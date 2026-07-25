@@ -20,12 +20,12 @@ defmodule QuantumBillingWeb.Router do
     live_session :app do
       live "/", DashboardLive, :index
       live "/dashboard", DashboardLive, :index
-      live "/invoices", PlaceholderLive, :invoices
-      live "/clients", PlaceholderLive, :clients
-      live "/e-way-bills", PlaceholderLive, :e_way_bills
-      live "/reports", PlaceholderLive, :reports
-      live "/compliance", PlaceholderLive, :compliance
-      live "/settings", PlaceholderLive, :settings
+      live "/invoices", InvoicesLive, :index
+      live "/clients", ClientsLive, :index
+      live "/e-way-bills", EWayBillsLive, :index
+      live "/reports", ReportsLive, :index
+      live "/compliance", ComplianceLive, :index
+      live "/settings", SettingsLive, :index
     end
   end
 
