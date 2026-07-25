@@ -174,34 +174,49 @@ defmodule QuantumBillingWeb.Layouts do
 
   def auth(assigns) do
     ~H"""
-    <div class="flex min-h-screen">
-      <div class="hidden w-1/2 flex-col justify-between bg-base-200 p-10 lg:flex">
-        <div class="flex items-center gap-2">
-          <div class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-content">
-            <.icon name="hero-receipt-percent" class="size-5" />
-          </div>
-          <span class="text-lg font-bold">QuantumBilling</span>
+    <div class="flex min-h-screen bg-white">
+      <div class="relative hidden w-1/2 flex-col bg-zinc-100 p-10 lg:flex">
+        <div class="flex items-center gap-2 text-lg font-semibold text-zinc-950">
+          <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
         </div>
 
-        <p class="max-w-md text-lg leading-relaxed text-base-content/70">
-          GST invoicing, e-way bills and compliance — all in one place.
-        </p>
+        <div class="mt-auto">
+          <p class="max-w-[540px] text-lg leading-relaxed text-zinc-700">
+            GST invoicing, e-way bills and compliance — all in one place.
+          </p>
+        </div>
       </div>
 
-      <div class="relative flex w-full flex-col bg-base-100 lg:w-1/2">
-        <div :if={@top_link != []} class="flex justify-end p-6 text-sm font-medium">
+      <div class="relative flex w-full items-center justify-center px-4 lg:w-1/2">
+        <div
+          :if={@top_link != []}
+          class="absolute right-4 top-4 text-sm font-medium text-zinc-950 md:right-8 md:top-8"
+        >
           {render_slot(@top_link)}
         </div>
 
-        <div class="flex flex-1 items-center justify-center px-6 pb-16">
-          <div class="w-full max-w-sm">
-            {render_slot(@inner_block)}
-          </div>
+        <div class="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+          {render_slot(@inner_block)}
         </div>
       </div>
     </div>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc """
+  Renders the centered title + subtitle block above an auth form.
+  """
+  attr :title, :string, required: true
+  attr :subtitle, :string, required: true
+
+  def auth_heading(assigns) do
+    ~H"""
+    <div class="flex flex-col space-y-2 text-center">
+      <h1 class="text-2xl font-bold tracking-tight text-zinc-950">{@title}</h1>
+      <p class="text-sm text-zinc-500">{@subtitle}</p>
+    </div>
     """
   end
 

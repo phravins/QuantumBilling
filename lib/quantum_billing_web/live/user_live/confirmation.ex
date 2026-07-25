@@ -1,18 +1,17 @@
 defmodule QuantumBillingWeb.UserLive.Confirmation do
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.UserLive.AuthComponents
+
   alias QuantumBilling.Accounts
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash}>
-      <div class="space-y-6">
-        <div class="space-y-2 text-center">
-          <h1 class="text-3xl font-bold tracking-tight">Welcome</h1>
-          <p class="text-base-content/60">{@user.email}</p>
-        </div>
+      <Layouts.auth_heading title="Welcome" subtitle={@user.email} />
 
+      <div class="grid gap-6">
         <.form
           :if={!@user.confirmed_at}
           for={@form}
@@ -21,17 +20,18 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
           phx-submit="submit"
           action={~p"/users/log-in?_action=confirmed"}
           phx-trigger-action={@trigger_submit}
+          class="space-y-2"
         >
           <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
           <.button
             name={@form[:remember_me].name}
             value="true"
             phx-disable-with="Confirming..."
-            class="btn btn-neutral w-full"
+            class={primary_button_class()}
           >
             Confirm and stay logged in
           </.button>
-          <.button phx-disable-with="Confirming..." class="btn btn-soft w-full mt-2">
+          <.button phx-disable-with="Confirming..." class={outline_button_class()}>
             Confirm and log in only this time
           </.button>
         </.form>
@@ -44,10 +44,11 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
           phx-mounted={JS.focus_first()}
           action={~p"/users/log-in"}
           phx-trigger-action={@trigger_submit}
+          class="space-y-2"
         >
           <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
           <%= if @current_scope do %>
-            <.button phx-disable-with="Logging in..." class="btn btn-neutral w-full">
+            <.button phx-disable-with="Logging in..." class={primary_button_class()}>
               Log in
             </.button>
           <% else %>
@@ -55,17 +56,17 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
               name={@form[:remember_me].name}
               value="true"
               phx-disable-with="Logging in..."
-              class="btn btn-neutral w-full"
+              class={primary_button_class()}
             >
               Keep me logged in on this device
             </.button>
-            <.button phx-disable-with="Logging in..." class="btn btn-soft w-full mt-2">
+            <.button phx-disable-with="Logging in..." class={outline_button_class()}>
               Log me in only this time
             </.button>
           <% end %>
         </.form>
 
-        <p :if={!@user.confirmed_at} class="alert alert-outline text-sm">
+        <p :if={!@user.confirmed_at} class="px-8 text-center text-sm text-zinc-500">
           Tip: If you prefer passwords, you can enable them in the user settings.
         </p>
       </div>

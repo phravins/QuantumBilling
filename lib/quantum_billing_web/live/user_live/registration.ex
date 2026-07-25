@@ -14,12 +14,12 @@ defmodule QuantumBillingWeb.UserLive.Registration do
         <.link navigate={~p"/users/log-in"} class="hover:underline">Login</.link>
       </:top_link>
 
-      <div class="space-y-6">
-        <div class="space-y-2 text-center">
-          <h1 class="text-3xl font-bold tracking-tight">Create an account</h1>
-          <p class="text-base-content/60">Enter your email below to create your account</p>
-        </div>
+      <Layouts.auth_heading
+        title="Create an account"
+        subtitle="Enter your email below to create your account"
+      />
 
+      <div class="grid gap-6">
         <.form for={@form} id="registration_form" phx-submit="save" phx-change="validate">
           <.input
             field={@form[:email]}
@@ -29,19 +29,21 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             spellcheck="false"
             required
             phx-mounted={JS.focus()}
+            class={input_class()}
+            error_class="border-red-500"
           />
 
-          <.button phx-disable-with="Creating account..." class="btn btn-neutral mt-2 w-full">
-            Sign Up with Email
+          <.button phx-disable-with="Creating account..." class={primary_button_class()}>
+            Sign In with Email
           </.button>
         </.form>
 
         <.or_divider />
 
         <.github_button />
-
-        <.legal_note />
       </div>
+
+      <.legal_note />
     </Layouts.auth>
     """
   end

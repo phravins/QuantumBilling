@@ -13,24 +13,22 @@ defmodule QuantumBillingWeb.UserLive.Login do
         <.link navigate={~p"/users/register"} class="hover:underline">Sign up</.link>
       </:top_link>
 
-      <div class="space-y-6">
-        <div class="space-y-2 text-center">
-          <h1 class="text-3xl font-bold tracking-tight">Welcome back</h1>
-          <p class="text-base-content/60">
-            <%= if @current_scope do %>
-              You need to reauthenticate to perform sensitive actions on your account.
-            <% else %>
-              Enter your email below to sign in to your account
-            <% end %>
-          </p>
-        </div>
+      <Layouts.auth_heading
+        title="Welcome back"
+        subtitle={
+          if @current_scope,
+            do: "You need to reauthenticate to perform sensitive actions on your account.",
+            else: "Enter your email below to sign in to your account"
+        }
+      />
 
-        <div :if={local_mail_adapter?()} class="alert alert-info text-sm">
-          <.icon name="hero-information-circle" class="size-5 shrink-0" />
-          <span>
-            Local mail adapter — magic links appear in <.link href="/dev/mailbox" class="underline">the mailbox</.link>.
-          </span>
-        </div>
+      <div class="grid gap-6">
+        <p :if={local_mail_adapter?()} class="text-center text-xs text-zinc-500">
+          Local mail adapter — magic links appear in <.link
+            href="/dev/mailbox"
+            class="underline underline-offset-4"
+          >the mailbox</.link>.
+        </p>
 
         <.form
           :let={f}
@@ -48,8 +46,10 @@ defmodule QuantumBillingWeb.UserLive.Login do
             spellcheck="false"
             required
             phx-mounted={JS.focus()}
+            class={input_class()}
+            error_class="border-red-500"
           />
-          <.button class="btn btn-neutral mt-2 w-full">
+          <.button class={primary_button_class()}>
             Sign In with Email
           </.button>
         </.form>
@@ -59,7 +59,7 @@ defmodule QuantumBillingWeb.UserLive.Login do
         <.github_button />
 
         <details class="group">
-          <summary class="cursor-pointer list-none text-center text-sm text-base-content/60 hover:underline">
+          <summary class="cursor-pointer list-none text-center text-sm text-zinc-500 hover:underline">
             Sign in with a password instead
           </summary>
 
@@ -70,28 +70,36 @@ defmodule QuantumBillingWeb.UserLive.Login do
             action={~p"/users/log-in"}
             phx-submit="submit_password"
             phx-trigger-action={@trigger_submit}
-            class="mt-4"
+            class="mt-4 space-y-2"
           >
             <.input
               readonly={!!@current_scope}
               field={f[:email]}
               type="email"
-              label="Email"
+              placeholder="name@example.com"
               autocomplete="username"
               spellcheck="false"
               required
+              class={input_class()}
+              error_class="border-red-500"
             />
             <.input
               field={@form[:password]}
               type="password"
-              label="Password"
+              placeholder="Password"
               autocomplete="current-password"
               spellcheck="false"
+              class={input_class()}
+              error_class="border-red-500"
             />
-            <.button class="btn btn-neutral w-full" name={@form[:remember_me].name} value="true">
+            <.button
+              class={primary_button_class()}
+              name={@form[:remember_me].name}
+              value="true"
+            >
               Log in and stay logged in
             </.button>
-            <.button class="btn btn-soft mt-2 w-full">
+            <.button class={outline_button_class()}>
               Log in only this time
             </.button>
           </.form>

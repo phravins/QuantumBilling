@@ -15,8 +15,12 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       assert html =~ "Create an account"
       assert html =~ "Enter your email below to create your account"
       assert html =~ ~s(placeholder="name@example.com")
-      assert html =~ "Sign Up with Email"
-      assert html =~ "OR CONTINUE WITH"
+      assert html =~ "Sign In with Email"
+      # the design's divider label is uppercased in CSS, so the markup is mixed case
+      assert html =~ "Or continue with"
+      # shadcn's 350px form column and type scale
+      assert html =~ "sm:w-[350px]"
+      assert html =~ "text-2xl font-bold tracking-tight"
       assert html =~ "GitHub"
       assert html =~ "Terms of Service"
       assert html =~ "Privacy Policy"
@@ -45,7 +49,7 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
 
       assert html =~ "Welcome back"
       assert html =~ "Sign In with Email"
-      assert html =~ "OR CONTINUE WITH"
+      assert html =~ "Or continue with"
       assert html =~ "QuantumBilling"
       assert html =~ ~s(href="/users/register")
       refute html =~ "Need Help?"
