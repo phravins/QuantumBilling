@@ -3,6 +3,8 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
   import Phoenix.LiveViewTest
 
+  setup :register_and_log_in_user
+
   test "renders the first page of invoices", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/invoices")
 

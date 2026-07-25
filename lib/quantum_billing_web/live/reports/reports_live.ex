@@ -10,7 +10,7 @@ defmodule QuantumBillingWeb.ReportsLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} active_nav={@active_nav}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
         {@page_title}
         <:subtitle>Coming soon</:subtitle>

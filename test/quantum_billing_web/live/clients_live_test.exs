@@ -3,6 +3,8 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  setup :register_and_log_in_user
+
   test "renders the first page of clients", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/clients")
 

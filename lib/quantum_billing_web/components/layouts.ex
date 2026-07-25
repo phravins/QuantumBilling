@@ -91,21 +91,23 @@ defmodule QuantumBillingWeb.Layouts do
               <div tabindex="0" role="button" class="flex items-center gap-2 px-1">
                 <div class="avatar avatar-placeholder">
                   <div class="w-9 rounded-full bg-primary text-primary-content">
-                    <span class="text-xs">PS</span>
+                    <span class="text-xs">{user_initials(@current_scope)}</span>
                   </div>
                 </div>
                 <div class="hidden text-left sm:block">
-                  <p class="text-sm font-semibold leading-tight">Priya Sharma</p>
+                  <p class="text-sm font-semibold leading-tight">{user_name(@current_scope)}</p>
                   <p class="text-xs text-base-content/60">GST Officer</p>
                 </div>
                 <.icon name="hero-chevron-down" class="size-4 text-base-content/50" />
               </div>
               <ul
                 tabindex="0"
-                class="dropdown-content menu z-10 mt-3 w-40 rounded-box bg-base-100 p-2 shadow"
+                class="dropdown-content menu z-10 mt-3 w-44 rounded-box bg-base-100 p-2 shadow"
               >
-                <li><a>Profile</a></li>
-                <li><a>Sign out</a></li>
+                <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
+                <li>
+                  <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
+                </li>
               </ul>
             </div>
           </div>
@@ -126,6 +128,17 @@ defmodule QuantumBillingWeb.Layouts do
     """
   end
 
+  # The topbar renders before anyone signs in (and in tests that mount the
+  # layout without a scope), so both helpers tolerate a nil scope.
+  defp user_name(%{user: %{email: email}}) when is_binary(email), do: email
+  defp user_name(_scope), do: "Signed out"
+
+  defp user_initials(%{user: %{email: email}}) when is_binary(email) do
+    email |> String.slice(0, 2) |> String.upcase()
+  end
+
+  defp user_initials(_scope), do: "--"
+
   defp nav_items do
     [
       %{key: :dashboard, label: "Dashboard", path: ~p"/dashboard", icon: "hero-squares-2x2"},
@@ -141,6 +154,55 @@ defmodule QuantumBillingWeb.Layouts do
       },
       %{key: :settings, label: "Settings", path: ~p"/settings", icon: "hero-cog-6-tooth"}
     ]
+  end
+
+  @doc """
+  Renders the split-screen shell used by the sign-in and sign-up pages: a
+  branded panel on the left, and the form column on the right.
+
+  ## Examples
+
+      <Layouts.auth flash={@flash}>
+        <:top_link><.link navigate={~p"/users/log-in"}>Login</.link></:top_link>
+        <.form ...>
+      </Layouts.auth>
+  """
+  attr :flash, :map, required: true, doc: "the map of flash messages"
+
+  slot :top_link, doc: "the cross-link shown in the top-right corner"
+  slot :inner_block, required: true
+
+  def auth(assigns) do
+    ~H"""
+    <div class="flex min-h-screen">
+      <div class="hidden w-1/2 flex-col justify-between bg-base-200 p-10 lg:flex">
+        <div class="flex items-center gap-2">
+          <div class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-content">
+            <.icon name="hero-receipt-percent" class="size-5" />
+          </div>
+          <span class="text-lg font-bold">QuantumBilling</span>
+        </div>
+
+        <p class="max-w-md text-lg leading-relaxed text-base-content/70">
+          GST invoicing, e-way bills and compliance — all in one place.
+        </p>
+      </div>
+
+      <div class="relative flex w-full flex-col bg-base-100 lg:w-1/2">
+        <div :if={@top_link != []} class="flex justify-end p-6 text-sm font-medium">
+          {render_slot(@top_link)}
+        </div>
+
+        <div class="flex flex-1 items-center justify-center px-6 pb-16">
+          <div class="w-full max-w-sm">
+            {render_slot(@inner_block)}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <.flash_group flash={@flash} />
+    """
   end
 
   @doc """

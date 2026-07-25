@@ -224,7 +224,7 @@ defmodule QuantumBillingWeb.ClientsLive do
       )
 
     ~H"""
-    <Layouts.app flash={@flash} active_nav={@active_nav}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
         Clients
         <:subtitle>Manage your clients and their details</:subtitle>

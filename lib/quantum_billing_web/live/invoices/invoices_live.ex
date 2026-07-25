@@ -203,7 +203,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
       )
 
     ~H"""
-    <Layouts.app flash={@flash} active_nav={@active_nav}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
