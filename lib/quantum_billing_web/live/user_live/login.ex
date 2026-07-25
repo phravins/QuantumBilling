@@ -105,6 +105,8 @@ defmodule QuantumBillingWeb.UserLive.Login do
           </.form>
         </details>
       </div>
+
+      <.legal_note />
     </Layouts.auth>
     """
   end

@@ -17,6 +17,18 @@ defmodule QuantumBillingWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Public legal documents — must stay reachable while signed out, since the
+  # sign-in and sign-up screens link to them.
+  scope "/", QuantumBillingWeb do
+    pipe_through :browser
+
+    live_session :public,
+      on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
+      live "/terms", TermsLive, :index
+      live "/privacy", PrivacyLive, :index
+    end
+  end
+
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 

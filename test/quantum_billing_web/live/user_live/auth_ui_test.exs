@@ -50,6 +50,10 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       assert html =~ "Welcome back"
       assert html =~ "Sign In with Email"
       assert html =~ "Or continue with"
+      # the legal footnote belongs on both auth screens, not just sign-up
+      assert html =~ "By clicking continue, you agree to our"
+      assert html =~ "Terms of Service"
+      assert html =~ "Privacy Policy"
       assert html =~ "QuantumBilling"
       assert html =~ ~s(href="/users/register")
       refute html =~ "Need Help?"

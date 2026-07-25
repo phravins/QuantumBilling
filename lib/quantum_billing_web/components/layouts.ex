@@ -206,6 +206,79 @@ defmodule QuantumBillingWeb.Layouts do
   end
 
   @doc """
+  Renders the shell for public legal documents (terms, privacy). Reachable
+  while signed out, so it deliberately avoids the app sidebar.
+
+  ## Examples
+
+      <Layouts.legal flash={@flash} title="Terms of Service" current_scope={@current_scope}>
+        <.legal_section title="1. About these terms">...</.legal_section>
+      </Layouts.legal>
+  """
+  attr :flash, :map, required: true
+  attr :title, :string, required: true
+  attr :current_scope, :map, default: nil
+  attr :other_doc_path, :string, required: true
+  attr :other_doc_label, :string, required: true
+
+  slot :inner_block, required: true
+
+  def legal(assigns) do
+    ~H"""
+    <div class="flex min-h-screen flex-col bg-white">
+      <header class="border-b border-zinc-200">
+        <div class="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
+          <.link
+            navigate={~p"/"}
+            class="flex items-center gap-2 text-lg font-semibold text-zinc-950"
+          >
+            <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
+          </.link>
+          <.link
+            navigate={if @current_scope, do: ~p"/dashboard", else: ~p"/users/log-in"}
+            class="text-sm font-medium text-zinc-600 hover:text-zinc-950"
+          >
+            {if @current_scope, do: "Back to dashboard", else: "Back to sign in"}
+          </.link>
+        </div>
+      </header>
+
+      <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        <h1 class="text-3xl font-bold tracking-tight text-zinc-950">{@title}</h1>
+        <p class="mt-2 text-sm text-zinc-500">Draft — not yet in effect.</p>
+
+        <div class="mt-8 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <p class="text-sm font-semibold text-amber-900">
+            Template pending legal review — do not publish as-is.
+          </p>
+          <p class="mt-1 text-sm text-amber-800">
+            This document is a starting structure, not legal advice. Have it reviewed by a
+            qualified lawyer and fill in every
+            <span class="rounded bg-amber-200 px-1 font-medium text-amber-900">highlighted</span>
+            blank before making it public. Remove this notice once reviewed.
+          </p>
+        </div>
+
+        <div class="mt-10 space-y-8">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+
+      <footer class="border-t border-zinc-200">
+        <div class="mx-auto flex max-w-3xl flex-col gap-2 px-6 py-6 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>© {DateTime.utc_now().year} QuantumBilling. All rights reserved.</span>
+          <.link navigate={@other_doc_path} class="underline underline-offset-4 hover:text-zinc-900">
+            {@other_doc_label}
+          </.link>
+        </div>
+      </footer>
+    </div>
+
+    <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc """
   Renders the centered title + subtitle block above an auth form.
   """
   attr :title, :string, required: true

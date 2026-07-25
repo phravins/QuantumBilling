@@ -8,6 +8,7 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   themed `btn-neutral` / `input` styles do not match.
   """
   use Phoenix.Component
+  use QuantumBillingWeb, :verified_routes
 
   @input_class "h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-950 " <>
                  "placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-950 " <>
@@ -78,10 +79,10 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
     ~H"""
     <p class="px-8 text-center text-sm text-zinc-500">
       By clicking continue, you agree to our
-      <.link href="#" class="underline underline-offset-4 hover:text-zinc-900">
+      <.link navigate={~p"/terms"} class="underline underline-offset-4 hover:text-zinc-900">
         Terms of Service
       </.link>
-      and <.link href="#" class="underline underline-offset-4 hover:text-zinc-900">
+      and <.link navigate={~p"/privacy"} class="underline underline-offset-4 hover:text-zinc-900">
         Privacy Policy
       </.link>.
     </p>
