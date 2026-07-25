@@ -8,26 +8,28 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
     assert html =~ "Manage and track all your GST invoices"
     assert html =~ "Showing 1 to 10 of 98 entries"
-    assert count_rows(html) == 10
+    assert length(row_seqs(html)) == 10
   end
 
-  test "search filters rows by client name", %{conn: conn} do
+  test "search narrows results to rows matching the client name", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/invoices")
 
-    html = view |> form("form", %{"q" => "V2V Technologies"}) |> render_change()
+    html = view |> form("#invoice-search", %{"q" => "PressuCare"}) |> render_change()
 
-    assert html =~ "V2V Technologies"
+    rows = row_seqs(html)
+    assert 15485 in rows
+    assert length(rows) < 10
+    refute html =~ "V2V Technologies"
+  end
+
+  test "search matches on invoice number", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/invoices")
+
+    html = view |> form("#invoice-search", %{"q" => "INV-2024-15481"}) |> render_change()
+
     assert html =~ "Showing 1 to 1 of 1 entries"
-    assert count_rows(html) == 1
-  end
-
-  test "search filters rows by invoice number", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/invoices")
-
-    html = view |> form("form", %{"q" => "INV-2024-15481"}) |> render_change()
-
+    assert row_seqs(html) == [15481]
     assert html =~ "Cancelled"
-    assert html =~ "Showing 1 to 1 of 1 entries"
   end
 
   test "status filter shows only matching-status rows", %{conn: conn} do
@@ -35,46 +37,67 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
     html = render_click(view, "filter_status", %{"status" => "Draft"})
 
-    assert html =~ "Showing 1 to 1 of 1 entries"
+    assert html =~ "Showing 1 to 10 of 10 entries"
     assert html =~ "Arch Info-Tech"
     refute html =~ "V2V Technologies"
+    # one badge per visible row, and no other status badge on the page
+    assert count_occurrences(html, ~s(badge-neutral">Draft<)) == 10
+    refute html =~ ~s(badge-success">)
   end
 
-  test "sorting toggles direction and reorders rows", %{conn: conn} do
+  test "sorting by invoice number toggles between ascending and descending", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/invoices")
+
+    asc = view |> render_click("sort", %{"field" => "seq"}) |> row_seqs()
+    assert asc == Enum.sort(asc, :asc)
+
+    desc = view |> render_click("sort", %{"field" => "seq"}) |> row_seqs()
+    assert desc == Enum.sort(desc, :desc)
+    assert asc != desc
+  end
+
+  test "sorting by date orders rows chronologically", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/invoices")
 
-    assert row_order(html) == Enum.sort(row_order(html), :desc)
+    # default sort is invoice_date desc
+    dates = row_dates(html)
+    assert dates == Enum.sort(dates, {:desc, Date})
 
-    asc_html = render_click(view, "sort", %{"field" => "invoice_date"})
-    assert row_order(asc_html) == Enum.sort(row_order(asc_html))
-
-    desc_html = render_click(view, "sort", %{"field" => "invoice_date"})
-    assert row_order(desc_html) == Enum.sort(row_order(desc_html), :desc)
+    asc_dates = view |> render_click("sort", %{"field" => "invoice_date"}) |> row_dates()
+    assert asc_dates == Enum.sort(asc_dates, {:asc, Date})
   end
 
   test "pagination moves to the next page with different rows", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/invoices")
 
-    page1_rows = row_order(html)
-
+    page1 = row_seqs(html)
     page2_html = render_click(view, "paginate", %{"page" => "2"})
-    page2_rows = row_order(page2_html)
 
     assert page2_html =~ "Showing 11 to 20 of 98 entries"
-    assert page1_rows != page2_rows
+    assert row_seqs(page2_html) != page1
   end
 
-  defp count_rows(html) do
-    html
-    |> Floki.parse_document!()
-    |> Floki.find("tbody tr")
-    |> length()
+  defp row_seqs(html) do
+    ~r/id="invoice-(\d+)"/
+    |> Regex.scan(html)
+    |> Enum.map(fn [_, seq] -> String.to_integer(seq) end)
   end
 
-  defp row_order(html) do
-    html
-    |> Floki.parse_document!()
-    |> Floki.find("tbody tr")
-    |> Enum.map(fn row -> row |> Floki.find("td:first-child") |> Floki.text() end)
+  # grabs the first <td> date cell of each row (the Invoice Date column)
+  defp row_dates(html) do
+    ~r/<td[^>]*>(\d{2} \w{3} \d{4})<\/td>/
+    |> Regex.scan(html)
+    |> Enum.map(fn [_, d] -> Date.from_iso8601!(to_iso(d)) end)
+    |> Enum.take_every(2)
+  end
+
+  defp to_iso(<<d::binary-2, " ", mon::binary-3, " ", y::binary-4>>) do
+    months = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
+    m = Enum.find_index(months, &(&1 == mon)) + 1
+    "#{y}-#{String.pad_leading(to_string(m), 2, "0")}-#{d}"
+  end
+
+  defp count_occurrences(html, needle) do
+    html |> String.split(needle) |> length() |> Kernel.-(1)
   end
 end

@@ -88,6 +88,9 @@ defmodule QuantumBillingWeb do
       import QuantumBillingWeb.CoreComponents
       import QuantumBillingWeb.SharedComponents
 
+      # Display formatting helpers
+      import QuantumBillingWeb.Format
+
       # Common modules used in templates
       alias Phoenix.LiveView.JS
       alias QuantumBillingWeb.Layouts

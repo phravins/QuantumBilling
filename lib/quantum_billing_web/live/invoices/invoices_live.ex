@@ -10,8 +10,6 @@ defmodule QuantumBillingWeb.InvoicesLive do
   """
   use QuantumBillingWeb, :live_view
 
-  import QuantumBillingWeb.InvoicesComponents
-
   @per_page 10
 
   @status_options [
@@ -218,7 +216,12 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
       <div class="card rounded-box border border-base-300 bg-base-100 p-5">
         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <form phx-change="search" phx-submit="search" class="relative w-full sm:max-w-xs">
+          <form
+            id="invoice-search"
+            phx-change="search"
+            phx-submit="search"
+            class="relative w-full sm:max-w-xs"
+          >
             <.icon
               name="hero-magnifying-glass"
               class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/40"
@@ -240,7 +243,10 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 {@status_filter}
                 <.icon name="hero-chevron-down" class="size-4" />
               </div>
-              <ul tabindex="0" class="dropdown-content menu z-10 mt-2 w-56 rounded-box bg-base-100 p-2 shadow">
+              <ul
+                tabindex="0"
+                class="dropdown-content menu z-10 mt-2 w-56 rounded-box bg-base-100 p-2 shadow"
+              >
                 <li :for={s <- @status_options}>
                   <a phx-click="filter_status" phx-value-status={s}>{s}</a>
                 </li>
@@ -293,7 +299,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 <td>{row.client}</td>
                 <td>{format_date(row.invoice_date)}</td>
                 <td>{format_date(row.due_date)}</td>
-                <td>{indian_amount(row.amount)}</td>
+                <td>{rupees(row.amount)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
                   <div class="flex gap-1">
@@ -364,24 +370,4 @@ defmodule QuantumBillingWeb.InvoicesLive do
   defp sort_rows(rows, :due_date, dir), do: Enum.sort_by(rows, & &1.due_date, {dir, Date})
 
   defp format_date(date), do: Calendar.strftime(date, "%d %b %Y")
-
-  defp indian_amount(n) when is_integer(n) do
-    s = Integer.to_string(n)
-    len = String.length(s)
-
-    {rest, last3} =
-      if len > 3 do
-        String.split_at(s, len - 3)
-      else
-        {"", s}
-      end
-
-    rest_grouped =
-      rest
-      |> String.reverse()
-      |> String.replace(~r/(\d{2})(?=\d)/, "\\1,")
-      |> String.reverse()
-
-    "₹" <> if(rest_grouped == "", do: last3, else: rest_grouped <> "," <> last3)
-  end
 end
