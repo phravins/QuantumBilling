@@ -1,22 +1,358 @@
 defmodule QuantumBillingWeb.EWayBillsLive do
   @moduledoc """
-  Placeholder page for the E-Way Bills section, pending its own data model.
+  The E-Way Bills list page: search, status filter, sortable columns and
+  pagination over the issued consignment notes.
+
+  All data is a hardcoded in-memory dataset pending the multi-tenant Ecto
+  schema. `mount/3` builds the dataset once; `handle_event/3` only ever
+  updates raw filter/sort/page state, and `render/1` re-derives the visible
+  rows fresh on every render so there is a single source of truth.
   """
   use QuantumBillingWeb, :live_view
 
+  @per_page 10
+
+  @status_options ["All Status", "Active", "Expired", "Cancelled"]
+
+  @seed_rows [
+    %{
+      seq: 1,
+      document_no: "INV-2024-15489",
+      issued_on: ~D[2024-05-28],
+      to_party: "V2V Technologies",
+      from_place: "Mumbai",
+      to_place: "Pune",
+      value: 70_800,
+      status: "Active"
+    },
+    %{
+      seq: 2,
+      document_no: "INV-2024-15488",
+      issued_on: ~D[2024-05-27],
+      to_party: "SoftSphere Solutions",
+      from_place: "Bengaluru",
+      to_place: "Chennai",
+      value: 86_200,
+      status: "Active"
+    },
+    %{
+      seq: 3,
+      document_no: "INV-2024-15487",
+      issued_on: ~D[2024-05-26],
+      to_party: "Insta Capital",
+      from_place: "Delhi",
+      to_place: "Jaipur",
+      value: 245_000,
+      status: "Expired"
+    },
+    %{
+      seq: 4,
+      document_no: "INV-2024-15486",
+      issued_on: ~D[2024-05-25],
+      to_party: "DreamNest Builders",
+      from_place: "Ahmedabad",
+      to_place: "Surat",
+      value: 132_400,
+      status: "Active"
+    },
+    %{
+      seq: 5,
+      document_no: "INV-2024-15485",
+      issued_on: ~D[2024-05-24],
+      to_party: "PressuCare Systems",
+      from_place: "Hyderabad",
+      to_place: "Vijayawada",
+      value: 58_900,
+      status: "Cancelled"
+    },
+    %{
+      seq: 6,
+      document_no: "INV-2024-15484",
+      issued_on: ~D[2024-05-23],
+      to_party: "Arch Info-Tech",
+      from_place: "Kolkata",
+      to_place: "Bhubaneswar",
+      value: 91_750,
+      status: "Expired"
+    }
+  ]
+
+  @party_pool [
+    "V2V Technologies",
+    "SoftSphere Solutions",
+    "Insta Capital",
+    "DreamNest Builders",
+    "PressuCare Systems",
+    "Arch Info-Tech",
+    "Nimbus Logistics",
+    "Orbit Traders",
+    "Sunrise Textiles",
+    "Vertex Pharma"
+  ]
+
+  @route_pool [
+    {"Mumbai", "Pune"},
+    {"Bengaluru", "Chennai"},
+    {"Delhi", "Jaipur"},
+    {"Ahmedabad", "Surat"},
+    {"Hyderabad", "Vijayawada"},
+    {"Kolkata", "Bhubaneswar"},
+    {"Nagpur", "Indore"}
+  ]
+
+  @value_pool [70_800, 45_200, 118_600, 236_500, 62_400, 95_300, 154_900, 38_700]
+
+  # Weighted so most bills read as active, the way a real ledger would.
+  @status_cycle [
+    "Active",
+    "Active",
+    "Active",
+    "Active",
+    "Active",
+    "Expired",
+    "Expired",
+    "Active",
+    "Cancelled",
+    "Active"
+  ]
+
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, page_title: "E-Way Bills", active_nav: :e_way_bills)}
+    {:ok,
+     socket
+     |> assign(:page_title, "E-Way Bills")
+     |> assign(:active_nav, :e_way_bills)
+     |> assign(:all_bills, all_bills())
+     |> assign(:search, "")
+     |> assign(:status_filter, "All Status")
+     |> assign(:sort_field, :issued_on)
+     |> assign(:sort_dir, :desc)
+     |> assign(:page, 1)}
+  end
+
+  def handle_event("search", %{"q" => q}, socket) do
+    {:noreply, socket |> assign(:search, q) |> assign(:page, 1)}
+  end
+
+  def handle_event("filter_status", %{"status" => status}, socket) do
+    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1)}
+  end
+
+  def handle_event("sort", %{"field" => field_str}, socket) do
+    field = String.to_existing_atom(field_str)
+
+    {sort_field, sort_dir} =
+      if socket.assigns.sort_field == field do
+        {field, if(socket.assigns.sort_dir == :asc, do: :desc, else: :asc)}
+      else
+        {field, :asc}
+      end
+
+    {:noreply, assign(socket, sort_field: sort_field, sort_dir: sort_dir, page: 1)}
+  end
+
+  def handle_event("paginate", %{"page" => page_str}, socket) do
+    {:noreply, assign(socket, :page, String.to_integer(page_str))}
   end
 
   def render(assigns) do
+    filtered =
+      assigns.all_bills
+      |> filter_search(assigns.search)
+      |> filter_status(assigns.status_filter)
+      |> sort_rows(assigns.sort_field, assigns.sort_dir)
+
+    total = length(filtered)
+    total_pages = max(ceil(total / @per_page), 1)
+    page = assigns.page |> max(1) |> min(total_pages)
+    rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
+    range_start = if total == 0, do: 0, else: (page - 1) * @per_page + 1
+    range_end = min(page * @per_page, total)
+
+    assigns =
+      assign(assigns,
+        rows: rows,
+        total: total,
+        total_pages: total_pages,
+        page: page,
+        range_start: range_start,
+        range_end: range_end,
+        status_options: @status_options
+      )
+
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
-        {@page_title}
-        <:subtitle>Coming soon</:subtitle>
+        E-Way Bills
+        <:subtitle>Track consignments and generate new e-way bills</:subtitle>
+        <:actions>
+          <.link navigate={~p"/e-way-bills/new"} class={action_button_class()}>
+            <.icon name="hero-plus" class="size-4" /> Generate New E-Way Bill
+          </.link>
+        </:actions>
       </.header>
-      <.coming_soon />
+
+      <.card>
+        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <form
+            id="ewb-search"
+            phx-change="search"
+            phx-submit="search"
+            class="relative w-full sm:max-w-xs"
+          >
+            <.icon
+              name="hero-magnifying-glass"
+              class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
+            />
+            <input
+              type="text"
+              name="q"
+              value={@search}
+              phx-debounce="300"
+              placeholder="Search e-way bills..."
+              class={filter_input_class()}
+            />
+          </form>
+
+          <div class="flex items-center gap-2">
+            <div class="dropdown dropdown-end">
+              <div tabindex="0" role="button" class={secondary_button_class()}>
+                <.icon name="hero-funnel" class="size-4" />
+                {@status_filter}
+                <.icon name="hero-chevron-down" class="size-4" />
+              </div>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+              >
+                <li :for={s <- @status_options}>
+                  <a phx-click="filter_status" phx-value-status={s}>{s}</a>
+                </li>
+              </ul>
+            </div>
+
+            <button type="button" class={secondary_button_class()}>
+              <.icon name="hero-arrow-down-tray" class="size-4" /> Export
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr class={table_head_class()}>
+                <th>
+                  <.sortable_th
+                    label="EWB No."
+                    field={:ewb_no}
+                    current_field={@sort_field}
+                    current_dir={@sort_dir}
+                  />
+                </th>
+                <th>Document No.</th>
+                <th>
+                  <.sortable_th
+                    label="Issued On"
+                    field={:issued_on}
+                    current_field={@sort_field}
+                    current_dir={@sort_dir}
+                  />
+                </th>
+                <th>To</th>
+                <th>Route</th>
+                <th>
+                  <.sortable_th
+                    label="Value"
+                    field={:value}
+                    current_field={@sort_field}
+                    current_dir={@sort_dir}
+                  />
+                </th>
+                <th>Status</th>
+                <th><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={row <- @rows} id={"ewb-#{row.ewb_no}"} class={table_row_class()}>
+                <td class="font-medium">{row.ewb_no}</td>
+                <td class="text-base-content/60">{row.document_no}</td>
+                <td class="text-base-content/60">{format_date(row.issued_on)}</td>
+                <td>{row.to_party}</td>
+                <td class="text-base-content/60">{row.from_place} &rarr; {row.to_place}</td>
+                <td class="font-medium">{rupees(row.value, decimals: 2, space: true)}</td>
+                <td><.status_badge status={row.status} /></td>
+                <td>
+                  <div class="flex gap-1">
+                    <button type="button" class={row_action_class()} aria-label="View e-way bill">
+                      <.icon name="hero-eye" class="size-4" />
+                    </button>
+                    <button type="button" class={row_action_class()} aria-label="Print e-way bill">
+                      <.icon name="hero-printer" class="size-4" />
+                    </button>
+                    <button type="button" class={row_action_class()} aria-label="More actions">
+                      <.icon name="hero-ellipsis-vertical" class="size-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+          <span class="text-sm text-base-content/60">
+            Showing {@range_start} to {@range_end} of {@total} entries
+          </span>
+          <.pagination current_page={@page} total_pages={@total_pages} />
+        </div>
+      </.card>
     </Layouts.app>
     """
   end
+
+  defp all_bills do
+    seed = Enum.map(@seed_rows, &finalize_row/1)
+    generated = Enum.map(1..54, &generated_row/1)
+    seed ++ generated
+  end
+
+  # The portal issues 12-digit numbers; derive them from the sequence so the
+  # list stays stable across renders.
+  defp finalize_row(row) do
+    Map.put(row, :ewb_no, "3910" <> String.pad_leading(to_string(391_000 + row.seq), 8, "0"))
+  end
+
+  defp generated_row(g) do
+    {from_place, to_place} = Enum.at(@route_pool, rem(g - 1, length(@route_pool)))
+
+    %{
+      seq: 6 + g,
+      document_no: "INV-2024-#{15_483 - (g - 1)}",
+      issued_on: Date.add(~D[2024-05-22], -div(g + 1, 2)),
+      to_party: Enum.at(@party_pool, rem(g - 1, length(@party_pool))),
+      from_place: from_place,
+      to_place: to_place,
+      value: Enum.at(@value_pool, rem(g - 1, length(@value_pool))) + rem(g, 9) * 250,
+      status: Enum.at(@status_cycle, rem(g - 1, 10))
+    }
+    |> finalize_row()
+  end
+
+  defp filter_search(rows, ""), do: rows
+
+  defp filter_search(rows, search) do
+    needle = String.downcase(search)
+
+    Enum.filter(rows, fn r ->
+      String.contains?(String.downcase(r.ewb_no), needle) or
+        String.contains?(String.downcase(r.document_no), needle) or
+        String.contains?(String.downcase(r.to_party), needle)
+    end)
+  end
+
+  defp filter_status(rows, "All Status"), do: rows
+  defp filter_status(rows, status), do: Enum.filter(rows, &(&1.status == status))
+
+  defp sort_rows(rows, :ewb_no, dir), do: Enum.sort_by(rows, & &1.ewb_no, dir)
+  defp sort_rows(rows, :value, dir), do: Enum.sort_by(rows, & &1.value, dir)
+  defp sort_rows(rows, :issued_on, dir), do: Enum.sort_by(rows, & &1.issued_on, {dir, Date})
 end

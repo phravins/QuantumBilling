@@ -23,6 +23,16 @@ defmodule QuantumBillingWeb.SharedComponents do
   @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
                       "transition-colors hover:bg-base-200 hover:text-base-content"
 
+  @form_control_base "w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
+                       "text-base-content placeholder:text-base-content/40 focus:outline-none " <>
+                       "focus:border-base-content/30 focus:ring-2 focus:ring-base-content/10 " <>
+                       "disabled:bg-base-200 disabled:text-base-content/60"
+
+  @form_input_class "h-9 " <> @form_control_base
+  @form_select_class "h-9 appearance-none pr-8 " <> @form_control_base
+  @form_textarea_class "min-h-24 py-2 " <> @form_control_base
+  @form_error_class "border-error focus:border-error focus:ring-error/15"
+
   @micro_label_class "text-2xs font-medium uppercase tracking-wider text-base-content/45"
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
@@ -43,6 +53,18 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
+
+  @doc "A text/date/number input on an app form; same 36px footprint as the toolbar controls."
+  def form_input_class, do: @form_input_class
+
+  @doc "A `<select>` on an app form."
+  def form_select_class, do: @form_select_class
+
+  @doc "A `<textarea>` on an app form."
+  def form_textarea_class, do: @form_textarea_class
+
+  @doc "The invalid state for any of the form controls above."
+  def form_error_class, do: @form_error_class
 
   @doc "The uppercase micro label used for sidebar sections and table headers."
   def micro_label_class, do: @micro_label_class
@@ -118,6 +140,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Active"), do: @positive
   defp status_badge_class("Inactive"), do: @pending
   defp status_badge_class("Blocked"), do: @negative
+  defp status_badge_class("Expired"), do: @pending
   defp status_badge_class(_other), do: @neutral
 
   @doc """

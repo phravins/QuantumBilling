@@ -35,6 +35,18 @@ defmodule QuantumBillingWeb.Format do
     "₹" <> space <> group_indian(amount) <> fraction
   end
 
+  @doc """
+  Formats a date the way every list and detail page shows it.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.format_date(~D[2024-05-28])
+      "28 May 2024"
+
+  """
+  def format_date(%Date{} = date), do: Calendar.strftime(date, "%d %b %Y")
+  def format_date(nil), do: "—"
+
   # Groups the last three digits, then every two digits above that:
   # 1500000 -> "15,00,000"
   defp group_indian(amount) do

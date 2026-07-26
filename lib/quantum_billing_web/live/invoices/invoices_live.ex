@@ -369,5 +369,4 @@ defmodule QuantumBillingWeb.InvoicesLive do
   defp sort_rows(rows, :invoice_date, dir), do: Enum.sort_by(rows, & &1.invoice_date, {dir, Date})
   defp sort_rows(rows, :due_date, dir), do: Enum.sort_by(rows, & &1.due_date, {dir, Date})
 
-  defp format_date(date), do: Calendar.strftime(date, "%d %b %Y")
 end
