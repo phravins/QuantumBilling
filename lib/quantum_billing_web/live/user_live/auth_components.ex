@@ -10,15 +10,15 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   use Phoenix.Component
   use QuantumBillingWeb, :verified_routes
 
-  @input_class "h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-950 " <>
+  @input_class "h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-950 " <>
                  "placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-950 " <>
                  "focus:ring-offset-2"
 
-  @primary_button_class "inline-flex h-10 w-full items-center justify-center rounded-md bg-zinc-900 " <>
+  @primary_button_class "inline-flex h-9 w-full items-center justify-center rounded-md bg-zinc-900 " <>
                           "text-sm font-medium text-white transition-colors hover:bg-zinc-800 " <>
                           "disabled:pointer-events-none disabled:opacity-50"
 
-  @outline_button_class "inline-flex h-10 w-full items-center justify-center rounded-md border " <>
+  @outline_button_class "inline-flex h-9 w-full items-center justify-center rounded-md border " <>
                           "border-zinc-200 bg-white text-sm font-medium text-zinc-950 " <>
                           "transition-colors hover:bg-zinc-100"
 

@@ -120,7 +120,7 @@ defmodule QuantumBilling.AccountsTest do
           valid_registration_attributes(password: "short", password_confirmation: "short")
         )
 
-      assert "should be at least 12 character(s)" in errors_on(changeset).password
+      assert "should be at least 8 character(s)" in errors_on(changeset).password
     end
 
     test "requires a username" do
@@ -167,7 +167,7 @@ defmodule QuantumBilling.AccountsTest do
         )
 
       assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
-      assert %{password: ["should be at least 12 character(s)"]} = errors_on(changeset)
+      assert %{password: ["should be at least 8 character(s)"]} = errors_on(changeset)
     end
   end
 
@@ -333,12 +333,12 @@ defmodule QuantumBilling.AccountsTest do
     test "validates password", %{user: user} do
       {:error, changeset} =
         Accounts.update_user_password(user, %{
-          password: "not valid",
+          password: "short",
           password_confirmation: "another"
         })
 
       assert %{
-               password: ["should be at least 12 character(s)"],
+               password: ["should be at least 8 character(s)"],
                password_confirmation: ["does not match password"]
              } = errors_on(changeset)
     end
