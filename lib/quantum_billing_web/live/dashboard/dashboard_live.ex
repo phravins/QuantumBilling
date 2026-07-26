@@ -53,7 +53,7 @@ defmodule QuantumBillingWeb.DashboardLive do
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
-            <h2 class="text-sm font-semibold">GST Invoices - Last 6 Months</h2>
+            <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
             <div class="flex items-center gap-4 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-base-content" /> CGST + SGST
@@ -67,14 +67,14 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
 
         <.card>
-          <h2 class="mb-4 text-sm font-semibold">Invoices by Status</h2>
+          <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
           <.donut_chart segments={@donut_segments} total={@donut_total} />
         </.card>
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
-          <h2 class="mb-4 text-sm font-semibold">Recent Tax Invoices</h2>
+          <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
           <div class="overflow-x-auto">
             <.table id="invoices" rows={@invoices}>
               <:col :let={row} label="Invoice #">{row.number}</:col>
@@ -84,10 +84,7 @@ defmodule QuantumBillingWeb.DashboardLive do
               <:col :let={row} label="Total Amount">{row.amount}</:col>
               <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
               <:action>
-                <button
-                  class="flex size-7 items-center justify-center rounded-field text-base-content/50 hover:bg-base-200 hover:text-base-content"
-                  aria-label="View QR code"
-                >
+                <button class={row_action_class()} aria-label="View QR code">
                   <.icon name="hero-qr-code" class="size-4" />
                 </button>
               </:action>
@@ -102,7 +99,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
 
         <.card>
-          <h2 class="mb-4 text-sm font-semibold">Compliance Calendar</h2>
+          <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
           <ul class="space-y-4">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
               <.compliance_date_badge month={item.month} day={item.day} />
@@ -251,7 +248,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         day: "20",
         title: "Annual Return (GSTR-9)",
         due_text: "Due in 20 days",
-        due_class: "text-base-content/50"
+        due_class: "text-base-content/45"
       }
     ]
   end

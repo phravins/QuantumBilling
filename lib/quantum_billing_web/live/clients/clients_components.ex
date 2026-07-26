@@ -30,10 +30,7 @@ defmodule QuantumBillingWeb.ClientsComponents do
 
     ~H"""
     <span
-      class={[
-        "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
-        @color
-      ]}
+      class={[QuantumBillingWeb.SharedComponents.avatar_class(), "shrink-0 text-white", @color]}
       aria-hidden="true"
     >
       {@initials}

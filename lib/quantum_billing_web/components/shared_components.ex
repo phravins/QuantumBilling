@@ -13,15 +13,24 @@ defmodule QuantumBillingWeb.SharedComponents do
                          "hover:bg-primary/90"
 
   @secondary_button_class "inline-flex h-9 items-center gap-2 rounded-field border " <>
-                            "border-base-300 bg-base-100 px-3 text-sm text-base-content/80 " <>
+                            "border-base-300 bg-base-100 px-3 text-sm text-base-content/60 " <>
                             "transition-colors hover:bg-base-200 hover:text-base-content"
 
   @filter_input_class "h-9 w-full rounded-field border border-base-300 bg-base-100 pl-9 pr-3 " <>
-                        "text-sm placeholder:text-base-content/40 focus:outline-none " <>
+                        "text-sm placeholder:text-base-content/45 focus:outline-none " <>
                         "focus:ring-2 focus:ring-base-content/10"
 
-  @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/50 " <>
+  @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
                       "transition-colors hover:bg-base-200 hover:text-base-content"
+
+  @micro_label_class "text-2xs font-medium uppercase tracking-wider text-base-content/45"
+
+  @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
+
+  @table_head_class "border-b border-base-300 text-2xs font-medium uppercase tracking-wider " <>
+                      "text-base-content/45"
+
+  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
 
   @doc "The solid, near-black call-to-action button used in page headers."
   def action_button_class, do: @action_button_class
@@ -35,6 +44,18 @@ defmodule QuantumBillingWeb.SharedComponents do
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
 
+  @doc "The uppercase micro label used for sidebar sections and table headers."
+  def micro_label_class, do: @micro_label_class
+
+  @doc "The circular initials chip, shared by the profile menu and the client list."
+  def avatar_class, do: @avatar_class
+
+  @doc "The `<tr>` inside `<thead>`; pairs with `table_row_class/0`."
+  def table_head_class, do: @table_head_class
+
+  @doc "A body `<tr>`: hairline separator, body type, hover tint."
+  def table_row_class, do: @table_row_class
+
   @doc """
   Renders the surface every panel on the app sits on: a white, hairline-bordered
   box with a whisper of shadow.
@@ -45,13 +66,15 @@ defmodule QuantumBillingWeb.SharedComponents do
   """
   attr :class, :any, default: nil
   attr :padding, :string, default: "p-5"
-  attr :rest, :global
+  attr :as, :string, default: "div", doc: "the tag to render, e.g. `button` for clickable tiles"
+  attr :rest, :global, include: ~w(type)
 
   slot :inner_block, required: true
 
   def card(assigns) do
     ~H"""
-    <div
+    <.dynamic_tag
+      tag_name={@as}
       class={[
         "rounded-box border border-base-300 bg-base-100 shadow-sm",
         @padding,
@@ -60,7 +83,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       {@rest}
     >
       {render_slot(@inner_block)}
-    </div>
+    </.dynamic_tag>
     """
   end
 
@@ -85,7 +108,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   @positive "border-emerald-200 bg-emerald-50 text-emerald-700"
   @pending "border-amber-200 bg-amber-50 text-amber-700"
   @negative "border-rose-200 bg-rose-50 text-rose-700"
-  @neutral "border-base-300 bg-base-200 text-base-content/70"
+  @neutral "border-base-300 bg-base-200 text-base-content/60"
 
   defp status_badge_class("E-Invoice Generated"), do: @positive
   defp status_badge_class("Pending E-Invoice"), do: @pending
@@ -113,20 +136,21 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def metric_card(assigns) do
     ~H"""
-    <button
+    <.card
+      as="button"
       type="button"
-      class="flex w-full flex-row items-center gap-4 rounded-box border border-base-300 bg-base-100 p-5 text-left shadow-sm transition-colors hover:border-base-content/20"
+      class="flex w-full flex-row items-center gap-4 text-left transition-colors hover:border-base-content/20"
       {@rest}
     >
-      <span class={["flex size-11 shrink-0 items-center justify-center rounded-full", @icon_class]}>
-        <.icon name={@icon} class="size-5" />
+      <span class={["flex size-10 shrink-0 items-center justify-center rounded-full", @icon_class]}>
+        <.icon name={@icon} class="size-4.5" />
       </span>
       <span class="min-w-0">
         <span class="block text-sm text-base-content/60">{@label}</span>
         <span class="block text-2xl font-semibold tracking-tight">{@value}</span>
-        <span :if={@caption} class="block text-xs text-base-content/50">{@caption}</span>
+        <span :if={@caption} class="block text-xs text-base-content/45">{@caption}</span>
       </span>
-    </button>
+    </.card>
     """
   end
 
@@ -138,10 +162,10 @@ defmodule QuantumBillingWeb.SharedComponents do
   def coming_soon(assigns) do
     ~H"""
     <.card padding="p-16" class="text-center">
-      <span class="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-base-200 text-base-content/40">
-        <.icon name="hero-wrench-screwdriver" class="size-5" />
+      <span class="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
+        <.icon name="hero-wrench-screwdriver" class="size-4.5" />
       </span>
-      <p class="text-sm text-base-content/50">{@title}</p>
+      <p class="text-sm text-base-content/60">{@title}</p>
     </.card>
     """
   end
@@ -177,7 +201,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.icon
         :if={@current_field != @field}
         name="hero-chevron-up-down"
-        class="size-3.5 text-base-content/30"
+        class="size-3.5 text-base-content/45"
       />
     </button>
     """
@@ -191,7 +215,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :total_pages, :integer, required: true
 
   @page_button_class "inline-flex size-8 items-center justify-center rounded-field border " <>
-                       "border-base-300 bg-base-100 text-sm text-base-content/70 transition-colors " <>
+                       "border-base-300 bg-base-100 text-sm text-base-content/60 transition-colors " <>
                        "hover:bg-base-200 hover:text-base-content disabled:opacity-40 " <>
                        "disabled:pointer-events-none"
 
@@ -213,7 +237,7 @@ defmodule QuantumBillingWeb.SharedComponents do
         <.icon name="hero-chevron-left" class="size-4" />
       </button>
       <%= for entry <- @window do %>
-        <span :if={entry == :ellipsis} class="px-1 text-base-content/40">...</span>
+        <span :if={entry == :ellipsis} class="px-1 text-base-content/45">...</span>
         <button
           :if={entry != :ellipsis}
           type="button"

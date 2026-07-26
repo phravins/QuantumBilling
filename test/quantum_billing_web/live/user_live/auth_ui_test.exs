@@ -22,7 +22,7 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       assert html =~ "Or continue with"
       # shadcn's 350px form column and type scale
       assert html =~ "sm:w-[350px]"
-      assert html =~ "text-2xl font-bold tracking-tight"
+      assert html =~ "text-2xl font-semibold tracking-tight"
       assert html =~ "GitHub"
       assert html =~ "Terms of Service"
       assert html =~ "Privacy Policy"

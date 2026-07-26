@@ -244,7 +244,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         >
           <.icon
             name="hero-magnifying-glass"
-            class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/40"
+            class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
           />
           <input
             type="text"
@@ -296,7 +296,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         <div class="overflow-x-auto">
           <table class="table">
             <thead>
-              <tr class="border-b border-base-300 text-xs font-medium uppercase tracking-wide text-base-content/50">
+              <tr class={table_head_class()}>
                 <th>
                   <.sortable_th
                     label="Client Name"
@@ -321,20 +321,16 @@ defmodule QuantumBillingWeb.ClientsLive do
               </tr>
             </thead>
             <tbody>
-              <tr
-                :for={row <- @rows}
-                id={"client-#{row.id}"}
-                class="border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
-              >
+              <tr :for={row <- @rows} id={"client-#{row.id}"} class={table_row_class()}>
                 <td>
                   <div class="flex items-center gap-3">
                     <.client_avatar name={row.name} />
                     <span class="font-medium">{row.name}</span>
                   </div>
                 </td>
-                <td class="text-base-content/70">{row.gstin}</td>
-                <td class="text-base-content/70">{row.email}</td>
-                <td class="text-base-content/70">{row.phone}</td>
+                <td class="text-base-content/60">{row.gstin}</td>
+                <td class="text-base-content/60">{row.email}</td>
+                <td class="text-base-content/60">{row.phone}</td>
                 <td class="font-medium">{rupees(row.outstanding, decimals: 2, space: true)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>

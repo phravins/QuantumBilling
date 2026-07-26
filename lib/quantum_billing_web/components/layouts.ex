@@ -42,29 +42,27 @@ defmodule QuantumBillingWeb.Layouts do
     <div class="flex min-h-screen bg-base-200">
       <aside class="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-base-300 bg-base-100">
         <div class="flex items-center gap-2.5 px-5 py-5">
-          <div class="flex size-8 items-center justify-center rounded-field bg-primary text-primary-content">
-            <.icon name="hero-receipt-percent" class="size-[18px]" />
+          <div class="flex size-7 items-center justify-center rounded-field bg-primary text-primary-content">
+            <.icon name="hero-receipt-percent" class="size-4" />
           </div>
-          <span class="text-[15px] font-semibold tracking-tight">QuantumBilling</span>
+          <span class="text-sm font-semibold tracking-tight">QuantumBilling</span>
         </div>
 
         <nav class="flex-1 overflow-y-auto px-3 pt-2">
-          <p class="px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/40">
-            Menu
-          </p>
+          <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
           <ul class="space-y-0.5">
             <li :for={item <- @nav_items}>
               <.link
                 navigate={item.path}
                 class={[
-                  "flex items-center gap-3 rounded-field px-3 py-2 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-field px-3 py-2 text-sm transition-colors",
                   if(@active_nav == item.key,
                     do: "bg-base-200 font-medium text-base-content",
                     else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                   )
                 ]}
               >
-                <.icon name={item.icon} class="size-[18px]" />
+                <.icon name={item.icon} class="size-4.5" />
                 {item.label}
               </.link>
             </li>
@@ -78,16 +76,16 @@ defmodule QuantumBillingWeb.Layouts do
               role="button"
               class="flex w-full items-center gap-2.5 rounded-field px-2 py-2 text-left hover:bg-base-200"
             >
-              <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-base-300 text-[11px] font-semibold text-base-content">
+              <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
                 {user_initials(@current_scope)}
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium leading-tight">
                   {user_name(@current_scope)}
                 </span>
-                <span class="block text-xs text-base-content/50">GST Officer</span>
+                <span class="block text-xs text-base-content/45">GST Officer</span>
               </span>
-              <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/40" />
+              <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
             </div>
             <ul
               tabindex="0"
@@ -103,20 +101,20 @@ defmodule QuantumBillingWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-base-300 bg-base-100 px-6">
+        <header class="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-base-300 bg-base-100 px-6">
           <button
-            class="flex size-8 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+            class="flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
             aria-label="Toggle sidebar"
           >
-            <.icon name="hero-bars-3" class="size-5" />
+            <.icon name="hero-bars-3" class="size-4.5" />
           </button>
 
           <button
-            class="relative flex size-8 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+            class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
             aria-label="Notifications"
           >
-            <.icon name="hero-bell" class="size-5" />
-            <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-error"></span>
+            <.icon name="hero-bell" class="size-4.5" />
+            <span class="absolute right-1 top-1 size-1.5 rounded-full bg-error"></span>
           </button>
         </header>
 
@@ -178,7 +176,7 @@ defmodule QuantumBillingWeb.Layouts do
   def auth(assigns) do
     ~H"""
     <div class="relative flex min-h-screen flex-col items-center justify-center bg-white px-4 py-20">
-      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold text-zinc-950 md:left-8 md:top-8">
+      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-950 md:left-8 md:top-8">
         <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
       </div>
 
@@ -241,10 +239,10 @@ defmodule QuantumBillingWeb.Layouts do
       </header>
 
       <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <h1 class="text-3xl font-bold tracking-tight text-zinc-950">{@title}</h1>
+        <h1 class="text-3xl font-semibold tracking-tight text-zinc-950">{@title}</h1>
         <p class="mt-2 text-sm text-zinc-500">Draft — not yet in effect.</p>
 
-        <div class="mt-8 rounded-md border border-amber-300 bg-amber-50 p-4">
+        <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4">
           <p class="text-sm font-semibold text-amber-900">
             Template pending legal review — do not publish as-is.
           </p>
@@ -284,7 +282,7 @@ defmodule QuantumBillingWeb.Layouts do
   def auth_heading(assigns) do
     ~H"""
     <div class="flex flex-col space-y-2 text-center">
-      <h1 class="text-2xl font-bold tracking-tight text-zinc-950">{@title}</h1>
+      <h1 class="text-2xl font-semibold tracking-tight text-zinc-950">{@title}</h1>
       <p class="text-sm text-zinc-500">{@subtitle}</p>
     </div>
     """

@@ -224,7 +224,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
           >
             <.icon
               name="hero-magnifying-glass"
-              class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/40"
+              class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
             />
             <input
               type="text"
@@ -262,7 +262,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         <div class="overflow-x-auto">
           <table class="table">
             <thead>
-              <tr class="border-b border-base-300 text-xs font-medium uppercase tracking-wide text-base-content/50">
+              <tr class={table_head_class()}>
                 <th>
                   <.sortable_th
                     label="Invoice #"
@@ -294,15 +294,11 @@ defmodule QuantumBillingWeb.InvoicesLive do
               </tr>
             </thead>
             <tbody>
-              <tr
-                :for={row <- @rows}
-                id={"invoice-#{row.seq}"}
-                class="border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
-              >
+              <tr :for={row <- @rows} id={"invoice-#{row.seq}"} class={table_row_class()}>
                 <td class="font-medium">{row.number}</td>
                 <td>{row.client}</td>
-                <td class="text-base-content/70">{format_date(row.invoice_date)}</td>
-                <td class="text-base-content/70">{format_date(row.due_date)}</td>
+                <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
+                <td class="text-base-content/60">{format_date(row.due_date)}</td>
                 <td class="font-medium">{rupees(row.amount)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>

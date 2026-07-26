@@ -101,11 +101,16 @@ defmodule QuantumBillingWeb.CoreComponents do
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    variants = %{"primary" => "btn-primary", nil => "btn-primary btn-soft"}
+    # Heights and type match SharedComponents.action_button_class/0 so daisyUI's
+    # own `.btn` sizing never introduces a second button height in the app.
+    variants = %{
+      "primary" => "btn-primary",
+      nil => "btn-primary btn-soft"
+    }
 
     assigns =
       assign_new(assigns, :class, fn ->
-        ["btn", Map.fetch!(variants, assigns[:variant])]
+        ["btn h-9 min-h-9 gap-2 text-sm font-medium", Map.fetch!(variants, assigns[:variant])]
       end)
 
     if rest[:href] || rest[:navigate] || rest[:patch] do
@@ -369,13 +374,8 @@ defmodule QuantumBillingWeb.CoreComponents do
     ~H"""
     <table class="table">
       <thead>
-        <tr class="border-b border-base-300">
-          <th
-            :for={col <- @col}
-            class="text-xs font-medium uppercase tracking-wide text-base-content/50"
-          >
-            {col[:label]}
-          </th>
+        <tr class={QuantumBillingWeb.SharedComponents.table_head_class()}>
+          <th :for={col <- @col}>{col[:label]}</th>
           <th :if={@action != []}>
             <span class="sr-only">{gettext("Actions")}</span>
           </th>
@@ -385,12 +385,12 @@ defmodule QuantumBillingWeb.CoreComponents do
         <tr
           :for={row <- @rows}
           id={@row_id && @row_id.(row)}
-          class="border-b border-base-300 last:border-0 hover:bg-base-200/60"
+          class={QuantumBillingWeb.SharedComponents.table_row_class()}
         >
           <td
             :for={col <- @col}
             phx-click={@row_click && @row_click.(row)}
-            class={["text-sm", @row_click && "hover:cursor-pointer"]}
+            class={@row_click && "hover:cursor-pointer"}
           >
             {render_slot(col, @row_item.(row))}
           </td>
@@ -426,7 +426,7 @@ defmodule QuantumBillingWeb.CoreComponents do
     <ul class="list">
       <li :for={item <- @item} class="list-row">
         <div class="list-col-grow">
-          <div class="font-bold">{item.title}</div>
+          <div class="font-semibold">{item.title}</div>
           <div>{render_slot(item)}</div>
         </div>
       </li>

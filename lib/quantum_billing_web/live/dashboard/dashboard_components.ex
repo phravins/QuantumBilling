@@ -25,8 +25,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def stat_card(assigns) do
     ~H"""
     <.card>
-      <div class={["mb-3 flex size-9 items-center justify-center rounded-field", @icon_class]}>
-        <.icon name={@icon} class="size-[18px]" />
+      <div class={["mb-3 flex size-8 items-center justify-center rounded-field", @icon_class]}>
+        <.icon name={@icon} class="size-4" />
       </div>
       <p class="text-sm text-base-content/60">{@label}</p>
       <p class="mt-1 text-2xl font-semibold tracking-tight">{@value}</p>
@@ -60,7 +60,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
     ~H"""
     <div class="flex gap-3">
-      <div class="flex h-64 flex-col justify-between text-xs text-base-content/50">
+      <div class="flex h-64 flex-col justify-between text-xs text-base-content/45">
         <span :for={g <- @gridlines}>{g}</span>
       </div>
       <div class="relative flex-1">
@@ -69,8 +69,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
         </div>
         <div class="relative flex h-64 items-end justify-between gap-6 px-2">
           <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1.5">
-            <div class="w-3 rounded-md bg-base-content" style={"height: #{m.cgst_pct}%"} />
-            <div class="w-3 rounded-md bg-base-content/25" style={"height: #{m.igst_pct}%"} />
+            <div class="w-3 rounded-sm bg-base-content" style={"height: #{m.cgst_pct}%"} />
+            <div class="w-3 rounded-sm bg-base-content/25" style={"height: #{m.igst_pct}%"} />
           </div>
         </div>
         <div class="mt-2 flex justify-between gap-6 px-2">
@@ -121,7 +121,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
       </div>
       <ul class="flex-1 space-y-3">
         <li :for={seg <- @segments} class="flex items-center justify-between gap-4 text-sm">
-          <span class="flex items-center gap-2 text-base-content/70">
+          <span class="flex items-center gap-2 text-base-content/60">
             <span class={["size-2.5 rounded-full", dot_class(seg.tone)]} />
             {seg.label}
           </span>
@@ -165,8 +165,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
   def compliance_date_badge(assigns) do
     ~H"""
-    <div class="flex size-11 shrink-0 flex-col items-center justify-center rounded-field border border-base-300 bg-base-200 text-base-content">
-      <span class="text-[10px] font-medium uppercase text-base-content/50">{@month}</span>
+    <div class="flex size-10 shrink-0 flex-col items-center justify-center rounded-field border border-base-300 bg-base-200 text-base-content">
+      <span class="text-2xs font-medium uppercase text-base-content/45">{@month}</span>
       <span class="text-sm font-semibold leading-tight">{@day}</span>
     </div>
     """
