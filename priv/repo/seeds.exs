@@ -9,9 +9,9 @@ alias QuantumBilling.Accounts.User
 alias QuantumBilling.Repo
 
 demo = %{
-  username: "demo",
-  email: "demo@quantumbilling.dev",
-  password: "DemoPass123!"
+  username: "admin",
+  email: "admin@osworks.in",
+  password: "admin123"
 }
 
 # A ready-to-use account so the app can be signed into before real tenant data

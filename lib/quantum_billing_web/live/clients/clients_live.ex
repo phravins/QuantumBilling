@@ -229,7 +229,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         Clients
         <:subtitle>Manage your clients and their details</:subtitle>
         <:actions>
-          <button type="button" class="btn btn-primary">
+          <button type="button" class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Add New Client
           </button>
         </:actions>
@@ -252,20 +252,20 @@ defmodule QuantumBillingWeb.ClientsLive do
             value={@search}
             phx-debounce="300"
             placeholder="Search clients..."
-            class="input input-bordered w-full pl-9"
+            class={filter_input_class()}
           />
         </form>
 
         <div class="flex items-center gap-2">
           <div class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class="btn btn-outline gap-2">
+            <div tabindex="0" role="button" class={secondary_button_class()}>
               <.icon name="hero-funnel" class="size-4" />
               {@status_filter}
               <.icon name="hero-chevron-down" class="size-4" />
             </div>
             <ul
               tabindex="0"
-              class="dropdown-content menu z-10 mt-2 w-56 rounded-box bg-base-100 p-2 shadow"
+              class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
               <li :for={s <- @status_options}>
                 <a phx-click="filter_status" phx-value-status={s}>{s}</a>
@@ -273,7 +273,7 @@ defmodule QuantumBillingWeb.ClientsLive do
             </ul>
           </div>
 
-          <button type="button" class="btn btn-outline gap-2">
+          <button type="button" class={secondary_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-4" /> Export
           </button>
         </div>
@@ -292,11 +292,11 @@ defmodule QuantumBillingWeb.ClientsLive do
         />
       </div>
 
-      <div class="mt-4 card rounded-box border border-base-300 bg-base-100 p-5">
+      <.card class="mt-4">
         <div class="overflow-x-auto">
-          <table class="table table-zebra">
+          <table class="table">
             <thead>
-              <tr>
+              <tr class="border-b border-base-300 text-xs font-medium uppercase tracking-wide text-base-content/50">
                 <th>
                   <.sortable_th
                     label="Client Name"
@@ -321,27 +321,31 @@ defmodule QuantumBillingWeb.ClientsLive do
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"client-#{row.id}"}>
+              <tr
+                :for={row <- @rows}
+                id={"client-#{row.id}"}
+                class="border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
+              >
                 <td>
                   <div class="flex items-center gap-3">
                     <.client_avatar name={row.name} />
                     <span class="font-medium">{row.name}</span>
                   </div>
                 </td>
-                <td>{row.gstin}</td>
-                <td>{row.email}</td>
-                <td>{row.phone}</td>
-                <td>{rupees(row.outstanding, decimals: 2, space: true)}</td>
+                <td class="text-base-content/70">{row.gstin}</td>
+                <td class="text-base-content/70">{row.email}</td>
+                <td class="text-base-content/70">{row.phone}</td>
+                <td class="font-medium">{rupees(row.outstanding, decimals: 2, space: true)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
                   <div class="flex gap-1">
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="View client">
+                    <button type="button" class={row_action_class()} aria-label="View client">
                       <.icon name="hero-eye" class="size-4" />
                     </button>
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="Edit client">
+                    <button type="button" class={row_action_class()} aria-label="Edit client">
                       <.icon name="hero-pencil-square" class="size-4" />
                     </button>
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="More actions">
+                    <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />
                     </button>
                   </div>
@@ -357,7 +361,7 @@ defmodule QuantumBillingWeb.ClientsLive do
           </span>
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>
-      </div>
+      </.card>
     </Layouts.app>
     """
   end
@@ -376,7 +380,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         value: Integer.to_string(total),
         caption: "All time",
         icon: "hero-users",
-        icon_class: "bg-primary/10 text-primary",
+        icon_class: "bg-base-200 text-base-content/60",
         status: "All Status"
       },
       %{
@@ -384,7 +388,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         value: Integer.to_string(active),
         caption: share(active, total),
         icon: "hero-check-circle",
-        icon_class: "bg-success/10 text-success",
+        icon_class: "bg-emerald-50 text-emerald-600",
         status: "Active"
       },
       %{
@@ -392,7 +396,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         value: Integer.to_string(inactive),
         caption: share(inactive, total),
         icon: "hero-clock",
-        icon_class: "bg-warning/10 text-warning",
+        icon_class: "bg-amber-50 text-amber-600",
         status: "Inactive"
       },
       %{
@@ -400,7 +404,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         value: Integer.to_string(blocked),
         caption: share(blocked, total),
         icon: "hero-x-circle",
-        icon_class: "bg-error/10 text-error",
+        icon_class: "bg-rose-50 text-rose-600",
         status: "Blocked"
       }
     ]

@@ -57,8 +57,8 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
     assert html =~ "Showing 1 to 5 of 5 entries"
     assert length(row_ids(html)) == 5
-    assert count_occurrences(html, ~s(badge-error">Blocked<)) == 5
-    refute html =~ ~s(badge-success">Active<)
+    assert count_occurrences(html, ~s(text-rose-700">Blocked<)) == 5
+    refute html =~ ~s(text-emerald-700">Active<)
   end
 
   test "summary tiles are filter shortcuts and keep all-time totals", %{conn: conn} do
@@ -139,7 +139,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
   end
 
   defp metric_values(html) do
-    ~r/<span class="block text-2xl font-bold">([^<]+)<\/span>/
+    ~r/<span class="block text-2xl font-semibold tracking-tight">([^<]+)<\/span>/
     |> Regex.scan(html)
     |> Enum.map(fn [_, v] -> v end)
   end

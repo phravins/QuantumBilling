@@ -39,88 +39,90 @@ defmodule QuantumBillingWeb.Layouts do
     assigns = assign(assigns, :nav_items, nav_items())
 
     ~H"""
-    <div class="flex min-h-screen bg-base-100">
-      <aside class="sticky top-0 flex h-screen w-[230px] shrink-0 flex-col border-r border-base-300">
-        <div class="flex items-center gap-2 px-5 py-5">
-          <div class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-content">
-            <.icon name="hero-receipt-percent" class="size-5" />
+    <div class="flex min-h-screen bg-base-200">
+      <aside class="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-base-300 bg-base-100">
+        <div class="flex items-center gap-2.5 px-5 py-5">
+          <div class="flex size-8 items-center justify-center rounded-field bg-primary text-primary-content">
+            <.icon name="hero-receipt-percent" class="size-[18px]" />
           </div>
-          <span class="text-lg font-bold">GST Invoice</span>
+          <span class="text-[15px] font-semibold tracking-tight">QuantumBilling</span>
         </div>
 
-        <nav class="flex-1 overflow-y-auto px-3">
-          <ul class="space-y-1">
+        <nav class="flex-1 overflow-y-auto px-3 pt-2">
+          <p class="px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/40">
+            Menu
+          </p>
+          <ul class="space-y-0.5">
             <li :for={item <- @nav_items}>
               <.link
                 navigate={item.path}
                 class={[
-                  "flex items-center gap-3 rounded-field px-3 py-2 text-sm text-base-content/70 hover:bg-base-200",
-                  @active_nav == item.key &&
-                    "border-l-4 border-primary bg-primary/10 font-semibold text-primary hover:bg-primary/10"
+                  "flex items-center gap-3 rounded-field px-3 py-2 text-sm transition-colors",
+                  if(@active_nav == item.key,
+                    do: "bg-base-200 font-medium text-base-content",
+                    else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                  )
                 ]}
               >
-                <.icon name={item.icon} class="size-5" />
+                <.icon name={item.icon} class="size-[18px]" />
                 {item.label}
               </.link>
             </li>
           </ul>
         </nav>
 
-        <div class="m-3 rounded-box bg-base-200 p-4 text-center">
-          <.icon name="hero-question-mark-circle" class="mx-auto size-6 text-base-content/50" />
-          <p class="mt-2 text-sm font-semibold">Need Help?</p>
-          <p class="mt-1 text-xs text-base-content/60">Contact support for any assistance.</p>
-          <.button class="btn btn-primary btn-sm mt-3 w-full">Contact Support</.button>
+        <div class="border-t border-base-300 p-3">
+          <div class="dropdown dropdown-top w-full">
+            <div
+              tabindex="0"
+              role="button"
+              class="flex w-full items-center gap-2.5 rounded-field px-2 py-2 text-left hover:bg-base-200"
+            >
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-base-300 text-[11px] font-semibold text-base-content">
+                {user_initials(@current_scope)}
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium leading-tight">
+                  {user_name(@current_scope)}
+                </span>
+                <span class="block text-xs text-base-content/50">GST Officer</span>
+              </span>
+              <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/40" />
+            </div>
+            <ul
+              tabindex="0"
+              class="dropdown-content menu z-10 mb-2 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+            >
+              <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
+              <li>
+                <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
+              </li>
+            </ul>
+          </div>
         </div>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="navbar border-b border-base-300 bg-base-100 px-6">
-          <div class="flex-1">
-            <button class="btn btn-ghost btn-circle" aria-label="Toggle sidebar">
-              <.icon name="hero-bars-3" class="size-5" />
-            </button>
-          </div>
-          <div class="flex flex-none items-center gap-4">
-            <button class="btn btn-ghost btn-circle relative" aria-label="Notifications">
-              <.icon name="hero-bell" class="size-5" />
-              <span class="badge badge-error badge-xs absolute right-1 top-1">5</span>
-            </button>
+        <header class="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-base-300 bg-base-100 px-6">
+          <button
+            class="flex size-8 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+            aria-label="Toggle sidebar"
+          >
+            <.icon name="hero-bars-3" class="size-5" />
+          </button>
 
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class="flex items-center gap-2 px-1">
-                <div class="avatar avatar-placeholder">
-                  <div class="w-9 rounded-full bg-primary text-primary-content">
-                    <span class="text-xs">{user_initials(@current_scope)}</span>
-                  </div>
-                </div>
-                <div class="hidden text-left sm:block">
-                  <p class="text-sm font-semibold leading-tight">{user_name(@current_scope)}</p>
-                  <p class="text-xs text-base-content/60">GST Officer</p>
-                </div>
-                <.icon name="hero-chevron-down" class="size-4 text-base-content/50" />
-              </div>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu z-10 mt-3 w-44 rounded-box bg-base-100 p-2 shadow"
-              >
-                <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
-                <li>
-                  <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
-                </li>
-              </ul>
-            </div>
-          </div>
+          <button
+            class="relative flex size-8 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+            aria-label="Notifications"
+          >
+            <.icon name="hero-bell" class="size-5" />
+            <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-error"></span>
+          </button>
         </header>
 
-        <main class="flex-1 overflow-y-auto bg-base-200 px-6 py-6">
+        <main class="flex-1 overflow-y-auto px-6 py-6 sm:px-8 sm:py-8">
           {render_slot(@inner_block)}
         </main>
-
-        <footer class="flex items-center justify-between border-t border-base-300 px-6 py-4 text-xs text-base-content/50">
-          <span>© 2024 GST Invoice Software. All rights reserved.</span>
-          <span>Version 1.0.0</span>
-        </footer>
       </div>
     </div>
 

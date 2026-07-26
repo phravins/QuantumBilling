@@ -7,6 +7,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
+  import QuantumBillingWeb.SharedComponents, only: [card: 1]
 
   @doc """
   Renders a single dashboard stat card with an icon badge, label, value,
@@ -16,24 +17,24 @@ defmodule QuantumBillingWeb.DashboardComponents do
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :icon, :string, required: true
-  attr :icon_class, :string, default: "bg-primary/10 text-primary"
+  attr :icon_class, :string, default: "bg-base-200 text-base-content/60"
   attr :delta_text, :string, default: nil
   attr :delta_class, :string, default: "text-success"
   attr :delta_icon, :string, default: nil
 
   def stat_card(assigns) do
     ~H"""
-    <div class="card rounded-box border border-base-300 bg-base-100 p-5">
-      <div class={["mb-3 flex size-10 items-center justify-center rounded-box", @icon_class]}>
-        <.icon name={@icon} class="size-5" />
+    <.card>
+      <div class={["mb-3 flex size-9 items-center justify-center rounded-field", @icon_class]}>
+        <.icon name={@icon} class="size-[18px]" />
       </div>
       <p class="text-sm text-base-content/60">{@label}</p>
-      <p class="mt-1 text-2xl font-bold">{@value}</p>
-      <p :if={@delta_text} class={["mt-1 flex items-center gap-1 text-xs", @delta_class]}>
+      <p class="mt-1 text-2xl font-semibold tracking-tight">{@value}</p>
+      <p :if={@delta_text} class={["mt-1.5 flex items-center gap-1 text-xs", @delta_class]}>
         <.icon :if={@delta_icon} name={@delta_icon} class="size-3" />
         {@delta_text}
       </p>
-    </div>
+    </.card>
     """
   end
 
@@ -67,9 +68,9 @@ defmodule QuantumBillingWeb.DashboardComponents do
           <div :for={_g <- @gridlines} class="h-0 border-t border-base-200" />
         </div>
         <div class="relative flex h-64 items-end justify-between gap-6 px-2">
-          <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1">
-            <div class="w-4 rounded-t bg-primary" style={"height: #{m.cgst_pct}%"} />
-            <div class="w-4 rounded-t bg-warning" style={"height: #{m.igst_pct}%"} />
+          <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1.5">
+            <div class="w-3 rounded-md bg-base-content" style={"height: #{m.cgst_pct}%"} />
+            <div class="w-3 rounded-md bg-base-content/25" style={"height: #{m.igst_pct}%"} />
           </div>
         </div>
         <div class="mt-2 flex justify-between gap-6 px-2">
@@ -84,8 +85,11 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
   @doc """
   Renders an SVG donut chart with a centered total and an adjacent legend,
-  from a list of `%{label:, value:, color:}` maps (`color` is a daisyUI
-  semantic color name such as `"primary"`, `"success"`, `"warning"`, `"error"`).
+  from a list of `%{label:, value:, tone:}` maps.
+
+  `tone` is one of `:strong`, `:medium`, `:soft` or `:faint` — the ring is a
+  monochrome ramp, so the segments read as one series rather than four
+  unrelated colors.
   """
   attr :segments, :list, required: true
   attr :total, :integer, required: true
@@ -104,29 +108,41 @@ defmodule QuantumBillingWeb.DashboardComponents do
             cy="21"
             r="15.9155"
             fill="none"
-            stroke-width="6"
-            class={"stroke-#{seg.color}"}
+            stroke-width="5"
+            class={stroke_class(seg.tone)}
             stroke-dasharray={seg.dasharray}
             stroke-dashoffset={seg.dashoffset}
           />
         </svg>
         <div class="absolute inset-0 flex flex-col items-center justify-center">
-          <span class="text-2xl font-bold">{format_number(@total)}</span>
+          <span class="text-2xl font-semibold tracking-tight">{format_number(@total)}</span>
           <span class="text-xs text-base-content/60">{@total_label}</span>
         </div>
       </div>
       <ul class="flex-1 space-y-3">
         <li :for={seg <- @segments} class="flex items-center justify-between gap-4 text-sm">
           <span class="flex items-center gap-2 text-base-content/70">
-            <span class={["size-2.5 rounded-full", "bg-#{seg.color}"]} />
+            <span class={["size-2.5 rounded-full", dot_class(seg.tone)]} />
             {seg.label}
           </span>
-          <span class="font-semibold">{format_number(seg.value)}</span>
+          <span class="font-medium">{format_number(seg.value)}</span>
         </li>
       </ul>
     </div>
     """
   end
+
+  # Written out in full rather than interpolated: Tailwind scans source text, so
+  # a class built as "stroke-#{tone}" is never emitted and the ring renders blank.
+  defp stroke_class(:strong), do: "stroke-base-content"
+  defp stroke_class(:medium), do: "stroke-base-content/60"
+  defp stroke_class(:soft), do: "stroke-base-content/35"
+  defp stroke_class(:faint), do: "stroke-base-content/15"
+
+  defp dot_class(:strong), do: "bg-base-content"
+  defp dot_class(:medium), do: "bg-base-content/60"
+  defp dot_class(:soft), do: "bg-base-content/35"
+  defp dot_class(:faint), do: "bg-base-content/15"
 
   defp donut_geometry(segments) do
     total = Enum.reduce(segments, 0, fn seg, acc -> acc + seg.value end)
@@ -149,9 +165,9 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
   def compliance_date_badge(assigns) do
     ~H"""
-    <div class="flex size-12 shrink-0 flex-col items-center justify-center rounded-box border border-primary/30 text-primary">
-      <span class="text-[10px] font-semibold uppercase">{@month}</span>
-      <span class="text-sm font-bold">{@day}</span>
+    <div class="flex size-11 shrink-0 flex-col items-center justify-center rounded-field border border-base-300 bg-base-200 text-base-content">
+      <span class="text-[10px] font-medium uppercase text-base-content/50">{@month}</span>
+      <span class="text-sm font-semibold leading-tight">{@day}</span>
     </div>
     """
   end

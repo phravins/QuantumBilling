@@ -8,27 +8,94 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
 
+  @action_button_class "inline-flex h-9 items-center gap-2 rounded-field bg-primary px-3.5 " <>
+                         "text-sm font-medium text-primary-content transition-colors " <>
+                         "hover:bg-primary/90"
+
+  @secondary_button_class "inline-flex h-9 items-center gap-2 rounded-field border " <>
+                            "border-base-300 bg-base-100 px-3 text-sm text-base-content/80 " <>
+                            "transition-colors hover:bg-base-200 hover:text-base-content"
+
+  @filter_input_class "h-9 w-full rounded-field border border-base-300 bg-base-100 pl-9 pr-3 " <>
+                        "text-sm placeholder:text-base-content/40 focus:outline-none " <>
+                        "focus:ring-2 focus:ring-base-content/10"
+
+  @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/50 " <>
+                      "transition-colors hover:bg-base-200 hover:text-base-content"
+
+  @doc "The solid, near-black call-to-action button used in page headers."
+  def action_button_class, do: @action_button_class
+
+  @doc "The outlined companion to `action_button_class/0`, for toolbar controls."
+  def secondary_button_class, do: @secondary_button_class
+
+  @doc "The search field used by the list-page toolbars (leaves room for a leading icon)."
+  def filter_input_class, do: @filter_input_class
+
+  @doc "The small, icon-only button used inside table rows."
+  def row_action_class, do: @row_action_class
+
   @doc """
-  Renders a colored status pill. Covers both GST invoice statuses and client
-  account statuses; anything unrecognized falls back to a neutral pill.
+  Renders the surface every panel on the app sits on: a white, hairline-bordered
+  box with a whisper of shadow.
+
+  ## Examples
+
+      <.card class="lg:col-span-2" padding="p-6">…</.card>
+  """
+  attr :class, :any, default: nil
+  attr :padding, :string, default: "p-5"
+  attr :rest, :global
+
+  slot :inner_block, required: true
+
+  def card(assigns) do
+    ~H"""
+    <div
+      class={[
+        "rounded-box border border-base-300 bg-base-100 shadow-sm",
+        @padding,
+        @class
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a status pill. Covers both GST invoice statuses and client account
+  statuses; anything unrecognized falls back to a neutral pill.
+
+  Colour is deliberately the only chroma left in the data tables, so the pills
+  stay soft: tinted background, matching hairline, no fill.
   """
   attr :status, :string, required: true
 
   def status_badge(assigns) do
     ~H"""
-    <span class={["badge badge-soft", status_badge_class(@status)]}>{@status}</span>
+    <span class={[
+      "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+      status_badge_class(@status)
+    ]}>{@status}</span>
     """
   end
 
-  defp status_badge_class("E-Invoice Generated"), do: "badge-success"
-  defp status_badge_class("Pending E-Invoice"), do: "badge-warning"
-  defp status_badge_class("Draft"), do: "badge-neutral"
-  defp status_badge_class("E-Invoice Failed"), do: "badge-error"
-  defp status_badge_class("Cancelled"), do: "badge-neutral"
-  defp status_badge_class("Active"), do: "badge-success"
-  defp status_badge_class("Inactive"), do: "badge-warning"
-  defp status_badge_class("Blocked"), do: "badge-error"
-  defp status_badge_class(_other), do: "badge-neutral"
+  @positive "border-emerald-200 bg-emerald-50 text-emerald-700"
+  @pending "border-amber-200 bg-amber-50 text-amber-700"
+  @negative "border-rose-200 bg-rose-50 text-rose-700"
+  @neutral "border-base-300 bg-base-200 text-base-content/70"
+
+  defp status_badge_class("E-Invoice Generated"), do: @positive
+  defp status_badge_class("Pending E-Invoice"), do: @pending
+  defp status_badge_class("Draft"), do: @neutral
+  defp status_badge_class("E-Invoice Failed"), do: @negative
+  defp status_badge_class("Cancelled"), do: @neutral
+  defp status_badge_class("Active"), do: @positive
+  defp status_badge_class("Inactive"), do: @pending
+  defp status_badge_class("Blocked"), do: @negative
+  defp status_badge_class(_other), do: @neutral
 
   @doc """
   Renders a horizontal summary tile: circular icon badge on the left, with the
@@ -41,22 +108,22 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :value, :string, required: true
   attr :caption, :string, default: nil
   attr :icon, :string, required: true
-  attr :icon_class, :string, default: "bg-primary/10 text-primary"
+  attr :icon_class, :string, default: "bg-base-200 text-base-content/60"
   attr :rest, :global
 
   def metric_card(assigns) do
     ~H"""
     <button
       type="button"
-      class="card flex w-full flex-row items-center gap-4 rounded-box border border-base-300 bg-base-100 p-5 text-left hover:border-primary/40"
+      class="flex w-full flex-row items-center gap-4 rounded-box border border-base-300 bg-base-100 p-5 text-left shadow-sm transition-colors hover:border-base-content/20"
       {@rest}
     >
-      <span class={["flex size-12 shrink-0 items-center justify-center rounded-full", @icon_class]}>
-        <.icon name={@icon} class="size-6" />
+      <span class={["flex size-11 shrink-0 items-center justify-center rounded-full", @icon_class]}>
+        <.icon name={@icon} class="size-5" />
       </span>
       <span class="min-w-0">
         <span class="block text-sm text-base-content/60">{@label}</span>
-        <span class="block text-2xl font-bold">{@value}</span>
+        <span class="block text-2xl font-semibold tracking-tight">{@value}</span>
         <span :if={@caption} class="block text-xs text-base-content/50">{@caption}</span>
       </span>
     </button>
@@ -70,9 +137,12 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def coming_soon(assigns) do
     ~H"""
-    <div class="card rounded-box border border-base-300 bg-base-100 p-16 text-center text-base-content/50">
-      {@title}
-    </div>
+    <.card padding="p-16" class="text-center">
+      <span class="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-base-200 text-base-content/40">
+        <.icon name="hero-wrench-screwdriver" class="size-5" />
+      </span>
+      <p class="text-sm text-base-content/50">{@title}</p>
+    </.card>
     """
   end
 
@@ -89,7 +159,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     ~H"""
     <button
       type="button"
-      class="inline-flex items-center gap-1 font-semibold hover:text-primary"
+      class="inline-flex items-center gap-1 hover:text-base-content"
       phx-click="sort"
       phx-value-field={@field}
     >
@@ -120,14 +190,22 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :current_page, :integer, required: true
   attr :total_pages, :integer, required: true
 
+  @page_button_class "inline-flex size-8 items-center justify-center rounded-field border " <>
+                       "border-base-300 bg-base-100 text-sm text-base-content/70 transition-colors " <>
+                       "hover:bg-base-200 hover:text-base-content disabled:opacity-40 " <>
+                       "disabled:pointer-events-none"
+
   def pagination(assigns) do
-    assigns = assign(assigns, :window, page_window(assigns.current_page, assigns.total_pages))
+    assigns =
+      assigns
+      |> assign(:window, page_window(assigns.current_page, assigns.total_pages))
+      |> assign(:page_button_class, @page_button_class)
 
     ~H"""
     <div class="flex items-center gap-1">
       <button
         type="button"
-        class="btn btn-ghost btn-sm"
+        class={@page_button_class}
         disabled={@current_page == 1}
         phx-click="paginate"
         phx-value-page={@current_page - 1}
@@ -135,14 +213,13 @@ defmodule QuantumBillingWeb.SharedComponents do
         <.icon name="hero-chevron-left" class="size-4" />
       </button>
       <%= for entry <- @window do %>
-        <span :if={entry == :ellipsis} class="px-2 text-base-content/40">...</span>
+        <span :if={entry == :ellipsis} class="px-1 text-base-content/40">...</span>
         <button
           :if={entry != :ellipsis}
           type="button"
           class={[
-            "btn btn-sm",
-            entry == @current_page && "btn-primary",
-            entry != @current_page && "btn-ghost"
+            @page_button_class,
+            entry == @current_page && "border-base-content bg-base-content text-base-100"
           ]}
           phx-click="paginate"
           phx-value-page={entry}
@@ -152,7 +229,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <% end %>
       <button
         type="button"
-        class="btn btn-ghost btn-sm"
+        class={@page_button_class}
         disabled={@current_page == @total_pages}
         phx-click="paginate"
         phx-value-page={@current_page + 1}

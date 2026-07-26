@@ -43,8 +43,8 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
     assert html =~ "Arch Info-Tech"
     refute html =~ "V2V Technologies"
     # one badge per visible row, and no other status badge on the page
-    assert count_occurrences(html, ~s(badge-neutral">Draft<)) == 10
-    refute html =~ ~s(badge-success">)
+    assert count_occurrences(html, ~s(text-base-content/70">Draft<)) == 10
+    refute html =~ ~s(text-emerald-700">)
   end
 
   test "sorting by invoice number toggles between ascending and descending", %{conn: conn} do

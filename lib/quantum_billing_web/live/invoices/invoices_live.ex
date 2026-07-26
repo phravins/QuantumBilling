@@ -208,13 +208,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
         <:actions>
-          <button type="button" class="btn btn-primary">
+          <button type="button" class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Create New GST Invoice
           </button>
         </:actions>
       </.header>
 
-      <div class="card rounded-box border border-base-300 bg-base-100 p-5">
+      <.card>
         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <form
             id="invoice-search"
@@ -232,20 +232,20 @@ defmodule QuantumBillingWeb.InvoicesLive do
               value={@search}
               phx-debounce="300"
               placeholder="Search invoices..."
-              class="input input-bordered w-full pl-9"
+              class={filter_input_class()}
             />
           </form>
 
           <div class="flex items-center gap-2">
             <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class="btn btn-outline gap-2">
+              <div tabindex="0" role="button" class={secondary_button_class()}>
                 <.icon name="hero-funnel" class="size-4" />
                 {@status_filter}
                 <.icon name="hero-chevron-down" class="size-4" />
               </div>
               <ul
                 tabindex="0"
-                class="dropdown-content menu z-10 mt-2 w-56 rounded-box bg-base-100 p-2 shadow"
+                class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
               >
                 <li :for={s <- @status_options}>
                   <a phx-click="filter_status" phx-value-status={s}>{s}</a>
@@ -253,16 +253,16 @@ defmodule QuantumBillingWeb.InvoicesLive do
               </ul>
             </div>
 
-            <button type="button" class="btn btn-outline gap-2">
+            <button type="button" class={secondary_button_class()}>
               <.icon name="hero-arrow-down-tray" class="size-4" /> Export
             </button>
           </div>
         </div>
 
         <div class="overflow-x-auto">
-          <table class="table table-zebra">
+          <table class="table">
             <thead>
-              <tr>
+              <tr class="border-b border-base-300 text-xs font-medium uppercase tracking-wide text-base-content/50">
                 <th>
                   <.sortable_th
                     label="Invoice #"
@@ -294,22 +294,26 @@ defmodule QuantumBillingWeb.InvoicesLive do
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"invoice-#{row.seq}"}>
-                <td class="font-medium text-primary">{row.number}</td>
+              <tr
+                :for={row <- @rows}
+                id={"invoice-#{row.seq}"}
+                class="border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
+              >
+                <td class="font-medium">{row.number}</td>
                 <td>{row.client}</td>
-                <td>{format_date(row.invoice_date)}</td>
-                <td>{format_date(row.due_date)}</td>
-                <td>{rupees(row.amount)}</td>
+                <td class="text-base-content/70">{format_date(row.invoice_date)}</td>
+                <td class="text-base-content/70">{format_date(row.due_date)}</td>
+                <td class="font-medium">{rupees(row.amount)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
                   <div class="flex gap-1">
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="View invoice">
+                    <button type="button" class={row_action_class()} aria-label="View invoice">
                       <.icon name="hero-eye" class="size-4" />
                     </button>
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="Edit invoice">
+                    <button type="button" class={row_action_class()} aria-label="Edit invoice">
                       <.icon name="hero-pencil-square" class="size-4" />
                     </button>
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="More actions">
+                    <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />
                     </button>
                   </div>
@@ -325,7 +329,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
           </span>
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>
-      </div>
+      </.card>
     </Layouts.app>
     """
   end

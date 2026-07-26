@@ -31,9 +31,9 @@ defmodule QuantumBillingWeb.DashboardLive do
         Dashboard
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
         <:actions>
-          <.button variant="primary" navigate={~p"/invoices"}>
+          <.link navigate={~p"/invoices"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Create New GST Invoice
-          </.button>
+          </.link>
         </:actions>
       </.header>
 
@@ -51,30 +51,30 @@ defmodule QuantumBillingWeb.DashboardLive do
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div class="card rounded-box border border-base-300 bg-base-100 p-5 lg:col-span-2">
+        <.card class="lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
-            <h2 class="font-semibold">GST Invoices - Last 6 Months</h2>
+            <h2 class="text-sm font-semibold">GST Invoices - Last 6 Months</h2>
             <div class="flex items-center gap-4 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
-                <span class="size-2.5 rounded-sm bg-primary" /> CGST + SGST
+                <span class="size-2 rounded-full bg-base-content" /> CGST + SGST
               </span>
               <span class="flex items-center gap-1.5">
-                <span class="size-2.5 rounded-sm bg-warning" /> IGST
+                <span class="size-2 rounded-full bg-base-content/25" /> IGST
               </span>
             </div>
           </div>
           <.bar_chart months={@chart_months} />
-        </div>
+        </.card>
 
-        <div class="card rounded-box border border-base-300 bg-base-100 p-5">
-          <h2 class="mb-4 font-semibold">Invoices by Status</h2>
+        <.card>
+          <h2 class="mb-4 text-sm font-semibold">Invoices by Status</h2>
           <.donut_chart segments={@donut_segments} total={@donut_total} />
-        </div>
+        </.card>
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div class="card rounded-box border border-base-300 bg-base-100 p-5 lg:col-span-2">
-          <h2 class="mb-4 font-semibold">Recent Tax Invoices</h2>
+        <.card class="lg:col-span-2">
+          <h2 class="mb-4 text-sm font-semibold">Recent Tax Invoices</h2>
           <div class="overflow-x-auto">
             <.table id="invoices" rows={@invoices}>
               <:col :let={row} label="Invoice #">{row.number}</:col>
@@ -84,7 +84,10 @@ defmodule QuantumBillingWeb.DashboardLive do
               <:col :let={row} label="Total Amount">{row.amount}</:col>
               <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
               <:action>
-                <button class="btn btn-ghost btn-xs" aria-label="View QR code">
+                <button
+                  class="flex size-7 items-center justify-center rounded-field text-base-content/50 hover:bg-base-200 hover:text-base-content"
+                  aria-label="View QR code"
+                >
                   <.icon name="hero-qr-code" class="size-4" />
                 </button>
               </:action>
@@ -92,14 +95,14 @@ defmodule QuantumBillingWeb.DashboardLive do
           </div>
           <div class="mt-4 flex items-center justify-between text-sm text-base-content/60">
             <span>Showing 1 to 5 of 5 entries</span>
-            <.link navigate={~p"/invoices"} class="link link-primary font-medium">
+            <.link navigate={~p"/invoices"} class="font-medium text-base-content hover:underline">
               View all invoices &rarr;
             </.link>
           </div>
-        </div>
+        </.card>
 
-        <div class="card rounded-box border border-base-300 bg-base-100 p-5">
-          <h2 class="mb-4 font-semibold">Compliance Calendar</h2>
+        <.card>
+          <h2 class="mb-4 text-sm font-semibold">Compliance Calendar</h2>
           <ul class="space-y-4">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
               <.compliance_date_badge month={item.month} day={item.day} />
@@ -109,10 +112,13 @@ defmodule QuantumBillingWeb.DashboardLive do
               </div>
             </li>
           </ul>
-          <.link navigate={~p"/compliance"} class="link link-primary mt-4 block text-sm font-medium">
+          <.link
+            navigate={~p"/compliance"}
+            class="mt-4 block text-sm font-medium text-base-content hover:underline"
+          >
             View all due dates &rarr;
           </.link>
-        </div>
+        </.card>
       </div>
     </Layouts.app>
     """
@@ -124,7 +130,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Total E-Invoices Generated",
         value: "15,489",
         icon: "hero-document-text",
-        icon_class: "bg-primary/10 text-primary",
+        icon_class: "bg-base-200 text-base-content/60",
         delta_text: "+12.5% from last 6 months",
         delta_class: "text-success",
         delta_icon: "hero-arrow-trending-up"
@@ -133,7 +139,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Current Month Tax Liability",
         value: "₹8,94,730",
         icon: "hero-currency-rupee",
-        icon_class: "bg-success/10 text-success",
+        icon_class: "bg-base-200 text-base-content/60",
         delta_text: "+8.3% from last month",
         delta_class: "text-success",
         delta_icon: "hero-arrow-trending-up"
@@ -142,7 +148,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Current Month ITC Available",
         value: "₹6,45,210",
         icon: "hero-arrow-trending-down",
-        icon_class: "bg-accent/10 text-accent",
+        icon_class: "bg-base-200 text-base-content/60",
         delta_text: "+6.7% from last month",
         delta_class: "text-success",
         delta_icon: "hero-arrow-trending-up"
@@ -151,7 +157,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Pending GSTR-3B Filings",
         value: "2",
         icon: "hero-calendar-days",
-        icon_class: "bg-warning/10 text-warning",
+        icon_class: "bg-base-200 text-base-content/60",
         delta_text: "Due in 5 days",
         delta_class: "text-error",
         delta_icon: nil
@@ -172,10 +178,10 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   defp donut_segments do
     [
-      %{label: "Generated", value: 12_456, color: "primary"},
-      %{label: "Pending", value: 1_245, color: "success"},
-      %{label: "Failed", value: 98, color: "warning"},
-      %{label: "Cancelled", value: 1_690, color: "error"}
+      %{label: "Generated", value: 12_456, tone: :strong},
+      %{label: "Pending", value: 1_245, tone: :medium},
+      %{label: "Failed", value: 98, tone: :soft},
+      %{label: "Cancelled", value: 1_690, tone: :faint}
     ]
   end
 
@@ -245,7 +251,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         day: "20",
         title: "Annual Return (GSTR-9)",
         due_text: "Due in 20 days",
-        due_class: "text-primary"
+        due_class: "text-base-content/50"
       }
     ]
   end
