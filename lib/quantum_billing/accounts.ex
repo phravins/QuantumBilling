@@ -80,6 +80,45 @@ defmodule QuantumBilling.Accounts do
     |> Repo.insert()
   end
 
+  @doc """
+  Registers a user with a password.
+
+  The account is confirmed on insert, since the password itself is the proof of
+  ownership from then on. This also keeps `login_user_by_magic_link/1` away from
+  the "unconfirmed user with a password" case, which it refuses to handle.
+
+  ## Examples
+
+      iex> register_user_with_password(%{email: value, password: value})
+      {:ok, %User{}}
+
+      iex> register_user_with_password(%{email: bad_value})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def register_user_with_password(attrs) do
+    %User{}
+    |> User.registration_changeset(attrs)
+    |> User.confirm_changeset()
+    |> Repo.insert()
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking the registration form.
+
+  Neither hashes the password nor hits the database for the uniqueness check, so
+  it is safe to run on every keystroke.
+
+  ## Examples
+
+      iex> change_user_registration(%User{})
+      %Ecto.Changeset{data: %User{}}
+
+  """
+  def change_user_registration(user \\ %User{}, attrs \\ %{}) do
+    User.registration_changeset(user, attrs, hash_password: false, validate_unique: false)
+  end
+
   ## Settings
 
   @doc """

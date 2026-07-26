@@ -1,6 +1,6 @@
 defmodule QuantumBillingWeb.UserLive.AuthUITest do
   @moduledoc """
-  Guards the custom split-screen auth design, which the generator's own tests
+  Guards the custom centered auth design, which the generator's own tests
   don't cover — they only assert behaviour, not that our layout replaced the
   default app shell.
   """
@@ -9,13 +9,14 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
   import Phoenix.LiveViewTest
 
   describe "registration page" do
-    test "renders the split-screen sign-up design", %{conn: conn} do
+    test "renders the centered sign-up design", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/users/register")
 
       assert html =~ "Create an account"
-      assert html =~ "Enter your email below to create your account"
+      assert html =~ "Enter your details below to create your account"
       assert html =~ ~s(placeholder="name@example.com")
-      assert html =~ "Sign In with Email"
+      assert html =~ ~s(placeholder="Confirm password")
+      assert html =~ "Create Account"
       # the design's divider label is uppercased in CSS, so the markup is mixed case
       assert html =~ "Or continue with"
       # shadcn's 350px form column and type scale
@@ -30,6 +31,8 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       {:ok, _view, html} = live(conn, ~p"/users/register")
 
       assert html =~ "QuantumBilling"
+      # the tagline sits at the foot of every auth screen
+      assert html =~ "GST invoicing, e-way bills and compliance — all in one place."
       # the app shell's sidebar links must not leak onto the auth screens
       refute html =~ ~s(href="/invoices")
       refute html =~ "Need Help?"
@@ -44,11 +47,12 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
   end
 
   describe "login page" do
-    test "renders the split-screen sign-in design", %{conn: conn} do
+    test "renders the centered sign-in design", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/users/log-in")
 
       assert html =~ "Welcome back"
-      assert html =~ "Sign In with Email"
+      assert html =~ ~s(placeholder="Password")
+      assert html =~ "Sign In"
       assert html =~ "Or continue with"
       # the legal footnote belongs on both auth screens, not just sign-up
       assert html =~ "By clicking continue, you agree to our"

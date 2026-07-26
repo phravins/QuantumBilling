@@ -36,18 +36,44 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
   end
 
   describe "register user" do
-    test "creates account but does not log in", %{conn: conn} do
+    test "creates account and logs the user in", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
       email = unique_user_email()
-      form = form(lv, "#registration_form", user: valid_user_attributes(email: email))
 
-      {:ok, _lv, html} =
-        render_submit(form)
-        |> follow_redirect(conn, ~p"/users/log-in")
+      form =
+        form(lv, "#registration_form",
+          user: %{
+            email: email,
+            password: valid_user_password(),
+            password_confirmation: valid_user_password()
+          }
+        )
 
-      assert html =~
-               ~r/An email was sent to .*, please access it to confirm your account/
+      render_submit(form)
+
+      conn = follow_trigger_action(form, conn)
+      assert redirected_to(conn) == ~p"/"
+
+      user = QuantumBilling.Accounts.get_user_by_email_and_password(email, valid_user_password())
+      assert user.confirmed_at
+    end
+
+    test "renders errors when the password confirmation does not match", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+
+      result =
+        lv
+        |> form("#registration_form",
+          user: %{
+            email: unique_user_email(),
+            password: valid_user_password(),
+            password_confirmation: "something else entirely"
+          }
+        )
+        |> render_submit()
+
+      assert result =~ "does not match password"
     end
 
     test "renders errors for duplicated email", %{conn: conn} do
@@ -58,7 +84,11 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       result =
         lv
         |> form("#registration_form",
-          user: %{"email" => user.email}
+          user: %{
+            email: user.email,
+            password: valid_user_password(),
+            password_confirmation: valid_user_password()
+          }
         )
         |> render_submit()
 

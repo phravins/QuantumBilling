@@ -157,8 +157,9 @@ defmodule QuantumBillingWeb.Layouts do
   end
 
   @doc """
-  Renders the split-screen shell used by the sign-in and sign-up pages: a
-  branded panel on the left, and the form column on the right.
+  Renders the shell used by the sign-in and sign-up pages: the form column
+  centered in the viewport, with the branding and cross-link pinned to the
+  top corners.
 
   ## Examples
 
@@ -174,31 +175,25 @@ defmodule QuantumBillingWeb.Layouts do
 
   def auth(assigns) do
     ~H"""
-    <div class="flex min-h-screen bg-white">
-      <div class="relative hidden w-1/2 flex-col bg-zinc-100 p-10 lg:flex">
-        <div class="flex items-center gap-2 text-lg font-semibold text-zinc-950">
-          <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
-        </div>
-
-        <div class="mt-auto">
-          <p class="max-w-[540px] text-lg leading-relaxed text-zinc-700">
-            GST invoicing, e-way bills and compliance — all in one place.
-          </p>
-        </div>
+    <div class="relative flex min-h-screen flex-col items-center justify-center bg-white px-4 py-20">
+      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold text-zinc-950 md:left-8 md:top-8">
+        <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
       </div>
 
-      <div class="relative flex w-full items-center justify-center px-4 lg:w-1/2">
-        <div
-          :if={@top_link != []}
-          class="absolute right-4 top-4 text-sm font-medium text-zinc-950 md:right-8 md:top-8"
-        >
-          {render_slot(@top_link)}
-        </div>
-
-        <div class="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-          {render_slot(@inner_block)}
-        </div>
+      <div
+        :if={@top_link != []}
+        class="absolute right-4 top-4 text-sm font-medium text-zinc-950 md:right-8 md:top-8"
+      >
+        {render_slot(@top_link)}
       </div>
+
+      <div class="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+        {render_slot(@inner_block)}
+      </div>
+
+      <p class="absolute inset-x-0 bottom-6 px-4 text-center text-xs text-zinc-500">
+        GST invoicing, e-way bills and compliance — all in one place.
+      </p>
     </div>
 
     <.flash_group flash={@flash} />

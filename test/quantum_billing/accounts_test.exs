@@ -87,6 +87,50 @@ defmodule QuantumBilling.AccountsTest do
     end
   end
 
+  describe "register_user_with_password/1" do
+    test "registers a confirmed user with a hashed password" do
+      email = unique_user_email()
+
+      {:ok, user} =
+        Accounts.register_user_with_password(%{
+          email: email,
+          password: valid_user_password(),
+          password_confirmation: valid_user_password()
+        })
+
+      assert user.email == email
+      assert user.confirmed_at
+      assert is_nil(user.password)
+      assert User.valid_password?(user, valid_user_password())
+    end
+
+    test "requires the password confirmation to match" do
+      {:error, changeset} =
+        Accounts.register_user_with_password(%{
+          email: unique_user_email(),
+          password: valid_user_password(),
+          password_confirmation: "not the same"
+        })
+
+      assert %{password_confirmation: ["does not match password"]} = errors_on(changeset)
+    end
+
+    test "validates password length" do
+      {:error, changeset} =
+        Accounts.register_user_with_password(%{email: unique_user_email(), password: "short"})
+
+      assert "should be at least 12 character(s)" in errors_on(changeset).password
+    end
+
+    test "validates the email alongside the password" do
+      {:error, changeset} =
+        Accounts.register_user_with_password(%{email: "not valid", password: "short"})
+
+      assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
+      assert %{password: ["should be at least 12 character(s)"]} = errors_on(changeset)
+    end
+  end
+
   describe "sudo_mode?/2" do
     test "validates the authenticated_at time" do
       now = DateTime.utc_now()

@@ -57,6 +57,19 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
+  A user changeset for registering with an email and a password.
+
+  Accepts the options of both `email_changeset/3` and `password_changeset/3`,
+  e.g. `hash_password: false` and `validate_unique: false` when the changeset
+  backs live form validation.
+  """
+  def registration_changeset(user, attrs, opts \\ []) do
+    user
+    |> email_changeset(attrs, opts)
+    |> password_changeset(attrs, opts)
+  end
+
+  @doc """
   A user changeset for changing the password.
 
   It is important to validate the length of the password, as long passwords may

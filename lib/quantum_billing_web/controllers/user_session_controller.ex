@@ -4,6 +4,10 @@ defmodule QuantumBillingWeb.UserSessionController do
   alias QuantumBilling.Accounts
   alias QuantumBillingWeb.UserAuth
 
+  def create(conn, %{"_action" => "registered"} = params) do
+    create(conn, params, "Account created successfully!")
+  end
+
   def create(conn, %{"_action" => "confirmed"} = params) do
     create(conn, params, "User confirmed successfully.")
   end

@@ -16,11 +16,20 @@ defmodule QuantumBillingWeb.UserLive.Registration do
 
       <Layouts.auth_heading
         title="Create an account"
-        subtitle="Enter your email below to create your account"
+        subtitle="Enter your details below to create your account"
       />
 
       <div class="grid gap-6">
-        <.form for={@form} id="registration_form" phx-submit="save" phx-change="validate">
+        <.form
+          for={@form}
+          id="registration_form"
+          action={~p"/users/log-in?_action=registered"}
+          method="post"
+          phx-submit="save"
+          phx-change="validate"
+          phx-trigger-action={@trigger_submit}
+          class="space-y-3"
+        >
           <.input
             field={@form[:email]}
             type="email"
@@ -33,8 +42,32 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             error_class="border-red-500"
           />
 
+          <.input
+            field={@form[:password]}
+            type="password"
+            placeholder="Password"
+            autocomplete="new-password"
+            spellcheck="false"
+            required
+            class={input_class()}
+            error_class="border-red-500"
+          />
+
+          <.input
+            field={@form[:password_confirmation]}
+            type="password"
+            placeholder="Confirm password"
+            autocomplete="new-password"
+            spellcheck="false"
+            required
+            class={input_class()}
+            error_class="border-red-500"
+          />
+
+          <p class="text-xs text-zinc-500">Use at least 12 characters.</p>
+
           <.button phx-disable-with="Creating account..." class={primary_button_class()}>
-            Sign In with Email
+            Create Account
           </.button>
         </.form>
 
@@ -55,28 +88,20 @@ defmodule QuantumBillingWeb.UserLive.Registration do
   end
 
   def mount(_params, _session, socket) do
-    changeset = Accounts.change_user_email(%User{}, %{}, validate_unique: false)
+    changeset = Accounts.change_user_registration(%User{})
 
-    {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+    {:ok, socket |> assign(trigger_submit: false) |> assign_form(changeset)}
   end
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
-    case Accounts.register_user(user_params) do
-      {:ok, user} ->
-        {:ok, _} =
-          Accounts.deliver_login_instructions(
-            user,
-            &url(~p"/users/log-in/#{&1}")
-          )
+    case Accounts.register_user_with_password(user_params) do
+      {:ok, _user} ->
+        # The rendered form still holds the credentials the user typed, so
+        # triggering it posts them to the session controller, which signs them in.
+        changeset = Accounts.change_user_registration(%User{}, user_params)
 
-        {:noreply,
-         socket
-         |> put_flash(
-           :info,
-           "An email was sent to #{user.email}, please access it to confirm your account."
-         )
-         |> push_navigate(to: ~p"/users/log-in")}
+        {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -84,7 +109,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
   end
 
   def handle_event("validate", %{"user" => user_params}, socket) do
-    changeset = Accounts.change_user_email(%User{}, user_params, validate_unique: false)
+    changeset = Accounts.change_user_registration(%User{}, user_params)
     {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
   end
 
