@@ -37,6 +37,22 @@ defmodule QuantumBillingWeb.UserLive.LoginTest do
       assert redirected_to(conn) == ~p"/"
     end
 
+    test "refuses to log in an account that has not been confirmed", %{conn: conn} do
+      user = registered_user_fixture()
+
+      {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+      form =
+        form(lv, "#login_form_password",
+          user: %{email: user.email, password: valid_user_password()}
+        )
+
+      conn = submit_form(form, conn)
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Please confirm your email first"
+      assert redirected_to(conn) == ~p"/users/log-in"
+    end
+
     test "redirects to login page with a flash error if credentials are invalid", %{
       conn: conn
     } do

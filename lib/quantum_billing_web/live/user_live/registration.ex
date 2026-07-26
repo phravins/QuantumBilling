@@ -23,21 +23,29 @@ defmodule QuantumBillingWeb.UserLive.Registration do
         <.form
           for={@form}
           id="registration_form"
-          action={~p"/users/log-in?_action=registered"}
-          method="post"
           phx-submit="save"
           phx-change="validate"
-          phx-trigger-action={@trigger_submit}
           class="space-y-3"
         >
           <.input
-            field={@form[:email]}
-            type="email"
-            placeholder="name@example.com"
+            field={@form[:username]}
+            type="text"
+            placeholder="Username"
             autocomplete="username"
             spellcheck="false"
             required
             phx-mounted={JS.focus()}
+            class={input_class()}
+            error_class="border-red-500"
+          />
+
+          <.input
+            field={@form[:email]}
+            type="email"
+            placeholder="name@example.com"
+            autocomplete="email"
+            spellcheck="false"
+            required
             class={input_class()}
             error_class="border-red-500"
           />
@@ -90,18 +98,27 @@ defmodule QuantumBillingWeb.UserLive.Registration do
   def mount(_params, _session, socket) do
     changeset = Accounts.change_user_registration(%User{})
 
-    {:ok, socket |> assign(trigger_submit: false) |> assign_form(changeset)}
+    {:ok, assign_form(socket, changeset)}
   end
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
     case Accounts.register_user_with_password(user_params) do
-      {:ok, _user} ->
-        # The rendered form still holds the credentials the user typed, so
-        # triggering it posts them to the session controller, which signs them in.
-        changeset = Accounts.change_user_registration(%User{}, user_params)
+      {:ok, user} ->
+        {:ok, _} =
+          Accounts.deliver_user_confirmation_instructions(
+            user,
+            &url(~p"/users/confirm/#{&1}")
+          )
 
-        {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Account created. We sent a confirmation link to #{user.email} — " <>
+             "open it to activate your account."
+         )
+         |> push_navigate(to: ~p"/users/log-in")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}

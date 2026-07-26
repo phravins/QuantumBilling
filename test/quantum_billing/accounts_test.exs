@@ -88,46 +88,125 @@ defmodule QuantumBilling.AccountsTest do
   end
 
   describe "register_user_with_password/1" do
-    test "registers a confirmed user with a hashed password" do
+    test "registers an unconfirmed user with a hashed password" do
       email = unique_user_email()
+      username = unique_username()
 
       {:ok, user} =
-        Accounts.register_user_with_password(%{
-          email: email,
-          password: valid_user_password(),
-          password_confirmation: valid_user_password()
-        })
+        Accounts.register_user_with_password(
+          valid_registration_attributes(email: email, username: username)
+        )
 
       assert user.email == email
-      assert user.confirmed_at
+      assert user.username == username
+      # the emailed confirmation link is what activates the account
+      assert is_nil(user.confirmed_at)
       assert is_nil(user.password)
       assert User.valid_password?(user, valid_user_password())
     end
 
     test "requires the password confirmation to match" do
       {:error, changeset} =
-        Accounts.register_user_with_password(%{
-          email: unique_user_email(),
-          password: valid_user_password(),
-          password_confirmation: "not the same"
-        })
+        Accounts.register_user_with_password(
+          valid_registration_attributes(password_confirmation: "not the same")
+        )
 
       assert %{password_confirmation: ["does not match password"]} = errors_on(changeset)
     end
 
     test "validates password length" do
       {:error, changeset} =
-        Accounts.register_user_with_password(%{email: unique_user_email(), password: "short"})
+        Accounts.register_user_with_password(
+          valid_registration_attributes(password: "short", password_confirmation: "short")
+        )
 
       assert "should be at least 12 character(s)" in errors_on(changeset).password
     end
 
+    test "requires a username" do
+      {:error, changeset} =
+        Accounts.register_user_with_password(%{
+          email: unique_user_email(),
+          password: valid_user_password()
+        })
+
+      assert %{username: ["can't be blank"]} = errors_on(changeset)
+    end
+
+    test "validates the username format and length" do
+      {:error, changeset} =
+        Accounts.register_user_with_password(
+          valid_registration_attributes(username: "no spaces!")
+        )
+
+      assert "may only contain letters, numbers, dots, dashes and underscores" in errors_on(
+               changeset
+             ).username
+
+      {:error, changeset} =
+        Accounts.register_user_with_password(valid_registration_attributes(username: "ab"))
+
+      assert "should be at least 3 character(s)" in errors_on(changeset).username
+    end
+
+    test "validates username uniqueness" do
+      user = registered_user_fixture()
+
+      {:error, changeset} =
+        Accounts.register_user_with_password(
+          valid_registration_attributes(username: user.username)
+        )
+
+      assert "has already been taken" in errors_on(changeset).username
+    end
+
     test "validates the email alongside the password" do
       {:error, changeset} =
-        Accounts.register_user_with_password(%{email: "not valid", password: "short"})
+        Accounts.register_user_with_password(
+          valid_registration_attributes(email: "not valid", password: "short")
+        )
 
       assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
       assert %{password: ["should be at least 12 character(s)"]} = errors_on(changeset)
+    end
+  end
+
+  describe "confirm_user_by_token/1" do
+    setup do
+      user = registered_user_fixture()
+
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_confirmation_instructions(user, url)
+        end)
+
+      %{user: user, token: token}
+    end
+
+    test "confirms the account and expires every outstanding token", %{user: user, token: token} do
+      assert {:ok, confirmed} = Accounts.confirm_user_by_token(token)
+      assert confirmed.id == user.id
+      assert confirmed.confirmed_at
+      refute Repo.get_by(Accounts.UserToken, user_id: user.id)
+    end
+
+    test "cannot be spent twice", %{token: token} do
+      assert {:ok, _user} = Accounts.confirm_user_by_token(token)
+      assert {:error, :not_found} = Accounts.confirm_user_by_token(token)
+    end
+
+    test "rejects an unknown token" do
+      assert {:error, :not_found} = Accounts.confirm_user_by_token("oops")
+    end
+
+    test "rejects an expired token", %{token: token, user: user} do
+      {1, nil} =
+        Repo.update_all(Accounts.UserToken,
+          set: [inserted_at: ~U[2020-01-01 00:00:00Z]]
+        )
+
+      assert {:error, :not_found} = Accounts.confirm_user_by_token(token)
+      refute Repo.get!(Accounts.User, user.id).confirmed_at
     end
   end
 

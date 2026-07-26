@@ -14,6 +14,7 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
 
       assert html =~ "Create an account"
       assert html =~ "Enter your details below to create your account"
+      assert html =~ ~s(placeholder="Username")
       assert html =~ ~s(placeholder="name@example.com")
       assert html =~ ~s(placeholder="Confirm password")
       assert html =~ "Create Account"

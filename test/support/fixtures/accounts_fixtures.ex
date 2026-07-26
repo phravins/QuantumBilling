@@ -10,12 +10,35 @@ defmodule QuantumBilling.AccountsFixtures do
   alias QuantumBilling.Accounts.Scope
 
   def unique_user_email, do: "user#{System.unique_integer()}@example.com"
+  def unique_username, do: "user#{System.unique_integer([:positive])}"
   def valid_user_password, do: "hello world!"
 
   def valid_user_attributes(attrs \\ %{}) do
     Enum.into(attrs, %{
       email: unique_user_email()
     })
+  end
+
+  def valid_registration_attributes(attrs \\ %{}) do
+    Enum.into(attrs, %{
+      username: unique_username(),
+      email: unique_user_email(),
+      password: valid_user_password(),
+      password_confirmation: valid_user_password()
+    })
+  end
+
+  @doc """
+  Creates an unconfirmed account the way the sign-up form does: username, email
+  and password, awaiting the emailed confirmation link.
+  """
+  def registered_user_fixture(attrs \\ %{}) do
+    {:ok, user} =
+      attrs
+      |> valid_registration_attributes()
+      |> Accounts.register_user_with_password()
+
+    user
   end
 
   def unconfirmed_user_fixture(attrs \\ %{}) do

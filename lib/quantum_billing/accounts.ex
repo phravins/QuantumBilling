@@ -81,15 +81,14 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc """
-  Registers a user with a password.
+  Registers a user with a username, an email and a password.
 
-  The account is confirmed on insert, since the password itself is the proof of
-  ownership from then on. This also keeps `login_user_by_magic_link/1` away from
-  the "unconfirmed user with a password" case, which it refuses to handle.
+  The account starts unconfirmed: `deliver_user_confirmation_instructions/2`
+  emails the link that confirms it, and password login is refused until then.
 
   ## Examples
 
-      iex> register_user_with_password(%{email: value, password: value})
+      iex> register_user_with_password(%{username: value, email: value, password: value})
       {:ok, %User{}}
 
       iex> register_user_with_password(%{email: bad_value})
@@ -99,7 +98,6 @@ defmodule QuantumBilling.Accounts do
   def register_user_with_password(attrs) do
     %User{}
     |> User.registration_changeset(attrs)
-    |> User.confirm_changeset()
     |> Repo.insert()
   end
 
@@ -310,6 +308,39 @@ defmodule QuantumBilling.Accounts do
     {encoded_token, user_token} = UserToken.build_email_token(user, "login")
     Repo.insert!(user_token)
     UserNotifier.deliver_login_instructions(user, magic_link_url_fun.(encoded_token))
+  end
+
+  @doc ~S"""
+  Delivers the sign-up confirmation link to the given user.
+
+  ## Examples
+
+      iex> deliver_user_confirmation_instructions(user, &url(~p"/users/confirm/#{&1}"))
+      {:ok, %{to: ..., body: ...}}
+
+  """
+  def deliver_user_confirmation_instructions(%User{} = user, confirm_url_fun)
+      when is_function(confirm_url_fun, 1) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
+    Repo.insert!(user_token)
+    UserNotifier.deliver_confirmation_instructions(user, confirm_url_fun.(encoded_token))
+  end
+
+  @doc """
+  Confirms a user from the token emailed at sign-up.
+
+  Every outstanding token is expired on success, so the confirmation link can
+  only be spent once.
+  """
+  def confirm_user_by_token(token) do
+    with {:ok, query} <- UserToken.verify_confirm_token_query(token),
+         {%User{} = user, _token} <- Repo.one(query),
+         {:ok, {user, _expired_tokens}} <-
+           user |> User.confirm_changeset() |> update_user_and_delete_all_tokens() do
+      {:ok, user}
+    else
+      _ -> {:error, :not_found}
+    end
   end
 
   @doc """

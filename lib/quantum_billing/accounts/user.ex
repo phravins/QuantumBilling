@@ -3,6 +3,7 @@ defmodule QuantumBilling.Accounts.User do
   import Ecto.Changeset
 
   schema "users" do
+    field :username, :string
     field :email, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
@@ -57,14 +58,48 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A user changeset for registering with an email and a password.
+  A user changeset for the display name.
 
-  Accepts the options of both `email_changeset/3` and `password_changeset/3`,
-  e.g. `hash_password: false` and `validate_unique: false` when the changeset
-  backs live form validation.
+  ## Options
+
+    * `:validate_unique` - Set to false if you don't want to validate the
+      uniqueness of the username, useful when displaying live validations.
+      Defaults to `true`.
+  """
+  def username_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:username])
+    |> validate_username(opts)
+  end
+
+  defp validate_username(changeset, opts) do
+    changeset =
+      changeset
+      |> validate_required([:username])
+      |> validate_format(:username, ~r/^[a-zA-Z0-9_.-]+$/,
+        message: "may only contain letters, numbers, dots, dashes and underscores"
+      )
+      |> validate_length(:username, min: 3, max: 30)
+
+    if Keyword.get(opts, :validate_unique, true) do
+      changeset
+      |> unsafe_validate_unique(:username, QuantumBilling.Repo)
+      |> unique_constraint(:username)
+    else
+      changeset
+    end
+  end
+
+  @doc """
+  A user changeset for registering with a username, an email and a password.
+
+  Accepts the options of `username_changeset/3`, `email_changeset/3` and
+  `password_changeset/3`, e.g. `hash_password: false` and `validate_unique: false`
+  when the changeset backs live form validation.
   """
   def registration_changeset(user, attrs, opts \\ []) do
     user
+    |> username_changeset(attrs, opts)
     |> email_changeset(attrs, opts)
     |> password_changeset(attrs, opts)
   end

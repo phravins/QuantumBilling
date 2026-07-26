@@ -36,27 +36,24 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
   end
 
   describe "register user" do
-    test "creates account and logs the user in", %{conn: conn} do
+    test "creates an unconfirmed account and emails the confirmation link", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
       email = unique_user_email()
 
-      form =
-        form(lv, "#registration_form",
-          user: %{
-            email: email,
-            password: valid_user_password(),
-            password_confirmation: valid_user_password()
-          }
-        )
+      {:ok, _lv, html} =
+        lv
+        |> form("#registration_form", user: valid_registration_attributes(email: email))
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/users/log-in")
 
-      render_submit(form)
-
-      conn = follow_trigger_action(form, conn)
-      assert redirected_to(conn) == ~p"/"
+      assert html =~ "We sent a confirmation link to #{email}"
 
       user = QuantumBilling.Accounts.get_user_by_email_and_password(email, valid_user_password())
-      assert user.confirmed_at
+      assert is_nil(user.confirmed_at)
+
+      assert QuantumBilling.Repo.get_by!(QuantumBilling.Accounts.UserToken, user_id: user.id).context ==
+               "confirm"
     end
 
     test "renders errors when the password confirmation does not match", %{conn: conn} do
@@ -65,11 +62,7 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       result =
         lv
         |> form("#registration_form",
-          user: %{
-            email: unique_user_email(),
-            password: valid_user_password(),
-            password_confirmation: "something else entirely"
-          }
+          user: valid_registration_attributes(password_confirmation: "something else entirely")
         )
         |> render_submit()
 
@@ -83,12 +76,21 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
 
       result =
         lv
+        |> form("#registration_form", user: valid_registration_attributes(email: user.email))
+        |> render_submit()
+
+      assert result =~ "has already been taken"
+    end
+
+    test "renders errors for duplicated username", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+
+      user = registered_user_fixture()
+
+      result =
+        lv
         |> form("#registration_form",
-          user: %{
-            email: user.email,
-            password: valid_user_password(),
-            password_confirmation: valid_user_password()
-          }
+          user: valid_registration_attributes(username: user.username)
         )
         |> render_submit()
 
