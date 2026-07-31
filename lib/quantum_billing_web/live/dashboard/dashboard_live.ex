@@ -40,11 +40,6 @@ defmodule QuantumBillingWeb.DashboardLive do
       <.header>
         Dashboard
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
-        <:actions>
-          <.link navigate={~p"/invoices"} class={action_button_class()}>
-            <.icon name="hero-plus" class="size-4" /> Create New GST Invoice
-          </.link>
-        </:actions>
       </.header>
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

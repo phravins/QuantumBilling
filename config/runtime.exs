@@ -51,10 +51,17 @@ if File.exists?(env_file) do
 
       {_, [key, value]} ->
         key = String.trim(key)
+        value = value |> String.trim() |> unquote_value.()
 
-        # Real environment variables take precedence.
-        if System.get_env(key) in [nil, ""] do
-          System.put_env(key, value |> String.trim() |> unquote_value.())
+        # A blank entry means "not configured" — skip it rather than exporting
+        # an empty string. Phoenix tests presence with `if System.get_env(...)`,
+        # and "" is truthy in Elixir, so exporting one would switch on features
+        # the template only meant to document. `PHX_SERVER=` is the sharp case:
+        # it would start the web server during `mix test`.
+        #
+        # A real environment variable always takes precedence.
+        if value != "" and System.get_env(key) in [nil, ""] do
+          System.put_env(key, value)
         end
 
       {_, _} ->
