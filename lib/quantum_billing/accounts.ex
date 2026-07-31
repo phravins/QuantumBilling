@@ -134,6 +134,37 @@ defmodule QuantumBilling.Accounts do
   def sudo_mode?(_user, _minutes), do: false
 
   @doc """
+  Returns an `%Ecto.Changeset{}` for the user's display details.
+
+  ## Examples
+
+      iex> change_user_profile(user)
+      %Ecto.Changeset{data: %User{}}
+
+  """
+  def change_user_profile(%User{} = user, attrs \\ %{}) do
+    User.profile_changeset(user, attrs)
+  end
+
+  @doc """
+  Updates the user's display details.
+
+  Unlike the email and password, these are not identity and need no
+  confirmation or re-authentication.
+
+  ## Examples
+
+      iex> update_user_profile(user, %{full_name: "Priya Sharma"})
+      {:ok, %User{}}
+
+  """
+  def update_user_profile(%User{} = user, attrs) do
+    user
+    |> User.profile_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Returns an `%Ecto.Changeset{}` for changing the user email.
 
   See `QuantumBilling.Accounts.User.email_changeset/3` for a list of supported options.

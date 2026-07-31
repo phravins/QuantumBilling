@@ -40,15 +40,15 @@ defmodule QuantumBillingWeb.Layouts do
 
     ~H"""
     <div class="flex min-h-screen bg-base-200">
-      <aside class="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-base-300 bg-base-100">
-        <div class="flex items-center gap-2.5 px-5 py-5">
-          <div class="flex size-7 items-center justify-center rounded-field bg-primary text-primary-content">
+      <aside class="sticky top-0 flex h-screen w-52 shrink-0 flex-col border-r border-base-300 bg-base-100">
+        <div class="flex items-center gap-2.5 px-4 py-4">
+          <div class="flex size-7 shrink-0 items-center justify-center rounded-field bg-primary text-primary-content">
             <.icon name="hero-receipt-percent" class="size-4" />
           </div>
-          <span class="text-sm font-semibold tracking-tight">QuantumBilling</span>
+          <span class="truncate text-sm font-semibold tracking-tight">QuantumBilling</span>
         </div>
 
-        <nav class="flex-1 overflow-y-auto px-3 pt-2">
+        <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
           <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
           <ul class="space-y-0.5">
             <li :for={item <- @nav_items}>
@@ -69,12 +69,12 @@ defmodule QuantumBillingWeb.Layouts do
           </ul>
         </nav>
 
-        <div class="border-t border-base-300 p-3">
+        <div class="border-t border-base-300 p-2.5">
           <div class="dropdown dropdown-top w-full">
             <div
               tabindex="0"
               role="button"
-              class="flex w-full items-center gap-2.5 rounded-field px-2 py-2 text-left hover:bg-base-200"
+              class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200"
             >
               <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
                 {user_initials(@current_scope)}
@@ -83,7 +83,12 @@ defmodule QuantumBillingWeb.Layouts do
                 <span class="block truncate text-sm font-medium leading-tight">
                   {user_name(@current_scope)}
                 </span>
-                <span class="block text-xs text-base-content/45">GST Officer</span>
+                <span
+                  :if={user_designation(@current_scope)}
+                  class="block truncate text-xs text-base-content/45"
+                >
+                  {user_designation(@current_scope)}
+                </span>
               </span>
               <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
             </div>
@@ -130,14 +135,29 @@ defmodule QuantumBillingWeb.Layouts do
 
   # The topbar renders before anyone signs in (and in tests that mount the
   # layout without a scope), so both helpers tolerate a nil scope.
+  # Prefer the name the user set on Account Settings, falling back to the email
+  # so an account with no profile filled in still renders.
+  defp user_name(%{user: %{full_name: name}}) when is_binary(name) and name != "", do: name
   defp user_name(%{user: %{email: email}}) when is_binary(email), do: email
   defp user_name(_scope), do: "Signed out"
+
+  defp user_initials(%{user: %{full_name: name}}) when is_binary(name) and name != "" do
+    case String.split(name, ~r/\s+/, trim: true) do
+      [single] -> single |> String.slice(0, 2) |> String.upcase()
+      [first, second | _] -> String.upcase(String.first(first) <> String.first(second))
+    end
+  end
 
   defp user_initials(%{user: %{email: email}}) when is_binary(email) do
     email |> String.slice(0, 2) |> String.upcase()
   end
 
   defp user_initials(_scope), do: "--"
+
+  defp user_designation(%{user: %{designation: title}}) when is_binary(title) and title != "",
+    do: title
+
+  defp user_designation(_scope), do: nil
 
   defp nav_items do
     [

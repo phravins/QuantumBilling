@@ -10,7 +10,31 @@ defmodule QuantumBilling.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
+    # Display details, shown on Account Settings and in the sidebar. None of
+    # these is part of identity — that stays the email address.
+    field :full_name, :string
+    field :phone, :string
+    field :designation, :string
+
     timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  A changeset for the user's display details.
+
+  Deliberately permissive: these are shown, not trusted. The phone is not held
+  to `QuantumBilling.Clients.Client`'s ten-digit `+91` rule — that belongs to
+  Indian GST parties, and a user of this software may be anywhere.
+  """
+  def profile_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:full_name, :phone, :designation])
+    |> validate_length(:full_name, max: 120)
+    |> validate_length(:designation, max: 80)
+    |> validate_length(:phone, max: 30)
+    |> validate_format(:phone, ~r/^[\d\s+()-]*$/,
+      message: "may only contain digits, spaces and + ( ) -"
+    )
   end
 
   @doc """

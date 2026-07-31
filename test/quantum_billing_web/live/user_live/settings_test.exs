@@ -12,8 +12,9 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
         |> log_in_user(user_fixture())
         |> live(~p"/users/settings")
 
-      assert html =~ "Change Email"
-      assert html =~ "Save Password"
+      assert html =~ "Account Settings"
+      assert html =~ "Profile Information"
+      assert html =~ "Email Address"
     end
 
     test "redirects if user is not logged in", %{conn: conn} do
@@ -24,16 +25,165 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
       assert %{"error" => "You must log in to access this page."} = flash
     end
 
-    test "redirects if user is not in sudo mode", %{conn: conn} do
-      {:ok, conn} =
-        conn
-        |> log_in_user(user_fixture(),
+    # This test changed meaning deliberately. The page used to carry
+    # `on_mount :require_sudo_mode`, so any visit more than ten minutes after
+    # sign-in redirected to the login screen — you could not look at your own
+    # name. The gate now sits on the sensitive actions instead.
+    test "stays open without recent sign-in, but refuses a password change", %{conn: conn} do
+      user = user_fixture()
+
+      conn =
+        log_in_user(conn, user,
           token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
         )
-        |> live(~p"/users/settings")
-        |> follow_redirect(conn, ~p"/users/log-in")
 
-      assert conn.resp_body =~ "You must re-authenticate to access this page."
+      # The page itself loads.
+      {:ok, lv, html} = live(conn, ~p"/users/settings?tab=password")
+      assert html =~ "Account Settings"
+
+      # The sensitive action is refused rather than crashing.
+      result =
+        lv
+        |> form("#password_form", %{
+          "user" => %{
+            "password" => "a-brand-new-password",
+            "password_confirmation" => "a-brand-new-password"
+          }
+        })
+        |> render_submit()
+
+      assert result =~ "sign in again"
+      refute Accounts.get_user_by_email_and_password(user.email, "a-brand-new-password")
+    end
+
+    test "refuses an email change without recent sign-in", %{conn: conn} do
+      user = user_fixture()
+
+      conn =
+        log_in_user(conn, user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#email_form", %{"user" => %{"email" => unique_user_email()}})
+        |> render_submit()
+
+      assert result =~ "sign in again"
+      # The address is unchanged.
+      assert Accounts.get_user_by_email(user.email)
+    end
+
+    test "editing the profile does not need recent sign-in", %{conn: conn} do
+      user = user_fixture()
+
+      conn =
+        log_in_user(conn, user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#profile_form", %{"user" => %{"full_name" => "Priya Sharma"}})
+        |> render_submit()
+
+      assert result =~ "Profile updated."
+      assert Accounts.get_user_by_email(user.email).full_name == "Priya Sharma"
+    end
+  end
+
+  describe "profile form" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "saves name, designation and phone together", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      lv
+      |> form("#profile_form", %{
+        "user" => %{
+          "full_name" => "Priya Sharma",
+          "designation" => "GST Officer",
+          "phone" => "+91 98765 43210"
+        }
+      })
+      |> render_submit()
+
+      reloaded = Accounts.get_user_by_email(user.email)
+      assert reloaded.full_name == "Priya Sharma"
+      assert reloaded.designation == "GST Officer"
+      assert reloaded.phone == "+91 98765 43210"
+    end
+
+    test "the saved name and designation reach the sidebar", %{conn: conn, user: user} do
+      {:ok, _} =
+        Accounts.update_user_profile(user, %{
+          full_name: "Priya Sharma",
+          designation: "GST Officer"
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/users/settings")
+
+      assert html =~ "Priya Sharma"
+      assert html =~ "GST Officer"
+      # Initials come from the name now, not the first two letters of the email.
+      assert html =~ ">\n            PS\n          <" or html =~ "PS"
+    end
+
+    test "rejects a phone number with letters in it", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#profile_form", %{"user" => %{"phone" => "call me maybe"}})
+        |> render_submit()
+
+      assert result =~ "may only contain digits"
+    end
+  end
+
+  describe "tabs" do
+    setup %{conn: conn} do
+      %{conn: log_in_user(conn, user_fixture())}
+    end
+
+    test "default to Profile", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings")
+
+      assert html =~ "Profile Information"
+      refute html =~ "Choose a strong password"
+    end
+
+    test "the password tab is linkable and survives a reload", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings?tab=password")
+
+      assert html =~ "Choose a strong password"
+      refute html =~ "Profile Information"
+    end
+
+    test "two factor authentication says it is not built", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings?tab=two_factor")
+
+      assert html =~ "not available yet"
+      assert html =~ "recovery codes"
+    end
+
+    test "an unknown tab falls back to Profile", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings?tab=nonsense")
+
+      assert html =~ "Profile Information"
+    end
+
+    test "the picture upload is labelled as needing storage", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings")
+
+      assert html =~ "needs file storage"
     end
   end
 
@@ -70,7 +220,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
           "user" => %{"email" => "with spaces"}
         })
 
-      assert result =~ "Change Email"
+      assert result =~ "Email Address"
       assert result =~ "must have the @ sign and no spaces"
     end
 
@@ -84,7 +234,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "Change Email"
+      assert result =~ "Email Address"
       assert result =~ "did not change"
     end
   end
@@ -98,7 +248,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
     test "updates the user password", %{conn: conn, user: user} do
       new_password = valid_user_password()
 
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=password")
 
       form =
         form(lv, "#password_form", %{
@@ -124,7 +274,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=password")
 
       result =
         lv
@@ -136,13 +286,13 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
           }
         })
 
-      assert result =~ "Save Password"
+      assert result =~ "Update Password"
       assert result =~ "should be at least 8 character(s)"
       assert result =~ "does not match password"
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=password")
 
       result =
         lv
@@ -154,7 +304,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "Save Password"
+      assert result =~ "Update Password"
       assert result =~ "should be at least 8 character(s)"
       assert result =~ "does not match password"
     end

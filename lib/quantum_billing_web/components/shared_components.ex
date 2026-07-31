@@ -197,7 +197,10 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :required, :boolean, default: false
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
-  attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows)
+  # `autocomplete` and `spellcheck` matter on the auth forms: without them
+  # password managers do not offer to fill or save credentials.
+  attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
+                autocomplete spellcheck)
 
   def field(assigns) do
     assigns = assign(assigns, :errors, field_errors(assigns.field))
