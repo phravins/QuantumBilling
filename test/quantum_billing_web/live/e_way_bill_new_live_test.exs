@@ -50,9 +50,10 @@ defmodule QuantumBillingWeb.EWayBillNewLiveTest do
   test "seeds the common defaults", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/e-way-bills/new")
 
-    assert html =~ ~s(value="Outward Supply" selected)
-    assert html =~ ~s(value="Tax Invoice" selected)
-    assert html =~ ~s(value="Road" selected)
+    # LiveView emits the attributes in this order: `<option selected="" value="…">`.
+    assert html =~ ~s(<option selected="" value="Outward Supply">)
+    assert html =~ ~s(<option selected="" value="Tax Invoice">)
+    assert html =~ ~s(<option selected="" value="Road">)
   end
 
   test "recomputes the total invoice value as amounts change", %{conn: conn} do

@@ -19,7 +19,6 @@ defmodule QuantumBillingWeb.UserLive.Login do
             else: "Enter your email below to sign in to your account"
         }
       />
-
       <div class="grid gap-6">
         <.form
           :let={f}
@@ -62,12 +61,8 @@ defmodule QuantumBillingWeb.UserLive.Login do
             Sign In
           </.button>
         </.form>
-
-        <.or_divider />
-
-        <.github_button />
+        <.or_divider /> <.github_button />
       </div>
-
       <.legal_note />
     </Layouts.auth>
     """

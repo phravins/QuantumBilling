@@ -105,7 +105,7 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
           %EWayBillForm{},
           valid_attrs(%{
             "from_gstin" => "27AABCA1234A1Z5",
-            "to_gstin" => "27AAACPJ8542D1ZS"
+            "to_gstin" => "27AAACP8542D1ZS"
           })
         )
 

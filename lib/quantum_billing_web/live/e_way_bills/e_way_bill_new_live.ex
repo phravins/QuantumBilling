@@ -118,7 +118,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 field={f[:document_no]}
                 label="Document No."
                 required
-                placeholder="INV-2024-0001"
+                placeholder="Document number"
               />
               <.field field={f[:document_date]} label="Document Date" type="date" required />
 
@@ -145,7 +145,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                   field={f[:from_party]}
                   label="From (Dispatch From)"
                   required
-                  placeholder="ABC Solutions Private Limited"
+                  placeholder="Consignor name"
                 />
                 <.field
                   field={f[:from_gstin]}
@@ -168,12 +168,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                   field={f[:to_party]}
                   label="To (Ship To)"
                   required
-                  placeholder="V2V Technologies"
+                  placeholder="Consignee name"
                 />
                 <.field
                   field={f[:to_gstin]}
                   label="To GSTIN"
-                  placeholder="27AAACPJ8542D1ZS"
+                  placeholder="27AAACP8542D1ZS"
                   hint="15-character GSTIN of the consignee"
                 />
                 <.field
@@ -229,7 +229,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               <.field
                 field={f[:transporter_name]}
                 label="Transporter Name"
-                placeholder="ABC Transport Services"
+                placeholder="Transporter name"
               />
               <.field
                 field={f[:transporter_id]}

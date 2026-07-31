@@ -36,11 +36,24 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
       assert total_line =~ :erlang.float_to_binary(expected.total_tax * 1.0, decimals: 2)
     end
 
-    test "respects an applied filter", %{conn: conn} do
-      all = conn |> get(~p"/reports/export") |> response(200)
-      cancelled = conn |> get(~p"/reports/export?#{[status: "Cancelled"]}") |> response(200)
+    # An export that actually differs per filter needs rows to filter; that
+    # assertion returns with the invoices table. What is checkable now is that
+    # every filter parameter is accepted rather than crashing the download.
+    test "accepts every filter parameter", %{conn: conn} do
+      params = [
+        date_range: "Last Month",
+        report_type: "Tax Liability",
+        client: "All Clients",
+        status: "Cancelled",
+        gstin: "27AAACP8542D1ZS"
+      ]
 
-      refute all == cancelled
+      assert conn |> get(~p"/reports/export?#{params}") |> response(200) =~ "Tax Type,"
+    end
+
+    test "ignores an unknown range rather than failing", %{conn: conn} do
+      assert conn |> get(~p"/reports/export?#{[date_range: "nonsense"]}") |> response(200) =~
+               "Tax Type,"
     end
 
     test "names the file after the period", %{conn: conn} do

@@ -3,12 +3,16 @@ defmodule QuantumBillingWeb.InvoicesLive do
   The Invoices list page: search, status filter, sortable columns, and
   pagination over the full set of GST invoices.
 
-  All data is a hardcoded in-memory dataset pending the multi-tenant Ecto
-  schema. `mount/3` builds the dataset once; `handle_event/3` only ever
-  updates raw filter/sort/page state, and `render/1` re-derives the visible
-  rows fresh on every render so there is a single source of truth.
+  Invoices come from `QuantumBilling.Invoices`, which has nothing to return
+  until the multi-tenant Ecto schema lands. `mount/3` loads them once;
+  `handle_event/3` only ever updates raw filter/sort/page state, and `render/1`
+  re-derives the visible rows fresh on every render so there is a single source
+  of truth. The search, sort and pagination code below is already correct at
+  zero rows and needs no change when real records arrive.
   """
   use QuantumBillingWeb, :live_view
+
+  alias QuantumBilling.Invoices
 
   @per_page 10
 
@@ -21,130 +25,12 @@ defmodule QuantumBillingWeb.InvoicesLive do
     "Cancelled"
   ]
 
-  @seed_rows [
-    %{
-      seq: 15489,
-      client: "V2V Technologies",
-      invoice_date: ~D[2024-05-28],
-      amount: 150_000,
-      status: "E-Invoice Generated"
-    },
-    %{
-      seq: 15488,
-      client: "RealOffice Solutions",
-      invoice_date: ~D[2024-05-28],
-      amount: 75_400,
-      status: "Pending E-Invoice"
-    },
-    %{
-      seq: 15487,
-      client: "DreamNest Builders",
-      invoice_date: ~D[2024-05-27],
-      amount: 210_000,
-      status: "E-Invoice Generated"
-    },
-    %{
-      seq: 15486,
-      client: "Arch Info-Tech",
-      invoice_date: ~D[2024-05-27],
-      amount: 32_950,
-      status: "Draft"
-    },
-    %{
-      seq: 15485,
-      client: "PressuCare Medicals",
-      invoice_date: ~D[2024-05-26],
-      amount: 500_000,
-      status: "E-Invoice Failed"
-    },
-    %{
-      seq: 15484,
-      client: "Insta Capital",
-      invoice_date: ~D[2024-05-26],
-      amount: 120_000,
-      status: "E-Invoice Generated"
-    },
-    %{
-      seq: 15483,
-      client: "Raam Techlink",
-      invoice_date: ~D[2024-05-25],
-      amount: 48_600,
-      status: "Pending E-Invoice"
-    },
-    %{
-      seq: 15482,
-      client: "SoftSphere Solutions",
-      invoice_date: ~D[2024-05-24],
-      amount: 88_000,
-      status: "E-Invoice Generated"
-    },
-    %{
-      seq: 15481,
-      client: "TechNova Systems",
-      invoice_date: ~D[2024-05-24],
-      amount: 115_000,
-      status: "Cancelled"
-    },
-    %{
-      seq: 15480,
-      client: "Bright Future Pvt Ltd",
-      invoice_date: ~D[2024-05-23],
-      amount: 63_250,
-      status: "E-Invoice Generated"
-    }
-  ]
-
-  @client_pool Enum.map(@seed_rows, & &1.client) ++
-                 [
-                   "NextGen Traders",
-                   "Sunrise Apparel Co",
-                   "BlueOcean Logistics",
-                   "Vertex Engineering Works",
-                   "Golden Harvest Foods",
-                   "Skyline Constructions",
-                   "Metro Retail Ventures",
-                   "Prime Auto Components",
-                   "Silverline Textiles",
-                   "Northstar Consulting"
-                 ]
-
-  @amount_pool [
-    45_000,
-    62_500,
-    78_900,
-    99_000,
-    110_000,
-    135_000,
-    160_000,
-    185_000,
-    225_000,
-    260_000,
-    305_000,
-    350_000,
-    420_000,
-    480_000,
-    525_000
-  ]
-
-  @status_cycle [
-    "E-Invoice Generated",
-    "E-Invoice Generated",
-    "E-Invoice Generated",
-    "Pending E-Invoice",
-    "E-Invoice Generated",
-    "Draft",
-    "E-Invoice Generated",
-    "Cancelled",
-    "Pending E-Invoice",
-    "E-Invoice Failed"
-  ]
-
   def mount(_params, _session, socket) do
     {:ok,
      socket
      |> assign(:page_title, "Invoices")
      |> assign(:active_nav, :invoices)
-     |> assign(:all_invoices, all_invoices())
+     |> assign(:all_invoices, Invoices.list_invoices())
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
@@ -259,7 +145,22 @@ defmodule QuantumBillingWeb.InvoicesLive do
           </div>
         </div>
 
-        <div class="overflow-x-auto">
+        <.empty_state
+          :if={@total == 0}
+          icon="hero-document-text"
+          title={
+            if @search == "" and @status_filter == "All Status",
+              do: "No invoices yet",
+              else: "No invoices match these filters"
+          }
+          description={
+            if @search == "" and @status_filter == "All Status",
+              do: "GST invoices you create will appear here.",
+              else: "Try a different search term or status."
+          }
+        />
+
+        <div :if={@total > 0} class="overflow-x-auto">
           <table class="table">
             <thead>
               <tr class={table_head_class()}>
@@ -319,7 +220,10 @@ defmodule QuantumBillingWeb.InvoicesLive do
           </table>
         </div>
 
-        <div class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <div
+          :if={@total > 0}
+          class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row"
+        >
           <span class="text-sm text-base-content/60">
             Showing {@range_start} to {@range_end} of {@total} entries
           </span>
@@ -328,27 +232,6 @@ defmodule QuantumBillingWeb.InvoicesLive do
       </.card>
     </Layouts.app>
     """
-  end
-
-  defp all_invoices do
-    seed = Enum.map(@seed_rows, &finalize_row/1)
-    generated = Enum.map(1..88, &generated_row/1)
-    seed ++ generated
-  end
-
-  defp finalize_row(row) do
-    Map.merge(row, %{number: "INV-2024-#{row.seq}", due_date: Date.add(row.invoice_date, 30)})
-  end
-
-  defp generated_row(g) do
-    %{
-      seq: 15_479 - (g - 1),
-      client: Enum.at(@client_pool, rem(g - 1, length(@client_pool))),
-      invoice_date: Date.add(~D[2024-05-23], -div(g + 1, 2)),
-      amount: Enum.at(@amount_pool, rem(g - 1, length(@amount_pool))) + rem(g, 7) * 500,
-      status: Enum.at(@status_cycle, rem(g - 1, 10))
-    }
-    |> finalize_row()
   end
 
   defp filter_search(rows, ""), do: rows
@@ -368,5 +251,4 @@ defmodule QuantumBillingWeb.InvoicesLive do
   defp sort_rows(rows, :seq, dir), do: Enum.sort_by(rows, & &1.seq, dir)
   defp sort_rows(rows, :invoice_date, dir), do: Enum.sort_by(rows, & &1.invoice_date, {dir, Date})
   defp sort_rows(rows, :due_date, dir), do: Enum.sort_by(rows, & &1.due_date, {dir, Date})
-
 end

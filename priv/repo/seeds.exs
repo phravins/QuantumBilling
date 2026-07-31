@@ -2,37 +2,21 @@
 #
 #     mix run priv/repo/seeds.exs
 #
-# It is idempotent: re-running it leaves existing records alone.
-
-alias QuantumBilling.Accounts
-alias QuantumBilling.Accounts.User
-alias QuantumBilling.Repo
-
-demo = %{
-  username: "admin",
-  email: "admin@osworks.in",
-  password: "admin123"
-}
-
-# A ready-to-use account so the app can be signed into before real tenant data
-# exists. Confirmed on insert — it never receives a confirmation email.
-case Accounts.get_user_by_email(demo.email) do
-  nil ->
-    {:ok, _user} =
-      %User{}
-      |> User.registration_changeset(demo)
-      |> User.confirm_changeset()
-      |> Repo.insert()
-
-    IO.puts("""
-
-    Demo account created:
-
-      email:    #{demo.email}
-      username: #{demo.username}
-      password: #{demo.password}
-    """)
-
-  _user ->
-    IO.puts("Demo account #{demo.email} already exists — nothing to do.")
-end
+# It is also run automatically by `mix ecto.setup` and `mix ecto.reset`.
+#
+# This file is intentionally empty. It previously created a demo administrator
+# with a password committed to the repository, which would have become a
+# known-credential account on any environment the seeds were run against.
+#
+# Create your first account by registering at /users/register and confirming it
+# from the local mailbox at /dev/mailbox.
+#
+# Anything added here must be safe to run in every environment, or guarded:
+#
+#     if Mix.env() != :prod do
+#       ...
+#     end
+#
+# Do not hardcode credentials. Read them from the environment instead:
+#
+#     System.fetch_env!("SEED_ADMIN_PASSWORD")

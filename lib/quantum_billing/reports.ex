@@ -55,7 +55,9 @@ defmodule QuantumBilling.Reports do
   end
 
   defp within?(_date, nil, nil), do: true
-  defp within?(date, from, to), do: Date.compare(date, from) != :lt and Date.compare(date, to) != :gt
+
+  defp within?(date, from, to),
+    do: Date.compare(date, from) != :lt and Date.compare(date, to) != :gt
 
   defp matches?(_value, nil, _all), do: true
   defp matches?(_value, all, all), do: true

@@ -8,15 +8,19 @@ defmodule QuantumBillingWeb.PageControllerTest do
     assert html_response(conn, 200) =~ "Overview of your GST invoicing and compliance"
   end
 
-  # `donut_chart/1` gained a `palette` attribute so the Reports page could show
-  # a coloured ring. Its default must stay `:mono`, or this page silently
-  # changes appearance too.
-  test "the dashboard donut stays monochrome", %{conn: conn} do
+  test "the dashboard shows empty states instead of invented figures", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
 
-    assert html =~ "stroke-base-content"
-    refute html =~ "stroke-blue-500"
-    refute html =~ "stroke-amber-500"
-    refute html =~ "stroke-rose-500"
+    assert html =~ "No invoice data yet"
+    assert html =~ "No invoices yet"
+    assert html =~ "No upcoming due dates"
+  end
+
+  test "the dashboard serves no sample records", %{conn: conn} do
+    html = conn |> get(~p"/") |> html_response(200)
+
+    refute html =~ "V2V Technologies"
+    refute html =~ "INV-2024-"
+    refute html =~ "15,489"
   end
 end

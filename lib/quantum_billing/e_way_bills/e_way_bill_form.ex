@@ -132,9 +132,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     |> validate_number(:total_goods_value, greater_than: 0)
     |> validate_amounts()
     |> update_change(:vehicle_no, &String.upcase(String.replace(&1 || "", ~r/\s/, "")))
-    |> validate_format(:vehicle_no, @vehicle_format,
-      message: "must look like MH01AB1234"
-    )
+    |> validate_format(:vehicle_no, @vehicle_format, message: "must look like MH01AB1234")
     |> validate_gstin(:from_gstin)
     |> validate_gstin(:to_gstin)
     |> validate_transporter_id()
@@ -164,9 +162,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   defp validate_transporter_id(changeset) do
     changeset
     |> update_change(:transporter_id, &String.upcase/1)
-    |> validate_format(:transporter_id, @gstin_format,
-      message: "must be a 15-character GSTIN"
-    )
+    |> validate_format(:transporter_id, @gstin_format, message: "must be a 15-character GSTIN")
   end
 
   @doc """

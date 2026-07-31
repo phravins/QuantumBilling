@@ -3,125 +3,27 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   The E-Way Bills list page: search, status filter, sortable columns and
   pagination over the issued consignment notes.
 
-  All data is a hardcoded in-memory dataset pending the multi-tenant Ecto
-  schema. `mount/3` builds the dataset once; `handle_event/3` only ever
-  updates raw filter/sort/page state, and `render/1` re-derives the visible
-  rows fresh on every render so there is a single source of truth.
+  Bills come from `QuantumBilling.EWayBills`, which has nothing to return until
+  the multi-tenant Ecto schema lands. `mount/3` loads them once;
+  `handle_event/3` only ever updates raw filter/sort/page state, and `render/1`
+  re-derives the visible rows fresh on every render so there is a single source
+  of truth. The search, sort and pagination code below is already correct at
+  zero rows and needs no change when real records arrive.
   """
   use QuantumBillingWeb, :live_view
+
+  alias QuantumBilling.EWayBills
 
   @per_page 10
 
   @status_options ["All Status", "Active", "Expired", "Cancelled"]
-
-  @seed_rows [
-    %{
-      seq: 1,
-      document_no: "INV-2024-15489",
-      issued_on: ~D[2024-05-28],
-      to_party: "V2V Technologies",
-      from_place: "Mumbai",
-      to_place: "Pune",
-      value: 70_800,
-      status: "Active"
-    },
-    %{
-      seq: 2,
-      document_no: "INV-2024-15488",
-      issued_on: ~D[2024-05-27],
-      to_party: "SoftSphere Solutions",
-      from_place: "Bengaluru",
-      to_place: "Chennai",
-      value: 86_200,
-      status: "Active"
-    },
-    %{
-      seq: 3,
-      document_no: "INV-2024-15487",
-      issued_on: ~D[2024-05-26],
-      to_party: "Insta Capital",
-      from_place: "Delhi",
-      to_place: "Jaipur",
-      value: 245_000,
-      status: "Expired"
-    },
-    %{
-      seq: 4,
-      document_no: "INV-2024-15486",
-      issued_on: ~D[2024-05-25],
-      to_party: "DreamNest Builders",
-      from_place: "Ahmedabad",
-      to_place: "Surat",
-      value: 132_400,
-      status: "Active"
-    },
-    %{
-      seq: 5,
-      document_no: "INV-2024-15485",
-      issued_on: ~D[2024-05-24],
-      to_party: "PressuCare Systems",
-      from_place: "Hyderabad",
-      to_place: "Vijayawada",
-      value: 58_900,
-      status: "Cancelled"
-    },
-    %{
-      seq: 6,
-      document_no: "INV-2024-15484",
-      issued_on: ~D[2024-05-23],
-      to_party: "Arch Info-Tech",
-      from_place: "Kolkata",
-      to_place: "Bhubaneswar",
-      value: 91_750,
-      status: "Expired"
-    }
-  ]
-
-  @party_pool [
-    "V2V Technologies",
-    "SoftSphere Solutions",
-    "Insta Capital",
-    "DreamNest Builders",
-    "PressuCare Systems",
-    "Arch Info-Tech",
-    "Nimbus Logistics",
-    "Orbit Traders",
-    "Sunrise Textiles",
-    "Vertex Pharma"
-  ]
-
-  @route_pool [
-    {"Mumbai", "Pune"},
-    {"Bengaluru", "Chennai"},
-    {"Delhi", "Jaipur"},
-    {"Ahmedabad", "Surat"},
-    {"Hyderabad", "Vijayawada"},
-    {"Kolkata", "Bhubaneswar"},
-    {"Nagpur", "Indore"}
-  ]
-
-  @value_pool [70_800, 45_200, 118_600, 236_500, 62_400, 95_300, 154_900, 38_700]
-
-  # Weighted so most bills read as active, the way a real ledger would.
-  @status_cycle [
-    "Active",
-    "Active",
-    "Active",
-    "Active",
-    "Active",
-    "Expired",
-    "Expired",
-    "Active",
-    "Cancelled",
-    "Active"
-  ]
 
   def mount(_params, _session, socket) do
     {:ok,
      socket
      |> assign(:page_title, "E-Way Bills")
      |> assign(:active_nav, :e_way_bills)
-     |> assign(:all_bills, all_bills())
+     |> assign(:all_bills, EWayBills.list_e_way_bills())
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :issued_on)
@@ -236,7 +138,22 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           </div>
         </div>
 
-        <div class="overflow-x-auto">
+        <.empty_state
+          :if={@total == 0}
+          icon="hero-truck"
+          title={
+            if @search == "" and @status_filter == "All Status",
+              do: "No e-way bills yet",
+              else: "No e-way bills match these filters"
+          }
+          description={
+            if @search == "" and @status_filter == "All Status",
+              do: "Consignments you generate an e-way bill for will appear here.",
+              else: "Try a different search term or status."
+          }
+        />
+
+        <div :if={@total > 0} class="overflow-x-auto">
           <table class="table">
             <thead>
               <tr class={table_head_class()}>
@@ -298,7 +215,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           </table>
         </div>
 
-        <div class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <div
+          :if={@total > 0}
+          class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row"
+        >
           <span class="text-sm text-base-content/60">
             Showing {@range_start} to {@range_end} of {@total} entries
           </span>
@@ -307,34 +227,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
       </.card>
     </Layouts.app>
     """
-  end
-
-  defp all_bills do
-    seed = Enum.map(@seed_rows, &finalize_row/1)
-    generated = Enum.map(1..54, &generated_row/1)
-    seed ++ generated
-  end
-
-  # The portal issues 12-digit numbers; derive them from the sequence so the
-  # list stays stable across renders.
-  defp finalize_row(row) do
-    Map.put(row, :ewb_no, "3910" <> String.pad_leading(to_string(391_000 + row.seq), 8, "0"))
-  end
-
-  defp generated_row(g) do
-    {from_place, to_place} = Enum.at(@route_pool, rem(g - 1, length(@route_pool)))
-
-    %{
-      seq: 6 + g,
-      document_no: "INV-2024-#{15_483 - (g - 1)}",
-      issued_on: Date.add(~D[2024-05-22], -div(g + 1, 2)),
-      to_party: Enum.at(@party_pool, rem(g - 1, length(@party_pool))),
-      from_place: from_place,
-      to_place: to_place,
-      value: Enum.at(@value_pool, rem(g - 1, length(@value_pool))) + rem(g, 9) * 250,
-      status: Enum.at(@status_cycle, rem(g - 1, 10))
-    }
-    |> finalize_row()
   end
 
   defp filter_search(rows, ""), do: rows
