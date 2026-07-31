@@ -96,9 +96,9 @@ defmodule QuantumBillingWeb.ClientsLive do
         Clients
         <:subtitle>Manage your clients and their details</:subtitle>
         <:actions>
-          <button type="button" class={action_button_class()}>
+          <.link navigate={~p"/clients/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Add New Client
-          </button>
+          </.link>
         </:actions>
       </.header>
 
@@ -304,11 +304,14 @@ defmodule QuantumBillingWeb.ClientsLive do
     needle = String.downcase(search)
 
     Enum.filter(rows, fn r ->
-      String.contains?(String.downcase(r.name), needle) or
-        String.contains?(String.downcase(r.gstin), needle) or
-        String.contains?(String.downcase(r.email), needle)
+      matches?(r.name, needle) or matches?(r.gstin, needle) or matches?(r.email, needle)
     end)
   end
+
+  # GSTIN and email are both legitimately absent — an unregistered client has no
+  # GSTIN — so a nil must simply not match rather than crash the search.
+  defp matches?(nil, _needle), do: false
+  defp matches?(value, needle), do: String.contains?(String.downcase(value), needle)
 
   defp filter_status(rows, "All Status"), do: rows
   defp filter_status(rows, status), do: Enum.filter(rows, &(&1.status == status))
