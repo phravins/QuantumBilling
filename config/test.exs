@@ -3,24 +3,21 @@ import Config
 # Only in tests, remove the complexity from the password hashing algorithm
 config :pbkdf2_elixir, :rounds, 1
 
-# Configure your database
+# Configure your database.
 #
-# The MIX_TEST_PARTITION environment variable can be used
-# to provide built-in test partitioning in CI environment.
-# Run `mix help test` for more information.
+# Credentials and the database name live in config/runtime.exs, which reads
+# them from the environment (and from .env if present). MIX_TEST_PARTITION is
+# appended there, so built-in test partitioning still works in CI.
 config :quantum_billing, QuantumBilling.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "quantum_billing_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
+#
+# secret_key_base is set in config/runtime.exs from SECRET_KEY_BASE.
 config :quantum_billing, QuantumBillingWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
-  secret_key_base: "vIB5fHAAMiYtE0FnO8ZxMw63VJQKMU8z4ggKjP7Yly1AD23j2n/3SGzupE+T9cHl",
   server: false
 
 # In test we don't send emails

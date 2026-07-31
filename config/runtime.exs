@@ -7,6 +7,96 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+# ## Local secrets (.env)
+#
+# Elixir does not read .env files on its own, so this loads one if it is
+# present. It runs here rather than in dev.exs/test.exs because those are
+# evaluated before this file — which is why every secret below is configured
+# here, not there.
+#
+# A real environment variable always wins over the file, so `.env` is a local
+# convenience and never overrides what a server, CI job or container sets.
+# In production there is no .env: the values come from the environment.
+#
+# Supported syntax: `KEY=value`, `export KEY=value`, `KEY="quoted value"`,
+# blank lines, and `#` comments.
+env_file = Path.expand("../.env", __DIR__)
+
+if File.exists?(env_file) do
+  unquote_value = fn value ->
+    cond do
+      String.starts_with?(value, ~s(")) and String.ends_with?(value, ~s(")) ->
+        value |> String.slice(1..-2//1)
+
+      String.starts_with?(value, "'") and String.ends_with?(value, "'") ->
+        value |> String.slice(1..-2//1)
+
+      true ->
+        value
+    end
+  end
+
+  env_file
+  |> File.read!()
+  |> String.split(~r/\r?\n/)
+  |> Enum.each(fn line ->
+    line = line |> String.trim() |> String.replace_prefix("export ", "")
+
+    case {line, String.split(line, "=", parts: 2)} do
+      {"", _} ->
+        :ok
+
+      {"#" <> _, _} ->
+        :ok
+
+      {_, [key, value]} ->
+        key = String.trim(key)
+
+        # Real environment variables take precedence.
+        if System.get_env(key) in [nil, ""] do
+          System.put_env(key, value |> String.trim() |> unquote_value.())
+        end
+
+      {_, _} ->
+        :ok
+    end
+  end)
+end
+
+# Database connection, shared by dev and test. Defaults keep a fresh clone and
+# CI working with no .env at all; set the variables to point somewhere else.
+if config_env() in [:dev, :test] do
+  database =
+    case config_env() do
+      :dev ->
+        System.get_env("DB_NAME", "quantum_billing_dev")
+
+      # MIX_TEST_PARTITION gives each CI partition its own database. It applies
+      # to the test database only — appending it in dev would silently point
+      # development at a different database whenever the variable is exported.
+      :test ->
+        System.get_env("DB_NAME_TEST", "quantum_billing_test") <>
+          (System.get_env("MIX_TEST_PARTITION") || "")
+    end
+
+  config :quantum_billing, QuantumBilling.Repo,
+    username: System.get_env("DB_USERNAME", "postgres"),
+    password: System.get_env("DB_PASSWORD", "postgres"),
+    hostname: System.get_env("DB_HOSTNAME", "localhost"),
+    port: String.to_integer(System.get_env("DB_PORT", "5432")),
+    database: database
+
+  # Not a real secret — it only signs cookies on a local machine, and a default
+  # is needed so the app boots without setup. Override it via SECRET_KEY_BASE
+  # for anything reachable by someone else. Generate one with `mix phx.gen.secret`.
+  config :quantum_billing, QuantumBillingWeb.Endpoint,
+    secret_key_base:
+      System.get_env(
+        "SECRET_KEY_BASE",
+        "kR2vQ8xLmNfW5tYcJ7bPdA3hZgE6sU9nX1oI4jT0aVwK8yBrC5eM2pD7lF3qGnHu"
+      )
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

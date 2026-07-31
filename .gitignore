@@ -35,3 +35,10 @@ quantum_billing-*.tar
 npm-debug.log
 /assets/node_modules/
 
+# Local secrets: database credentials, secret key base, mailer and OAuth keys.
+# Never commit these. `.env.example` is the committed template — keep it in
+# sync when you add a variable, but keep the real values out of git.
+/.env
+/.env.*
+!/.env.example
+
