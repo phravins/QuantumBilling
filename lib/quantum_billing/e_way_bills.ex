@@ -11,10 +11,24 @@ defmodule QuantumBilling.EWayBills do
   is unaffected; it validates input rather than reading stored records.
   """
 
+  alias QuantumBilling.Events
+
   @doc """
   Every e-way bill, newest first.
 
   Returns `[]` until the e-way bills table exists.
   """
   def list_e_way_bills, do: []
+
+  @doc """
+  Subscribes the caller to e-way bill changes.
+  """
+  def subscribe, do: Events.subscribe(Events.e_way_bills_topic())
+
+  @doc """
+  Announces an e-way bill change to every listening page.
+  """
+  def broadcast_change(e_way_bill, event \\ :e_way_bill_changed) do
+    Events.broadcast(Events.e_way_bills_topic(), {event, e_way_bill})
+  end
 end

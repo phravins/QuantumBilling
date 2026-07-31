@@ -10,8 +10,14 @@ defmodule QuantumBilling.Settings do
   import Ecto.Query, warn: false
 
   alias QuantumBilling.Compliance
+  alias QuantumBilling.Events
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings.Organization
+
+  @doc """
+  Subscribes the caller to settings changes.
+  """
+  def subscribe, do: Events.subscribe(Events.settings_topic())
 
   @doc """
   The organisation's settings, or an unsaved struct with the defaults.
@@ -36,9 +42,19 @@ defmodule QuantumBilling.Settings do
   Returns `{:ok, organization}` or `{:error, changeset}`.
   """
   def update_section(%Organization{} = organization, attrs, section) do
-    organization
-    |> Organization.changeset(attrs, section)
-    |> Repo.insert_or_update()
+    result =
+      organization
+      |> Organization.changeset(attrs, section)
+      |> Repo.insert_or_update()
+
+    # Broadcast from, not to: the window that saved has already re-rendered
+    # with its own result, and handling its own echo would rebuild the form it
+    # is still sitting in.
+    with {:ok, saved} <- result do
+      Events.broadcast_from(Events.settings_topic(), {:settings_updated, saved})
+    end
+
+    result
   end
 
   @doc """

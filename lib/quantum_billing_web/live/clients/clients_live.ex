@@ -25,6 +25,8 @@ defmodule QuantumBillingWeb.ClientsLive do
   @status_options ["All Status", "Active", "Inactive", "Blocked"]
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Clients.subscribe()
+
     {:ok,
      socket
      |> assign(:page_title, "Clients")
@@ -60,6 +62,14 @@ defmodule QuantumBillingWeb.ClientsLive do
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
     {:noreply, assign(socket, :page, String.to_integer(page_str))}
+  end
+
+  # A client added or edited in another window. Reload the whole set rather than
+  # splicing the one row in: the summary tiles, the active search and the sort
+  # order all have to agree with it, and `render/1` already derives every one of
+  # those from `all_clients`.
+  def handle_info({event, _client}, socket) when event in [:client_created, :client_updated] do
+    {:noreply, assign(socket, :all_clients, Clients.list_clients())}
   end
 
   def render(assigns) do

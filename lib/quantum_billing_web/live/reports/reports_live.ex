@@ -17,15 +17,24 @@ defmodule QuantumBillingWeb.ReportsLive do
   import QuantumBillingWeb.DashboardComponents, only: [stat_card: 1, donut_chart: 1]
   import QuantumBillingWeb.ReportsComponents
 
+  alias QuantumBilling.Invoices
   alias QuantumBilling.Reports
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Invoices.subscribe()
+
     {:ok,
      socket
      |> assign(:page_title, "Reports")
      |> assign(:active_nav, :reports)
      |> assign(:invoices, Reports.invoices())
      |> assign(:filters, Reports.default_filters())}
+  end
+
+  # Only the underlying set is replaced. The active filters stay put, so a
+  # report someone is reading does not reset itself when an invoice changes.
+  def handle_info({:invoice_changed, _invoice}, socket) do
+    {:noreply, assign(socket, :invoices, Reports.invoices())}
   end
 
   def handle_event("filter", params, socket) do

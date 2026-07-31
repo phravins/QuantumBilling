@@ -73,7 +73,12 @@ defmodule QuantumBilling.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # Two factor authentication: RFC 6238 codes, and the QR that enrols them.
+      # Both are pure Elixir with no runtime services, so the secret never
+      # leaves the application.
+      {:nimble_totp, "~> 1.0"},
+      {:eqrcode, "~> 0.2"}
     ]
   end
 

@@ -19,6 +19,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   @status_options ["All Status", "Active", "Expired", "Cancelled"]
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: EWayBills.subscribe()
+
     {:ok,
      socket
      |> assign(:page_title, "E-Way Bills")
@@ -54,6 +56,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
     {:noreply, assign(socket, :page, String.to_integer(page_str))}
+  end
+
+  def handle_info({:e_way_bill_changed, _bill}, socket) do
+    {:noreply, assign(socket, :all_bills, EWayBills.list_e_way_bills())}
   end
 
   def render(assigns) do

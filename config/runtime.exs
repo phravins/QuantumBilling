@@ -102,6 +102,18 @@ if config_env() in [:dev, :test] do
         "SECRET_KEY_BASE",
         "kR2vQ8xLmNfW5tYcJ7bPdA3hZgE6sU9nX1oI4jT0aVwK8yBrC5eM2pD7lF3qGnHu"
       )
+
+  # Encrypts the TOTP secret at rest. Same reasoning as above: a default so a
+  # fresh clone and CI boot, overridden by TOTP_ENCRYPTION_KEY anywhere real.
+  #
+  # Changing this invalidates every existing 2FA enrolment — the stored secrets
+  # become undecryptable and those users would have to enrol again.
+  config :quantum_billing,
+    totp_encryption_key:
+      System.get_env(
+        "TOTP_ENCRYPTION_KEY",
+        "dev-only-totp-key-Xq7Pm2Lw9Rt4Yv6Bn8Kc3Fh5Jd1Sa0Zg"
+      )
 end
 
 # ## Using releases
@@ -166,6 +178,22 @@ if config_env() == :prod do
       environment variable SECRET_KEY_BASE is missing.
       You can generate one by calling: mix phx.gen.secret
       """
+
+  # Required, and checked here at boot rather than lazily when someone first
+  # opens the 2FA tab. Losing this key makes every stored TOTP secret
+  # undecryptable, so a deploy missing it should refuse to start.
+  totp_encryption_key =
+    System.get_env("TOTP_ENCRYPTION_KEY") ||
+      raise """
+      environment variable TOTP_ENCRYPTION_KEY is missing.
+
+      It encrypts two-factor secrets at rest. Generate one by calling:
+      mix phx.gen.secret
+
+      Changing it later invalidates every existing 2FA enrolment.
+      """
+
+  config :quantum_billing, totp_encryption_key: totp_encryption_key
 
   host = System.get_env("PHX_HOST") || "example.com"
 

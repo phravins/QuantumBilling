@@ -26,6 +26,8 @@ defmodule QuantumBillingWeb.InvoicesLive do
   ]
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Invoices.subscribe()
+
     {:ok,
      socket
      |> assign(:page_title, "Invoices")
@@ -61,6 +63,10 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
     {:noreply, assign(socket, :page, String.to_integer(page_str))}
+  end
+
+  def handle_info({:invoice_changed, _invoice}, socket) do
+    {:noreply, assign(socket, :all_invoices, Invoices.list_invoices())}
   end
 
   def render(assigns) do

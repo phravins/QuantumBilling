@@ -6,7 +6,16 @@ defmodule QuantumBilling.Clients do
   import Ecto.Query, warn: false
 
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Events
   alias QuantumBilling.Repo
+
+  @doc """
+  Subscribes the caller to client changes.
+
+  See `QuantumBilling.Events` for the messages and why the topic is
+  organisation-wide rather than per user.
+  """
+  def subscribe, do: Events.subscribe(Events.clients_topic())
 
   @doc """
   Every client, alphabetically.
@@ -34,6 +43,7 @@ defmodule QuantumBilling.Clients do
     %Client{}
     |> Client.changeset(attrs)
     |> Repo.insert()
+    |> announce(:client_created)
   end
 
   @doc """
@@ -43,7 +53,17 @@ defmodule QuantumBilling.Clients do
     client
     |> Client.changeset(attrs)
     |> Repo.update()
+    |> announce(:client_updated)
   end
+
+  # Only a successful write is announced, and the notification never changes
+  # the result the caller gets back.
+  defp announce({:ok, client} = result, event) do
+    Events.broadcast(Events.clients_topic(), {event, client})
+    result
+  end
+
+  defp announce({:error, _changeset} = result, _event), do: result
 
   @doc """
   Whether a client of this type must supply a GSTIN.

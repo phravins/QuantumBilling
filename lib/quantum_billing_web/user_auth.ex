@@ -40,6 +40,58 @@ defmodule QuantumBillingWeb.UserAuth do
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
 
+  @pending_two_factor_key :pending_two_factor
+  @pending_two_factor_ttl_seconds 600
+
+  @doc """
+  Holds a password-verified user at the door until they pass the second factor.
+
+  The session is renewed first — the same fixation defence `log_in_user/3`
+  relies on — and then carries only an id, a timestamp and the sign-in intent.
+  Crucially it does **not** write `:user_token`, so
+  `fetch_current_scope_for_user/2` still sees a signed-out visitor: this marker
+  is a note about an attempt in progress, never a credential.
+  """
+  def stash_pending_two_factor(conn, user, params) do
+    conn
+    |> renew_session(nil)
+    |> put_session(@pending_two_factor_key, %{
+      "user_id" => user.id,
+      "at" => System.system_time(:second),
+      "remember_me" => params["remember_me"] == "true",
+      "return_to" => get_session(conn, :user_return_to)
+    })
+  end
+
+  @doc """
+  The user waiting on a second factor, or `nil`.
+
+  Returns `nil` for an expired attempt, so an abandoned half-login cannot be
+  finished hours later from the same browser.
+  """
+  def pending_two_factor(conn) do
+    with %{"user_id" => id, "at" => at} = pending <- get_session(conn, @pending_two_factor_key),
+         true <- System.system_time(:second) - at <= @pending_two_factor_ttl_seconds,
+         %{} = user <- Accounts.get_user(id) do
+      {user, pending}
+    else
+      _ -> nil
+    end
+  end
+
+  @doc "Drops any half-finished sign-in."
+  def clear_pending_two_factor(conn), do: delete_session(conn, @pending_two_factor_key)
+
+  @doc """
+  Completes a sign-in that was held for a second factor.
+  """
+  def complete_two_factor_login(conn, user, pending) do
+    conn
+    |> clear_pending_two_factor()
+    |> put_session(:user_return_to, pending["return_to"])
+    |> log_in_user(%{}, user, %{"remember_me" => to_string(pending["remember_me"])})
+  end
+
   @doc """
   Logs the user out.
 
@@ -219,7 +271,7 @@ defmodule QuantumBillingWeb.UserAuth do
     socket = mount_current_scope(socket, session)
 
     if socket.assigns.current_scope && socket.assigns.current_scope.user do
-      {:cont, socket}
+      {:cont, watch_own_account(socket)}
     else
       socket =
         socket
@@ -242,6 +294,33 @@ defmodule QuantumBillingWeb.UserAuth do
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
+    end
+  end
+
+  # The sidebar renders the signed-in user's name, initials and designation from
+  # `current_scope`, and every authenticated page draws that sidebar. Subscribing
+  # here rather than in each LiveView means editing your profile refreshes it in
+  # all of your open windows, with no page having to know about it.
+  #
+  # The `handle_info` hook is attached rather than left to the page: a LiveView
+  # with no matching clause would crash on a message it never asked for.
+  defp watch_own_account(socket) do
+    if Phoenix.LiveView.connected?(socket) do
+      Accounts.subscribe_user(socket.assigns.current_scope.user)
+
+      Phoenix.LiveView.attach_hook(socket, :profile_updated, :handle_info, fn
+        {:profile_updated, %{id: id} = updated}, socket ->
+          if socket.assigns.current_scope.user.id == id do
+            {:halt, Phoenix.Component.assign(socket, :current_scope, Scope.for_user(updated))}
+          else
+            {:cont, socket}
+          end
+
+        _message, socket ->
+          {:cont, socket}
+      end)
+    else
+      socket
     end
   end
 

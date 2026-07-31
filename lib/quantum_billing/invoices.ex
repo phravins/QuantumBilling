@@ -8,10 +8,28 @@ defmodule QuantumBilling.Invoices do
   and no caller has to change.
   """
 
+  alias QuantumBilling.Events
+
   @doc """
   Every invoice, newest first.
 
   Returns `[]` until the invoices table exists.
   """
   def list_invoices, do: []
+
+  @doc """
+  Subscribes the caller to invoice changes.
+
+  Already wired even though nothing broadcasts yet: the Dashboard and Reports
+  pages subscribe through this, so they start updating the moment invoice writes
+  call `broadcast_change/2`.
+  """
+  def subscribe, do: Events.subscribe(Events.invoices_topic())
+
+  @doc """
+  Announces an invoice change to every listening page.
+  """
+  def broadcast_change(invoice, event \\ :invoice_changed) do
+    Events.broadcast(Events.invoices_topic(), {event, invoice})
+  end
 end

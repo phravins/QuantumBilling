@@ -20,18 +20,29 @@ defmodule QuantumBillingWeb.DashboardLive do
   alias QuantumBilling.Invoices
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Invoices.subscribe()
+
+    {:ok, assign_dashboard(socket)}
+  end
+
+  # Every panel is derived from the invoice set, so a change to it rebuilds all
+  # of them together rather than leaving the cards and the charts disagreeing.
+  def handle_info({:invoice_changed, _invoice}, socket) do
+    {:noreply, assign_dashboard(socket)}
+  end
+
+  defp assign_dashboard(socket) do
     invoices = Invoices.list_invoices()
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Dashboard")
-     |> assign(:active_nav, :dashboard)
-     |> assign(:stats, stats(invoices))
-     |> assign(:chart_months, chart_months(invoices))
-     |> assign(:donut_segments, donut_segments(invoices))
-     |> assign(:donut_total, length(invoices))
-     |> assign(:invoices, recent_invoices(invoices))
-     |> assign(:compliance_items, compliance_items())}
+    socket
+    |> assign(:page_title, "Dashboard")
+    |> assign(:active_nav, :dashboard)
+    |> assign(:stats, stats(invoices))
+    |> assign(:chart_months, chart_months(invoices))
+    |> assign(:donut_segments, donut_segments(invoices))
+    |> assign(:donut_total, length(invoices))
+    |> assign(:invoices, recent_invoices(invoices))
+    |> assign(:compliance_items, compliance_items())
   end
 
   def render(assigns) do

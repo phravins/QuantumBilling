@@ -260,8 +260,10 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <h2 class="text-sm font-semibold tracking-tight">Profile Picture</h2>
 
       <div class="mt-3 flex flex-wrap items-center gap-4">
+        <%!-- current_scope, not the page's own copy: the on_mount hook keeps it in
+        step when the profile is edited in another window. --%>
         <span class={[avatar_class(), "size-14 bg-base-300 text-base text-base-content"]}>
-          {initials(@user)}
+          {initials(@current_scope.user)}
         </span>
         <div>
           <p class="text-sm text-base-content/60">

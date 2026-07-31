@@ -26,11 +26,29 @@ defmodule QuantumBillingWeb.SettingsLive do
   @saveable ~w(general invoice e_way_bill tax notifications preferences)a
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Settings.subscribe()
+
     {:ok,
      socket
      |> assign(:page_title, "Settings")
      |> assign(:active_nav, :settings)
      |> assign(:organization, Settings.get_organization())}
+  end
+
+  # Settings saved in another window. `update_section/3` broadcasts *from* the
+  # saver, so this only ever reaches other windows — the one that saved keeps
+  # the form it is sitting in.
+  #
+  # The struct in the message is deliberately ignored and the row re-read. A
+  # broadcast is a signal that something changed, not a value to trust: the
+  # payload was loaded by a different process, on a different connection, and
+  # adopting it wholesale hands this page a record it never read itself. The
+  # clients list takes the same approach for the same reason.
+  def handle_info({:settings_updated, _organization}, socket) do
+    {:noreply,
+     socket
+     |> assign(:organization, Settings.get_organization())
+     |> assign_form(socket.assigns.section)}
   end
 
   def handle_params(params, _uri, socket) do

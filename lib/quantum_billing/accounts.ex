@@ -4,6 +4,7 @@ defmodule QuantumBilling.Accounts do
   """
 
   import Ecto.Query, warn: false
+  alias QuantumBilling.Events
   alias QuantumBilling.Repo
 
   alias QuantumBilling.Accounts.{User, UserToken, UserNotifier}
@@ -159,10 +160,24 @@ defmodule QuantumBilling.Accounts do
 
   """
   def update_user_profile(%User{} = user, attrs) do
-    user
-    |> User.profile_changeset(attrs)
-    |> Repo.update()
+    result =
+      user
+      |> User.profile_changeset(attrs)
+      |> Repo.update()
+
+    # Keyed to this user: their other windows should pick the new name up in
+    # the sidebar, nobody else's should.
+    with {:ok, saved} <- result do
+      Events.broadcast(Events.user_topic(saved.id), {:profile_updated, saved})
+    end
+
+    result
   end
+
+  @doc """
+  Subscribes the caller to changes to `user`'s own account.
+  """
+  def subscribe_user(%User{id: id}), do: Events.subscribe(Events.user_topic(id))
 
   @doc """
   Returns an `%Ecto.Changeset{}` for changing the user email.

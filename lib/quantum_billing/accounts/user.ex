@@ -16,6 +16,14 @@ defmodule QuantumBilling.Accounts.User do
     field :phone, :string
     field :designation, :string
 
+    # Two factor authentication. The secret is encrypted at rest; see
+    # `QuantumBilling.Encrypted.Binary` for why that matters more here than it
+    # would for a password.
+    field :totp_secret, QuantumBilling.Encrypted.Binary, redact: true
+    field :totp_confirmed_at, :utc_datetime
+    field :totp_last_used_at, :utc_datetime
+    field :recovery_codes, {:array, :string}, default: [], redact: true
+
     timestamps(type: :utc_datetime)
   end
 
