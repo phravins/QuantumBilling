@@ -37,6 +37,8 @@ defmodule QuantumBillingWeb.Router do
       live "/", DashboardLive, :index
       live "/dashboard", DashboardLive, :index
       live "/invoices", InvoicesLive, :index
+      live "/invoices/new", InvoiceNewLive, :new
+      live "/invoices/:id", InvoiceShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
       live "/e-way-bills", EWayBillsLive, :index

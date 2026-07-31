@@ -30,6 +30,35 @@ defmodule QuantumBilling.Settings do
   end
 
   @doc """
+  Makes sure the settings row exists, and returns it.
+
+  Anything that needs to lock the organisation — invoice numbering, for
+  instance — has to call this first. `SELECT ... FOR UPDATE` locks nothing when
+  the table is empty, so without a row already there, concurrent callers all
+  race to insert the singleton and deadlock against each other on its unique
+  index.
+
+  `on_conflict: :nothing` means a caller that loses that race simply reads the
+  winner's row instead of failing.
+  """
+  def ensure_organization do
+    case Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1) do
+      nil ->
+        %Organization{}
+        |> Ecto.Changeset.change(%{})
+        |> Repo.insert(on_conflict: :nothing, conflict_target: :singleton)
+
+        # Re-read rather than trusting the insert's return: on a conflict it
+        # comes back without an id, because the row that exists is someone
+        # else's.
+        Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1)
+
+      organization ->
+        organization
+    end
+  end
+
+  @doc """
   Builds a changeset for one section of the settings.
   """
   def change_organization(%Organization{} = organization, attrs \\ %{}, section) do

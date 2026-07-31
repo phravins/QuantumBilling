@@ -1,19 +1,48 @@
 defmodule QuantumBillingWeb.InvoicesLiveTest do
-  use QuantumBillingWeb.ConnCase, async: true
+  use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
+  alias QuantumBilling.Invoices
+
   setup :register_and_log_in_user
 
-  # Search, sorting, status filtering and pagination need rows to act on, and
-  # there are none until the invoices table exists. Those tests come back with
-  # the schema, built on database fixtures rather than invented records.
+  defp create_invoice(over \\ %{}) do
+    attrs =
+      Map.merge(
+        %{
+          "invoice_date" => "2024-05-28",
+          "place_of_supply" => "Maharashtra (27)",
+          "client_name" => "V2V Technologies",
+          "items" => %{
+            "0" => %{
+              "description" => "Web Development Services",
+              "quantity" => "1",
+              "unit" => "Nos",
+              "rate" => "50000",
+              "tax_rate" => "18",
+              "position" => "0"
+            }
+          }
+        },
+        over
+      )
+
+    {:ok, invoice} = Invoices.create_invoice(attrs)
+    invoice
+  end
 
   test "renders the page shell", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/invoices")
 
     assert html =~ "Manage and track all your GST invoices"
     assert html =~ "Create New GST Invoice"
+  end
+
+  test "the create button links to the form", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/invoices")
+
+    assert html =~ ~s(href="/invoices/new")
   end
 
   test "keeps the toolbar available", %{conn: conn} do
@@ -49,5 +78,76 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
   test "requires authentication" do
     assert {:error, {:redirect, %{to: "/users/log-in"}}} = live(build_conn(), ~p"/invoices")
+  end
+
+  describe "with invoices in the database" do
+    test "a saved invoice appears in the table", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, _view, html} = live(conn, ~p"/invoices")
+
+      assert html =~ invoice.invoice_number
+      assert html =~ "V2V Technologies"
+      assert html =~ "Showing 1 to 1 of 1 entries"
+      refute html =~ "No invoices yet"
+    end
+
+    test "the eye icon opens the document", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      assert has_element?(view, ~s(a[href="/invoices/#{invoice.id}"]))
+    end
+
+    test "search finds an invoice by number and by client", %{conn: conn} do
+      first = create_invoice()
+      _second = create_invoice(%{"client_name" => "Insta Capital"})
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      by_client = view |> form("#invoice-search", %{"q" => "Insta"}) |> render_change()
+      assert by_client =~ "Insta Capital"
+      refute by_client =~ "V2V Technologies"
+
+      by_number =
+        view |> form("#invoice-search", %{"q" => first.invoice_number}) |> render_change()
+
+      assert by_number =~ "V2V Technologies"
+    end
+
+    test "the status filter narrows to Draft", %{conn: conn} do
+      create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      drafts = render_click(view, "filter_status", %{"status" => "Draft"})
+      assert drafts =~ "Showing 1 to 1 of 1 entries"
+
+      generated = render_click(view, "filter_status", %{"status" => "E-Invoice Generated"})
+      assert generated =~ "No invoices match these filters"
+    end
+
+    test "sorting by invoice number works over real rows", %{conn: conn} do
+      create_invoice()
+      create_invoice(%{"client_name" => "Insta Capital"})
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      html = render_click(view, "sort", %{"field" => "seq"})
+
+      assert html =~ "Showing 1 to 2 of 2 entries"
+    end
+
+    test "an invoice created elsewhere appears without a reload", %{conn: conn} do
+      # The list already subscribed to invoice events from the realtime work;
+      # this confirms create_invoice/1 actually broadcasts.
+      {:ok, view, html} = live(conn, ~p"/invoices")
+      assert html =~ "No invoices yet"
+
+      create_invoice()
+
+      assert render(view) =~ "V2V Technologies"
+    end
   end
 end

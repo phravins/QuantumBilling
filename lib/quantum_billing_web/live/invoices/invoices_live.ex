@@ -100,9 +100,9 @@ defmodule QuantumBillingWeb.InvoicesLive do
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
         <:actions>
-          <button type="button" class={action_button_class()}>
+          <.link navigate={~p"/invoices/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Create New GST Invoice
-          </button>
+          </.link>
         </:actions>
       </.header>
 
@@ -201,7 +201,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"invoice-#{row.seq}"} class={table_row_class()}>
+              <tr :for={row <- @rows} id={"invoice-#{row.id}"} class={table_row_class()}>
                 <td class="font-medium">{row.number}</td>
                 <td>{row.client}</td>
                 <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
@@ -210,9 +210,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 <td><.status_badge status={row.status} /></td>
                 <td>
                   <div class="flex gap-1">
-                    <button type="button" class={row_action_class()} aria-label="View invoice">
+                    <.link
+                      navigate={~p"/invoices/#{row.id}"}
+                      class={row_action_class()}
+                      aria-label="View invoice"
+                    >
                       <.icon name="hero-eye" class="size-4" />
-                    </button>
+                    </.link>
                     <button type="button" class={row_action_class()} aria-label="Edit invoice">
                       <.icon name="hero-pencil-square" class="size-4" />
                     </button>

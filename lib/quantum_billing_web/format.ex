@@ -47,6 +47,64 @@ defmodule QuantumBillingWeb.Format do
   def format_date(%Date{} = date), do: Calendar.strftime(date, "%d %b %Y")
   def format_date(nil), do: "—"
 
+  @ones ~w(Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve
+           Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen)
+
+  @tens ~w(_ _ Twenty Thirty Forty Fifty Sixty Seventy Eighty Ninety)
+
+  @doc """
+  Spells a rupee amount out the way an invoice foot does.
+
+  Indian numbering, so it groups by crore and lakh rather than million and
+  billion.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.rupees_in_words(70_800)
+      "Rupees Seventy Thousand Eight Hundred Only"
+
+      iex> QuantumBillingWeb.Format.rupees_in_words(0)
+      "Rupees Zero Only"
+
+  """
+  def rupees_in_words(amount) when is_integer(amount) and amount < 0 do
+    "Minus " <> rupees_in_words(-amount)
+  end
+
+  def rupees_in_words(0), do: "Rupees Zero Only"
+
+  def rupees_in_words(amount) when is_integer(amount) do
+    "Rupees " <> String.trim(in_words(amount)) <> " Only"
+  end
+
+  # Indian grouping: crore, then lakh, then the last three digits read as a
+  # Western hundred.
+  defp in_words(0), do: ""
+
+  defp in_words(n) when n >= 10_000_000 do
+    in_words(div(n, 10_000_000)) <> " Crore" <> in_words(rem(n, 10_000_000))
+  end
+
+  defp in_words(n) when n >= 100_000 do
+    in_words(div(n, 100_000)) <> " Lakh" <> in_words(rem(n, 100_000))
+  end
+
+  defp in_words(n) when n >= 1_000 do
+    in_words(div(n, 1_000)) <> " Thousand" <> in_words(rem(n, 1_000))
+  end
+
+  defp in_words(n) when n >= 100 do
+    in_words(div(n, 100)) <> " Hundred" <> in_words(rem(n, 100))
+  end
+
+  # Everything below twenty has its own name, which is why the table runs that
+  # far rather than stopping at nine.
+  defp in_words(n) when n >= 20 do
+    " " <> Enum.at(@tens, div(n, 10)) <> in_words(rem(n, 10))
+  end
+
+  defp in_words(n), do: " " <> Enum.at(@ones, n)
+
   # Groups the last three digits, then every two digits above that:
   # 1500000 -> "15,00,000"
   defp group_indian(amount) do
