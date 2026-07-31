@@ -87,13 +87,22 @@ defmodule QuantumBillingWeb.DashboardComponents do
   Renders an SVG donut chart with a centered total and an adjacent legend,
   from a list of `%{label:, value:, tone:}` maps.
 
-  `tone` is one of `:strong`, `:medium`, `:soft` or `:faint` — the ring is a
-  monochrome ramp, so the segments read as one series rather than four
-  unrelated colors.
+  `tone` is one of `:strong`, `:medium`, `:soft` or `:faint`.
+
+  `palette` picks how those tones are rendered:
+
+    * `:mono` (default) — a monochrome ramp, so the segments read as one series
+      rather than four unrelated colors. This is what the dashboard uses.
+    * `:color` — a categorical palette, for the Reports page, where charts are
+      the one place colour is allowed.
+
+  The default keeps every existing caller monochrome.
   """
   attr :segments, :list, required: true
   attr :total, :integer, required: true
   attr :total_label, :string, default: "Total"
+  attr :palette, :atom, default: :mono, values: [:mono, :color]
+  attr :show_percent, :boolean, default: false
 
   def donut_chart(assigns) do
     assigns = assign(assigns, :segments, donut_geometry(assigns.segments))
@@ -109,7 +118,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
             r="15.9155"
             fill="none"
             stroke-width="5"
-            class={stroke_class(seg.tone)}
+            class={stroke_class(@palette, seg.tone)}
             stroke-dasharray={seg.dasharray}
             stroke-dashoffset={seg.dashoffset}
           />
@@ -122,10 +131,15 @@ defmodule QuantumBillingWeb.DashboardComponents do
       <ul class="flex-1 space-y-3">
         <li :for={seg <- @segments} class="flex items-center justify-between gap-4 text-sm">
           <span class="flex items-center gap-2 text-base-content/60">
-            <span class={["size-2.5 rounded-full", dot_class(seg.tone)]} />
+            <span class={["size-2.5 shrink-0 rounded-full", dot_class(@palette, seg.tone)]} />
             {seg.label}
           </span>
-          <span class="font-medium">{format_number(seg.value)}</span>
+          <span class="whitespace-nowrap font-medium">
+            {format_number(seg.value)}
+            <span :if={@show_percent} class="font-normal text-base-content/45">
+              ({seg.percent}%)
+            </span>
+          </span>
         </li>
       </ul>
     </div>
@@ -134,15 +148,23 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
   # Written out in full rather than interpolated: Tailwind scans source text, so
   # a class built as "stroke-#{tone}" is never emitted and the ring renders blank.
-  defp stroke_class(:strong), do: "stroke-base-content"
-  defp stroke_class(:medium), do: "stroke-base-content/60"
-  defp stroke_class(:soft), do: "stroke-base-content/35"
-  defp stroke_class(:faint), do: "stroke-base-content/15"
+  defp stroke_class(:mono, :strong), do: "stroke-base-content"
+  defp stroke_class(:mono, :medium), do: "stroke-base-content/60"
+  defp stroke_class(:mono, :soft), do: "stroke-base-content/35"
+  defp stroke_class(:mono, :faint), do: "stroke-base-content/15"
+  defp stroke_class(:color, :strong), do: "stroke-blue-500"
+  defp stroke_class(:color, :medium), do: "stroke-amber-500"
+  defp stroke_class(:color, :soft), do: "stroke-rose-500"
+  defp stroke_class(:color, :faint), do: "stroke-base-content/20"
 
-  defp dot_class(:strong), do: "bg-base-content"
-  defp dot_class(:medium), do: "bg-base-content/60"
-  defp dot_class(:soft), do: "bg-base-content/35"
-  defp dot_class(:faint), do: "bg-base-content/15"
+  defp dot_class(:mono, :strong), do: "bg-base-content"
+  defp dot_class(:mono, :medium), do: "bg-base-content/60"
+  defp dot_class(:mono, :soft), do: "bg-base-content/35"
+  defp dot_class(:mono, :faint), do: "bg-base-content/15"
+  defp dot_class(:color, :strong), do: "bg-blue-500"
+  defp dot_class(:color, :medium), do: "bg-amber-500"
+  defp dot_class(:color, :soft), do: "bg-rose-500"
+  defp dot_class(:color, :faint), do: "bg-base-content/20"
 
   defp donut_geometry(segments) do
     total = Enum.reduce(segments, 0, fn seg, acc -> acc + seg.value end)
@@ -150,7 +172,14 @@ defmodule QuantumBillingWeb.DashboardComponents do
     {rows, _acc} =
       Enum.map_reduce(segments, 0, fn seg, acc ->
         pct = seg.value / total * 100
-        row = Map.merge(seg, %{dasharray: "#{pct} #{100 - pct}", dashoffset: -acc})
+
+        row =
+          Map.merge(seg, %{
+            dasharray: "#{pct} #{100 - pct}",
+            dashoffset: -acc,
+            percent: :erlang.float_to_binary(pct, decimals: 1)
+          })
+
         {row, acc + pct}
       end)
 

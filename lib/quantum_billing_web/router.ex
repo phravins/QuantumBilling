@@ -44,6 +44,9 @@ defmodule QuantumBillingWeb.Router do
       live "/compliance", ComplianceLive, :index
       live "/settings", SettingsLive, :index
     end
+
+    # Outside the live_session above: that block takes only `live` routes.
+    get "/reports/export", ReportsController, :export
   end
 
   # Other scopes may use custom stacks.

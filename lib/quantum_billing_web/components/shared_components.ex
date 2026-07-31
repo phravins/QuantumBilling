@@ -194,6 +194,42 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
+  Renders the "nothing here yet" state a list or panel shows when it has no
+  records.
+
+  Unlike `coming_soon/1` this is not a placeholder for unbuilt work: the screen
+  is finished, there is simply nothing to show. It renders bare rather than in
+  its own card, so it can sit inside the card a table already lives in.
+
+  ## Examples
+
+      <.empty_state title="No invoices yet" description="Create your first GST invoice.">
+        <:action>
+          <button class={action_button_class()}>Create New GST Invoice</button>
+        </:action>
+      </.empty_state>
+  """
+  attr :icon, :string, default: "hero-inbox"
+  attr :title, :string, required: true
+  attr :description, :string, default: nil
+  attr :class, :any, default: nil
+
+  slot :action
+
+  def empty_state(assigns) do
+    ~H"""
+    <div class={["flex flex-col items-center px-6 py-14 text-center", @class]}>
+      <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
+        <.icon name={@icon} class="size-4.5" />
+      </span>
+      <p class="text-sm font-medium">{@title}</p>
+      <p :if={@description} class="mt-1 max-w-sm text-sm text-base-content/60">{@description}</p>
+      <div :if={@action != []} class="mt-4">{render_slot(@action)}</div>
+    </div>
+    """
+  end
+
+  @doc """
   Renders a clickable `<th>` label that toggles sorting for `field` and shows
   the current sort direction when it is the active sort column.
   """
