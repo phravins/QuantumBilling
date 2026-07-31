@@ -41,10 +41,10 @@ defmodule QuantumBillingWeb.Layouts do
     ~H"""
     <div class="flex min-h-screen bg-base-200">
       <aside class="sticky top-0 flex h-screen w-52 shrink-0 flex-col border-r border-base-300 bg-base-100">
-        <div class="flex items-center gap-2.5 px-4 py-4">
-          <div class="flex size-7 shrink-0 items-center justify-center rounded-field bg-primary text-primary-content">
-            <.icon name="hero-receipt-percent" class="size-4" />
-          </div>
+        <%!-- The bare mark, matching the sign-in and legal screens: no filled
+        tile, and the icon takes its colour from the surrounding text. --%>
+        <div class="flex items-center gap-2 px-4 py-4">
+          <.icon name="hero-receipt-percent" class="size-6 shrink-0" />
           <span class="truncate text-sm font-semibold tracking-tight">QuantumBilling</span>
         </div>
 
