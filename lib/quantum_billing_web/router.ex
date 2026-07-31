@@ -43,6 +43,9 @@ defmodule QuantumBillingWeb.Router do
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
       live "/settings", SettingsLive, :index
+      # The open section lives in the URL so a panel can be linked to directly
+      # and survives a reload.
+      live "/settings/:section", SettingsLive, :section
     end
 
     # Outside the live_session above: that block takes only `live` routes.

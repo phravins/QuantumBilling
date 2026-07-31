@@ -15,6 +15,8 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
   import Ecto.Changeset
 
+  alias QuantumBilling.GST
+
   @supply_types ["Outward Supply", "Inward Supply"]
 
   @sub_types [
@@ -66,7 +68,6 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
   # Two letters, one or two digits, up to three letters, four digits: MH01AB1234.
   @vehicle_format ~r/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$/
-  @gstin_format ~r/^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}$/
 
   @required ~w(supply_type sub_type document_type document_no document_date
                transaction_type from_party from_state to_party to_state
@@ -156,13 +157,11 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   end
 
   defp validate_gstin(changeset, field) do
-    validate_format(changeset, field, @gstin_format, message: "is not a valid GSTIN")
+    GST.validate_gstin(changeset, field)
   end
 
   defp validate_transporter_id(changeset) do
-    changeset
-    |> update_change(:transporter_id, &String.upcase/1)
-    |> validate_format(:transporter_id, @gstin_format, message: "must be a 15-character GSTIN")
+    GST.validate_gstin(changeset, :transporter_id, message: "must be a 15-character GSTIN")
   end
 
   @doc """
