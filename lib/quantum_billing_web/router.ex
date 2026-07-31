@@ -96,4 +96,18 @@ defmodule QuantumBillingWeb.Router do
     post "/users/log-in", UserSessionController, :create
     delete "/users/log-out", UserSessionController, :delete
   end
+
+  # Must stay the last scope in this file. Phoenix matches routes in definition
+  # order, so anything declared below this would be unreachable.
+  #
+  # Catching unknown paths here means they render the branded 404 instead of
+  # raising Phoenix.Router.NoRouteError. That matters in development, where the
+  # debug error page answers an unrecognised URL with a table of every route in
+  # the application. Genuine exceptions still reach the debug page with their
+  # stacktrace, so this costs nothing while debugging.
+  scope "/", QuantumBillingWeb do
+    pipe_through :browser
+
+    match :*, "/*path", PageController, :not_found
+  end
 end

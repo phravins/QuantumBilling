@@ -63,8 +63,14 @@ config :esbuild,
   ]
 
 # Configure tailwind (the version is required)
+#
+# Pinned to 4.2.4: the 4.3.0 windows-x64 standalone binary crashes on startup with
+# "TypeError: undefined is not a constructor (evaluating 'new import_oxide.Scanner')"
+# — its native oxide scanner fails to load, so no stylesheet can be built at all.
+# The fault is in the binary itself (it fails on an empty input with no sources),
+# not in this project's CSS. Revisit when a later release fixes it.
 config :tailwind,
-  version: "4.3.0",
+  version: "4.2.4",
   quantum_billing: [
     args: ~w(
       --input=assets/css/app.css
