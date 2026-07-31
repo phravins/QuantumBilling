@@ -61,6 +61,14 @@ defmodule QuantumBilling.Accounts do
   """
   def get_user!(id), do: Repo.get!(User, id)
 
+  @doc """
+  Gets a user by id, or `nil`.
+
+  Used where a missing user is an ordinary outcome rather than a bug — a
+  half-finished sign-in whose account was deleted in the meantime, for example.
+  """
+  def get_user(id), do: Repo.get(User, id)
+
   ## User registration
 
   @doc """

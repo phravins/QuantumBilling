@@ -2,6 +2,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
   use QuantumBillingWeb.ConnCase, async: true
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.Accounts.TwoFactor
   import Phoenix.LiveViewTest
   import QuantumBilling.AccountsFixtures
 
@@ -167,11 +168,94 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
       refute html =~ "Profile Information"
     end
 
-    test "two factor authentication says it is not built", %{conn: conn} do
+    test "two factor authentication offers enrolment", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/settings?tab=two_factor")
 
-      assert html =~ "not available yet"
-      assert html =~ "recovery codes"
+      assert html =~ "Set up two-factor authentication"
+      refute html =~ "not available yet"
+    end
+  end
+
+  describe "two factor enrolment" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "starting it shows a QR and the manual key", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=two_factor")
+
+      html = lv |> element("button[phx-click=start_totp_enrolment]") |> render_click()
+
+      assert html =~ "Scan this with your authenticator app"
+      assert html =~ "<svg"
+      assert html =~ "enter this key by hand"
+      # Not on yet — a secret alone must never gate a login.
+      refute html =~ "Turn off"
+    end
+
+    test "a wrong code leaves it switched off", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=two_factor")
+      lv |> element("button[phx-click=start_totp_enrolment]") |> render_click()
+
+      html =
+        lv
+        |> form("form[phx-submit=confirm_totp]", %{"totp" => %{"code" => "000000"}})
+        |> render_submit()
+
+      assert html =~ "not valid"
+      refute TwoFactor.enabled?(Accounts.get_user(user.id))
+    end
+
+    test "a correct code turns it on and shows the recovery codes once", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=two_factor")
+      lv |> element("button[phx-click=start_totp_enrolment]") |> render_click()
+
+      code = NimbleTOTP.verification_code(Accounts.get_user(user.id).totp_secret)
+
+      html =
+        lv
+        |> form("form[phx-submit=confirm_totp]", %{"totp" => %{"code" => code}})
+        |> render_submit()
+
+      assert html =~ "Save your recovery codes"
+      assert html =~ "will not be shown again"
+      assert TwoFactor.enabled?(Accounts.get_user(user.id))
+
+      # Dismissed, they are gone from the page — they are stored hashed and
+      # cannot be produced again.
+      dismissed = lv |> element("button[phx-click=dismiss_recovery_codes]") |> render_click()
+      refute dismissed =~ "Save your recovery codes"
+    end
+
+    test "once on, it can be turned off again", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=two_factor")
+      lv |> element("button[phx-click=start_totp_enrolment]") |> render_click()
+      code = NimbleTOTP.verification_code(Accounts.get_user(user.id).totp_secret)
+
+      lv
+      |> form("form[phx-submit=confirm_totp]", %{"totp" => %{"code" => code}})
+      |> render_submit()
+
+      lv |> element("button[phx-click=disable_totp]") |> render_click()
+
+      refute TwoFactor.enabled?(Accounts.get_user(user.id))
+    end
+
+    test "enrolling needs a recent sign-in", %{conn: conn} do
+      user = user_fixture()
+
+      conn =
+        log_in_user(build_conn(), user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=two_factor")
+
+      html = lv |> element("button[phx-click=start_totp_enrolment]") |> render_click()
+
+      assert html =~ "sign in again"
+      refute TwoFactor.pending?(Accounts.get_user(user.id))
     end
 
     test "an unknown tab falls back to Profile", %{conn: conn} do

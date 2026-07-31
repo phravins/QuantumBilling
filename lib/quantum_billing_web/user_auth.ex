@@ -72,7 +72,7 @@ defmodule QuantumBillingWeb.UserAuth do
   def pending_two_factor(conn) do
     with %{"user_id" => id, "at" => at} = pending <- get_session(conn, @pending_two_factor_key),
          true <- System.system_time(:second) - at <= @pending_two_factor_ttl_seconds,
-         %{} = user <- Accounts.get_user(id) do
+         %Accounts.User{} = user <- Accounts.get_user(id) do
       {user, pending}
     else
       _ -> nil
@@ -88,9 +88,12 @@ defmodule QuantumBillingWeb.UserAuth do
   def complete_two_factor_login(conn, user, pending) do
     conn
     |> clear_pending_two_factor()
-    |> put_session(:user_return_to, pending["return_to"])
-    |> log_in_user(%{}, user, %{"remember_me" => to_string(pending["remember_me"])})
+    |> maybe_restore_return_to(pending["return_to"])
+    |> log_in_user(user, %{"remember_me" => to_string(pending["remember_me"])})
   end
+
+  defp maybe_restore_return_to(conn, nil), do: conn
+  defp maybe_restore_return_to(conn, path), do: put_session(conn, :user_return_to, path)
 
   @doc """
   Logs the user out.
