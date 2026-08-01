@@ -148,36 +148,39 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class(_other), do: @neutral
 
   @doc """
-  Renders a horizontal summary tile: circular icon badge on the left, with the
-  label, value and caption stacked beside it.
+  Renders a flat summary metric: label, value and caption stacked, with no
+  surrounding card.
+
+  Deliberately unboxed — the numbers sit directly on the page so a row of them
+  reads as data rather than as four competing panels. Because there is no
+  border or fill to signal it, the hover state carries the whole affordance
+  that these are clickable filters, so it is not decorative.
+
+  The coloured circular icon badges this used to render are gone: they were
+  among the last non-status colour left in the UI, and dropping them is the
+  point of the flat treatment.
 
   Any additional attributes (e.g. `phx-click`) are forwarded to the underlying
-  button, so tiles can double as filter shortcuts.
+  button, so tiles double as filter shortcuts.
   """
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :caption, :string, default: nil
-  attr :icon, :string, required: true
-  attr :icon_class, :string, default: "bg-base-200 text-base-content/60"
   attr :rest, :global
 
   def metric_card(assigns) do
     ~H"""
-    <.card
-      as="button"
+    <button
       type="button"
-      class="flex w-full flex-row items-center gap-4 text-left transition-colors hover:border-base-content/20"
+      class="group w-full cursor-pointer text-left transition-colors"
       {@rest}
     >
-      <span class={["flex size-10 shrink-0 items-center justify-center rounded-full", @icon_class]}>
-        <.icon name={@icon} class="size-4.5" />
+      <span class="block text-sm text-base-content/60 transition-colors group-hover:text-base-content">
+        {@label}
       </span>
-      <span class="min-w-0">
-        <span class="block text-sm text-base-content/60">{@label}</span>
-        <span class="block text-2xl font-semibold tracking-tight">{@value}</span>
-        <span :if={@caption} class="block text-xs text-base-content/45">{@caption}</span>
-      </span>
-    </.card>
+      <span class="mt-1 block text-2xl font-semibold tracking-tight">{@value}</span>
+      <span :if={@caption} class="mt-0.5 block text-xs text-base-content/45">{@caption}</span>
+    </button>
     """
   end
 

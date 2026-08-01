@@ -106,14 +106,9 @@ defmodule QuantumBillingWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-base-300 bg-base-100 px-6">
-          <button
-            class="flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
-            aria-label="Toggle sidebar"
-          >
-            <.icon name="hero-bars-3" class="size-4.5" />
-          </button>
-
+        <%!-- justify-end, not justify-between: the sidebar toggle used to sit on
+        the left and is gone, so anything left aligned would drift over to it. --%>
+        <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
           <button
             class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
             aria-label="Notifications"

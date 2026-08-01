@@ -156,14 +156,12 @@ defmodule QuantumBillingWeb.ClientsLive do
         </div>
       </div>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="mb-6 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
         <.metric_card
           :for={m <- @metrics}
           label={m.label}
           value={m.value}
           caption={m.caption}
-          icon={m.icon}
-          icon_class={m.icon_class}
           phx-click="filter_status"
           phx-value-status={m.status}
         />
@@ -270,32 +268,24 @@ defmodule QuantumBillingWeb.ClientsLive do
         label: "Total Clients",
         value: Integer.to_string(total),
         caption: "All time",
-        icon: "hero-users",
-        icon_class: "bg-base-200 text-base-content/60",
         status: "All Status"
       },
       %{
         label: "Active Clients",
         value: Integer.to_string(active),
         caption: share(active, total),
-        icon: "hero-check-circle",
-        icon_class: "bg-emerald-50 text-emerald-600",
         status: "Active"
       },
       %{
         label: "Inactive Clients",
         value: Integer.to_string(inactive),
         caption: share(inactive, total),
-        icon: "hero-clock",
-        icon_class: "bg-amber-50 text-amber-600",
         status: "Inactive"
       },
       %{
         label: "Blocked Clients",
         value: Integer.to_string(blocked),
         caption: share(blocked, total),
-        icon: "hero-x-circle",
-        icon_class: "bg-rose-50 text-rose-600",
         status: "Blocked"
       }
     ]
