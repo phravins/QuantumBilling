@@ -148,43 +148,6 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class(_other), do: @neutral
 
   @doc """
-  Renders a flat summary metric: label, value and caption stacked, with no
-  surrounding card.
-
-  Deliberately unboxed — the numbers sit directly on the page so a row of them
-  reads as data rather than as four competing panels. Because there is no
-  border or fill to signal it, the hover state carries the whole affordance
-  that these are clickable filters, so it is not decorative.
-
-  The coloured circular icon badges this used to render are gone: they were
-  among the last non-status colour left in the UI, and dropping them is the
-  point of the flat treatment.
-
-  Any additional attributes (e.g. `phx-click`) are forwarded to the underlying
-  button, so tiles double as filter shortcuts.
-  """
-  attr :label, :string, required: true
-  attr :value, :string, required: true
-  attr :caption, :string, default: nil
-  attr :rest, :global
-
-  def metric_card(assigns) do
-    ~H"""
-    <button
-      type="button"
-      class="group w-full cursor-pointer text-left transition-colors"
-      {@rest}
-    >
-      <span class="block text-sm text-base-content/60 transition-colors group-hover:text-base-content">
-        {@label}
-      </span>
-      <span class="mt-1 block text-2xl font-semibold tracking-tight">{@value}</span>
-      <span :if={@caption} class="mt-0.5 block text-xs text-base-content/45">{@caption}</span>
-    </button>
-    """
-  end
-
-  @doc """
   Renders a labelled form control with its validation errors.
 
   Anything not consumed here is forwarded to `CoreComponents.input/1`, so

@@ -1,7 +1,7 @@
 defmodule QuantumBillingWeb.ClientsLive do
   @moduledoc """
-  The Clients list page: summary tiles, search, status filter, sortable
-  columns, and pagination over the full client base.
+  The Clients list page: search, status filter, sortable columns, and
+  pagination over the full client base.
 
   Clients come from `QuantumBilling.Clients`, which has nothing to return until
   the multi-tenant Ecto schema lands. `mount/3` loads them once;
@@ -9,10 +9,6 @@ defmodule QuantumBillingWeb.ClientsLive do
   re-derives the visible rows fresh on every render so there is a single source
   of truth. The search, sort and pagination code below is already correct at
   zero rows and needs no change when real records arrive.
-
-  The four summary tiles are always computed from the *full* set, so they stay
-  stable as an at-a-glance view of the whole client base while the table below
-  them responds to search and filtering.
   """
   use QuantumBillingWeb, :live_view
 
@@ -65,9 +61,8 @@ defmodule QuantumBillingWeb.ClientsLive do
   end
 
   # A client added or edited in another window. Reload the whole set rather than
-  # splicing the one row in: the summary tiles, the active search and the sort
-  # order all have to agree with it, and `render/1` already derives every one of
-  # those from `all_clients`.
+  # splicing the one row in: the active search and the sort order both have to
+  # agree with it, and `render/1` already derives them from `all_clients`.
   def handle_info({event, _client}, socket) when event in [:client_created, :client_updated] do
     {:noreply, assign(socket, :all_clients, Clients.list_clients())}
   end
@@ -96,8 +91,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         page: page,
         range_start: range_start,
         range_end: range_end,
-        status_options: @status_options,
-        metrics: metrics(all)
+        status_options: @status_options
       )
 
     ~H"""
@@ -154,17 +148,6 @@ defmodule QuantumBillingWeb.ClientsLive do
             <.icon name="hero-arrow-down-tray" class="size-4" /> Export
           </button>
         </div>
-      </div>
-
-      <div class="mb-6 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
-        <.metric_card
-          :for={m <- @metrics}
-          label={m.label}
-          value={m.value}
-          caption={m.caption}
-          phx-click="filter_status"
-          phx-value-status={m.status}
-        />
       </div>
 
       <.card class="mt-4">
@@ -253,49 +236,6 @@ defmodule QuantumBillingWeb.ClientsLive do
       </.card>
     </Layouts.app>
     """
-  end
-
-  # Always derived from the full client base, never the filtered subset.
-  defp metrics(all) do
-    total = length(all)
-    counts = Enum.frequencies_by(all, & &1.status)
-    active = Map.get(counts, "Active", 0)
-    inactive = Map.get(counts, "Inactive", 0)
-    blocked = Map.get(counts, "Blocked", 0)
-
-    [
-      %{
-        label: "Total Clients",
-        value: Integer.to_string(total),
-        caption: "All time",
-        status: "All Status"
-      },
-      %{
-        label: "Active Clients",
-        value: Integer.to_string(active),
-        caption: share(active, total),
-        status: "Active"
-      },
-      %{
-        label: "Inactive Clients",
-        value: Integer.to_string(inactive),
-        caption: share(inactive, total),
-        status: "Inactive"
-      },
-      %{
-        label: "Blocked Clients",
-        value: Integer.to_string(blocked),
-        caption: share(blocked, total),
-        status: "Blocked"
-      }
-    ]
-  end
-
-  defp share(_count, 0), do: "0% of total"
-
-  defp share(count, total) do
-    pct = count / total * 100
-    :erlang.float_to_binary(pct, decimals: 1) <> "% of total"
   end
 
   defp filter_search(rows, ""), do: rows

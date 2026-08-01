@@ -31,12 +31,6 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
     refute html =~ "entries"
   end
 
-  test "the summary tiles read zero rather than dividing by zero", %{conn: conn} do
-    {:ok, _view, html} = live(conn, ~p"/clients")
-
-    assert html =~ "0% of total"
-  end
-
   test "distinguishes an empty account from an empty search", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/clients")
 
@@ -101,14 +95,6 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       assert html =~ "billing@acme.in"
       assert html =~ "Showing 1 to 2 of 2 entries"
       refute html =~ "No clients yet"
-    end
-
-    test "the summary tiles count them", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/clients")
-
-      assert html =~ "Total Clients"
-      assert html =~ ">2<"
-      assert html =~ "100.0% of total"
     end
 
     test "search finds a client by name", %{conn: conn} do

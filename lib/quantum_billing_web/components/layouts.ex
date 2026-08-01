@@ -40,7 +40,7 @@ defmodule QuantumBillingWeb.Layouts do
 
     ~H"""
     <div class="flex min-h-screen bg-base-200">
-      <aside class="sticky top-0 flex h-screen w-52 shrink-0 flex-col border-r border-base-300 bg-base-100">
+      <aside class="sticky top-0 flex h-screen w-48 shrink-0 flex-col border-r border-base-300 bg-base-100">
         <%!-- The bare mark, matching the sign-in and legal screens: no filled
         tile, and the icon takes its colour from the surrounding text. --%>
         <div class="flex items-center gap-2 px-4 py-4">
@@ -118,7 +118,7 @@ defmodule QuantumBillingWeb.Layouts do
           </button>
         </header>
 
-        <main class="flex-1 overflow-y-auto px-6 py-6 sm:px-8 sm:py-8">
+        <main class="flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-5">
           {render_slot(@inner_block)}
         </main>
       </div>

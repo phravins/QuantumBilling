@@ -46,7 +46,7 @@ defmodule QuantumBillingWeb.RealtimeTest do
       refute render(view) =~ "No clients yet"
     end
 
-    test "the summary tiles keep up too", %{conn: conn} do
+    test "several creates elsewhere all land before the next render", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/clients")
 
       {:ok, _} = Clients.create_client(client_attrs(%{"name" => "First Client"}))
@@ -55,7 +55,8 @@ defmodule QuantumBillingWeb.RealtimeTest do
       html = render(view)
 
       assert html =~ "Showing 1 to 2 of 2 entries"
-      assert html =~ "100.0% of total"
+      assert html =~ "First Client"
+      assert html =~ "Second Client"
     end
 
     test "an edit elsewhere is reflected", %{conn: conn} do
