@@ -43,6 +43,7 @@ defmodule QuantumBillingWeb.Router do
       live "/clients/new", ClientNewLive, :new
       live "/e-way-bills", EWayBillsLive, :index
       live "/e-way-bills/new", EWayBillNewLive, :index
+      live "/hsn-finder", HsnFinderLive, :index
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
       live "/settings", SettingsLive, :index

@@ -165,6 +165,12 @@ defmodule QuantumBillingWeb.Layouts do
       %{key: :invoices, label: "Invoices", path: ~p"/invoices", icon: "hero-document-text"},
       %{key: :clients, label: "Clients", path: ~p"/clients", icon: "hero-users"},
       %{key: :e_way_bills, label: "E-Way Bills", path: ~p"/e-way-bills", icon: "hero-truck"},
+      %{
+        key: :hsn_finder,
+        label: "HSN Finder",
+        path: ~p"/hsn-finder",
+        icon: "hero-magnifying-glass"
+      },
       %{key: :reports, label: "Reports", path: ~p"/reports", icon: "hero-chart-bar"},
       %{
         key: :compliance,
