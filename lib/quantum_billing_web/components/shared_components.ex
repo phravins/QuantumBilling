@@ -44,8 +44,13 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
 
+  # `[&>th]:py-1.5` sets the header's height from here rather than cell by cell.
+  # daisyUI's own `.table` padding is 0.75rem top and bottom, which on a row of
+  # 10px uppercase labels is most of the row's height; the arbitrary variant
+  # outranks it because daisyUI wraps its rules in zero-specificity `:where()`.
+  # Horizontal padding is left alone — only the height was too generous.
   @table_head_class "border-b border-base-300 text-2xs font-medium uppercase tracking-wider " <>
-                      "text-base-content/45"
+                      "text-base-content/45 [&>th]:py-1.5"
 
   @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
 
@@ -397,28 +402,29 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
+  @page_button_class "inline-flex size-8 items-center justify-center rounded-full border " <>
+                       "border-base-300 bg-base-100 text-sm text-base-content/60 " <>
+                       "transition-colors hover:bg-base-200 hover:text-base-content " <>
+                       "disabled:opacity-40 disabled:pointer-events-none"
+
   @doc """
-  Renders prev/next chevrons plus a windowed set of page number buttons
-  (e.g. `1 2 3 ... 10`) around the current page.
+  Renders the pager for a list: step back, the page you are on, step forward.
+
+  The page number is an outlined disc rather than a filled one. Filled, it read
+  as the primary action on the row when it is not an action at all — it is just
+  where you are.
   """
   attr :current_page, :integer, required: true
   attr :total_pages, :integer, required: true
 
-  @page_button_class "inline-flex size-8 items-center justify-center rounded-field border " <>
-                       "border-base-300 bg-base-100 text-sm text-base-content/60 transition-colors " <>
-                       "hover:bg-base-200 hover:text-base-content disabled:opacity-40 " <>
-                       "disabled:pointer-events-none"
-
   def pagination(assigns) do
-    assigns =
-      assigns
-      |> assign(:window, page_window(assigns.current_page, assigns.total_pages))
-      |> assign(:page_button_class, @page_button_class)
+    assigns = assign(assigns, :page_button_class, @page_button_class)
 
     ~H"""
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-1.5">
       <button
         type="button"
+        aria-label="Previous page"
         class={@page_button_class}
         disabled={@current_page == 1}
         phx-click="paginate"
@@ -426,23 +432,21 @@ defmodule QuantumBillingWeb.SharedComponents do
       >
         <.icon name="hero-chevron-left" class="size-4" />
       </button>
-      <%= for entry <- @window do %>
-        <span :if={entry == :ellipsis} class="px-1 text-base-content/45">...</span>
-        <button
-          :if={entry != :ellipsis}
-          type="button"
-          class={[
-            @page_button_class,
-            entry == @current_page && "border-base-content bg-base-content text-base-100"
-          ]}
-          phx-click="paginate"
-          phx-value-page={entry}
-        >
-          {entry}
-        </button>
-      <% end %>
+
+      <span
+        aria-current="page"
+        aria-label={"Page #{@current_page} of #{@total_pages}"}
+        class={[
+          "inline-flex size-7 shrink-0 items-center justify-center rounded-full",
+          "border border-base-content/70 text-xs font-medium text-base-content"
+        ]}
+      >
+        {@current_page}
+      </span>
+
       <button
         type="button"
+        aria-label="Next page"
         class={@page_button_class}
         disabled={@current_page == @total_pages}
         phx-click="paginate"
@@ -452,15 +456,5 @@ defmodule QuantumBillingWeb.SharedComponents do
       </button>
     </div>
     """
-  end
-
-  defp page_window(_current, total) when total <= 5, do: Enum.to_list(1..total)
-
-  defp page_window(current, total) do
-    cond do
-      current <= 3 -> [1, 2, 3, :ellipsis, total]
-      current >= total - 2 -> [1, :ellipsis, total - 2, total - 1, total]
-      true -> [1, :ellipsis, current - 1, current, current + 1, :ellipsis, total]
-    end
   end
 end

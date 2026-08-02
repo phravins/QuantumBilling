@@ -54,9 +54,9 @@ defmodule QuantumBillingWeb.RealtimeTest do
 
       html = render(view)
 
-      assert html =~ "Showing 1 to 2 of 2 entries"
       assert html =~ "First Client"
       assert html =~ "Second Client"
+      refute html =~ "No clients yet"
     end
 
     test "an edit elsewhere is reflected", %{conn: conn} do

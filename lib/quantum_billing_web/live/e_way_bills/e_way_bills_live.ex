@@ -73,8 +73,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     total_pages = max(ceil(total / @per_page), 1)
     page = assigns.page |> max(1) |> min(total_pages)
     rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
-    range_start = if total == 0, do: 0, else: (page - 1) * @per_page + 1
-    range_end = min(page * @per_page, total)
 
     assigns =
       assign(assigns,
@@ -82,8 +80,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         total: total,
         total_pages: total_pages,
         page: page,
-        range_start: range_start,
-        range_end: range_end,
         status_options: @status_options
       )
 
@@ -143,7 +139,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </div>
       </div>
 
-      <.card class={@total == 0 && "flex flex-1 flex-col"}>
+      <.card class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"
@@ -222,13 +218,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           </table>
         </div>
 
-        <div
-          :if={@total > 0}
-          class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row"
-        >
-          <span class="text-sm text-base-content/60">
-            Showing {@range_start} to {@range_end} of {@total} entries
-          </span>
+        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>
       </.card>

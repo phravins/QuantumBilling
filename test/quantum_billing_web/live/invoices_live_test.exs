@@ -88,7 +88,7 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
       assert html =~ invoice.invoice_number
       assert html =~ "V2V Technologies"
-      assert html =~ "Showing 1 to 1 of 1 entries"
+      refute html =~ "No invoices yet"
       refute html =~ "No invoices yet"
     end
 
@@ -122,7 +122,8 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       {:ok, view, _html} = live(conn, ~p"/invoices")
 
       drafts = render_click(view, "filter_status", %{"status" => "Draft"})
-      assert drafts =~ "Showing 1 to 1 of 1 entries"
+      assert drafts =~ "V2V Technologies"
+      refute drafts =~ "No invoices match these filters"
 
       generated = render_click(view, "filter_status", %{"status" => "E-Invoice Generated"})
       assert generated =~ "No invoices match these filters"
@@ -136,7 +137,8 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
       html = render_click(view, "sort", %{"field" => "seq"})
 
-      assert html =~ "Showing 1 to 2 of 2 entries"
+      assert html =~ "V2V Technologies"
+      assert html =~ "Insta Capital"
     end
 
     test "an invoice created elsewhere appears without a reload", %{conn: conn} do

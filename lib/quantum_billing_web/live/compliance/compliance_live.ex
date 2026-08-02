@@ -194,12 +194,12 @@ defmodule QuantumBillingWeb.ComplianceLive do
             <table class="w-full">
               <thead>
                 <tr class={table_head_class()}>
-                  <th class="py-2 pr-4 text-left font-medium">Compliance Type</th>
-                  <th class="py-2 pr-4 text-left font-medium">Period</th>
-                  <th class="py-2 pr-4 text-left font-medium">Due Date</th>
-                  <th class="py-2 pr-4 text-left font-medium">Status</th>
-                  <th class="py-2 pr-4 text-left font-medium">Filed Date</th>
-                  <th class="py-2 text-left font-medium">
+                  <th class="pr-4 text-left font-medium">Compliance Type</th>
+                  <th class="pr-4 text-left font-medium">Period</th>
+                  <th class="pr-4 text-left font-medium">Due Date</th>
+                  <th class="pr-4 text-left font-medium">Status</th>
+                  <th class="pr-4 text-left font-medium">Filed Date</th>
+                  <th class="text-left font-medium">
                     <span class="sr-only">Actions</span>
                   </th>
                 </tr>

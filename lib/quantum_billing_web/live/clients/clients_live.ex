@@ -80,8 +80,6 @@ defmodule QuantumBillingWeb.ClientsLive do
     total_pages = max(ceil(total / @per_page), 1)
     page = assigns.page |> max(1) |> min(total_pages)
     rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
-    range_start = if total == 0, do: 0, else: (page - 1) * @per_page + 1
-    range_end = min(page * @per_page, total)
 
     assigns =
       assign(assigns,
@@ -89,8 +87,6 @@ defmodule QuantumBillingWeb.ClientsLive do
         total: total,
         total_pages: total_pages,
         page: page,
-        range_start: range_start,
-        range_end: range_end,
         status_options: @status_options
       )
 
@@ -151,8 +147,10 @@ defmodule QuantumBillingWeb.ClientsLive do
       </div>
 
       <%!-- No `mt-4`: the toolbar's `mb-4` used to collapse into it, and inside
-      a flex column the two would stack into a double gap instead. --%>
-      <.card class={@total == 0 && "flex flex-1 flex-col"}>
+      a flex column the two would stack into a double gap instead. Stretches
+      whether or not there are rows — a short table floating above a band of
+      empty page reads just as unfinished as an empty one did. --%>
+      <.card class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"
@@ -227,13 +225,10 @@ defmodule QuantumBillingWeb.ClientsLive do
           </table>
         </div>
 
-        <div
-          :if={@total > 0}
-          class="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row"
-        >
-          <span class="text-sm text-base-content/60">
-            Showing {@range_start} to {@range_end} of {@total} entries
-          </span>
+        <%!-- `mt-auto` rather than a fixed margin: the card stretches to the
+        page, so this pins the pager to the bottom of it instead of leaving it
+        floating under the last row. --%>
+        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>
       </.card>

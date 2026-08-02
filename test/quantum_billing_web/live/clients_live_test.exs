@@ -93,7 +93,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       assert html =~ "Acme Traders"
       assert html =~ "27AABCA1234A1Z5"
       assert html =~ "billing@acme.in"
-      assert html =~ "Showing 1 to 2 of 2 entries"
+      assert html =~ "Walk-in Buyer"
       refute html =~ "No clients yet"
     end
 
@@ -114,7 +114,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       html = view |> form("#clients-search", %{"q" => "walk"}) |> render_change()
 
       assert html =~ "Walk-in Buyer"
-      assert html =~ "Showing 1 to 1 of 1 entries"
+      refute html =~ "Acme Traders"
     end
 
     test "search by GSTIN still works", %{conn: conn} do
@@ -123,7 +123,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       html = view |> form("#clients-search", %{"q" => "27AABCA"}) |> render_change()
 
       assert html =~ "Acme Traders"
-      assert html =~ "Showing 1 to 1 of 1 entries"
+      refute html =~ "Walk-in Buyer"
     end
 
     test "sorting by name works over real rows", %{conn: conn} do
