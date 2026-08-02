@@ -68,11 +68,17 @@ defmodule QuantumBillingWeb.Layouts do
               current page instead meant Account Settings unfolded the whole
               list on arrival, since that page marks the same nav item active,
               and the Settings link could never be followed without the list
-              springing open with it. --%>
+              springing open with it.
+
+              Whether it is open is the browser's to remember: every navigation
+              re-renders this sidebar from scratch, so without the hook below
+              the list would snap shut the moment you picked a section from
+              it. --%>
               <input
                 :if={item.key == :settings}
                 type="checkbox"
                 id="settings-sections-toggle"
+                phx-hook=".SettingsDisclosure"
                 class="peer sr-only"
               />
 
@@ -112,6 +118,7 @@ defmodule QuantumBillingWeb.Layouts do
               already sitting a few pixels above in this same list. --%>
               <div
                 :if={item.key == :settings}
+                id="settings-sections"
                 class={[
                   "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out",
                   "peer-checked:grid-rows-[1fr]"
@@ -203,6 +210,38 @@ defmodule QuantumBillingWeb.Layouts do
     </div>
 
     <.flash_group flash={@flash} />
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsDisclosure">
+      // Keeps the settings sections open across navigation. The server renders
+      // the checkbox unchecked every time, so without this, picking a section
+      // from the list would close the list you picked it from.
+      const KEY = "qb:settings-sections-open"
+
+      export default {
+        mounted() {
+          this.restore()
+          this.el.addEventListener("change", () =>
+            localStorage.setItem(KEY, this.el.checked)
+          )
+        },
+
+        updated() {
+          this.restore()
+        },
+
+        // Restoring is not the user opening it, so it must not animate --
+        // otherwise the list slides open again on every page load.
+        restore() {
+          const open = localStorage.getItem(KEY) === "true"
+          if (this.el.checked === open) return
+
+          const panel = document.getElementById("settings-sections")
+          if (panel) panel.style.transition = "none"
+          this.el.checked = open
+          if (panel) requestAnimationFrame(() => (panel.style.transition = ""))
+        }
+      }
+    </script>
     """
   end
 

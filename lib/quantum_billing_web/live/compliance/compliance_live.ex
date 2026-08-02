@@ -106,26 +106,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
       <.header>
         Compliance
         <:subtitle>Track your GST compliance and filing status</:subtitle>
-        <:actions :if={@obligations != []}>
+        <:actions>
           <a href="#filing-calendar" phx-click="show_all" class={action_button_class()}>
             <.icon name="hero-calendar-days" class="size-4" /> View Filing Calendar
           </a>
         </:actions>
       </.header>
 
-      <.card :if={@obligations == []} class="flex flex-1 flex-col">
-        <.empty_state
-          class="flex-1 justify-center"
-          icon="hero-shield-check"
-          title="No compliance data yet"
-          description="GST filing obligations will appear here once your returns are being tracked."
-        />
-      </.card>
-
-      <div
-        :if={@obligations != []}
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-      >
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           label="Total Returns"
           value={Integer.to_string(@summary.total)}
@@ -156,7 +144,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
         />
       </div>
 
-      <div :if={@obligations != []} class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
@@ -184,8 +172,19 @@ defmodule QuantumBillingWeb.ComplianceLive do
             <.obligation_detail obligation={@selected} />
           </div>
 
+          <%!-- Two different empty states: nothing tracked at all is not the
+          same as a filter that excluded everything, and telling someone with
+          no data to "try another status" sends them chasing rows that do not
+          exist. --%>
           <.empty_state
-            :if={@rows == []}
+            :if={@obligations == []}
+            icon="hero-shield-check"
+            title="No compliance data yet"
+            description="Your GST filing obligations will be listed here once returns are being tracked."
+          />
+
+          <.empty_state
+            :if={@obligations != [] and @rows == []}
             icon="hero-shield-check"
             title="Nothing matches these filters"
             description="Try another category or status."
@@ -274,7 +273,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
               :if={@upcoming == []}
               icon="hero-check-circle"
               title="Nothing due"
-              description="Every obligation for this year is filed."
+              description={
+                if @obligations == [],
+                  do: "Filing deadlines will appear here once returns are being tracked.",
+                  else: "Every obligation for this year is filed."
+              }
             />
           </.card>
 

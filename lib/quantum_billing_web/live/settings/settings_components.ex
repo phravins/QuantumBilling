@@ -1,10 +1,11 @@
 defmodule QuantumBillingWeb.SettingsComponents do
   @moduledoc """
-  Building blocks for the Settings page: the panel header carrying each
-  section's Save action, and the labelled toggle used by the boolean settings.
+  Building blocks for the Settings page: the labelled toggle used by the
+  boolean settings, and the panel for a section that is not built yet.
 
   `sections/0` is the single source of truth for the section list. The app
   sidebar reads it too, which is why it lives here rather than in the LiveView.
+  Each section's title is rendered by the page header, not in here.
 
   The labelled `field/1` these panels use lives in
   `QuantumBillingWeb.SharedComponents` and is auto-imported.
@@ -12,7 +13,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
-  import QuantumBillingWeb.SharedComponents, only: [action_button_class: 0]
 
   # `short_title` is what the sidebar shows. The sidebar is only 12rem wide and
   # already says "Settings" above these, so the suffix is both redundant and too
@@ -96,24 +96,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
   @doc "The section for `key`, or the general section when it is unknown."
   def section(key) do
     Enum.find(@sections, hd(@sections), &(&1.key == key))
-  end
-
-  @doc """
-  Renders a panel's title row, with an optional Save button wired to `form`.
-  """
-  attr :title, :string, required: true
-  attr :form_id, :string, default: nil
-
-  def panel_header(assigns) do
-    ~H"""
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2 class="text-base font-semibold tracking-tight">{@title}</h2>
-
-      <button :if={@form_id} type="submit" form={@form_id} class={action_button_class()}>
-        <.icon name="hero-check" class="size-4" /> Save Changes
-      </button>
-    </div>
-    """
   end
 
   @doc """

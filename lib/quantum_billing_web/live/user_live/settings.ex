@@ -288,7 +288,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         <:subtitle>Manage your personal information and sign-in security</:subtitle>
       </.header>
 
-      <.card padding="p-0">
+      <.card padding="p-0" class="flex flex-1 flex-col">
         <div class="flex items-center gap-1 overflow-x-auto border-b border-base-300 px-2">
           <.link
             :for={{key, label, icon} <- @tabs}
@@ -305,7 +305,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           </.link>
         </div>
 
-        <div class="p-6">
+        <div class="flex-1 p-6">
           {render_tab(assigns)}
         </div>
       </.card>

@@ -9,18 +9,35 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
   describe "page" do
     # The sections live in the app sidebar now, which shows each one's short
-    # title — the sidebar already says "Settings" above them. The open
-    # section's full title still comes from its panel header.
+    # title — the sidebar already says "Settings" above them.
     test "opens on General with every section in the sidebar", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/settings")
 
-      assert html =~ "Manage your account and application settings"
       assert html =~ "General Settings"
 
       for section <- QuantumBillingWeb.SettingsComponents.sections() do
         assert has_element?(view, ~s(a[href="/settings/#{section.key}"])),
                "expected a sidebar link for #{section.key}"
       end
+    end
+
+    # The open section names the page; there is no standing "Settings" title
+    # and no subtitle repeating what the sidebar already says.
+    test "the open section titles the page", %{conn: conn} do
+      for section <- QuantumBillingWeb.SettingsComponents.sections() do
+        {:ok, view, html} = live(conn, ~p"/settings/#{section.key}")
+
+        assert has_element?(view, "h1", section.title)
+        refute html =~ "Manage your account and application settings"
+      end
+    end
+
+    # Save belongs to the page, like every other form screen in the app, and
+    # only exists where there is something to save.
+    test "Save Changes sits in the page header, not the panel", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/tax")
+
+      assert has_element?(view, ~s(header button[type="submit"][form="settings-form"]))
     end
 
     # The sections stay in the DOM so the chevron can animate them open, but

@@ -57,6 +57,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply,
      socket
      |> assign(:section, section)
+     |> assign(:page_title, section(section).title)
      |> assign_form(section)}
   end
 
@@ -107,9 +108,18 @@ defmodule QuantumBillingWeb.SettingsLive do
       active_nav={@active_nav}
       active_sub={@section}
     >
+      <%!-- The open section names the page. A standing "Settings / Manage your
+      account and application settings" said nothing the sidebar had not
+      already said, and left the panel repeating the section title inside its
+      own card. Save sits here for the same reason it does on every other form
+      page: it belongs to the page, not to the panel. --%>
       <.header>
-        Settings
-        <:subtitle>Manage your account and application settings</:subtitle>
+        {section(@section).title}
+        <:actions :if={@form}>
+          <button type="submit" form="settings-form" class={action_button_class()}>
+            <.icon name="hero-check" class="size-4" /> Save Changes
+          </button>
+        </:actions>
       </.header>
 
       <%!-- `gap-4` rather than `space-y-4`: this is a flex column now, so the
@@ -140,8 +150,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :general} = assigns) do
     ~H"""
-    <.panel_header title="General Settings" form_id="settings-form" />
-
     <.form
       :let={f}
       for={@form}
@@ -208,8 +216,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :invoice} = assigns) do
     ~H"""
-    <.panel_header title="Invoice Settings" form_id="settings-form" />
-
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <.field field={f[:invoice_prefix]} label="Invoice Prefix" required placeholder="INV" />
@@ -254,8 +260,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :e_way_bill} = assigns) do
     ~H"""
-    <.panel_header title="E-Way Bill Settings" form_id="settings-form" />
-
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
@@ -292,8 +296,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :tax} = assigns) do
     ~H"""
-    <.panel_header title="Tax Settings" form_id="settings-form" />
-
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
@@ -324,8 +326,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :notifications} = assigns) do
     ~H"""
-    <.panel_header title="Notifications" form_id="settings-form" />
-
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="space-y-3">
         <.toggle field={f[:notify_invoice_created]} label="An invoice is created" />
@@ -352,8 +352,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :preferences} = assigns) do
     ~H"""
-    <.panel_header title="Preferences" form_id="settings-form" />
-
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
@@ -385,8 +383,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :security} = assigns) do
     ~H"""
-    <.panel_header title="Security" />
-
     <dl class="space-y-4">
       <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
         <div>
@@ -414,7 +410,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :users} = assigns) do
     ~H"""
-    <.panel_header title="Users & Roles" />
     <.unbuilt_panel
       title="Users & Roles"
       icon="hero-users"
@@ -425,7 +420,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :backup} = assigns) do
     ~H"""
-    <.panel_header title="Backup & Restore" />
     <.unbuilt_panel
       title="Backup & Restore"
       icon="hero-cloud-arrow-up"
@@ -436,7 +430,6 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :integrations} = assigns) do
     ~H"""
-    <.panel_header title="Integrations" />
     <.unbuilt_panel
       title="Integrations"
       icon="hero-squares-2x2"
