@@ -20,7 +20,7 @@ defmodule QuantumBillingWeb.HsnFinderLiveTest do
     test "keeps its guidance in the header popover, not a rail", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/hsn-finder")
 
-      assert has_element?(view, ~s(span[role="button"][aria-label="About HSN / SAC codes"]))
+      assert has_element?(view, ~s(label[for="hsn-help"][aria-label="About HSN / SAC codes"]))
       assert html =~ "About HSN / SAC"
       assert html =~ "Note"
 

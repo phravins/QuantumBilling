@@ -64,7 +64,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
       <.header>
         <span class="inline-flex items-center gap-2">
           HSN / SAC Code &amp; GST Rate Finder
-          <.help_popover label="About HSN / SAC codes">
+          <.help_popover id="hsn-help" label="About HSN / SAC codes">
             <span class="block">
               <span class="flex items-center gap-2.5">
                 <.icon name="hero-information-circle" class="size-4 text-base-content/45" />

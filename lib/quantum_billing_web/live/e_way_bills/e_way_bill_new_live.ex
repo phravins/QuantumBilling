@@ -66,7 +66,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       <.header>
         <span class="inline-flex items-center gap-2">
           Generate New E-Way Bill
-          <.help_popover label="Before you generate this e-way bill">
+          <.help_popover id="ewb-help" label="Before you generate this e-way bill">
             <span class="flex gap-2.5">
               <.icon name="hero-information-circle" class="size-4 shrink-0 text-base-content/45" />
               <span class="block">

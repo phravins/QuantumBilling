@@ -66,7 +66,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
       <.header>
         <span class="inline-flex items-center gap-2">
           Add New Client
-          <.help_popover label="About adding a client">
+          <.help_popover id="client-help" label="About adding a client">
             <span class="block">
               <span class="flex items-center gap-2.5">
                 <.icon name="hero-information-circle" class="size-4 text-base-content/45" />

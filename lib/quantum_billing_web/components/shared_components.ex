@@ -156,8 +156,13 @@ defmodule QuantumBillingWeb.SharedComponents do
   page is for" blurb and the tips beside it — lives here instead of in a
   sidebar, so the form itself gets the full width of the page.
 
-  Built on the same daisyUI dropdown the filter menus and the profile menu use,
-  so click-away and Esc dismissal come for free and no JavaScript is involved.
+  Driven by a hidden checkbox the chevron labels, deliberately *not* by the
+  daisyUI dropdown the filter menus use: that one opens on `:focus-within`, and
+  with the trigger in the tab order the panel sprang open whenever focus
+  happened to reach it rather than when anyone asked for it. Only a click on the
+  chevron opens this. A hook closes it on an outside click or Escape, which
+  focus-driven dropdowns get for free and this does not.
+
   It renders as `<span>`s because the usual home for it is inside `header/1`'s
   `<h1>`, which only accepts phrasing content.
 
@@ -166,10 +171,12 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.header>
         <span class="inline-flex items-center gap-2">
           Add New Client
-          <.help_popover label="About adding a client">…</.help_popover>
+          <.help_popover id="client-help" label="About adding a client">…</.help_popover>
         </span>
       </.header>
   """
+  attr :id, :string, required: true
+
   attr :label, :string,
     default: "More information",
     doc: "the accessible name for the icon-only trigger"
@@ -180,29 +187,55 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def help_popover(assigns) do
     ~H"""
-    <span class={["dropdown dropdown-start", @class]}>
-      <span
-        tabindex="0"
-        role="button"
+    <span class={["group relative inline-flex", @class]}>
+      <input type="checkbox" id={@id} class="peer sr-only" phx-hook=".HelpPopover" />
+
+      <label
+        for={@id}
         aria-label={@label}
         class={[
-          "flex size-6 items-center justify-center rounded-field text-base-content/45",
-          "transition-colors hover:bg-base-200 hover:text-base-content"
+          "flex size-6 cursor-pointer items-center justify-center rounded-field",
+          "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
         ]}
       >
-        <.icon name="hero-chevron-down" class="size-4" />
-      </span>
+        <.icon
+          name="hero-chevron-down"
+          class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
+        />
+      </label>
+
       <%!-- The trigger usually sits in an <h1>, whose type would otherwise cascade in. --%>
-      <span
-        tabindex="0"
-        class={[
-          "dropdown-content z-20 mt-1 block w-80 space-y-4 rounded-box border border-base-300",
-          "bg-base-100 p-4 text-left text-sm font-normal tracking-normal shadow-lg"
-        ]}
-      >
+      <span class={[
+        "invisible absolute left-0 top-full z-20 mt-1 block w-80 space-y-4 opacity-0",
+        "rounded-box border border-base-300 bg-base-100 p-4 shadow-lg",
+        "text-left text-sm font-normal tracking-normal",
+        "transition-opacity duration-150 peer-checked:visible peer-checked:opacity-100"
+      ]}>
         {render_slot(@inner_block)}
       </span>
     </span>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".HelpPopover">
+      // The chevron opens it; this is only about closing. Without it the panel
+      // would sit over the form until you found the chevron again.
+      export default {
+        mounted() {
+          this.onClick = (e) => {
+            if (!this.el.parentElement.contains(e.target)) this.el.checked = false
+          }
+          this.onKey = (e) => {
+            if (e.key === "Escape") this.el.checked = false
+          }
+          document.addEventListener("click", this.onClick)
+          document.addEventListener("keydown", this.onKey)
+        },
+
+        destroyed() {
+          document.removeEventListener("click", this.onClick)
+          document.removeEventListener("keydown", this.onKey)
+        }
+      }
+    </script>
     """
   end
 

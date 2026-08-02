@@ -199,8 +199,12 @@ defmodule QuantumBillingWeb.Layouts do
         without `flex-1` they still take their natural height. --%>
         <%!-- Bottom gap matches the side gap. A deeper one was fine under a
         card that stopped short, but now that a panel can run the full height
-        it just reads as a band of dead space under the page. --%>
-        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
+        it just reads as a band of dead space under the page.
+
+        The top gap is tighter still: the bar above already separates the page
+        from the chrome, so every pixel here is one the table below does not
+        get. --%>
+        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3">
           {render_slot(@inner_block)}
         </main>
       </div>
