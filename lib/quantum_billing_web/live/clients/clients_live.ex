@@ -150,9 +150,12 @@ defmodule QuantumBillingWeb.ClientsLive do
         </div>
       </div>
 
-      <.card class="mt-4">
+      <%!-- No `mt-4`: the toolbar's `mb-4` used to collapse into it, and inside
+      a flex column the two would stack into a double gap instead. --%>
+      <.card class={@total == 0 && "flex flex-1 flex-col"}>
         <.empty_state
           :if={@total == 0}
+          class="flex-1 justify-center"
           icon="hero-users"
           title={
             if @search == "" and @status_filter == "All Status",

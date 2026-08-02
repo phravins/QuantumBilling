@@ -62,14 +62,18 @@ defmodule QuantumBillingWeb.Layouts do
               <%!-- Settings is the one item with sections beneath it. The
               chevron opens them, animating the row track from 0fr to 1fr —
               the one way to transition to an unknown height in CSS alone, so
-              this needs neither JavaScript nor a server round trip. It starts
-              open on a settings page and closed everywhere else. --%>
+              this needs neither JavaScript nor a server round trip.
+
+              The chevron is the only thing that opens it. Tying it to the
+              current page instead meant Account Settings unfolded the whole
+              list on arrival, since that page marks the same nav item active,
+              and the Settings link could never be followed without the list
+              springing open with it. --%>
               <input
                 :if={item.key == :settings}
                 type="checkbox"
                 id="settings-sections-toggle"
                 class="peer sr-only"
-                checked={@active_nav == :settings}
               />
 
               <div class="flex items-center gap-0.5">
@@ -183,7 +187,11 @@ defmodule QuantumBillingWeb.Layouts do
           </button>
         </header>
 
-        <main class="flex-1 overflow-y-auto px-3 pb-6 pt-4 sm:px-4 sm:pb-8 sm:pt-5">
+        <%!-- A flex column so a page can hand a panel `flex-1` and have it take
+        the height left over — an empty list reads as broken when its card stops
+        halfway down an otherwise blank screen. Block children are unaffected:
+        without `flex-1` they still take their natural height. --%>
+        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-6 pt-4 sm:px-4 sm:pb-8 sm:pt-5">
           {render_slot(@inner_block)}
         </main>
       </div>

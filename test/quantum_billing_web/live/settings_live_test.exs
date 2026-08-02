@@ -23,16 +23,28 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    # The sections stay in the DOM so the chevron can animate them open; what
-    # changes per page is whether the disclosure starts open.
-    test "the sections start unfolded inside Settings and folded elsewhere", %{conn: conn} do
-      {:ok, settings_view, _html} = live(conn, ~p"/settings")
-      {:ok, invoices_view, _html} = live(conn, ~p"/invoices")
+    # The sections stay in the DOM so the chevron can animate them open, but
+    # nothing opens them on arrival — the chevron is the only control. Account
+    # Settings marks the same nav item active, so binding this to the page
+    # unfolded the whole list there too.
+    test "the sections stay folded on arrival, whatever the page", %{conn: conn} do
+      for path <- [~p"/settings", ~p"/settings/tax", ~p"/users/settings", ~p"/invoices"] do
+        {:ok, view, _html} = live(conn, path)
 
-      assert has_element?(settings_view, "#settings-sections-toggle[checked]")
-      refute has_element?(invoices_view, "#settings-sections-toggle[checked]")
+        refute has_element?(view, "#settings-sections-toggle[checked]"),
+               "expected the settings sections to start folded on #{path}"
 
-      assert has_element?(invoices_view, ~s(a[href="/settings/tax"]))
+        assert has_element?(view, ~s(a[href="/settings/tax"]))
+      end
+    end
+
+    test "the chevron is the only control that opens them", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      # A plain label driving the checkbox: no phx-click, so following the
+      # Settings link cannot double as opening the list.
+      assert has_element?(view, ~s(label[for="settings-sections-toggle"]))
+      refute has_element?(view, ~s(a[href="/settings"][phx-click]))
     end
 
     test "renders the General form fields", %{conn: conn} do

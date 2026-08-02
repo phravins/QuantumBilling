@@ -113,8 +113,9 @@ defmodule QuantumBillingWeb.ComplianceLive do
         </:actions>
       </.header>
 
-      <.card :if={@obligations == []}>
+      <.card :if={@obligations == []} class="flex flex-1 flex-col">
         <.empty_state
+          class="flex-1 justify-center"
           icon="hero-shield-check"
           title="No compliance data yet"
           description="GST filing obligations will appear here once your returns are being tracked."

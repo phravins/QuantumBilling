@@ -99,7 +99,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </:actions>
       </.header>
 
-      <.card>
+      <.card class={@total == 0 && "flex flex-1 flex-col"}>
         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <form
             id="ewb-search"
@@ -146,6 +146,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
         <.empty_state
           :if={@total == 0}
+          class="flex-1 justify-center"
           icon="hero-truck"
           title={
             if @search == "" and @status_filter == "All Status",
