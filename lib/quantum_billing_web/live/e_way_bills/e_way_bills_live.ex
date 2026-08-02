@@ -99,51 +99,51 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </:actions>
       </.header>
 
-      <.card class={@total == 0 && "flex flex-1 flex-col"}>
-        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <form
-            id="ewb-search"
-            phx-change="search"
-            phx-submit="search"
-            class="relative w-full sm:max-w-xs"
-          >
-            <.icon
-              name="hero-magnifying-glass"
-              class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
-            />
-            <input
-              type="text"
-              name="q"
-              value={@search}
-              phx-debounce="300"
-              placeholder="Search e-way bills..."
-              class={filter_input_class()}
-            />
-          </form>
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <form
+          id="ewb-search"
+          phx-change="search"
+          phx-submit="search"
+          class="relative w-full sm:max-w-xs"
+        >
+          <.icon
+            name="hero-magnifying-glass"
+            class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-base-content/45"
+          />
+          <input
+            type="text"
+            name="q"
+            value={@search}
+            phx-debounce="300"
+            placeholder="Search e-way bills..."
+            class={filter_input_class()}
+          />
+        </form>
 
-          <div class="flex items-center gap-2">
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class={secondary_button_class()}>
-                <.icon name="hero-funnel" class="size-4" />
-                {@status_filter}
-                <.icon name="hero-chevron-down" class="size-4" />
-              </div>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-              >
-                <li :for={s <- @status_options}>
-                  <a phx-click="filter_status" phx-value-status={s}>{s}</a>
-                </li>
-              </ul>
+        <div class="flex items-center gap-2">
+          <div class="dropdown dropdown-end">
+            <div tabindex="0" role="button" class={filter_button_class()}>
+              <.icon name="hero-funnel" class="size-3.5" />
+              {@status_filter}
+              <.icon name="hero-chevron-down" class="size-3.5" />
             </div>
-
-            <button type="button" class={secondary_button_class()}>
-              <.icon name="hero-arrow-down-tray" class="size-4" /> Export
-            </button>
+            <ul
+              tabindex="0"
+              class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+            >
+              <li :for={s <- @status_options}>
+                <a phx-click="filter_status" phx-value-status={s}>{s}</a>
+              </li>
+            </ul>
           </div>
-        </div>
 
+          <button type="button" class={filter_button_class()}>
+            <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
+          </button>
+        </div>
+      </div>
+
+      <.card class={@total == 0 && "flex flex-1 flex-col"}>
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"

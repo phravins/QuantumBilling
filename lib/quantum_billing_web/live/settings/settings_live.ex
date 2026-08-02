@@ -112,8 +112,11 @@ defmodule QuantumBillingWeb.SettingsLive do
         <:subtitle>Manage your account and application settings</:subtitle>
       </.header>
 
-      <div class="space-y-4">
-        <.card padding="p-6">
+      <%!-- `gap-4` rather than `space-y-4`: this is a flex column now, so the
+      panel can take the height left over instead of stopping under its last
+      field. The Logo card below it keeps its natural height. --%>
+      <div class="flex flex-1 flex-col gap-4">
+        <.card padding="p-6" class="flex flex-1 flex-col">
           {render_panel(assigns)}
         </.card>
 

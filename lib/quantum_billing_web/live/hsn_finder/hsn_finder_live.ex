@@ -129,7 +129,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
               <div class="relative flex-1">
                 <.icon
                   name="hero-magnifying-glass"
-                  class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
+                  class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-base-content/45"
                 />
                 <input
                   type="text"

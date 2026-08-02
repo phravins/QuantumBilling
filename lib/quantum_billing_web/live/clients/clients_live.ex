@@ -115,7 +115,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         >
           <.icon
             name="hero-magnifying-glass"
-            class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-base-content/45"
+            class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-base-content/45"
           />
           <input
             type="text"
@@ -129,10 +129,10 @@ defmodule QuantumBillingWeb.ClientsLive do
 
         <div class="flex items-center gap-2">
           <div class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class={secondary_button_class()}>
-              <.icon name="hero-funnel" class="size-4" />
+            <div tabindex="0" role="button" class={filter_button_class()}>
+              <.icon name="hero-funnel" class="size-3.5" />
               {@status_filter}
-              <.icon name="hero-chevron-down" class="size-4" />
+              <.icon name="hero-chevron-down" class="size-3.5" />
             </div>
             <ul
               tabindex="0"
@@ -144,8 +144,8 @@ defmodule QuantumBillingWeb.ClientsLive do
             </ul>
           </div>
 
-          <button type="button" class={secondary_button_class()}>
-            <.icon name="hero-arrow-down-tray" class="size-4" /> Export
+          <button type="button" class={filter_button_class()}>
+            <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
           </button>
         </div>
       </div>

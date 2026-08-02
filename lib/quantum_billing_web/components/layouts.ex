@@ -161,9 +161,11 @@ defmodule QuantumBillingWeb.Layouts do
               </span>
               <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
             </div>
+            <%!-- `w-full`, not a fixed width: the sidebar is only 12rem, so
+            anything wider hangs out over the page beside it. --%>
             <ul
               tabindex="0"
-              class="dropdown-content menu z-10 mb-2 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+              class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
               <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
               <li>
@@ -191,7 +193,10 @@ defmodule QuantumBillingWeb.Layouts do
         the height left over — an empty list reads as broken when its card stops
         halfway down an otherwise blank screen. Block children are unaffected:
         without `flex-1` they still take their natural height. --%>
-        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-6 pt-4 sm:px-4 sm:pb-8 sm:pt-5">
+        <%!-- Bottom gap matches the side gap. A deeper one was fine under a
+        card that stopped short, but now that a panel can run the full height
+        it just reads as a band of dead space under the page. --%>
+        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
           {render_slot(@inner_block)}
         </main>
       </div>

@@ -16,9 +16,16 @@ defmodule QuantumBillingWeb.SharedComponents do
                             "border-base-300 bg-base-100 px-3 text-sm text-base-content/60 " <>
                             "transition-colors hover:bg-base-200 hover:text-base-content"
 
-  @filter_input_class "h-9 w-full rounded-field border border-base-300 bg-base-100 pl-9 pr-3 " <>
-                        "text-sm placeholder:text-base-content/45 focus:outline-none " <>
+  # The toolbar controls run a size below the page-header buttons: they sit
+  # above every list and repeat on every page, so the height they take is
+  # height the list itself does not get.
+  @filter_input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 pl-8 pr-3 " <>
+                        "text-xs placeholder:text-base-content/45 focus:outline-none " <>
                         "focus:ring-2 focus:ring-base-content/10"
+
+  @filter_button_class "inline-flex h-8 items-center gap-1.5 rounded-field border " <>
+                         "border-base-300 bg-base-100 px-2.5 text-xs text-base-content/60 " <>
+                         "transition-colors hover:bg-base-200 hover:text-base-content"
 
   @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
                       "transition-colors hover:bg-base-200 hover:text-base-content"
@@ -50,6 +57,9 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @doc "The search field used by the list-page toolbars (leaves room for a leading icon)."
   def filter_input_class, do: @filter_input_class
+
+  @doc "The compact button beside `filter_input_class/0`; a size down from `secondary_button_class/0`."
+  def filter_button_class, do: @filter_button_class
 
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
