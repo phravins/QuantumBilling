@@ -33,10 +33,17 @@ defmodule QuantumBillingWeb.Layouts do
 
   attr :active_nav, :atom, default: nil, doc: "the key of the currently active sidebar item"
 
+  attr :active_sub, :atom,
+    default: nil,
+    doc: "the key of the active settings section, when one is open"
+
   slot :inner_block, required: true
 
   def app(assigns) do
-    assigns = assign(assigns, :nav_items, nav_items())
+    assigns =
+      assigns
+      |> assign(:nav_items, nav_items())
+      |> assign(:settings_sections, QuantumBillingWeb.SettingsComponents.sections())
 
     ~H"""
     <div class="flex min-h-screen bg-base-200">
@@ -65,6 +72,30 @@ defmodule QuantumBillingWeb.Layouts do
                 <.icon name={item.icon} class="size-4.5" />
                 {item.label}
               </.link>
+
+              <%!-- Settings is the one item with sections beneath it. They only
+              unfold while you are in there, so the sidebar stays short
+              everywhere else. No icons: half of them repeat an icon already
+              sitting a few pixels above in this same list. --%>
+              <ul
+                :if={item.key == :settings and @active_nav == :settings}
+                class="mt-0.5 space-y-0.5 border-l border-base-300 pl-3 ml-4"
+              >
+                <li :for={section <- @settings_sections}>
+                  <.link
+                    navigate={~p"/settings/#{section.key}"}
+                    class={[
+                      "block truncate rounded-field px-2.5 py-1.5 text-xs transition-colors",
+                      if(@active_sub == section.key,
+                        do: "bg-base-200 font-medium text-base-content",
+                        else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                      )
+                    ]}
+                  >
+                    {section.short_title}
+                  </.link>
+                </li>
+              </ul>
             </li>
           </ul>
         </nav>

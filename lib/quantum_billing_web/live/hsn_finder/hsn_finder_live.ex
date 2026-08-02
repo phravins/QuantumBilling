@@ -62,7 +62,40 @@ defmodule QuantumBillingWeb.HsnFinderLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
-        HSN / SAC Code &amp; GST Rate Finder
+        <span class="inline-flex items-center gap-2">
+          HSN / SAC Code &amp; GST Rate Finder
+          <.help_popover label="About HSN / SAC codes">
+            <span class="block">
+              <span class="flex items-center gap-2.5">
+                <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
+                <span class="font-semibold tracking-tight">About HSN / SAC</span>
+              </span>
+              <span class="mt-3 block text-base-content/60">
+                HSN (Harmonized System of Nomenclature) is an internationally standardized
+                system of names and numbers to classify traded products.
+              </span>
+              <span class="mt-2 block text-base-content/60">
+                SAC (Services Accounting Code) is used to classify services.
+              </span>
+            </span>
+
+            <span class="block">
+              <span class="flex items-center gap-2.5">
+                <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
+                <span class="font-semibold tracking-tight">Note</span>
+              </span>
+              <ul class="mt-3 space-y-2 text-base-content/60">
+                <li>
+                  GST was restructured on {format_date(HsnFinder.gst_2_0_date())} ("GST 2.0") —
+                  rates below reflect the current structure, not the pre-reform slabs.
+                </li>
+                <li>This covers a curated set of commonly searched codes, not the full list.</li>
+                <li>Please verify the HSN / SAC code and rate before use.</li>
+                <li>For anything not covered here, refer to the official CBIC / GST portal.</li>
+              </ul>
+            </span>
+          </.help_popover>
+        </span>
         <:subtitle>Search and find the correct HSN / SAC code and applicable GST rate.</:subtitle>
       </.header>
 
@@ -201,20 +234,6 @@ defmodule QuantumBillingWeb.HsnFinderLive do
 
         <div class="space-y-4">
           <.card padding="p-5">
-            <div class="flex items-center gap-2.5">
-              <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
-              <h2 class="text-sm font-semibold tracking-tight">About HSN / SAC</h2>
-            </div>
-            <p class="mt-3 text-sm text-base-content/60">
-              HSN (Harmonized System of Nomenclature) is an internationally standardized
-              system of names and numbers to classify traded products.
-            </p>
-            <p class="mt-2 text-sm text-base-content/60">
-              SAC (Services Accounting Code) is used to classify services.
-            </p>
-          </.card>
-
-          <.card padding="p-5">
             <h2 class="mb-3 text-sm font-semibold tracking-tight">Quick Links</h2>
             <ul class="space-y-2.5">
               <li :for={{label, href} <- quick_links()}>
@@ -228,22 +247,6 @@ defmodule QuantumBillingWeb.HsnFinderLive do
                   <.icon name="hero-arrow-top-right-on-square" class="size-4 text-base-content/45" />
                 </a>
               </li>
-            </ul>
-          </.card>
-
-          <.card padding="p-5">
-            <div class="flex items-center gap-2.5">
-              <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
-              <h2 class="text-sm font-semibold tracking-tight">Note</h2>
-            </div>
-            <ul class="mt-3 space-y-2 text-sm text-base-content/60">
-              <li>
-                GST was restructured on {format_date(HsnFinder.gst_2_0_date())} ("GST 2.0") —
-                rates below reflect the current structure, not the pre-reform slabs.
-              </li>
-              <li>This covers a curated set of commonly searched codes, not the full list.</li>
-              <li>Please verify the HSN / SAC code and rate before use.</li>
-              <li>For anything not covered here, refer to the official CBIC / GST portal.</li>
             </ul>
           </.card>
         </div>

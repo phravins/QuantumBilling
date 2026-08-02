@@ -105,6 +105,17 @@ defmodule QuantumBilling.ComplianceTest do
     end
   end
 
+  describe "tracked_obligations/1" do
+    # The statutory calendar above is the same for every business in the
+    # country. Nothing is this tenant's until there are filing records to
+    # resolve it against, so the page shows nothing rather than showing the
+    # calendar as though it were their own compliance position.
+    test "is empty while there are no filing records" do
+      assert Compliance.tracked_obligations(@today) == []
+      assert Compliance.tracked_obligations() == []
+    end
+  end
+
   describe "summary/1" do
     test "counts split across the statuses and total up" do
       summary = Compliance.summary(obligations())

@@ -3,7 +3,9 @@ defmodule QuantumBillingWeb.ClientNewLive do
   The "Add New Client" form.
 
   Follows the shape of `EWayBillNewLive`: breadcrumb, header carrying Cancel and
-  Save, the form on the left and an information rail on the right.
+  Save, then the form. Nothing here needs a running summary the way an invoice
+  does, so the form takes the full width and the standing guidance sits behind
+  the header's `help_popover/1` rather than in a permanent right-hand rail.
 
   The GSTIN's required marker follows the client type rather than being fixed —
   an unregistered dealer or a walk-in consumer has no GSTIN, and B2C invoicing
@@ -68,7 +70,37 @@ defmodule QuantumBillingWeb.ClientNewLive do
       </nav>
 
       <.header>
-        Add New Client
+        <span class="inline-flex items-center gap-2">
+          Add New Client
+          <.help_popover label="About adding a client">
+            <span class="block">
+              <span class="flex items-center gap-2.5">
+                <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
+                <span class="font-semibold tracking-tight">Information</span>
+              </span>
+              <span class="mt-3 block text-base-content/60">
+                Add accurate client details to create GST invoices, e-way bills and maintain
+                compliance.
+              </span>
+            </span>
+
+            <span class="block">
+              <span class="flex items-center gap-2.5">
+                <.icon name="hero-light-bulb" class="size-4 text-base-content/45" />
+                <span class="font-semibold tracking-tight">Tips</span>
+              </span>
+              <ul class="mt-3 space-y-2.5">
+                <li :for={tip <- tips()} class="flex gap-2 text-base-content/60">
+                  <.icon
+                    name="hero-check-circle"
+                    class="mt-0.5 size-4 shrink-0 text-base-content/45"
+                  />
+                  {tip}
+                </li>
+              </ul>
+            </span>
+          </.help_popover>
+        </span>
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/clients"} class={secondary_button_class()}>Cancel</.link>
@@ -79,15 +111,8 @@ defmodule QuantumBillingWeb.ClientNewLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <.form
-          :let={f}
-          for={@form}
-          id="client-form"
-          phx-change="validate"
-          phx-submit="save"
-          class="lg:col-span-2"
-        >
+      <div>
+        <.form :let={f} for={@form} id="client-form" phx-change="validate" phx-submit="save">
           <.card padding="p-6">
             <h2 class="mb-4 text-sm font-semibold tracking-tight">Basic Information</h2>
 
@@ -296,32 +321,6 @@ defmodule QuantumBillingWeb.ClientNewLive do
             </details>
           </.card>
         </.form>
-
-        <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
-          <.card>
-            <div class="flex items-center gap-2.5">
-              <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
-              <h2 class="text-sm font-semibold tracking-tight">Information</h2>
-            </div>
-            <p class="mt-3 text-sm text-base-content/60">
-              Add accurate client details to create GST invoices, e-way bills and maintain
-              compliance.
-            </p>
-          </.card>
-
-          <.card>
-            <div class="flex items-center gap-2.5">
-              <.icon name="hero-light-bulb" class="size-4 text-base-content/45" />
-              <h2 class="text-sm font-semibold tracking-tight">Tips</h2>
-            </div>
-            <ul class="mt-3 space-y-2.5">
-              <li :for={tip <- tips()} class="flex gap-2 text-sm text-base-content/60">
-                <.icon name="hero-check-circle" class="mt-0.5 size-4 shrink-0 text-base-content/45" />
-                {tip}
-              </li>
-            </ul>
-          </.card>
-        </div>
       </div>
     </Layouts.app>
     """

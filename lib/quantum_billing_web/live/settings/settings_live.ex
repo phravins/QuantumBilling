@@ -101,36 +101,35 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      active_sub={@section}
+    >
       <.header>
         Settings
         <:subtitle>Manage your account and application settings</:subtitle>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div class="lg:col-span-4 xl:col-span-3">
-          <.section_nav active={@section} />
-        </div>
+      <div class="space-y-4">
+        <.card padding="p-6">
+          {render_panel(assigns)}
+        </.card>
 
-        <div class="space-y-4 lg:col-span-8 xl:col-span-9">
-          <.card padding="p-6">
-            {render_panel(assigns)}
-          </.card>
-
-          <.card :if={@section == :general} padding="p-6">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
-                <p class="mt-1 text-sm text-base-content/60">
-                  Upload your company logo and signature that will appear on invoices.
-                </p>
-              </div>
-              <span class="inline-flex h-9 shrink-0 items-center gap-2 rounded-field border border-base-300 px-3 text-sm text-base-content/45">
-                <.icon name="hero-photo" class="size-4" /> Needs file storage
-              </span>
+        <.card :if={@section == :general} padding="p-6">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
+              <p class="mt-1 text-sm text-base-content/60">
+                Upload your company logo and signature that will appear on invoices.
+              </p>
             </div>
-          </.card>
-        </div>
+            <span class="inline-flex h-9 shrink-0 items-center gap-2 rounded-field border border-base-300 px-3 text-sm text-base-content/45">
+              <.icon name="hero-photo" class="size-4" /> Needs file storage
+            </span>
+          </div>
+        </.card>
       </div>
     </Layouts.app>
     """

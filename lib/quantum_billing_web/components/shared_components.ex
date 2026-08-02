@@ -110,6 +110,63 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
+  Renders a small arrow that opens a panel of supporting copy when clicked.
+
+  Guidance worth reading once but not worth a permanent column — the "what this
+  page is for" blurb and the tips beside it — lives here instead of in a
+  sidebar, so the form itself gets the full width of the page.
+
+  Built on the same daisyUI dropdown the filter menus and the profile menu use,
+  so click-away and Esc dismissal come for free and no JavaScript is involved.
+  It renders as `<span>`s because the usual home for it is inside `header/1`'s
+  `<h1>`, which only accepts phrasing content.
+
+  ## Examples
+
+      <.header>
+        <span class="inline-flex items-center gap-2">
+          Add New Client
+          <.help_popover label="About adding a client">…</.help_popover>
+        </span>
+      </.header>
+  """
+  attr :label, :string,
+    default: "More information",
+    doc: "the accessible name for the icon-only trigger"
+
+  attr :class, :any, default: nil
+
+  slot :inner_block, required: true
+
+  def help_popover(assigns) do
+    ~H"""
+    <span class={["dropdown dropdown-start", @class]}>
+      <span
+        tabindex="0"
+        role="button"
+        aria-label={@label}
+        class={[
+          "flex size-6 items-center justify-center rounded-field text-base-content/45",
+          "transition-colors hover:bg-base-200 hover:text-base-content"
+        ]}
+      >
+        <.icon name="hero-chevron-down" class="size-4" />
+      </span>
+      <%!-- The trigger usually sits in an <h1>, whose type would otherwise cascade in. --%>
+      <span
+        tabindex="0"
+        class={[
+          "dropdown-content z-20 mt-1 block w-80 space-y-4 rounded-box border border-base-300",
+          "bg-base-100 p-4 text-left text-sm font-normal tracking-normal shadow-lg"
+        ]}
+      >
+        {render_slot(@inner_block)}
+      </span>
+    </span>
+    """
+  end
+
+  @doc """
   Renders a status pill. Covers both GST invoice statuses and client account
   statuses; anything unrecognized falls back to a neutral pill.
 
@@ -180,6 +237,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.input
         field={@field}
         type={@type}
+        required={@required}
         class={[control_class(@type), @class, @errors != [] && form_error_class()]}
         error_class={form_error_class()}
         {@rest}

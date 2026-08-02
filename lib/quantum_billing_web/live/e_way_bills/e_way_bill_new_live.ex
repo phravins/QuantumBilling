@@ -70,7 +70,21 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       </nav>
 
       <.header>
-        Generate New E-Way Bill
+        <span class="inline-flex items-center gap-2">
+          Generate New E-Way Bill
+          <.help_popover label="Before you generate this e-way bill">
+            <span class="flex gap-2.5">
+              <.icon name="hero-information-circle" class="size-4 shrink-0 text-base-content/45" />
+              <span class="block">
+                <span class="block font-medium">Note</span>
+                <span class="mt-1 block text-base-content/60">
+                  Please verify all details before generating the e-way bill. Once generated,
+                  only the vehicle number can be updated.
+                </span>
+              </span>
+            </span>
+          </.help_popover>
+        </span>
         <:subtitle>Fill in the consignment details to generate a new e-way bill</:subtitle>
         <:actions>
           <div class="flex items-center gap-2">
@@ -336,19 +350,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 value={rupees(@total_invoice_value, decimals: 2, space: true)}
                 emphasis
               />
-            </div>
-          </.card>
-
-          <.card>
-            <div class="flex gap-2.5">
-              <.icon name="hero-information-circle" class="size-4 shrink-0 text-base-content/45" />
-              <div>
-                <p class="text-xs font-medium">Note</p>
-                <p class="mt-1 text-xs text-base-content/60">
-                  Please verify all details before generating the e-way bill. Once generated,
-                  only the vehicle number can be updated.
-                </p>
-              </div>
             </div>
           </.card>
         </div>

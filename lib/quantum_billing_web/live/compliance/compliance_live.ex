@@ -27,7 +27,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
      |> assign(:page_title, "Compliance")
      |> assign(:active_nav, :compliance)
      |> assign(:today, today)
-     |> assign(:obligations, Compliance.obligations(today))
+     |> assign(:obligations, Compliance.tracked_obligations(today))
      |> assign(:category, :all)
      |> assign(:status_filter, "All Status")
      |> assign(:calendar_year, today.year)
@@ -106,14 +106,25 @@ defmodule QuantumBillingWeb.ComplianceLive do
       <.header>
         Compliance
         <:subtitle>Track your GST compliance and filing status</:subtitle>
-        <:actions>
+        <:actions :if={@obligations != []}>
           <a href="#filing-calendar" phx-click="show_all" class={action_button_class()}>
             <.icon name="hero-calendar-days" class="size-4" /> View Filing Calendar
           </a>
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <.card :if={@obligations == []}>
+        <.empty_state
+          icon="hero-shield-check"
+          title="No compliance data yet"
+          description="GST filing obligations will appear here once your returns are being tracked."
+        />
+      </.card>
+
+      <div
+        :if={@obligations != []}
+        class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
         <.stat_card
           label="Total Returns"
           value={Integer.to_string(@summary.total)}
@@ -144,7 +155,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div :if={@obligations != []} class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>

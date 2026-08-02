@@ -341,7 +341,9 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 <thead>
                   <tr class={table_head_class()}>
                     <th class="w-8 py-2 pr-2 text-left font-medium">#</th>
-                    <th class="py-2 pr-2 text-left font-medium">Item / Description</th>
+                    <th class="py-2 pr-2 text-left font-medium">
+                      Item / Description<span class="ml-0.5 text-error">*</span>
+                    </th>
                     <th class="w-28 py-2 pr-2 text-left font-medium">HSN / SAC</th>
                     <th class="w-20 py-2 pr-2 text-left font-medium">Qty</th>
                     <th class="w-24 py-2 pr-2 text-left font-medium">Unit</th>
@@ -372,6 +374,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         name={item_form[:description].name}
                         value={Phoenix.HTML.Form.input_value(item_form, :description)}
                         placeholder="Item or service"
+                        required
                         class={form_input_class()}
                       />
                     </td>

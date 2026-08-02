@@ -1,8 +1,10 @@
 defmodule QuantumBillingWeb.SettingsComponents do
   @moduledoc """
-  Building blocks for the Settings page: the section nav down the left, the
-  panel header carrying each section's Save action, and the labelled toggle used
-  by the boolean settings.
+  Building blocks for the Settings page: the panel header carrying each
+  section's Save action, and the labelled toggle used by the boolean settings.
+
+  `sections/0` is the single source of truth for the section list. The app
+  sidebar reads it too, which is why it lives here rather than in the LiveView.
 
   The labelled `field/1` these panels use lives in
   `QuantumBillingWeb.SharedComponents` and is auto-imported.
@@ -10,68 +12,79 @@ defmodule QuantumBillingWeb.SettingsComponents do
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
-  import QuantumBillingWeb.SharedComponents, only: [card: 1, action_button_class: 0]
+  import QuantumBillingWeb.SharedComponents, only: [action_button_class: 0]
 
-  use QuantumBillingWeb, :verified_routes
-
+  # `short_title` is what the sidebar shows. The sidebar is only 12rem wide and
+  # already says "Settings" above these, so the suffix is both redundant and too
+  # long to fit.
   @sections [
     %{
       key: :general,
       title: "General Settings",
+      short_title: "General",
       subtitle: "Company details and basic settings",
       icon: "hero-cog-6-tooth"
     },
     %{
       key: :invoice,
       title: "Invoice Settings",
+      short_title: "Invoice",
       subtitle: "Invoice numbering and preferences",
       icon: "hero-document-text"
     },
     %{
       key: :e_way_bill,
       title: "E-Way Bill Settings",
+      short_title: "E-Way Bill",
       subtitle: "E-way bill and transport settings",
       icon: "hero-truck"
     },
     %{
       key: :tax,
       title: "Tax Settings",
+      short_title: "Tax",
       subtitle: "GST rates and tax configurations",
       icon: "hero-receipt-percent"
     },
     %{
       key: :users,
       title: "Users & Roles",
+      short_title: "Users & Roles",
       subtitle: "Manage users and roles",
       icon: "hero-users"
     },
     %{
       key: :notifications,
       title: "Notifications",
+      short_title: "Notifications",
       subtitle: "Email and in-app notifications",
       icon: "hero-bell"
     },
     %{
       key: :backup,
       title: "Backup & Restore",
+      short_title: "Backup & Restore",
       subtitle: "Backup your data and restore",
       icon: "hero-cloud-arrow-up"
     },
     %{
       key: :integrations,
       title: "Integrations",
+      short_title: "Integrations",
       subtitle: "Third party integrations",
       icon: "hero-squares-2x2"
     },
     %{
       key: :security,
       title: "Security",
+      short_title: "Security",
       subtitle: "Password and security settings",
       icon: "hero-lock-closed"
     },
     %{
       key: :preferences,
       title: "Preferences",
+      short_title: "Preferences",
       subtitle: "Language and theme settings",
       icon: "hero-computer-desktop"
     }
@@ -83,60 +96,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
   @doc "The section for `key`, or the general section when it is unknown."
   def section(key) do
     Enum.find(@sections, hd(@sections), &(&1.key == key))
-  end
-
-  @doc """
-  Renders the left-hand section nav.
-
-  Each entry links to its own URL so a section can be bookmarked and survives a
-  reload. The active treatment matches the app sidebar rather than the
-  screenshot's blue highlight.
-  """
-  attr :active, :atom, required: true
-
-  def section_nav(assigns) do
-    assigns = assign(assigns, :sections, @sections)
-
-    ~H"""
-    <.card padding="p-2">
-      <nav class="space-y-0.5">
-        <.link
-          :for={section <- @sections}
-          patch={~p"/settings/#{section.key}"}
-          class={[
-            "flex items-start gap-3 rounded-field px-3 py-2.5 transition-colors",
-            if(@active == section.key,
-              do: "bg-base-200",
-              else: "hover:bg-base-200/60"
-            )
-          ]}
-        >
-          <span class={[
-            "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-field",
-            if(@active == section.key,
-              do: "bg-base-100 text-base-content",
-              else: "bg-base-200 text-base-content/60"
-            )
-          ]}>
-            <.icon name={section.icon} class="size-4" />
-          </span>
-
-          <span class="min-w-0">
-            <span class={[
-              "block text-sm",
-              if(@active == section.key,
-                do: "font-medium text-base-content",
-                else: "text-base-content/80"
-              )
-            ]}>
-              {section.title}
-            </span>
-            <span class="block text-xs text-base-content/45">{section.subtitle}</span>
-          </span>
-        </.link>
-      </nav>
-    </.card>
-    """
   end
 
   @doc """

@@ -8,20 +8,27 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   setup :register_and_log_in_user
 
   describe "page" do
-    test "opens on General with every section in the nav", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/settings")
+    # The sections live in the app sidebar now, which shows each one's short
+    # title — the sidebar already says "Settings" above them. The open
+    # section's full title still comes from its panel header.
+    test "opens on General with every section in the sidebar", %{conn: conn} do
+      {:ok, view, html} = live(conn, ~p"/settings")
 
       assert html =~ "Manage your account and application settings"
       assert html =~ "General Settings"
-      assert html =~ "Invoice Settings"
-      assert html =~ "E-Way Bill Settings"
-      assert html =~ "Tax Settings"
-      assert html =~ "Users &amp; Roles"
-      assert html =~ "Notifications"
-      assert html =~ "Backup &amp; Restore"
-      assert html =~ "Integrations"
-      assert html =~ "Security"
-      assert html =~ "Preferences"
+
+      for section <- QuantumBillingWeb.SettingsComponents.sections() do
+        assert has_element?(view, ~s(a[href="/settings/#{section.key}"])),
+               "expected a sidebar link for #{section.key}"
+      end
+    end
+
+    test "the sections only unfold while inside Settings", %{conn: conn} do
+      {:ok, _view, settings} = live(conn, ~p"/settings")
+      {:ok, _view, invoices} = live(conn, ~p"/invoices")
+
+      assert settings =~ ~s(href="/settings/tax")
+      refute invoices =~ ~s(href="/settings/tax")
     end
 
     test "renders the General form fields", %{conn: conn} do
@@ -60,13 +67,25 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    test "clicking the nav moves to that section and updates the URL", %{conn: conn} do
+    # The sidebar renders on every page, so these links navigate rather than
+    # patch — a patch would be invalid from any LiveView other than this one.
+    test "clicking the sidebar moves to that section and updates the URL", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
-      html = view |> element(~s(a[href="/settings/tax"])) |> render_click()
+      {:ok, _view, html} =
+        view
+        |> element(~s(a[href="/settings/tax"]))
+        |> render_click()
+        |> follow_redirect(conn, ~p"/settings/tax")
 
       assert html =~ "Default GST Rate (%)"
-      assert_patched(view, ~p"/settings/tax")
+    end
+
+    test "the open section is marked active in the sidebar", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/tax")
+
+      assert has_element?(view, ~s(a[href="/settings/tax"].font-medium))
+      refute has_element?(view, ~s(a[href="/settings/invoice"].font-medium))
     end
   end
 

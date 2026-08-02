@@ -152,6 +152,21 @@ defmodule QuantumBilling.Compliance do
   def filings, do: []
 
   @doc """
+  The obligations this tenant is actually tracking.
+
+  Returns `[]` until the filings table exists. `obligations/1` above is the
+  statutory calendar — correct, but the same 30 rows for every business in the
+  country. Showing it before there is a single filing record reads as invented
+  data rather than as this tenant's compliance position, so the page shows
+  nothing instead, the way `Reports.invoices/0` and
+  `EWayBills.list_e_way_bills/0` do for their own unbacked features.
+
+  When the schema lands this narrows `obligations/1` to the periods the tenant
+  is registered for and resolves each against `filings/0`.
+  """
+  def tracked_obligations(_today \\ Date.utc_today()), do: []
+
+  @doc """
   Counts and percentages for the summary cards.
 
   Percentages are of the total, rounded to one decimal, and are `0.0` for an
