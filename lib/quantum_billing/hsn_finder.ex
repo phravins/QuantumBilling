@@ -13,9 +13,9 @@ defmodule QuantumBilling.HsnFinder do
   The actual government HSN/SAC master runs to roughly twenty-two thousand
   codes, and nothing available here can reliably import that. This is a
   curated set of commonly searched codes instead, correctly rated and clearly
-  presented as a starting point — the UI's empty state and Quick Links exist
-  specifically to send a miss to the real official source rather than implying
-  the tool is broken.
+  presented as a starting point — the UI's empty state exists specifically to
+  send a miss to the real official source rather than implying the tool is
+  broken.
 
   ## Why these rates, specifically
 

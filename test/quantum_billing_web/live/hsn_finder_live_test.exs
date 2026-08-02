@@ -14,14 +14,18 @@ defmodule QuantumBillingWeb.HsnFinderLiveTest do
       assert html =~ "Search by HSN / SAC Code"
     end
 
-    test "renders the info rail", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/hsn-finder")
+    # There is no side rail any more: the standing guidance moved into the
+    # header popover, and Quick Links was removed outright so the search gets
+    # the full width of the page.
+    test "keeps its guidance in the header popover, not a rail", %{conn: conn} do
+      {:ok, view, html} = live(conn, ~p"/hsn-finder")
 
+      assert has_element?(view, ~s(span[role="button"][aria-label="About HSN / SAC codes"]))
       assert html =~ "About HSN / SAC"
-      assert html =~ "Quick Links"
       assert html =~ "Note"
-      assert html =~ "https://www.cbic.gov.in"
-      assert html =~ "https://www.gst.gov.in"
+
+      refute html =~ "Quick Links"
+      refute html =~ "https://www.gst.gov.in"
     end
 
     test "opens with no query and a neutral prompt, not an empty-state warning", %{conn: conn} do

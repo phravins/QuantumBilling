@@ -120,6 +120,31 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
+  Renders the QuantumBilling mark: the bare icon with the wordmark beside it.
+
+  Shared because it appears both in the sidebar and at the head of the
+  documents the app produces, and a mark that drifts between the two stops
+  reading as one product.
+
+  ## Examples
+
+      <.brand_mark />
+      <.brand_mark icon_class="size-5" label_class="text-base font-semibold" />
+  """
+  attr :class, :any, default: nil
+  attr :icon_class, :any, default: "size-6"
+  attr :label_class, :any, default: "text-sm font-semibold tracking-tight"
+
+  def brand_mark(assigns) do
+    ~H"""
+    <div class={["flex items-center gap-2", @class]}>
+      <.icon name="hero-receipt-percent" class={["shrink-0", @icon_class]} />
+      <span class={["truncate", @label_class]}>QuantumBilling</span>
+    </div>
+    """
+  end
+
+  @doc """
   Renders a small arrow that opens a panel of supporting copy when clicked.
 
   Guidance worth reading once but not worth a permanent column — the "what this

@@ -59,6 +59,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       <.card padding="p-8">
         <div class="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
+            <.brand_mark
+              class="mb-5"
+              icon_class="size-7"
+              label_class="text-base font-semibold tracking-tight"
+            />
+
             <p class="text-2xs uppercase tracking-wider text-base-content/45">From</p>
             <p class="mt-1 text-sm font-semibold tracking-tight">
               {@invoice.company_name || "—"}

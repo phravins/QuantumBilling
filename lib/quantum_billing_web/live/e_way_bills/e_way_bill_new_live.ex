@@ -272,6 +272,8 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
 
         <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
           <.card>
+            <.brand_mark class="mb-4 border-b border-base-300 pb-4" icon_class="size-6" />
+
             <h2 class="mb-4 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
 
             <div class="space-y-2.5">
