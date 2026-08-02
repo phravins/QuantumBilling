@@ -65,6 +65,27 @@ defmodule QuantumBillingWeb.InvoicesLive do
     {:noreply, assign(socket, :page, String.to_integer(page_str))}
   end
 
+  def handle_event("delete", %{"id" => id}, socket) do
+    case Invoices.get_invoice(id) do
+      nil ->
+        # Already gone — most likely deleted in another window, whose broadcast
+        # is about to refresh this list anyway.
+        {:noreply, put_flash(socket, :error, "That invoice no longer exists.")}
+
+      invoice ->
+        case Invoices.delete_invoice(invoice) do
+          {:ok, invoice} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Invoice #{invoice.invoice_number} deleted.")
+             |> assign(:all_invoices, Invoices.list_invoices())}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "That invoice could not be deleted.")}
+        end
+    end
+  end
+
   def handle_info({:invoice_changed, _invoice}, socket) do
     {:noreply, assign(socket, :all_invoices, Invoices.list_invoices())}
   end
@@ -87,6 +108,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         total: total,
         total_pages: total_pages,
         page: page,
+        row_offset: (page - 1) * @per_page,
         status_options: @status_options
       )
 
@@ -163,16 +185,15 @@ defmodule QuantumBillingWeb.InvoicesLive do
           }
         />
 
-        <div :if={@total > 0} class="overflow-x-auto">
-          <table class="table">
+        <div :if={@total > 0}>
+          <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
+                <th class="w-12">S.No</th>
                 <th>
                   <.sortable_th
-                    label="Invoice #"
+                    label="Invoice"
                     field={:seq}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>Client</th>
@@ -180,25 +201,28 @@ defmodule QuantumBillingWeb.InvoicesLive do
                   <.sortable_th
                     label="Invoice Date"
                     field={:invoice_date}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>
                   <.sortable_th
                     label="Due Date"
                     field={:due_date}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>Total Amount</th>
                 <th>Status</th>
-                <th><span class="sr-only">Actions</span></th>
+                <th class="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"invoice-#{row.id}"} class={table_row_class()}>
+              <%!-- The serial carries on across pages rather than restarting at
+              1, so it reads as a position in the list, not on the screen. --%>
+              <tr
+                :for={{row, index} <- Enum.with_index(@rows)}
+                id={"invoice-#{row.id}"}
+                class={table_row_class()}
+              >
+                <td class="text-base-content/45">{@row_offset + index + 1}</td>
                 <td class="font-medium">{row.number}</td>
                 <td>{row.client}</td>
                 <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
@@ -206,7 +230,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 <td class="font-medium">{rupees(row.amount)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
-                  <div class="flex gap-1">
+                  <div class="flex justify-end gap-1">
                     <.link
                       navigate={~p"/invoices/#{row.id}"}
                       class={row_action_class()}
@@ -214,12 +238,44 @@ defmodule QuantumBillingWeb.InvoicesLive do
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
-                    <button type="button" class={row_action_class()} aria-label="Edit invoice">
-                      <.icon name="hero-pencil-square" class="size-4" />
-                    </button>
-                    <button type="button" class={row_action_class()} aria-label="More actions">
-                      <.icon name="hero-ellipsis-vertical" class="size-4" />
-                    </button>
+                    <div class="dropdown dropdown-end">
+                      <div
+                        tabindex="0"
+                        role="button"
+                        class={row_action_class()}
+                        aria-label="More actions"
+                      >
+                        <.icon name="hero-ellipsis-vertical" class="size-4" />
+                      </div>
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content menu z-10 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
+                      >
+                        <li>
+                          <.link navigate={~p"/invoices/#{row.id}/edit"}>
+                            <.icon name="hero-pencil-square" class="size-4" /> Edit
+                          </.link>
+                        </li>
+                        <li>
+                          <%!-- A real navigation, not a LiveView event: the
+                          print view is a plain page the browser has to load
+                          before it can offer to save it. --%>
+                          <.link href={~p"/invoices/#{row.id}/pdf"} target="_blank">
+                            <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
+                          </.link>
+                        </li>
+                        <li>
+                          <a
+                            phx-click="delete"
+                            phx-value-id={row.id}
+                            data-confirm={"Delete #{row.number}? This cannot be undone, and the number is not reused."}
+                            class="text-error"
+                          >
+                            <.icon name="hero-trash" class="size-4" /> Delete
+                          </a>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
                 </td>
               </tr>

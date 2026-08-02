@@ -25,8 +25,26 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
-  def mount(_params, _session, socket) do
+  # Serves both /invoices/new and /invoices/:id/edit. The form, the totals and
+  # the validation are identical either way — only what the save writes to
+  # differs — so one LiveView rather than a near-copy that drifts.
+  def mount(params, _session, socket) do
     organization = Settings.get_organization()
+
+    socket =
+      socket
+      |> assign(:active_nav, :invoices)
+      |> assign(:organization, organization)
+      |> assign(:clients, Clients.list_clients())
+      |> assign(:selected_client_id, nil)
+
+    case params do
+      %{"id" => id} -> mount_edit(id, organization, socket)
+      _new -> {:ok, mount_new(organization, socket)}
+    end
+  end
+
+  defp mount_new(organization, socket) do
     today = Date.utc_today()
 
     params = %{
@@ -38,14 +56,27 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       "items" => %{"0" => blank_item(0)}
     }
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Create New GST Invoice")
-     |> assign(:active_nav, :invoices)
-     |> assign(:organization, organization)
-     |> assign(:clients, Clients.list_clients())
-     |> assign(:selected_client_id, nil)
-     |> assign_form(Invoices.change_invoice(%Invoice{}, with_company(params, organization)))}
+    socket
+    |> assign(:page_title, "Create New GST Invoice")
+    |> assign(:invoice, %Invoice{})
+    |> assign_form(Invoices.change_invoice(%Invoice{}, with_company(params, organization)))
+  end
+
+  defp mount_edit(id, _organization, socket) do
+    case Invoices.get_invoice(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "That invoice does not exist.")
+         |> push_navigate(to: ~p"/invoices")}
+
+      invoice ->
+        {:ok,
+         socket
+         |> assign(:page_title, "Edit #{invoice.invoice_number}")
+         |> assign(:invoice, invoice)
+         |> assign_form(Invoices.change_invoice(invoice))}
+    end
   end
 
   def handle_event("validate", %{"invoice" => params}, socket) do
@@ -57,7 +88,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       |> with_company(socket.assigns.organization)
 
     changeset =
-      %Invoice{}
+      socket.assigns.invoice
       |> Invoices.change_invoice(params)
       |> Map.put(:action, :validate)
 
@@ -72,11 +103,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     {params, _socket} = apply_client_choice(params, socket)
     params = apply_payment_term(params)
 
-    case Invoices.create_invoice(params) do
+    case save_invoice(socket.assigns.invoice, params) do
       {:ok, invoice} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Invoice #{invoice.invoice_number} saved as a draft.")
+         |> put_flash(:info, saved_message(socket.assigns.invoice, invoice))
          |> push_navigate(to: ~p"/invoices/#{invoice.id}")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -86,6 +117,14 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
          |> assign_form(changeset)}
     end
   end
+
+  defp save_invoice(%Invoice{id: nil}, params), do: Invoices.create_invoice(params)
+  defp save_invoice(%Invoice{} = invoice, params), do: Invoices.update_invoice(invoice, params)
+
+  defp saved_message(%Invoice{id: nil}, invoice),
+    do: "Invoice #{invoice.invoice_number} saved as a draft."
+
+  defp saved_message(_existing, invoice), do: "Invoice #{invoice.invoice_number} updated."
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     # The totals are already on the changeset — recalculate/1 put them there —
@@ -181,12 +220,13 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.header>
-        Create New GST Invoice
+        {@page_title}
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/invoices"} class={secondary_button_class()}>Cancel</.link>
             <button type="submit" form="invoice-form" class={secondary_button_class()}>
-              <.icon name="hero-document-text" class="size-4" /> Save Draft
+              <.icon name="hero-document-text" class="size-4" />
+              {if @invoice.id, do: "Save Changes", else: "Save Draft"}
             </button>
             <button type="submit" form="invoice-form" class={action_button_class()}>
               <.icon name="hero-eye" class="size-4" /> Preview Invoice
@@ -226,10 +266,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                   Invoice No.<span class="ml-0.5 text-error">*</span>
                 </span>
                 <div class="flex h-9 items-center rounded-field border border-base-300 bg-base-200 px-3 text-sm font-medium">
-                  {Settings.next_invoice_number(@organization)}
+                  {@invoice.invoice_number || Settings.next_invoice_number(@organization)}
                 </div>
                 <p class="mt-1 text-2xs text-base-content/45">
-                  Assigned on save. Change the series in Settings.
+                  {if @invoice.id,
+                    do: "Fixed once issued — it belongs to the numbering series.",
+                    else: "Assigned on save. Change the series in Settings."}
                 </p>
               </div>
 
@@ -334,17 +376,17 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <table class="w-full">
                 <thead>
                   <tr class={table_head_class()}>
-                    <th class="w-8 pr-2 text-left font-medium">#</th>
-                    <th class="pr-2 text-left font-medium">
+                    <th class="w-8 pr-2 text-left">#</th>
+                    <th class="pr-2 text-left">
                       Item / Description<span class="ml-0.5 text-error">*</span>
                     </th>
-                    <th class="w-28 pr-2 text-left font-medium">HSN / SAC</th>
-                    <th class="w-20 pr-2 text-left font-medium">Qty</th>
-                    <th class="w-24 pr-2 text-left font-medium">Unit</th>
-                    <th class="w-28 pr-2 text-left font-medium">Rate (₹)</th>
-                    <th class="w-24 pr-2 text-left font-medium">Tax (%)</th>
-                    <th class="w-28 pr-2 text-right font-medium">Amount (₹)</th>
-                    <th class="w-10 text-right font-medium">
+                    <th class="w-28 pr-2 text-left">HSN / SAC</th>
+                    <th class="w-20 pr-2 text-left">Qty</th>
+                    <th class="w-24 pr-2 text-left">Unit</th>
+                    <th class="w-28 pr-2 text-left">Rate (₹)</th>
+                    <th class="w-24 pr-2 text-left">Tax (%)</th>
+                    <th class="w-28 pr-2 text-right">Amount (₹)</th>
+                    <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
                     </th>
                   </tr>
@@ -354,7 +396,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                     :for={{item, index} <- Enum.with_index(f[:items].value || [])}
                     class={table_row_class()}
                   >
-                    <% item_form = to_form(item, as: "invoice[items][#{index}]") %>
+                    <% item_form = item_form(item, index) %>
                     <td class="py-2 pr-2 align-top text-sm text-base-content/45">{index + 1}</td>
                     <td class="py-2 pr-2 align-top">
                       <input type="hidden" name="invoice[items_sort][]" value={index} />
@@ -602,6 +644,19 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
+  # A new invoice's items arrive as changesets, straight from `cast_assoc`. An
+  # existing one's arrive as loaded structs, because opening the edit form runs
+  # no params through the changeset — and `to_form/2` has no idea what to do
+  # with a bare struct. Normalising here rather than at the call site keeps the
+  # row markup identical for both.
+  defp item_form(%Ecto.Changeset{} = changeset, index) do
+    to_form(changeset, as: "invoice[items][#{index}]")
+  end
+
+  defp item_form(%InvoiceItem{} = item, index) do
+    item |> Ecto.Changeset.change() |> item_form(index)
+  end
+
   # The line total as typed, before anything is saved.
   defp line_amount(%Ecto.Changeset{} = changeset) do
     quantity = Ecto.Changeset.get_field(changeset, :quantity) || 0
@@ -610,7 +665,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   end
 
   defp line_amount(%InvoiceItem{} = item), do: InvoiceItem.amount(item)
-  defp line_amount(_other), do: 0
 
   # `cast_assoc` reports "add at least one item" against :items, which no
   # individual input owns, so it is surfaced under the table instead.

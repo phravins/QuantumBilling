@@ -126,14 +126,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <table class="w-full">
             <thead>
               <tr class={table_head_class()}>
-                <th class="w-8 pr-4 text-left font-medium">#</th>
-                <th class="pr-4 text-left font-medium">Item / Description</th>
-                <th class="pr-4 text-left font-medium">HSN / SAC</th>
-                <th class="pr-4 text-right font-medium">Qty</th>
-                <th class="pr-4 text-left font-medium">Unit</th>
-                <th class="pr-4 text-right font-medium">Rate (₹)</th>
-                <th class="pr-4 text-right font-medium">Tax (%)</th>
-                <th class="text-right font-medium">Amount (₹)</th>
+                <th class="w-8 pr-4 text-left">#</th>
+                <th class="pr-4 text-left">Item / Description</th>
+                <th class="pr-4 text-left">HSN / SAC</th>
+                <th class="pr-4 text-right">Qty</th>
+                <th class="pr-4 text-left">Unit</th>
+                <th class="pr-4 text-right">Rate (₹)</th>
+                <th class="pr-4 text-right">Tax (%)</th>
+                <th class="text-right">Amount (₹)</th>
               </tr>
             </thead>
             <tbody>

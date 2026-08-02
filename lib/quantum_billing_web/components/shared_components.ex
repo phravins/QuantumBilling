@@ -49,8 +49,10 @@ defmodule QuantumBillingWeb.SharedComponents do
   # 10px uppercase labels is most of the row's height; the arbitrary variant
   # outranks it because daisyUI wraps its rules in zero-specificity `:where()`.
   # Horizontal padding is left alone — only the height was too generous.
-  @table_head_class "border-b border-base-300 text-2xs font-medium uppercase tracking-wider " <>
-                      "text-base-content/45 [&>th]:py-1.5"
+  # `font-semibold` and a darker tint than the rows beneath: at this size the
+  # labels were reading as the same weight as the data they head.
+  @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
+                      "text-base-content/60 [&>th]:py-1.5"
 
   @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
 
@@ -399,38 +401,24 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
-  Renders a clickable `<th>` label that toggles sorting for `field` and shows
-  the current sort direction when it is the active sort column.
+  Renders a clickable `<th>` label that toggles sorting for `field`.
+
+  `uppercase` is repeated here even though the header row already sets it: a
+  `<button>` does not inherit `text-transform`, which is why these columns read
+  "Invoice Date" while the plain ones beside them read "CLIENT".
   """
   attr :label, :string, required: true
   attr :field, :atom, required: true
-  attr :current_field, :atom, default: nil
-  attr :current_dir, :atom, default: :asc
 
   def sortable_th(assigns) do
     ~H"""
     <button
       type="button"
-      class="inline-flex items-center gap-1 hover:text-base-content"
+      class="inline-flex items-center uppercase hover:text-base-content"
       phx-click="sort"
       phx-value-field={@field}
     >
       {@label}
-      <.icon
-        :if={@current_field == @field and @current_dir == :asc}
-        name="hero-chevron-up"
-        class="size-3.5"
-      />
-      <.icon
-        :if={@current_field == @field and @current_dir == :desc}
-        name="hero-chevron-down"
-        class="size-3.5"
-      />
-      <.icon
-        :if={@current_field != @field}
-        name="hero-chevron-up-down"
-        class="size-3.5 text-base-content/45"
-      />
     </button>
     """
   end

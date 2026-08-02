@@ -38,6 +38,8 @@ defmodule QuantumBillingWeb.Router do
       live "/dashboard", DashboardLive, :index
       live "/invoices", InvoicesLive, :index
       live "/invoices/new", InvoiceNewLive, :new
+      # Before "/invoices/:id", or "new" and "<id>/edit" would both match it.
+      live "/invoices/:id/edit", InvoiceNewLive, :edit
       live "/invoices/:id", InvoiceShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
@@ -54,6 +56,7 @@ defmodule QuantumBillingWeb.Router do
 
     # Outside the live_session above: that block takes only `live` routes.
     get "/reports/export", ReportsController, :export
+    get "/invoices/:id/pdf", InvoicePdfController, :show
   end
 
   # Other scopes may use custom stacks.

@@ -143,6 +143,49 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
+  @doc """
+  Updates an invoice in place.
+
+  Neither the number nor the company block is touched. The number belongs to the
+  series and reassigning it would break the sequence; the company block is a
+  snapshot of who issued the invoice at the time, and refreshing it here would
+  quietly rewrite history whenever Settings changed. Items are replaced wholesale
+  — `has_many :items, on_replace: :delete` is what makes a removed row actually
+  go.
+  """
+  def update_invoice(%Invoice{} = invoice, attrs) do
+    invoice
+    |> Repo.preload(:items)
+    |> Invoice.changeset(attrs)
+    |> Repo.update()
+    |> case do
+      {:ok, invoice} ->
+        broadcast_change(invoice, :invoice_changed)
+        {:ok, Repo.preload(invoice, :items, force: true)}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
+  Deletes an invoice and its line items.
+
+  The number is not returned to the series: `invoice_next_number` only ever goes
+  forward, so a deleted invoice leaves a gap rather than letting the next save
+  reuse a number that has already been out in the world.
+  """
+  def delete_invoice(%Invoice{} = invoice) do
+    case Repo.delete(invoice) do
+      {:ok, invoice} ->
+        broadcast_change(invoice, :invoice_changed)
+        {:ok, invoice}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
   defp with_number(attrs, organization) do
     put_attr(attrs, "invoice_number", Settings.next_invoice_number(organization))
   end

@@ -80,6 +80,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         total: total,
         total_pages: total_pages,
         page: page,
+        row_offset: (page - 1) * @per_page,
         status_options: @status_options
       )
 
@@ -156,16 +157,15 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           }
         />
 
-        <div :if={@total > 0} class="overflow-x-auto">
-          <table class="table">
+        <div :if={@total > 0}>
+          <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
+                <th class="w-12">S.No</th>
                 <th>
                   <.sortable_th
                     label="EWB No."
                     field={:ewb_no}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>Document No.</th>
@@ -173,8 +173,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                   <.sortable_th
                     label="Issued On"
                     field={:issued_on}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>To</th>
@@ -183,16 +181,19 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                   <.sortable_th
                     label="Value"
                     field={:value}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>Status</th>
-                <th><span class="sr-only">Actions</span></th>
+                <th class="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"ewb-#{row.ewb_no}"} class={table_row_class()}>
+              <tr
+                :for={{row, index} <- Enum.with_index(@rows)}
+                id={"ewb-#{row.ewb_no}"}
+                class={table_row_class()}
+              >
+                <td class="text-base-content/45">{@row_offset + index + 1}</td>
                 <td class="font-medium">{row.ewb_no}</td>
                 <td class="text-base-content/60">{row.document_no}</td>
                 <td class="text-base-content/60">{format_date(row.issued_on)}</td>
@@ -201,7 +202,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 <td class="font-medium">{rupees(row.value, decimals: 2, space: true)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
-                  <div class="flex gap-1">
+                  <div class="flex justify-end gap-1">
                     <button type="button" class={row_action_class()} aria-label="View e-way bill">
                       <.icon name="hero-eye" class="size-4" />
                     </button>

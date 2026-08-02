@@ -87,6 +87,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         total: total,
         total_pages: total_pages,
         page: page,
+        row_offset: (page - 1) * @per_page,
         status_options: @status_options
       )
 
@@ -167,16 +168,15 @@ defmodule QuantumBillingWeb.ClientsLive do
           }
         />
 
-        <div :if={@total > 0} class="overflow-x-auto">
-          <table class="table">
+        <div :if={@total > 0}>
+          <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
+                <th class="w-12">S.No</th>
                 <th>
                   <.sortable_th
                     label="Client Name"
                     field={:name}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>GSTIN</th>
@@ -186,16 +186,19 @@ defmodule QuantumBillingWeb.ClientsLive do
                   <.sortable_th
                     label="Outstanding"
                     field={:outstanding}
-                    current_field={@sort_field}
-                    current_dir={@sort_dir}
                   />
                 </th>
                 <th>Status</th>
-                <th><span class="sr-only">Actions</span></th>
+                <th class="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr :for={row <- @rows} id={"client-#{row.id}"} class={table_row_class()}>
+              <tr
+                :for={{row, index} <- Enum.with_index(@rows)}
+                id={"client-#{row.id}"}
+                class={table_row_class()}
+              >
+                <td class="text-base-content/45">{@row_offset + index + 1}</td>
                 <td>
                   <div class="flex items-center gap-3">
                     <.client_avatar name={row.name} />
@@ -208,12 +211,9 @@ defmodule QuantumBillingWeb.ClientsLive do
                 <td class="font-medium">{rupees(row.outstanding, decimals: 2, space: true)}</td>
                 <td><.status_badge status={row.status} /></td>
                 <td>
-                  <div class="flex gap-1">
+                  <div class="flex justify-end gap-1">
                     <button type="button" class={row_action_class()} aria-label="View client">
                       <.icon name="hero-eye" class="size-4" />
-                    </button>
-                    <button type="button" class={row_action_class()} aria-label="Edit client">
-                      <.icon name="hero-pencil-square" class="size-4" />
                     </button>
                     <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />

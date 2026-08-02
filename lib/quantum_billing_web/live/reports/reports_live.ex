@@ -225,12 +225,12 @@ defmodule QuantumBillingWeb.ReportsLive do
             <table class="w-full">
               <thead>
                 <tr class={table_head_class()}>
-                  <th class="pr-4 text-left font-medium">Tax Type</th>
-                  <th class="pr-4 text-right font-medium">Taxable Value (₹)</th>
-                  <th class="pr-4 text-right font-medium">CGST (₹)</th>
-                  <th class="pr-4 text-right font-medium">SGST (₹)</th>
-                  <th class="pr-4 text-right font-medium">IGST (₹)</th>
-                  <th class="text-right font-medium">Total Tax (₹)</th>
+                  <th class="pr-4 text-left">Tax Type</th>
+                  <th class="pr-4 text-right">Taxable Value (₹)</th>
+                  <th class="pr-4 text-right">CGST (₹)</th>
+                  <th class="pr-4 text-right">SGST (₹)</th>
+                  <th class="pr-4 text-right">IGST (₹)</th>
+                  <th class="text-right">Total Tax (₹)</th>
                 </tr>
               </thead>
               <tbody>
