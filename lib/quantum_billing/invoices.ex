@@ -30,7 +30,8 @@ defmodule QuantumBilling.Invoices do
 
   The list renders `number`, `client`, `invoice_date`, `due_date`, `amount`,
   `status` and sorts on `seq`, so those are what this returns — the page itself
-  needs no change to start showing real rows.
+  needs no change to start showing real rows. The Dashboard's recent-invoices
+  table reads the same shape and additionally shows `gstin` and `tax_type`.
   """
   def list_invoices do
     Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
@@ -43,9 +44,13 @@ defmodule QuantumBilling.Invoices do
       seq: invoice.id,
       number: invoice.invoice_number,
       client: invoice.client_name,
+      gstin: invoice.client_gstin,
       invoice_date: invoice.invoice_date,
       due_date: invoice.due_date || invoice.invoice_date,
       amount: invoice.grand_total,
+      # Which taxes the supply attracts, not the document type: an intra-state
+      # supply splits into CGST and SGST, an inter-state one is a single IGST.
+      tax_type: if(Invoice.intra_state?(invoice), do: "CGST + SGST", else: "IGST"),
       status: invoice.status
     }
   end

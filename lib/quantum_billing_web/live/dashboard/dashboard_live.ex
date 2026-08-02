@@ -117,10 +117,12 @@ defmodule QuantumBillingWeb.DashboardLive do
           <div :if={@invoices != []} class="overflow-x-auto">
             <.table id="invoices" rows={@invoices}>
               <:col :let={row} label="Invoice #">{row.number}</:col>
-              <:col :let={row} label="Date">{row.date}</:col>
-              <:col :let={row} label="Customer GSTIN">{row.gstin}</:col>
+              <:col :let={row} label="Date">{format_date(row.invoice_date)}</:col>
+              <:col :let={row} label="Customer GSTIN">{row.gstin || "—"}</:col>
               <:col :let={row} label="Tax Type">{row.tax_type}</:col>
-              <:col :let={row} label="Total Amount">{row.amount}</:col>
+              <:col :let={row} label="Total Amount">
+                {rupees(row.amount, decimals: 2, space: true)}
+              </:col>
               <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
               <:action>
                 <button class={row_action_class()} aria-label="View QR code">
