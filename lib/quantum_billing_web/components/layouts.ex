@@ -118,7 +118,7 @@ defmodule QuantumBillingWeb.Layouts do
           </button>
         </header>
 
-        <main class="flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-5">
+        <main class="flex-1 overflow-y-auto px-3 pb-6 pt-4 sm:px-4 sm:pb-8 sm:pt-5">
           {render_slot(@inner_block)}
         </main>
       </div>
