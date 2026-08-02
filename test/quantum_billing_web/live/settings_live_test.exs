@@ -23,12 +23,16 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    test "the sections only unfold while inside Settings", %{conn: conn} do
-      {:ok, _view, settings} = live(conn, ~p"/settings")
-      {:ok, _view, invoices} = live(conn, ~p"/invoices")
+    # The sections stay in the DOM so the chevron can animate them open; what
+    # changes per page is whether the disclosure starts open.
+    test "the sections start unfolded inside Settings and folded elsewhere", %{conn: conn} do
+      {:ok, settings_view, _html} = live(conn, ~p"/settings")
+      {:ok, invoices_view, _html} = live(conn, ~p"/invoices")
 
-      assert settings =~ ~s(href="/settings/tax")
-      refute invoices =~ ~s(href="/settings/tax")
+      assert has_element?(settings_view, "#settings-sections-toggle[checked]")
+      refute has_element?(invoices_view, "#settings-sections-toggle[checked]")
+
+      assert has_element?(invoices_view, ~s(a[href="/settings/tax"]))
     end
 
     test "renders the General form fields", %{conn: conn} do

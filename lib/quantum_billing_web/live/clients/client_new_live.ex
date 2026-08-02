@@ -2,7 +2,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
   @moduledoc """
   The "Add New Client" form.
 
-  Follows the shape of `EWayBillNewLive`: breadcrumb, header carrying Cancel and
+  Follows the shape of `EWayBillNewLive`: header carrying Cancel and
   Save, then the form. Nothing here needs a running summary the way an invoice
   does, so the form takes the full width and the standing guidance sits behind
   the header's `help_popover/1` rather than in a permanent right-hand rail.
@@ -63,12 +63,6 @@ defmodule QuantumBillingWeb.ClientNewLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
-      <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
-        <.link navigate={~p"/clients"} class="hover:text-base-content">Clients</.link>
-        <.icon name="hero-chevron-right" class="size-3" />
-        <span class="text-base-content/60">Add New Client</span>
-      </nav>
-
       <.header>
         <span class="inline-flex items-center gap-2">
           Add New Client

@@ -63,12 +63,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
-      <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
-        <.link navigate={~p"/e-way-bills"} class="hover:text-base-content">E-Way Bills</.link>
-        <.icon name="hero-chevron-right" class="size-3" />
-        <span class="text-base-content/60">Generate New E-Way Bill</span>
-      </nav>
-
       <.header>
         <span class="inline-flex items-center gap-2">
           Generate New E-Way Bill

@@ -2,8 +2,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   @moduledoc """
   The "Create New GST Invoice" form.
 
-  Follows the shape of `ClientNewLive` and `EWayBillNewLive`: breadcrumb, header
-  carrying the actions, the form on the left and a summary rail on the right.
+  Follows the shape of `ClientNewLive` and `EWayBillNewLive`: header carrying
+  the actions, the form on the left and a summary rail on the right.
 
   The summary recomputes on every change without saving anything —
   `Invoice.recalculate/1` writes the totals onto the changeset, so the panel is
@@ -180,12 +180,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
-      <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
-        <.link navigate={~p"/invoices"} class="hover:text-base-content">Invoices</.link>
-        <.icon name="hero-chevron-right" class="size-3" />
-        <span class="text-base-content/60">Create New GST Invoice</span>
-      </nav>
-
       <.header>
         Create New GST Invoice
         <:actions>

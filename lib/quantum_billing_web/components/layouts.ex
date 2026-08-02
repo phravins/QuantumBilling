@@ -58,44 +58,78 @@ defmodule QuantumBillingWeb.Layouts do
         <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
           <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
           <ul class="space-y-0.5">
-            <li :for={item <- @nav_items}>
-              <.link
-                navigate={item.path}
+            <li :for={item <- @nav_items} class="group">
+              <%!-- Settings is the one item with sections beneath it. The
+              chevron opens them, animating the row track from 0fr to 1fr —
+              the one way to transition to an unknown height in CSS alone, so
+              this needs neither JavaScript nor a server round trip. It starts
+              open on a settings page and closed everywhere else. --%>
+              <input
+                :if={item.key == :settings}
+                type="checkbox"
+                id="settings-sections-toggle"
+                class="peer sr-only"
+                checked={@active_nav == :settings}
+              />
+
+              <div class="flex items-center gap-0.5">
+                <.link
+                  navigate={item.path}
+                  class={[
+                    "flex min-w-0 flex-1 items-center gap-2.5 rounded-field px-3 py-2",
+                    "text-sm transition-colors",
+                    if(@active_nav == item.key,
+                      do: "bg-base-200 font-medium text-base-content",
+                      else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                    )
+                  ]}
+                >
+                  <.icon name={item.icon} class="size-4.5 shrink-0" />
+                  <span class="truncate">{item.label}</span>
+                </.link>
+
+                <label
+                  :if={item.key == :settings}
+                  for="settings-sections-toggle"
+                  class={[
+                    "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-field",
+                    "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
+                  ]}
+                >
+                  <span class="sr-only">Show settings sections</span>
+                  <.icon
+                    name="hero-chevron-down"
+                    class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
+                  />
+                </label>
+              </div>
+
+              <%!-- No icons on the sections: half of them repeat an icon
+              already sitting a few pixels above in this same list. --%>
+              <div
+                :if={item.key == :settings}
                 class={[
-                  "flex items-center gap-2.5 rounded-field px-3 py-2 text-sm transition-colors",
-                  if(@active_nav == item.key,
-                    do: "bg-base-200 font-medium text-base-content",
-                    else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                  )
+                  "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out",
+                  "peer-checked:grid-rows-[1fr]"
                 ]}
               >
-                <.icon name={item.icon} class="size-4.5" />
-                {item.label}
-              </.link>
-
-              <%!-- Settings is the one item with sections beneath it. They only
-              unfold while you are in there, so the sidebar stays short
-              everywhere else. No icons: half of them repeat an icon already
-              sitting a few pixels above in this same list. --%>
-              <ul
-                :if={item.key == :settings and @active_nav == :settings}
-                class="mt-0.5 space-y-0.5 border-l border-base-300 pl-3 ml-4"
-              >
-                <li :for={section <- @settings_sections}>
-                  <.link
-                    navigate={~p"/settings/#{section.key}"}
-                    class={[
-                      "block truncate rounded-field px-2.5 py-1.5 text-xs transition-colors",
-                      if(@active_sub == section.key,
-                        do: "bg-base-200 font-medium text-base-content",
-                        else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                      )
-                    ]}
-                  >
-                    {section.short_title}
-                  </.link>
-                </li>
-              </ul>
+                <ul class="ml-4 space-y-0.5 overflow-hidden border-l border-base-300 pl-3 pt-0.5">
+                  <li :for={section <- @settings_sections}>
+                    <.link
+                      navigate={~p"/settings/#{section.key}"}
+                      class={[
+                        "block truncate rounded-field px-2.5 py-1.5 text-xs transition-colors",
+                        if(@active_sub == section.key,
+                          do: "bg-base-200 font-medium text-base-content",
+                          else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                        )
+                      ]}
+                    >
+                      {section.short_title}
+                    </.link>
+                  </li>
+                </ul>
+              </div>
             </li>
           </ul>
         </nav>
