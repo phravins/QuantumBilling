@@ -10,8 +10,15 @@ defmodule QuantumBillingWeb.InvoicePdfHTML do
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBillingWeb.Format
+  alias QuantumBillingWeb.InvoiceDocument
 
   embed_templates "invoice_pdf_html/*"
+
+  @doc "The document's title, from the customization settings or the invoice type."
+  defdelegate heading(config, invoice), to: InvoiceDocument
+
+  @doc "Whether the cess row belongs on this document."
+  defdelegate show_cess?(config, invoice), to: InvoiceDocument
 
   @doc "The line total for an item, as shown on the document."
   def line_amount(item), do: item.quantity * item.rate

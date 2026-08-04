@@ -15,7 +15,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Settings
   alias QuantumBillingWeb.Format
+  alias QuantumBillingWeb.InvoiceDocument
 
   def mount(%{"id" => id}, _session, socket) do
     case Invoices.get_invoice(id) do
@@ -26,11 +28,19 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
+        # The figures and party details come from the invoice's own snapshot;
+        # only how it looks is read live, so rebranding restyles every invoice
+        # instead of only the next one.
+        config = InvoiceDocument.config(Settings.get_organization())
+
         {:ok,
          socket
          |> assign(:page_title, invoice.invoice_number)
          |> assign(:active_nav, :invoices)
-         |> assign(:invoice, invoice)}
+         |> assign(:invoice, invoice)
+         |> assign(:doc, config)
+         |> assign(:heading, InvoiceDocument.heading(config, invoice))
+         |> assign(:show_cess?, InvoiceDocument.show_cess?(config, invoice))}
     end
   end
 
@@ -59,7 +69,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       <.card padding="p-8">
         <div class="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
+            <img :if={@doc.logo} src={@doc.logo} alt="" class="mb-5 max-h-14 max-w-52" />
             <.brand_mark
+              :if={is_nil(@doc.logo)}
               class="mb-5"
               icon_class="size-7"
               label_class="text-base font-semibold tracking-tight"
@@ -84,6 +96,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </div>
 
           <dl class="space-y-1 text-sm sm:text-right">
+            <div class="mb-2 sm:text-right">
+              <p class="text-base font-semibold tracking-tight" style={"color: #{@doc.accent}"}>
+                {@heading}
+              </p>
+            </div>
             <div class="flex gap-3 sm:justify-end">
               <dt class="text-base-content/60">Invoice Date</dt>
               <dd class="font-medium">{Format.format_date(@invoice.invoice_date)}</dd>
@@ -128,11 +145,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <tr class={table_head_class()}>
                 <th class="w-8 pr-4 text-left">#</th>
                 <th class="pr-4 text-left">Item / Description</th>
-                <th class="pr-4 text-left">HSN / SAC</th>
+                <th :if={@doc.show_hsn} class="pr-4 text-left">HSN / SAC</th>
                 <th class="pr-4 text-right">Qty</th>
-                <th class="pr-4 text-left">Unit</th>
+                <th :if={@doc.show_unit} class="pr-4 text-left">Unit</th>
                 <th class="pr-4 text-right">Rate (₹)</th>
-                <th class="pr-4 text-right">Tax (%)</th>
+                <th :if={@doc.show_tax_rate} class="pr-4 text-right">Tax (%)</th>
                 <th class="text-right">Amount (₹)</th>
               </tr>
             </thead>
@@ -144,11 +161,15 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               >
                 <td class="py-2.5 pr-4 text-base-content/45">{index}</td>
                 <td class="py-2.5 pr-4 font-medium">{item.description}</td>
-                <td class="py-2.5 pr-4 text-base-content/60">{item.hsn_sac || "—"}</td>
+                <td :if={@doc.show_hsn} class="py-2.5 pr-4 text-base-content/60">
+                  {item.hsn_sac || "—"}
+                </td>
                 <td class="py-2.5 pr-4 text-right">{item.quantity}</td>
-                <td class="py-2.5 pr-4 text-base-content/60">{item.unit}</td>
+                <td :if={@doc.show_unit} class="py-2.5 pr-4 text-base-content/60">{item.unit}</td>
                 <td class="py-2.5 pr-4 text-right">{rupees(item.rate, decimals: 2)}</td>
-                <td class="py-2.5 pr-4 text-right text-base-content/60">{item.tax_rate}%</td>
+                <td :if={@doc.show_tax_rate} class="py-2.5 pr-4 text-right text-base-content/60">
+                  {item.tax_rate}%
+                </td>
                 <td class="py-2.5 text-right font-medium">{rupees(item.amount, decimals: 2)}</td>
               </tr>
             </tbody>
@@ -177,29 +198,37 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               value={rupees(@invoice.igst_amount, decimals: 2, space: true)}
             />
             <.total_line
+              :if={@show_cess?}
+              label="Cess"
+              value={rupees(@invoice.cess_amount, decimals: 2, space: true)}
+            />
+            <.total_line
               label="Round Off"
               value={rupees(@invoice.round_off, decimals: 2, space: true)}
             />
 
-            <div class="flex items-center justify-between gap-4 rounded-field bg-base-200 px-3 py-2.5">
+            <div
+              class="flex items-center justify-between gap-4 rounded-field border-t-2 bg-base-200 px-3 py-2.5"
+              style={"border-color: #{@doc.accent}"}
+            >
               <dt class="font-semibold">Grand Total</dt>
-              <dd class="font-semibold tracking-tight">
+              <dd class="font-semibold tracking-tight" style={"color: #{@doc.accent}"}>
                 {rupees(@invoice.grand_total, decimals: 2, space: true)}
               </dd>
             </div>
           </dl>
         </div>
 
-        <div class="mt-6 border-t border-base-300 pt-4">
+        <div :if={@doc.show_amount_words} class="mt-6 border-t border-base-300 pt-4">
           <p class="text-2xs uppercase tracking-wider text-base-content/45">Amount in Words</p>
           <p class="mt-1 text-sm">{Format.rupees_in_words(@invoice.grand_total)}</p>
         </div>
 
         <div
-          :if={@invoice.remarks || @invoice.terms}
+          :if={(@doc.show_remarks and @invoice.remarks) || @invoice.terms}
           class="mt-6 grid grid-cols-1 gap-6 border-t border-base-300 pt-4 sm:grid-cols-2"
         >
-          <div :if={@invoice.remarks}>
+          <div :if={@doc.show_remarks and @invoice.remarks}>
             <p class="text-2xs uppercase tracking-wider text-base-content/45">Remarks</p>
             <p class="mt-1 whitespace-pre-line text-sm text-base-content/60">{@invoice.remarks}</p>
           </div>
@@ -210,6 +239,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <p class="mt-1 whitespace-pre-line text-sm text-base-content/60">{@invoice.terms}</p>
           </div>
         </div>
+
+        <p
+          :if={@doc.footer}
+          class="mt-6 whitespace-pre-line border-t border-base-300 pt-4 text-center text-sm text-base-content/60"
+        >
+          {@doc.footer}
+        </p>
       </.card>
     </Layouts.app>
     """

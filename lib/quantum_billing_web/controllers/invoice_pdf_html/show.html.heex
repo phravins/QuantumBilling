@@ -19,6 +19,22 @@
       .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
       .brand svg { width: 26px; height: 26px; flex: none; }
       .brand-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      .logo { max-height: 56px; max-width: 200px; margin-bottom: 20px; }
+      .heading {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 4px;
+        color: var(--accent);
+      }
+      .footer {
+        margin-top: 24px;
+        padding-top: 10px;
+        border-top: 1px solid #e4e4e7;
+        text-align: center;
+        color: #52525b;
+        white-space: pre-line;
+      }
       .label {
         font-size: 9px;
         text-transform: uppercase;
@@ -47,11 +63,12 @@
       .totals { width: 280px; margin-left: auto; margin-top: 16px; }
       .totals div { display: flex; justify-content: space-between; padding: 3px 0; }
       .grand {
-        border-top: 1px solid #e4e4e7;
+        border-top: 2px solid var(--accent);
         margin-top: 6px;
         padding-top: 8px !important;
         font-weight: 600;
         font-size: 13px;
+        color: var(--accent);
       }
       .words { margin-top: 20px; }
       /*
@@ -67,15 +84,23 @@
       }
     </style>
   </head>
-  <body>
+  <%!-- The accent rides in as a custom property rather than being interpolated
+  through the stylesheet, so the rules above stay static and there is exactly
+  one place the colour enters the page. It is validated to six hex digits by the
+  changeset before it ever gets here. --%>
+  <body style={"--accent: #{@doc.accent}"}>
     <div class="sheet">
       <div class="row">
         <div>
-          <%!-- The mark is inlined rather than pulled in through the app's
-          icon classes: those are CSS masks defined in the application
-          stylesheet, which this standalone page deliberately does not load, so
-          the icon came out blank on the saved file. --%>
-          <div class="brand">
+          <%!-- An uploaded logo is a plain `<img>`: the browser fetches it
+          before `load` fires, so it is on the page by the time the print
+          dialog opens. The fallback mark is inlined rather than pulled in
+          through the app's icon classes, which are CSS masks from the
+          application stylesheet this standalone page deliberately does not
+          load — through those, the icon came out blank on the saved file. --%>
+          <img :if={@doc.logo} src={@doc.logo} alt="" class="logo" />
+
+          <div :if={is_nil(@doc.logo)} class="brand">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -101,6 +126,7 @@
         </div>
 
         <div class="meta">
+          <p class="heading">{heading(@doc, @invoice)}</p>
           <p class="name">{@invoice.invoice_number}</p>
           <div><span>Invoice Date</span><b>{Format.format_date(@invoice.invoice_date)}</b></div>
           <div><span>Due Date</span><b>{Format.format_date(@invoice.due_date)}</b></div>
@@ -124,11 +150,11 @@
           <tr>
             <th>#</th>
             <th>Item / Description</th>
-            <th>HSN / SAC</th>
+            <th :if={@doc.show_hsn}>HSN / SAC</th>
             <th class="right">Qty</th>
-            <th>Unit</th>
+            <th :if={@doc.show_unit}>Unit</th>
             <th class="right">Rate</th>
-            <th class="right">Tax %</th>
+            <th :if={@doc.show_tax_rate} class="right">Tax %</th>
             <th class="right">Amount</th>
           </tr>
         </thead>
@@ -136,11 +162,11 @@
           <tr :for={{item, index} <- Enum.with_index(@invoice.items, 1)}>
             <td>{index}</td>
             <td>{item.description}</td>
-            <td>{item.hsn_sac || "—"}</td>
+            <td :if={@doc.show_hsn}>{item.hsn_sac || "—"}</td>
             <td class="right">{item.quantity}</td>
-            <td>{item.unit}</td>
+            <td :if={@doc.show_unit}>{item.unit}</td>
             <td class="right">{money(item.rate)}</td>
-            <td class="right">{item.tax_rate}%</td>
+            <td :if={@doc.show_tax_rate} class="right">{item.tax_rate}%</td>
             <td class="right">{money(line_amount(item))}</td>
           </tr>
         </tbody>
@@ -157,21 +183,33 @@
         <div :if={not intra_state?(@invoice)}>
           <span>IGST</span><span>{money(@invoice.igst_amount)}</span>
         </div>
+        <div :if={show_cess?(@doc, @invoice)}>
+          <span>Cess</span><span>{money(@invoice.cess_amount)}</span>
+        </div>
         <div><span>Round Off</span><span>{money(@invoice.round_off)}</span></div>
         <div class="grand">
           <span>Grand Total</span><span>{money(@invoice.grand_total)}</span>
         </div>
       </div>
 
-      <div class="words">
+      <div :if={@doc.show_amount_words} class="words">
         <p class="label">Amount in Words</p>
         <p class="muted">{Format.rupees_in_words(@invoice.grand_total)}</p>
       </div>
+
+      <%!-- Remarks used to be on the screen version only. A reader comparing
+      the two would have found a note on one and not the other. --%>
+      <p :if={@doc.show_remarks and @invoice.remarks} class="words">
+        <span class="label">Remarks</span><br />
+        <span class="muted">{@invoice.remarks}</span>
+      </p>
 
       <p :if={@invoice.terms} class="words">
         <span class="label">Terms &amp; Conditions</span><br />
         <span class="muted">{@invoice.terms}</span>
       </p>
+
+      <p :if={@doc.footer} class="footer">{@doc.footer}</p>
     </div>
 
     <script>

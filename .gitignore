@@ -42,3 +42,7 @@ npm-debug.log
 /.env.*
 !/.env.example
 
+
+# User-uploaded files (company logos). Content, not source: each install has
+# its own, and they are reproducible only by the user who uploaded them.
+/priv/static/uploads/

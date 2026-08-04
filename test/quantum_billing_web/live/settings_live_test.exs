@@ -7,6 +7,16 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
   setup :register_and_log_in_user
 
+  # A one-pixel PNG, so an upload test moves real image bytes, with unique
+  # trailing bytes per call. Stored files are named by content hash, so two
+  # tests uploading identical bytes would share one file — and race each other
+  # deleting it on the way out.
+  defp png do
+    Base.decode64!(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    ) <> <<System.unique_integer([:positive])::64>>
+  end
+
   describe "page" do
     # The sections live in the app sidebar now, which shows each one's short
     # title — the sidebar already says "Settings" above them.
@@ -93,6 +103,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
             {"tax", "Default GST Rate (%)"},
             {"notifications", "Remind me this many days ahead"},
             {"preferences", "Rows Per Page"},
+            {"customization", "Accent Colour"},
             {"security", "Manage account security"}
           ] do
         {:ok, _view, html} = live(conn, ~p"/settings/#{path}")
@@ -247,7 +258,6 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   describe "sections that are not built" do
     test "say so rather than offering dead controls", %{conn: conn} do
       for {path, needs} <- [
-            {"users", "roles model"},
             {"backup", "backup tooling"},
             {"integrations", "credentials"}
           ] do
@@ -257,6 +267,116 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
         assert html =~ needs
         refute html =~ "Save Changes"
       end
+    end
+  end
+
+  describe "customization" do
+    test "saves the document settings", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "doc_template" => "Modern",
+          "doc_accent_color" => "#1D4ED8",
+          "doc_heading" => "TAX INVOICE",
+          "doc_footer_text" => "Thank you for your business.",
+          "doc_show_hsn" => "false",
+          "doc_show_unit" => "false"
+        }
+      })
+      |> render_submit()
+
+      organization = Settings.get_organization()
+      assert organization.doc_template == "Modern"
+      assert organization.doc_accent_color == "#1D4ED8"
+      assert organization.doc_heading == "TAX INVOICE"
+      assert organization.doc_footer_text == "Thank you for your business."
+      refute organization.doc_show_hsn
+      refute organization.doc_show_unit
+      # Untouched toggles keep their defaults rather than being cleared.
+      assert organization.doc_show_tax_rate
+    end
+
+    test "rejects a colour that is not a hex value", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      html =
+        view
+        |> form("#settings-form", %{"organization" => %{"doc_accent_color" => "red"}})
+        |> render_submit()
+
+      assert html =~ "must be a hex colour"
+      assert Settings.get_organization().doc_accent_color == "#18181b"
+    end
+
+    # The whole point of the upload is a file that survives the request and is
+    # then servable, so this asserts on disk rather than on markup.
+    test "uploading a logo stores the file and records its path", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      logo =
+        file_input(view, "#settings-form", :logo, [
+          %{
+            name: "logo.png",
+            content: png(),
+            type: "image/png"
+          }
+        ])
+
+      assert render_upload(logo, "logo.png") =~ "100%"
+
+      view |> form("#settings-form", %{"organization" => %{}}) |> render_submit()
+
+      path = Settings.get_organization().doc_logo_path
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      assert String.starts_with?(path, "/uploads/")
+      assert File.exists?(Path.join(QuantumBilling.Uploads.directory(), Path.basename(path)))
+
+      # And it reaches the document, not just the database.
+      assert render(view) =~ path
+    end
+
+    test "removing a logo clears the setting and unlinks the file", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      logo =
+        file_input(view, "#settings-form", :logo, [
+          %{name: "l.png", content: png(), type: "image/png"}
+        ])
+
+      render_upload(logo, "l.png")
+      view |> form("#settings-form", %{"organization" => %{}}) |> render_submit()
+
+      path = Settings.get_organization().doc_logo_path
+      on_disk = Path.join(QuantumBilling.Uploads.directory(), Path.basename(path))
+      assert File.exists?(on_disk)
+
+      view |> element("button[phx-click=remove_logo]") |> render_click()
+
+      assert Settings.get_organization().doc_logo_path == nil
+      refute File.exists?(on_disk)
+    end
+
+    # The preview is the only feedback before saving, so it has to move with the
+    # form rather than with the stored row.
+    test "the preview follows the form before anything is saved", %{conn: conn} do
+      {:ok, view, html} = live(conn, ~p"/settings/customization")
+
+      assert html =~ "HSN"
+
+      changed =
+        view
+        |> form("#settings-form", %{
+          "organization" => %{"doc_show_hsn" => "false", "doc_heading" => "PROFORMA"}
+        })
+        |> render_change()
+
+      assert changed =~ "PROFORMA"
+      refute changed =~ ">HSN<"
+      # Nothing has been written yet.
+      assert Settings.get_organization().doc_show_hsn
     end
   end
 

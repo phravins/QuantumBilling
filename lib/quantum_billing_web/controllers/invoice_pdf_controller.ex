@@ -15,6 +15,8 @@ defmodule QuantumBillingWeb.InvoicePdfController do
   use QuantumBillingWeb, :controller
 
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Settings
+  alias QuantumBillingWeb.InvoiceDocument
 
   def show(conn, %{"id" => id}) do
     case Invoices.get_invoice(id) do
@@ -24,10 +26,14 @@ defmodule QuantumBillingWeb.InvoicePdfController do
         |> redirect(to: ~p"/invoices")
 
       invoice ->
+        # The same resolver `InvoiceShowLive` uses, so the printed document and
+        # the one on screen cannot disagree about what appears on them.
+        config = InvoiceDocument.config(Settings.get_organization())
+
         conn
         |> put_root_layout(false)
         |> put_layout(false)
-        |> render(:show, invoice: invoice)
+        |> render(:show, invoice: invoice, doc: config)
     end
   end
 end

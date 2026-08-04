@@ -31,6 +31,11 @@ defmodule QuantumBilling.Settings.Organization do
 
   @rows_per_page [10, 25, 50, 100]
 
+  # Three takes on the same document rather than a free canvas: every one of
+  # these still has to satisfy the same GST disclosure rules, so what varies is
+  # emphasis and density, not which facts appear.
+  @doc_templates ["Classic", "Modern", "Compact"]
+
   schema "organization_settings" do
     field :company_name, :string
     field :trade_name, :string
@@ -71,6 +76,20 @@ defmodule QuantumBilling.Settings.Organization do
     field :language, :string, default: "en"
     field :rows_per_page, :integer, default: 10
 
+    # How the invoice document looks. Presentation, read live at render time —
+    # unlike the figures and party details, which each invoice snapshots.
+    field :doc_template, :string, default: "Classic"
+    field :doc_accent_color, :string, default: "#18181b"
+    field :doc_logo_path, :string
+    field :doc_heading, :string
+    field :doc_footer_text, :string
+    field :doc_show_hsn, :boolean, default: true
+    field :doc_show_unit, :boolean, default: true
+    field :doc_show_tax_rate, :boolean, default: true
+    field :doc_show_remarks, :boolean, default: true
+    field :doc_show_amount_words, :boolean, default: true
+    field :doc_show_cess, :boolean, default: false
+
     field :singleton, :boolean, default: true
 
     timestamps(type: :utc_datetime)
@@ -91,6 +110,12 @@ defmodule QuantumBilling.Settings.Organization do
                     notify_filing_reminders reminder_lead_days)a
 
   @preferences ~w(language rows_per_page)a
+
+  # `doc_logo_path` is cast here but never typed into: the panel writes it from
+  # the stored upload's path, not from a text box.
+  @customization ~w(doc_template doc_accent_color doc_logo_path doc_heading
+                    doc_footer_text doc_show_hsn doc_show_unit doc_show_tax_rate
+                    doc_show_remarks doc_show_amount_words doc_show_cess)a
 
   @doc """
   Builds the changeset for one section.
@@ -162,6 +187,21 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_inclusion(:rows_per_page, @rows_per_page)
   end
 
+  def changeset(organization, attrs, :customization) do
+    organization
+    |> cast(attrs, @customization)
+    |> validate_inclusion(:doc_template, @doc_templates)
+    # The colour is written straight into a `style` attribute on the document,
+    # so it is pinned to six hex digits rather than accepting any CSS colour
+    # string. A named colour or a `var(--x)` would be harmless; `red; content:`
+    # would not.
+    |> validate_format(:doc_accent_color, ~r/^#[0-9A-Fa-f]{6}$/,
+      message: "must be a hex colour like #1D4ED8"
+    )
+    |> validate_length(:doc_heading, max: 60)
+    |> validate_length(:doc_footer_text, max: 300)
+  end
+
   # The transporter ID is optional, but must be a GSTIN when supplied.
   defp maybe_validate_transporter_id(changeset) do
     case get_field(changeset, :ewb_transporter_id) do
@@ -177,6 +217,7 @@ defmodule QuantumBilling.Settings.Organization do
   def fields(:tax), do: @tax
   def fields(:notifications), do: @notifications
   def fields(:preferences), do: @preferences
+  def fields(:customization), do: @customization
 
   def gst_rates, do: @gst_rates
   def currencies, do: @currencies
@@ -184,4 +225,5 @@ defmodule QuantumBilling.Settings.Organization do
   def timezones, do: @timezones
   def languages, do: @languages
   def rows_per_page_options, do: @rows_per_page
+  def doc_templates, do: @doc_templates
 end
