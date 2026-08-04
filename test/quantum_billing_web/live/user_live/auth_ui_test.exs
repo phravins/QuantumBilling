@@ -20,9 +20,11 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       assert html =~ "Create Account"
       # the design's divider label is uppercased in CSS, so the markup is mixed case
       assert html =~ "Or continue with"
-      # shadcn's 350px form column and type scale
+      # shadcn's 350px form column, and the app's own heading step — these
+      # screens run on the same type scale as the rest of the product rather
+      # than a private one.
       assert html =~ "sm:w-[350px]"
-      assert html =~ "text-2xl font-semibold tracking-tight"
+      assert html =~ "text-xl font-semibold tracking-tight"
       assert html =~ "GitHub"
       assert html =~ "Terms of Service"
       assert html =~ "Privacy Policy"

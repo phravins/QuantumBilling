@@ -90,7 +90,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
           :if={not @recovery?}
           type="button"
           phx-click="use_recovery"
-          class="text-center text-sm text-zinc-500 underline underline-offset-4 hover:text-zinc-900"
+          class="text-center text-sm text-base-content/60 underline underline-offset-4 hover:text-base-content"
         >
           Lost your device? Use a recovery code
         </button>
@@ -99,7 +99,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
           :if={@recovery?}
           type="button"
           phx-click="use_authenticator"
-          class="text-center text-sm text-zinc-500 underline underline-offset-4 hover:text-zinc-900"
+          class="text-center text-sm text-base-content/60 underline underline-offset-4 hover:text-base-content"
         >
           Use your authenticator app instead
         </button>
@@ -107,7 +107,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
         <.link
           href={~p"/users/log-out"}
           method="delete"
-          class="text-center text-sm text-zinc-500 underline underline-offset-4 hover:text-zinc-900"
+          class="text-center text-sm text-base-content/60 underline underline-offset-4 hover:text-base-content"
         >
           Cancel and sign in as someone else
         </.link>

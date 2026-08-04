@@ -314,14 +314,14 @@ defmodule QuantumBillingWeb.Layouts do
 
   def auth(assigns) do
     ~H"""
-    <div class="relative flex min-h-screen flex-col items-center justify-center bg-white px-4 py-20">
-      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-950 md:left-8 md:top-8">
+    <div class="relative flex min-h-screen flex-col items-center justify-center bg-base-100 px-4 py-20">
+      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-base-content md:left-8 md:top-8">
         <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
       </div>
 
       <div
         :if={@top_link != []}
-        class="absolute right-4 top-4 text-sm font-medium text-zinc-950 md:right-8 md:top-8"
+        class="absolute right-4 top-4 text-sm font-medium text-base-content md:right-8 md:top-8"
       >
         {render_slot(@top_link)}
       </div>
@@ -330,7 +330,7 @@ defmodule QuantumBillingWeb.Layouts do
         {render_slot(@inner_block)}
       </div>
 
-      <p class="absolute inset-x-0 bottom-6 px-4 text-center text-xs text-zinc-500">
+      <p class="absolute inset-x-0 bottom-6 px-4 text-center text-xs text-base-content/60">
         GST invoicing, e-way bills and compliance — all in one place.
       </p>
     </div>
@@ -359,18 +359,18 @@ defmodule QuantumBillingWeb.Layouts do
 
   def legal(assigns) do
     ~H"""
-    <div class="flex min-h-screen flex-col bg-white">
-      <header class="border-b border-zinc-200">
+    <div class="flex min-h-screen flex-col bg-base-100">
+      <header class="border-b border-base-300">
         <div class="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
           <.link
             navigate={~p"/"}
-            class="flex items-center gap-2 text-lg font-semibold text-zinc-950"
+            class="flex items-center gap-2 text-lg font-semibold text-base-content"
           >
             <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
           </.link>
           <.link
             navigate={if @current_scope, do: ~p"/dashboard", else: ~p"/users/log-in"}
-            class="text-sm font-medium text-zinc-600 hover:text-zinc-950"
+            class="text-sm font-medium text-base-content/60 hover:text-base-content"
           >
             {if @current_scope, do: "Back to dashboard", else: "Back to sign in"}
           </.link>
@@ -378,8 +378,8 @@ defmodule QuantumBillingWeb.Layouts do
       </header>
 
       <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <h1 class="text-3xl font-semibold tracking-tight text-zinc-950">{@title}</h1>
-        <p class="mt-2 text-sm text-zinc-500">Draft — not yet in effect.</p>
+        <h1 class="text-3xl font-semibold tracking-tight text-base-content">{@title}</h1>
+        <p class="mt-2 text-sm text-base-content/60">Draft — not yet in effect.</p>
 
         <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4">
           <p class="text-sm font-semibold text-amber-900">
@@ -398,10 +398,13 @@ defmodule QuantumBillingWeb.Layouts do
         </div>
       </main>
 
-      <footer class="border-t border-zinc-200">
-        <div class="mx-auto flex max-w-3xl flex-col gap-2 px-6 py-6 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+      <footer class="border-t border-base-300">
+        <div class="mx-auto flex max-w-3xl flex-col gap-2 px-6 py-6 text-sm text-base-content/60 sm:flex-row sm:items-center sm:justify-between">
           <span>© {DateTime.utc_now().year} QuantumBilling. All rights reserved.</span>
-          <.link navigate={@other_doc_path} class="underline underline-offset-4 hover:text-zinc-900">
+          <.link
+            navigate={@other_doc_path}
+            class="underline underline-offset-4 hover:text-base-content"
+          >
             {@other_doc_label}
           </.link>
         </div>
@@ -421,8 +424,8 @@ defmodule QuantumBillingWeb.Layouts do
   def auth_heading(assigns) do
     ~H"""
     <div class="flex flex-col space-y-2 text-center">
-      <h1 class="text-2xl font-semibold tracking-tight text-zinc-950">{@title}</h1>
-      <p class="text-sm text-zinc-500">{@subtitle}</p>
+      <h1 class="text-xl font-semibold tracking-tight text-base-content">{@title}</h1>
+      <p class="text-sm text-base-content/60">{@subtitle}</p>
     </div>
     """
   end

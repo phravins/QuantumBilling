@@ -61,6 +61,8 @@ defmodule QuantumBillingWeb.CoreComponents do
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
+      data-msg={msg}
+      phx-hook=".FlashDismiss"
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
       class="toast toast-top toast-end z-50"
@@ -83,6 +85,29 @@ defmodule QuantumBillingWeb.CoreComponents do
         </button>
       </div>
     </div>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".FlashDismiss">
+      // Dismissing works by pushing `lv:clear-flash`, which needs a live socket.
+      // A flash rendered by the static HTML can be dismissed before that socket
+      // exists — the click hides it, the server never hears, and the connected
+      // render puts the toast straight back. Remembering the dismissal here
+      // keeps it shut until the message itself changes.
+      export default {
+        mounted() {
+          this.el.addEventListener("click", () => {
+            this.dismissed = this.el.dataset.msg
+          })
+        },
+
+        updated() {
+          if (this.dismissed && this.dismissed === this.el.dataset.msg) {
+            this.el.style.display = "none"
+          } else {
+            this.dismissed = null
+          }
+        }
+      }
+    </script>
     """
   end
 
@@ -308,10 +333,12 @@ defmodule QuantumBillingWeb.CoreComponents do
   end
 
   # Helper used by inputs to generate form errors
+  # Matches the error `SharedComponents.field/1` renders. They sat at different
+  # sizes, so which style you got depended on which component drew the field.
   defp error(assigns) do
     ~H"""
-    <p class="mt-1.5 flex gap-2 items-center text-sm text-error">
-      <.icon name="hero-exclamation-circle" class="size-5" />
+    <p class="mt-1 flex items-center gap-1 text-2xs text-error">
+      <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />
       {render_slot(@inner_block)}
     </p>
     """
@@ -326,7 +353,7 @@ defmodule QuantumBillingWeb.CoreComponents do
 
   def header(assigns) do
     ~H"""
-    <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-4"]}>
+    <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-3"]}>
       <div>
         <h1 class="text-xl font-semibold tracking-tight">
           {render_slot(@inner_block)}

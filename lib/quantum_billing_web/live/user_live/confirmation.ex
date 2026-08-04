@@ -66,7 +66,7 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
           <% end %>
         </.form>
 
-        <p :if={!@user.confirmed_at} class="px-8 text-center text-sm text-zinc-500">
+        <p :if={!@user.confirmed_at} class="px-8 text-center text-sm text-base-content/60">
           Tip: If you prefer passwords, you can enable them in the user settings.
         </p>
       </div>

@@ -72,7 +72,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             error_class="border-red-500"
           />
 
-          <p class="text-xs text-zinc-500">Use at least 8 characters.</p>
+          <p class="text-xs text-base-content/60">Use at least 8 characters.</p>
 
           <.button phx-disable-with="Creating account..." class={primary_button_class()}>
             Create Account

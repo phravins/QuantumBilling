@@ -57,7 +57,7 @@ defmodule QuantumBillingWeb.TermsLive do
           completeness of that data and for the returns and filings you make using it. We
           process your data to provide the service, as described in our <.link
             navigate={~p"/privacy"}
-            class="underline underline-offset-4 hover:text-zinc-900"
+            class="underline underline-offset-4 hover:text-base-content"
           >
             Privacy Policy
           </.link>.

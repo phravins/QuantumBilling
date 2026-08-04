@@ -120,7 +120,7 @@ defmodule QuantumBillingWeb.UserAuthTest do
       refute get_session(conn, :user_token)
       refute conn.cookies[@remember_me_cookie]
       assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/users/log-in"
       refute Accounts.get_user_by_session_token(user_token)
     end
 
@@ -139,7 +139,7 @@ defmodule QuantumBillingWeb.UserAuthTest do
       conn = conn |> fetch_cookies() |> UserAuth.log_out_user()
       refute get_session(conn, :user_token)
       assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/users/log-in"
     end
   end
 
@@ -324,9 +324,38 @@ defmodule QuantumBillingWeb.UserAuthTest do
       assert conn.halted
 
       assert redirected_to(conn) == ~p"/users/log-in"
+    end
+
+    # Built with a real request path rather than patching the struct: the rule
+    # reads `current_path/1`, so the path has to arrive the way a request
+    # delivers it.
+    defp reject_request_for(path) do
+      build_conn(:get, path)
+      |> Map.replace!(:secret_key_base, QuantumBillingWeb.Endpoint.config(:secret_key_base))
+      |> init_test_session(%{})
+      |> UserAuth.fetch_current_scope_for_user([])
+      |> fetch_flash()
+      |> UserAuth.require_authenticated_user([])
+    end
+
+    # Being bounced off a page you asked for deserves an explanation.
+    test "explains the redirect when a specific page was requested" do
+      conn = reject_request_for("/invoices")
+
+      assert redirected_to(conn) == ~p"/users/log-in"
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
                "You must log in to access this page."
+    end
+
+    # Opening the bare address is not an error. The root is the dashboard, so
+    # every signed-out visitor lands here — telling them off for opening the
+    # app is noise on the first screen anyone sees.
+    test "says nothing when the visitor only opened the app root" do
+      conn = reject_request_for("/")
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+      refute Phoenix.Flash.get(conn.assigns.flash, :error)
     end
 
     test "stores the path to redirect to on GET", %{conn: conn} do

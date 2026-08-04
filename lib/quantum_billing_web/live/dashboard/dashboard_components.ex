@@ -25,12 +25,12 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def stat_card(assigns) do
     ~H"""
     <.card>
-      <div class={["mb-3 flex size-8 items-center justify-center rounded-field", @icon_class]}>
-        <.icon name={@icon} class="size-4" />
+      <div class={["mb-2.5 flex size-7 items-center justify-center rounded-field", @icon_class]}>
+        <.icon name={@icon} class="size-3.5" />
       </div>
-      <p class="text-sm text-base-content/60">{@label}</p>
-      <p class="mt-1 text-2xl font-semibold tracking-tight">{@value}</p>
-      <p :if={@delta_text} class={["mt-1.5 flex items-center gap-1 text-xs", @delta_class]}>
+      <p class="text-xs text-base-content/60">{@label}</p>
+      <p class="mt-0.5 text-2xl font-semibold tracking-tight">{@value}</p>
+      <p :if={@delta_text} class={["mt-1 flex items-center gap-1 text-xs", @delta_class]}>
         <.icon :if={@delta_icon} name={@delta_icon} class="size-3" />
         {@delta_text}
       </p>

@@ -509,6 +509,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           <p class="mt-1 text-sm text-base-content/60">
             Google Authenticator, Microsoft Authenticator, 1Password and others all work.
           </p>
+          <%!-- Literally white, not `bg-base-100`: the QR modules are black, so
+          on a dark theme a themed surface would leave nothing for a camera to
+          read. --%>
           <div class="mt-3 w-fit rounded-box border border-base-300 bg-white p-3">
             {Phoenix.HTML.raw(TwoFactor.qr_svg(@user))}
           </div>

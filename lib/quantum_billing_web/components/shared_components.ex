@@ -104,7 +104,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.card class="lg:col-span-2" padding="p-6">…</.card>
   """
   attr :class, :any, default: nil
-  attr :padding, :string, default: "p-5"
+  attr :padding, :string, default: "p-4"
   attr :as, :string, default: "div", doc: "the tag to render, e.g. `button` for clickable tiles"
   attr :rest, :global, include: ~w(type)
 
@@ -355,7 +355,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def coming_soon(assigns) do
     ~H"""
-    <.card padding="p-16" class="text-center">
+    <.card padding="p-12" class="text-center">
       <span class="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name="hero-wrench-screwdriver" class="size-4.5" />
       </span>

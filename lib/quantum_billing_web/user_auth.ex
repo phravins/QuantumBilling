@@ -111,7 +111,11 @@ defmodule QuantumBillingWeb.UserAuth do
     conn
     |> renew_session(nil)
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
-    |> redirect(to: ~p"/")
+    # Straight to the sign-in page, not to `/`. The root is a protected route,
+    # so going there on the way out meant every sign-out bounced off
+    # `require_authenticated_user/2` and stacked a red "You must log in" on top
+    # of the goodbye message.
+    |> redirect(to: ~p"/users/log-in")
   end
 
   @doc """
@@ -354,10 +358,22 @@ defmodule QuantumBillingWeb.UserAuth do
       conn
     else
       conn
-      |> put_flash(:error, "You must log in to access this page.")
+      |> maybe_explain_redirect()
       |> maybe_store_return_to()
       |> redirect(to: ~p"/users/log-in")
       |> halt()
+    end
+  end
+
+  # Only worth saying when the visitor was after something in particular.
+  # The root is the dashboard, so opening the bare address signed out lands
+  # here too — and being told off for opening the app is not information, it
+  # is noise on the first screen anyone sees.
+  defp maybe_explain_redirect(conn) do
+    if current_path(conn) == "/" do
+      conn
+    else
+      put_flash(conn, :error, "You must log in to access this page.")
     end
   end
 

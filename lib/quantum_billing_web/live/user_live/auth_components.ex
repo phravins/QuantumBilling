@@ -2,25 +2,30 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   @moduledoc """
   Presentational pieces for the sign-in / sign-up screens.
 
-  These deliberately use explicit neutral utility classes rather than the
-  daisyUI theme tokens the rest of the app uses: the auth design is a
-  monochrome, light-only screen (near-black buttons on white), which the
-  themed `btn-neutral` / `input` styles do not match.
+  These use the same theme tokens as the rest of the app. They used to carry
+  their own `zinc-*` palette and `rounded-md` corners, which meant the sign-in
+  screen quietly drifted from the product it signs you in to — a type-scale or
+  radius change would land everywhere except the first screen anyone sees.
+
+  The look is unchanged: the app's light theme is already near-black on white,
+  so the theme tokens resolve to what these were hardcoding.
   """
   use Phoenix.Component
   use QuantumBillingWeb, :verified_routes
 
-  @input_class "h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-950 " <>
-                 "placeholder:text-zinc-500 transition-colors focus:outline-none " <>
-                 "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-950/10"
+  @input_class "h-9 w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
+                 "text-base-content placeholder:text-base-content/45 transition-colors " <>
+                 "focus:outline-none focus:border-base-content/30 focus:ring-2 " <>
+                 "focus:ring-base-content/10"
 
-  @primary_button_class "inline-flex h-9 w-full items-center justify-center rounded-md bg-zinc-900 " <>
-                          "text-sm font-medium text-white transition-colors hover:bg-zinc-800 " <>
+  @primary_button_class "inline-flex h-9 w-full items-center justify-center rounded-field " <>
+                          "bg-primary text-sm font-medium text-primary-content " <>
+                          "transition-colors hover:bg-primary/90 " <>
                           "disabled:pointer-events-none disabled:opacity-50"
 
-  @outline_button_class "inline-flex h-9 w-full items-center justify-center rounded-md border " <>
-                          "border-zinc-200 bg-white text-sm font-medium text-zinc-950 " <>
-                          "transition-colors hover:bg-zinc-100"
+  @outline_button_class "inline-flex h-9 w-full items-center justify-center rounded-field " <>
+                          "border border-base-300 bg-base-100 text-sm font-medium " <>
+                          "text-base-content transition-colors hover:bg-base-200"
 
   @doc "Shared class list for text inputs on the auth screens."
   def input_class, do: @input_class
@@ -40,11 +45,11 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
     ~H"""
     <div class="relative">
       <div class="absolute inset-0 flex items-center">
-        <span class="w-full border-t border-zinc-200"></span>
+        <span class="w-full border-t border-base-300"></span>
       </div>
 
       <div class="relative flex justify-center text-xs uppercase">
-        <span class="bg-white px-2 text-zinc-500">{@label}</span>
+        <span class="bg-base-100 px-2 text-base-content/60">{@label}</span>
       </div>
     </div>
     """
@@ -78,12 +83,12 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   """
   def legal_note(assigns) do
     ~H"""
-    <p class="px-8 text-center text-sm text-zinc-500">
+    <p class="px-8 text-center text-sm text-base-content/60">
       By clicking continue, you agree to our
-      <.link navigate={~p"/terms"} class="underline underline-offset-4 hover:text-zinc-900">
+      <.link navigate={~p"/terms"} class="underline underline-offset-4 hover:text-base-content">
         Terms of Service
       </.link>
-      and <.link navigate={~p"/privacy"} class="underline underline-offset-4 hover:text-zinc-900">
+      and <.link navigate={~p"/privacy"} class="underline underline-offset-4 hover:text-base-content">
         Privacy Policy
       </.link>.
     </p>
