@@ -55,13 +55,21 @@ defmodule QuantumBillingWeb.CoreComponents do
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
-    assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
+    assigns =
+      assigns
+      |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
+      # The dismissal key has to be the plain flash string, never the rendered
+      # slot. The connection toasts pass markup as their body, and markup in an
+      # attribute breaks out of the quotes and takes the rest of the tag with
+      # it — `hidden` and `class` included, which left them unhidden, unstyled
+      # and sitting in the page flow.
+      |> assign(:dismiss_key, Phoenix.Flash.get(assigns.flash, assigns.kind))
 
     ~H"""
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
-      data-msg={msg}
+      data-msg={@dismiss_key}
       phx-hook=".FlashDismiss"
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
