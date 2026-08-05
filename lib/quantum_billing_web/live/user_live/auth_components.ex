@@ -13,17 +13,20 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   use Phoenix.Component
   use QuantumBillingWeb, :verified_routes
 
-  @input_class "h-9 w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
+  # 32px rather than the product's 36px control height. The auth screens stack
+  # full-width controls on an otherwise empty page, where the same height that
+  # reads as normal in a dense form reads as oversized.
+  @input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
                  "text-base-content placeholder:text-base-content/45 transition-colors " <>
                  "focus:outline-none focus:border-base-content/30 focus:ring-2 " <>
                  "focus:ring-base-content/10"
 
-  @primary_button_class "inline-flex h-9 w-full items-center justify-center rounded-field " <>
+  @primary_button_class "inline-flex h-8 w-full items-center justify-center rounded-field " <>
                           "bg-primary text-sm font-medium text-primary-content " <>
                           "transition-colors hover:bg-primary/90 " <>
                           "disabled:pointer-events-none disabled:opacity-50"
 
-  @outline_button_class "inline-flex h-9 w-full items-center justify-center rounded-field " <>
+  @outline_button_class "inline-flex h-8 w-full items-center justify-center rounded-field " <>
                           "border border-base-300 bg-base-100 text-sm font-medium " <>
                           "text-base-content transition-colors hover:bg-base-200"
 
