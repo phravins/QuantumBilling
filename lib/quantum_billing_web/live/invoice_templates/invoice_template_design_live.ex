@@ -349,7 +349,12 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
       </nav>
 
       <.header>
-        <form id="template-name-form" phx-change="update_template" phx-submit="update_template" class="contents">
+        <form
+          id="template-name-form"
+          phx-change="update_template"
+          phx-submit="update_template"
+          class="contents"
+        >
           <input
             type="text"
             name="name"
@@ -369,7 +374,11 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
         <:actions>
           <div class="flex items-center gap-2">
-            <form id="template-accent-form" phx-change="update_template" class="flex items-center gap-1.5">
+            <form
+              id="template-accent-form"
+              phx-change="update_template"
+              class="flex items-center gap-1.5"
+            >
               <label for="template-accent" class="text-xs text-base-content/60">Accent</label>
               <input
                 type="color"
