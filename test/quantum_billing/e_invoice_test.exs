@@ -88,7 +88,9 @@ defmodule QuantumBilling.EInvoiceTest do
   defp at(node, []), do: node
 
   defp content(nil), do: nil
-  defp content({_name, _attrs, children}), do: children |> Enum.filter(&is_binary/1) |> Enum.join()
+
+  defp content({_name, _attrs, children}),
+    do: children |> Enum.filter(&is_binary/1) |> Enum.join()
 
   defp names({_name, _attrs, children}) do
     for {name, _attrs, _kids} <- children, is_binary(name), do: name
@@ -190,7 +192,10 @@ defmodule QuantumBilling.EInvoiceTest do
     end
 
     test "an inter-state supply is all IGST" do
-      tree = tree(invoice(%{"place_of_supply" => "Karnataka (29)", "client_state" => "Karnataka (29)"}))
+      tree =
+        tree(
+          invoice(%{"place_of_supply" => "Karnataka (29)", "client_state" => "Karnataka (29)"})
+        )
 
       assert text(tree, ["ValDtls", "IgstVal"]) == "180.00"
       assert text(tree, ["ValDtls", "CgstVal"]) == "0.00"
@@ -224,7 +229,12 @@ defmodule QuantumBilling.EInvoiceTest do
 
     test "a SAC marks the line as a service, an HSN as goods" do
       service = tree(invoice()) |> at(["ItemList", "Item", "IsServc"]) |> content()
-      goods = invoice(%{}, %{"hsn_sac" => "847130"}) |> tree() |> at(["ItemList", "Item", "IsServc"]) |> content()
+
+      goods =
+        invoice(%{}, %{"hsn_sac" => "847130"})
+        |> tree()
+        |> at(["ItemList", "Item", "IsServc"])
+        |> content()
 
       assert service == "Y"
       assert goods == "N"

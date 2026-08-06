@@ -13,7 +13,12 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
   organisation's `doc_*` columns, so the helpers below edit the layout and
   re-save the draft — which is the path a user takes through the design pad.
   """
-  use QuantumBillingWeb.ConnCase, async: true
+  # Not async: these seed a default design, and the partial unique index over
+  # `invoice_templates.is_default` makes two transactions inserting one block
+  # each other until the first ends. In production that wait is milliseconds and
+  # is exactly what the index is for; a sandbox transaction lasts the whole test,
+  # so concurrent seeders deadlock instead.
+  use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 

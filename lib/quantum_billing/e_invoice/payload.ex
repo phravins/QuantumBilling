@@ -124,7 +124,10 @@ defmodule QuantumBilling.EInvoice.Payload do
        maybe("Addr2", rest_lines(invoice.client_billing_address)),
        element("Loc", invoice.client_city),
        element("Pin", invoice.client_pincode),
-       element("Stcd", GST.state_code(invoice.client_state) || GST.state_code(invoice.place_of_supply))
+       element(
+         "Stcd",
+         GST.state_code(invoice.client_state) || GST.state_code(invoice.place_of_supply)
+       )
      ]
      |> compact()}
   end
@@ -211,7 +214,9 @@ defmodule QuantumBilling.EInvoice.Payload do
   # schema, and coupling them would mean a change for one silently altering the
   # other.
   defp decimal(nil), do: "0.00"
-  defp decimal(amount) when is_integer(amount), do: :erlang.float_to_binary(amount * 1.0, decimals: 2)
+
+  defp decimal(amount) when is_integer(amount),
+    do: :erlang.float_to_binary(amount * 1.0, decimals: 2)
 
   defp first_line(nil), do: ""
 

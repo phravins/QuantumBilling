@@ -132,7 +132,8 @@ defmodule QuantumBilling.EInvoice do
         do: "The client's city is missing. Add it to the client and re-save the invoice."
       ),
       unless(pincode?(invoice.client_pincode),
-        do: "The client's six-digit PIN code is missing. Add it to the client and re-save the invoice."
+        do:
+          "The client's six-digit PIN code is missing. Add it to the client and re-save the invoice."
       )
     ]
   end

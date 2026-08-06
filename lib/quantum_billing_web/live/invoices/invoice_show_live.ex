@@ -74,7 +74,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             </.link>
 
             <div class="flex items-center gap-1">
-              <.link href={~p"/invoices/#{@invoice.id}/e-invoice.xml"} class={secondary_button_class()}>
+              <.link
+                href={~p"/invoices/#{@invoice.id}/e-invoice.xml"}
+                class={secondary_button_class()}
+              >
                 <.icon name="hero-code-bracket" class="size-4" /> E-Invoice XML
               </.link>
 

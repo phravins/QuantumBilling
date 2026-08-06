@@ -293,20 +293,6 @@ defmodule QuantumBilling.TemplatesTest do
     end
   end
 
-  # The `doc_*` columns are legacy data now: `Layout.from_legacy/1` still reads
-  # them so an installation that customised its invoices before templates
-  # existed keeps the invoices it had, but nothing writes them any more — the
-  # settings changeset stopped casting them when the panel became a template
-  # list. So these are set directly, the way a pre-existing row would carry them.
-  defp legacy(attrs) do
-    {:ok, organization} =
-      Settings.ensure_organization()
-      |> Ecto.Changeset.change(attrs)
-      |> Repo.update()
-
-    organization
-  end
-
   defp invoice_attrs do
     %{
       "invoice_date" => Date.to_iso8601(~D[2026-04-18]),
@@ -319,7 +305,6 @@ defmodule QuantumBilling.TemplatesTest do
   end
 
   defp block(document, type), do: Enum.find(document.blocks, &(&1.type == type))
-  defp block_of(document, type), do: block(document, type).children
 
   defp drop(document, type) do
     %{document | blocks: Enum.reject(document.blocks, &(&1.type == type))}

@@ -204,7 +204,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         <p class="text-sm font-medium">{label_for(@block.type)}</p>
       </div>
 
-      <form phx-change="update_block" class="space-y-3">
+      <form id={"block-form-#{@block.id}"} phx-change="update_block" class="space-y-3">
         <%!-- `_id` rather than `id`: a form input named `id` overrides the DOM
         id of the form element it sits in, which LiveView needs to track it. --%>
         <input type="hidden" name="_id" value={@block.id} />

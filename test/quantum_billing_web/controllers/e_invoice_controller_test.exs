@@ -36,7 +36,12 @@ defmodule QuantumBillingWeb.EInvoiceControllerTest do
         "items" => %{
           "0" =>
             Map.merge(
-              %{"description" => "Design retainer", "hsn_sac" => "998311", "quantity" => "2", "rate" => "500"},
+              %{
+                "description" => "Design retainer",
+                "hsn_sac" => "998311",
+                "quantity" => "2",
+                "rate" => "500"
+              },
               item_attrs
             )
         }
