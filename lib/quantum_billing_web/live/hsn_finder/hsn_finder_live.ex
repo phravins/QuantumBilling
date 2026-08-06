@@ -70,35 +70,42 @@ defmodule QuantumBillingWeb.HsnFinderLive do
                 <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
                 <span class="font-semibold tracking-tight">About HSN / SAC</span>
               </span>
+              
               <span class="mt-3 block text-base-content/60">
                 HSN (Harmonized System of Nomenclature) is an internationally standardized
                 system of names and numbers to classify traded products.
               </span>
+              
               <span class="mt-2 block text-base-content/60">
                 SAC (Services Accounting Code) is used to classify services.
               </span>
             </span>
-
+            
             <span class="block">
               <span class="flex items-center gap-2.5">
                 <.icon name="hero-information-circle" class="size-4 text-base-content/45" />
                 <span class="font-semibold tracking-tight">Note</span>
               </span>
+              
               <ul class="mt-3 space-y-2 text-base-content/60">
                 <li>
                   GST was restructured on {format_date(HsnFinder.gst_2_0_date())} ("GST 2.0") —
                   rates below reflect the current structure, not the pre-reform slabs.
                 </li>
+                
                 <li>This covers a curated set of commonly searched codes, not the full list.</li>
+                
                 <li>Please verify the HSN / SAC code and rate before use.</li>
+                
                 <li>For anything not covered here, refer to the official CBIC / GST portal.</li>
               </ul>
             </span>
           </.help_popover>
         </span>
+        
         <:subtitle>Search and find the correct HSN / SAC code and applicable GST rate.</:subtitle>
       </.header>
-
+      
       <div class="flex flex-1 flex-col gap-4">
         <.card padding="p-5">
           <div class="-mb-px flex items-center gap-6 border-b border-base-300">
@@ -118,7 +125,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
               {label}
             </button>
           </div>
-
+          
           <form
             id="hsn-search"
             phx-change="search"
@@ -143,24 +150,26 @@ defmodule QuantumBillingWeb.HsnFinderLive do
                 class={filter_input_class()}
               />
             </div>
+            
             <button type="submit" class={action_button_class()}>
               <.icon name="hero-magnifying-glass" class="size-4" /> Search
             </button>
           </form>
-
+          
           <p :if={@tab == :keyword} class="mt-2 text-xs text-base-content/45">
             Example: Mobile phone, Consulting service, Cotton fabric, Restaurant service
           </p>
         </.card>
-
+        
         <.card padding="p-5" class="flex flex-1 flex-col">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Search Results</h2>
+            
             <span :if={@query != ""} class="text-sm font-medium text-base-content/60">
               {length(@results)} Result{if length(@results) != 1, do: "s"} Found
             </span>
           </div>
-
+          
           <.empty_state
             :if={@query != "" and @results == []}
             class="flex-1 justify-center"
@@ -168,14 +177,13 @@ defmodule QuantumBillingWeb.HsnFinderLive do
             title="No match in this reference set"
             description="This finder covers a curated set of commonly searched codes, not the full government master list. The CBIC and GST portals carry the complete list."
           />
-
           <p
             :if={@query == ""}
             class="flex flex-1 items-center justify-center py-8 text-center text-sm text-base-content/45"
           >
             Enter a search above to look up an HSN / SAC code and its GST rate.
           </p>
-
+          
           <ul :if={@results != []} class="space-y-2">
             <li :for={entry <- @results}>
               <button
@@ -194,19 +202,23 @@ defmodule QuantumBillingWeb.HsnFinderLive do
                   <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-base-200 text-base-content/60">
                     <.icon name="hero-check" class="size-4" />
                   </span>
+                  
                   <div>
                     <p class="font-semibold tracking-tight">{entry.code}</p>
+                    
                     <p class="mt-0.5 text-sm text-base-content/60">{entry.description}</p>
                   </div>
                 </div>
+                
                 <div class="shrink-0 rounded-field bg-base-200 px-3 py-1.5 text-center">
                   <p class="text-sm font-semibold">{entry.rate}%</p>
+                  
                   <p class="text-2xs text-base-content/45">GST Rate</p>
                 </div>
               </button>
             </li>
           </ul>
-
+          
           <div :if={@selected} class="mt-4 border-t border-base-300 pt-4">
             <.detail_row label="HSN / SAC Code" value={@selected.code} />
             <.detail_row label="Description" value={@selected.description} />
@@ -217,9 +229,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
             <.detail_row
               label="Cess"
               value={if @selected.cess == 0, do: "NIL", else: "#{@selected.cess}%"}
-            />
-            <.detail_row label="Effective From" value={format_date(@selected.effective_from)} />
-
+            /> <.detail_row label="Effective From" value={format_date(@selected.effective_from)} />
             <div class="mt-4 flex items-center justify-between border-t border-base-300 pt-4 text-sm text-base-content/45">
               <span>Source: {@selected.source}</span>
               <a

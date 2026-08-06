@@ -1,8 +1,13 @@
 defmodule QuantumBillingWeb.InvoiceDocumentTest do
   @moduledoc """
-  The invoice is rendered twice — on screen and for print — from separate
-  markup. These assert both honour the same customization settings, because a
-  toggle that only reaches one of them is worse than no toggle at all.
+  The invoice is rendered on two surfaces — on screen, and standalone for print.
+  These assert the two agree, because a setting that only reaches one of them is
+  worse than no setting at all.
+
+  Both now render through `InvoiceDoc.Renderer`, so agreement is structural
+  rather than maintained by hand. These stay as the contract that says so: they
+  are what caught the print page labelling its money columns differently from
+  the screen, and they are what a future change to the renderer has to survive.
   """
   use QuantumBillingWeb.ConnCase, async: true
 
@@ -48,6 +53,16 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     printed = conn |> get(~p"/invoices/#{invoice.id}/pdf") |> html_response(200)
 
     %{screen: screen, printed: printed}
+  end
+
+  # The item table's column headers, in render order. Order is the thing a
+  # renderer rewrite reshuffles silently — every column can still be present
+  # while the document has become unreadable.
+  defp item_columns(html) do
+    html
+    |> LazyHTML.from_document()
+    |> LazyHTML.query("table thead th")
+    |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
   end
 
   describe "column toggles" do
@@ -119,14 +134,17 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert printed =~ "Thank you for your business."
     end
 
-    # The app sidebar carries the same mark, so the screen page always contains
-    # one. What matters is whether the *document* adds a second.
-    defp marks(html), do: html |> String.split("hero-receipt-percent") |> length() |> Kernel.-(1)
+    # Counts the mark the *document* draws. The app sidebar carries its own,
+    # which is why this looks for the document's element rather than the icon:
+    # both surfaces now draw the fallback as an inline SVG, because the `hero-*`
+    # classes are CSS masks from a stylesheet the print page does not load.
+    defp marks(html), do: html |> String.split("qb-doc__brand\"") |> length() |> Kernel.-(1)
 
     test "the fallback mark shows while no logo is uploaded", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
 
-      assert marks(screen) == 2, "expected the sidebar mark and the document mark"
+      assert marks(screen) == 1, "the document should draw its own mark"
+      assert marks(printed) == 1
       assert printed =~ "QuantumBilling"
     end
 
@@ -138,8 +156,9 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert screen =~ "/uploads/pretend-logo.png"
       assert printed =~ "/uploads/pretend-logo.png"
 
-      assert marks(screen) == 1, "the document should no longer add its own mark"
-      # The print page has no sidebar, so its mark should be gone entirely.
+      assert marks(screen) == 0, "the document should no longer add its own mark"
+      assert marks(printed) == 0
+      # The print page has no sidebar, so its wordmark should be gone entirely.
       refute printed =~ "QuantumBilling"
     end
   end
@@ -181,6 +200,147 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert invoice.cess_amount == 0
       refute screen =~ ">Cess<"
       refute printed =~ ">Cess<"
+    end
+  end
+
+  # The assertions above check that a *setting* reaches both documents. These
+  # check that the documents agree about everything else too — the parts no
+  # toggle governs, which is exactly what a rewrite of the markup can reshuffle
+  # without any test noticing.
+  describe "parity of the parts no setting governs" do
+    test "the item columns render in the same order on both", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      expected = [
+        "#",
+        "Item / Description",
+        "HSN / SAC",
+        "Qty",
+        "Unit",
+        "Rate (₹)",
+        "Tax (%)",
+        "Amount (₹)"
+      ]
+
+      assert item_columns(screen) == expected
+      assert item_columns(printed) == expected
+    end
+
+    test "dropping a column shifts neither document's remaining order",
+         %{conn: conn, invoice: invoice} do
+      customize(%{"doc_show_unit" => "false"})
+
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      expected = [
+        "#",
+        "Item / Description",
+        "HSN / SAC",
+        "Qty",
+        "Rate (₹)",
+        "Tax (%)",
+        "Amount (₹)"
+      ]
+
+      assert item_columns(screen) == expected
+      assert item_columns(printed) == expected
+    end
+
+    test "the identifying fields reach both", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert html =~ invoice.invoice_number
+        assert html =~ "Maharashtra (27)"
+        assert html =~ "Place of Supply"
+        assert html =~ "Invoice Date"
+        assert html =~ "Due Date"
+        assert html =~ "Northwind Traders"
+        assert html =~ "Bill To"
+        assert html =~ "18 Apr 2026"
+      end
+    end
+
+    test "every totals row reaches both", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert html =~ "Taxable Value"
+        assert html =~ "Round Off"
+        assert html =~ "Grand Total"
+      end
+    end
+
+    # Which tax applies is decided by the supply, not by the template. Printing
+    # IGST on an intra-state supply is a compliance error, so neither document
+    # may be the one that gets it wrong.
+    test "an intra-state supply shows CGST and SGST and no IGST on both",
+         %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert html =~ "CGST"
+        assert html =~ "SGST"
+        refute html =~ "IGST"
+      end
+    end
+
+    test "an inter-state supply shows IGST and no CGST or SGST on both", %{conn: conn} do
+      # The snapshot is taken at issue, so the company's state has to be set
+      # before the invoice is created rather than after.
+      {:ok, _organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"company_name" => "Your Company", "state" => "Karnataka (29)"},
+          :general
+        )
+
+      {:ok, invoice} =
+        Invoices.create_invoice(%{
+          "invoice_date" => Date.to_iso8601(~D[2026-04-18]),
+          "place_of_supply" => "Maharashtra (27)",
+          "client_name" => "Northwind Traders",
+          "items" => %{
+            "0" => %{"description" => "Design retainer", "quantity" => "2", "rate" => "500"}
+          }
+        })
+
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert html =~ "IGST"
+        refute html =~ "CGST"
+        refute html =~ "SGST"
+      end
+    end
+
+    # HEEx does not interpolate inside a `<style>` element, and escaping the CSS
+    # as ordinary content turns the child combinator into `&gt;` and drops the
+    # rule. Both mistakes are silent — the page still renders, just unstyled.
+    test "the stylesheet reaches both surfaces unescaped", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for {label, html} <- [{"screen", screen}, {"printed", printed}] do
+        assert html =~ "qb-doc__row > .qb-doc__cell",
+               "the child combinator did not survive on the #{label} document"
+
+        refute html =~ "{Phoenix.HTML.raw",
+               "the #{label} document emitted the interpolation as literal text"
+      end
+
+      # The paper rules belong only to the page that is actually printed.
+      assert printed =~ "@page"
+      refute screen =~ "@page"
+    end
+
+    test "the line figures reach both", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      # Two hours at ₹500 — the rate, the quantity and the line total.
+      for html <- [screen, printed] do
+        assert html =~ "500.00"
+        assert html =~ "1,000.00"
+      end
     end
   end
 end

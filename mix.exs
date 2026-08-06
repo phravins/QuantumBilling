@@ -74,6 +74,12 @@ defmodule QuantumBilling.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
+      # Invoice layouts and the e-invoice export are both XML. Saxy is pure
+      # Elixir with no transitive dependencies, and — unlike `:xmerl` — it has
+      # no DTD or external entity support at all, so entity-expansion attacks
+      # are absent rather than mitigated. It also serialises, which `:xmerl`
+      # effectively does not, and this codebase writes XML in two places.
+      {:saxy, "~> 1.6"},
       # Two factor authentication: RFC 6238 codes, and the QR that enrols them.
       # Both are pure Elixir with no runtime services, so the secret never
       # leaves the application.

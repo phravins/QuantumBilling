@@ -14,9 +14,9 @@ defmodule QuantumBillingWeb.SettingsComponents do
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
-  import QuantumBillingWeb.Format, only: [rupees: 2, format_date: 1, rupees_in_words: 1]
-  import QuantumBillingWeb.SharedComponents, only: [brand_mark: 1]
 
+  alias QuantumBillingWeb.InvoiceDoc.Layout
+  alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoiceDocument
 
   # `short_title` is what the sidebar shows. The sidebar is only 12rem wide and
@@ -137,132 +137,36 @@ defmodule QuantumBillingWeb.SettingsComponents do
   @doc """
   Renders a miniature invoice reflecting the customization settings.
 
-  Driven by `InvoiceDocument.config/1` and `InvoiceDocument.sample/0` — the same
-  resolver the real document uses — so a toggle that does nothing here does
-  nothing there either. It is scaled down rather than simplified: hiding detail
-  would let the preview agree with settings it is not actually honouring.
+  Rendered by `InvoiceDoc.Renderer` from the layout the settings describe — the
+  same component and the same stylesheet the real document uses — so a toggle
+  that does nothing here does nothing there either. It is scaled down rather
+  than simplified: hiding detail would let the preview agree with a setting it
+  is not actually honouring.
+
+  `settings` is the unsaved changeset draft, so the preview follows the form
+  rather than the stored row.
   """
   attr :settings, :map, required: true, doc: "the Organization being edited, saved or not"
   attr :organization, :map, required: true, doc: "the saved row, for the stored logo path"
 
   def invoice_preview(assigns) do
-    config = InvoiceDocument.config(assigns.settings)
-    invoice = InvoiceDocument.sample()
-
     assigns =
       assigns
-      |> assign(:config, config)
-      |> assign(:invoice, invoice)
-      |> assign(:logo, config.logo || assigns.organization.doc_logo_path)
-      |> assign(:show_cess?, InvoiceDocument.show_cess?(config, invoice))
-      |> assign(:heading, InvoiceDocument.heading(config, invoice))
+      |> assign(:doc, Layout.from_legacy(assigns.settings))
+      |> assign(:invoice, InvoiceDocument.sample())
+      |> assign(:accent, assigns.settings.doc_accent_color || "#18181b")
+      |> assign(:logo, assigns.settings.doc_logo_path || assigns.organization.doc_logo_path)
 
     ~H"""
-    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100 p-5 text-2xs shadow-sm">
-      <div class="flex items-start justify-between gap-4">
-        <div>
-          <img :if={@logo} src={@logo} alt="" class="mb-2 max-h-8 max-w-32" />
-          <.brand_mark
-            :if={is_nil(@logo)}
-            class="mb-2"
-            icon_class="size-5"
-            label_class="text-xs font-semibold"
-          />
-          <p class="font-semibold">{@invoice.company_name}</p>
-          <p class="whitespace-pre-line text-base-content/60">{@invoice.company_address}</p>
-        </div>
-
-        <div class="text-right">
-          <p class="text-sm font-semibold" style={"color: #{@config.accent}"}>{@heading}</p>
-          <p class="font-medium">{@invoice.invoice_number}</p>
-          <p class="text-base-content/60">{format_date(@invoice.invoice_date)}</p>
-        </div>
-      </div>
-
-      <p class="mt-3 uppercase tracking-wider text-base-content/45">Bill To</p>
-      <p class="font-semibold">{@invoice.client_name}</p>
-
-      <table class="mt-3 w-full">
-        <thead>
-          <tr
-            class="border-b uppercase tracking-wider text-base-content/45"
-            style={"border-color: #{@config.accent}"}
-          >
-            <th class="py-1 pr-2 text-left font-semibold">#</th>
-            <th class="py-1 pr-2 text-left font-semibold">Item</th>
-            <th :if={@config.show_hsn} class="py-1 pr-2 text-left font-semibold">HSN</th>
-            <th class="py-1 pr-2 text-right font-semibold">Qty</th>
-            <th :if={@config.show_unit} class="py-1 pr-2 text-left font-semibold">Unit</th>
-            <th class="py-1 pr-2 text-right font-semibold">Rate</th>
-            <th :if={@config.show_tax_rate} class="py-1 pr-2 text-right font-semibold">Tax %</th>
-            <th class="py-1 text-right font-semibold">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            :for={{item, index} <- Enum.with_index(@invoice.items, 1)}
-            class="border-b border-base-200"
-          >
-            <td class="py-1 pr-2 text-base-content/45">{index}</td>
-            <td class="py-1 pr-2">{item.description}</td>
-            <td :if={@config.show_hsn} class="py-1 pr-2 text-base-content/60">{item.hsn_sac}</td>
-            <td class="py-1 pr-2 text-right">{item.quantity}</td>
-            <td :if={@config.show_unit} class="py-1 pr-2 text-base-content/60">{item.unit}</td>
-            <td class="py-1 pr-2 text-right">{rupees(item.rate, decimals: 2)}</td>
-            <td :if={@config.show_tax_rate} class="py-1 pr-2 text-right text-base-content/60">
-              {item.tax_rate}%
-            </td>
-            <td class="py-1 text-right font-medium">{rupees(item.amount, decimals: 2)}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="ml-auto mt-3 w-48 space-y-1">
-        <.preview_total label="Taxable Value" value={rupees(@invoice.taxable_value, decimals: 2)} />
-        <.preview_total label="CGST" value={rupees(@invoice.cgst_amount, decimals: 2)} />
-        <.preview_total label="SGST" value={rupees(@invoice.sgst_amount, decimals: 2)} />
-        <.preview_total
-          :if={@show_cess?}
-          label="Cess"
-          value={rupees(@invoice.cess_amount, decimals: 2)}
-        />
-        <div
-          class="flex justify-between border-t pt-1 text-xs font-semibold"
-          style={"border-color: #{@config.accent}; color: #{@config.accent}"}
-        >
-          <span>Grand Total</span>
-          <span>{rupees(@invoice.grand_total, decimals: 2)}</span>
-        </div>
-      </div>
-
-      <div :if={@config.show_amount_words} class="mt-3">
-        <p class="uppercase tracking-wider text-base-content/45">Amount in Words</p>
-        <p class="text-base-content/60">{rupees_in_words(@invoice.grand_total)}</p>
-      </div>
-
-      <div :if={@config.show_remarks and @invoice.remarks} class="mt-3">
-        <p class="uppercase tracking-wider text-base-content/45">Remarks</p>
-        <p class="text-base-content/60">{@invoice.remarks}</p>
-      </div>
-
-      <p
-        :if={@config.footer}
-        class="mt-4 border-t border-base-200 pt-2 text-center text-base-content/45"
-      >
-        {@config.footer}
-      </p>
-    </div>
-    """
-  end
-
-  attr :label, :string, required: true
-  attr :value, :string, required: true
-
-  defp preview_total(assigns) do
-    ~H"""
-    <div class="flex justify-between">
-      <span class="text-base-content/60">{@label}</span>
-      <span>{@value}</span>
+    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100 p-3 shadow-sm">
+      <Renderer.stylesheet doc={@doc} />
+      <Renderer.thumbnail
+        doc={@doc}
+        invoice={@invoice}
+        accent={@accent}
+        logo={@logo}
+        scale={0.42}
+      />
     </div>
     """
   end

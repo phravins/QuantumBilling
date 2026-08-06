@@ -51,9 +51,9 @@ defmodule QuantumBillingWeb.Layouts do
         <%!-- The bare mark, matching the sign-in and legal screens: no filled
         tile, and the icon takes its colour from the surrounding text. --%>
         <.brand_mark class="px-4 py-4" />
-
         <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
           <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
+          
           <ul class="space-y-0.5">
             <li :for={item <- @nav_items} class="group">
               <%!-- Settings is the one item with sections beneath it. The
@@ -78,7 +78,6 @@ defmodule QuantumBillingWeb.Layouts do
                 phx-hook=".SettingsDisclosure"
                 class="peer sr-only"
               />
-
               <div class="flex items-center gap-0.5">
                 <.link
                   navigate={item.path}
@@ -94,7 +93,7 @@ defmodule QuantumBillingWeb.Layouts do
                   <.icon name={item.icon} class="size-4.5 shrink-0" />
                   <span class="truncate">{item.label}</span>
                 </.link>
-
+                
                 <label
                   :if={item.key == :settings}
                   for="settings-sections-toggle"
@@ -110,7 +109,7 @@ defmodule QuantumBillingWeb.Layouts do
                   />
                 </label>
               </div>
-
+              
               <%!-- No icons on the sections: half of them repeat an icon
               already sitting a few pixels above in this same list. --%>
               <div
@@ -141,7 +140,7 @@ defmodule QuantumBillingWeb.Layouts do
             </li>
           </ul>
         </nav>
-
+        
         <div class="border-t border-base-300 p-2.5">
           <div class="dropdown dropdown-top w-full">
             <div
@@ -152,10 +151,12 @@ defmodule QuantumBillingWeb.Layouts do
               <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
                 {user_initials(@current_scope)}
               </span>
+              
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium leading-tight">
                   {user_name(@current_scope)}
                 </span>
+                
                 <span
                   :if={user_designation(@current_scope)}
                   class="block truncate text-xs text-base-content/45"
@@ -163,8 +164,9 @@ defmodule QuantumBillingWeb.Layouts do
                   {user_designation(@current_scope)}
                 </span>
               </span>
-              <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
+               <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
             </div>
+            
             <%!-- `w-full`, not a fixed width: the sidebar is only 12rem, so
             anything wider hangs out over the page beside it. --%>
             <ul
@@ -172,6 +174,7 @@ defmodule QuantumBillingWeb.Layouts do
               class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
               <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
+              
               <li>
                 <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
               </li>
@@ -179,7 +182,7 @@ defmodule QuantumBillingWeb.Layouts do
           </div>
         </div>
       </aside>
-
+      
       <div class="flex min-w-0 flex-1 flex-col">
         <%!-- justify-end, not justify-between: the sidebar toggle used to sit on
         the left and is gone, so anything left aligned would drift over to it. --%>
@@ -192,7 +195,7 @@ defmodule QuantumBillingWeb.Layouts do
             <span class="absolute right-1 top-1 size-1.5 rounded-full bg-error"></span>
           </button>
         </header>
-
+        
         <%!-- A flex column so a page can hand a panel `flex-1` and have it take
         the height left over — an empty list reads as broken when its card stops
         halfway down an otherwise blank screen. Block children are unaffected:
@@ -209,9 +212,7 @@ defmodule QuantumBillingWeb.Layouts do
         </main>
       </div>
     </div>
-
-    <.flash_group flash={@flash} />
-
+     <.flash_group flash={@flash} />
     <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsDisclosure">
       // Keeps the settings sections open across navigation. The server renders
       // the checkbox unchecked every time, so without this, picking a section
@@ -318,24 +319,23 @@ defmodule QuantumBillingWeb.Layouts do
       <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-base-content md:left-8 md:top-8">
         <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
       </div>
-
+      
       <div
         :if={@top_link != []}
         class="absolute right-4 top-4 text-sm font-medium text-base-content md:right-8 md:top-8"
       >
         {render_slot(@top_link)}
       </div>
-
+      
       <div class="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
         {render_slot(@inner_block)}
       </div>
-
+      
       <p class="absolute inset-x-0 bottom-6 px-4 text-center text-xs text-base-content/60">
         GST invoicing, e-way bills and compliance — all in one place.
       </p>
     </div>
-
-    <.flash_group flash={@flash} />
+     <.flash_group flash={@flash} />
     """
   end
 
@@ -368,6 +368,7 @@ defmodule QuantumBillingWeb.Layouts do
           >
             <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
           </.link>
+          
           <.link
             navigate={if @current_scope, do: ~p"/dashboard", else: ~p"/users/log-in"}
             class="text-sm font-medium text-base-content/60 hover:text-base-content"
@@ -376,15 +377,17 @@ defmodule QuantumBillingWeb.Layouts do
           </.link>
         </div>
       </header>
-
+      
       <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <h1 class="text-3xl font-semibold tracking-tight text-base-content">{@title}</h1>
+        
         <p class="mt-2 text-sm text-base-content/60">Draft — not yet in effect.</p>
-
+        
         <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4">
           <p class="text-sm font-semibold text-amber-900">
             Template pending legal review — do not publish as-is.
           </p>
+          
           <p class="mt-1 text-sm text-amber-800">
             This document is a starting structure, not legal advice. Have it reviewed by a
             qualified lawyer and fill in every
@@ -392,12 +395,12 @@ defmodule QuantumBillingWeb.Layouts do
             blank before making it public. Remove this notice once reviewed.
           </p>
         </div>
-
+        
         <div class="mt-10 space-y-8">
           {render_slot(@inner_block)}
         </div>
       </main>
-
+      
       <footer class="border-t border-base-300">
         <div class="mx-auto flex max-w-3xl flex-col gap-2 px-6 py-6 text-sm text-base-content/60 sm:flex-row sm:items-center sm:justify-between">
           <span>© {DateTime.utc_now().year} QuantumBilling. All rights reserved.</span>
@@ -410,8 +413,7 @@ defmodule QuantumBillingWeb.Layouts do
         </div>
       </footer>
     </div>
-
-    <.flash_group flash={@flash} />
+     <.flash_group flash={@flash} />
     """
   end
 
@@ -425,6 +427,7 @@ defmodule QuantumBillingWeb.Layouts do
     ~H"""
     <div class="flex flex-col space-y-2 text-center">
       <h1 class="text-xl font-semibold tracking-tight text-base-content">{@title}</h1>
+      
       <p class="text-sm text-base-content/60">{@subtitle}</p>
     </div>
     """
@@ -443,9 +446,7 @@ defmodule QuantumBillingWeb.Layouts do
   def flash_group(assigns) do
     ~H"""
     <div id={@id} aria-live="polite">
-      <.flash kind={:info} flash={@flash} />
-      <.flash kind={:error} flash={@flash} />
-
+      <.flash kind={:info} flash={@flash} /> <.flash kind={:error} flash={@flash} />
       <.flash
         id="client-error"
         kind={:error}
@@ -460,7 +461,7 @@ defmodule QuantumBillingWeb.Layouts do
         {gettext("Attempting to reconnect")}
         <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
-
+      
       <.flash
         id="server-error"
         kind={:error}
@@ -488,7 +489,6 @@ defmodule QuantumBillingWeb.Layouts do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
       <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
-
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
@@ -496,7 +496,7 @@ defmodule QuantumBillingWeb.Layouts do
       >
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
-
+      
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
@@ -504,7 +504,7 @@ defmodule QuantumBillingWeb.Layouts do
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
-
+      
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}

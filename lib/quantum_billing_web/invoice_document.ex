@@ -1,79 +1,21 @@
 defmodule QuantumBillingWeb.InvoiceDocument do
   @moduledoc """
-  What an invoice document should show, resolved from the organisation's
-  customization settings.
+  A representative invoice, for previewing a layout without a real one.
 
-  The invoice is rendered twice — on screen by `InvoiceShowLive` in Tailwind, and
-  standalone for printing by `InvoicePdfHTML` in inline CSS, because the print
-  page deliberately loads none of the app's stylesheet. Those two cannot share
-  markup, but they must not disagree about *what* appears. This module is the one
-  place that decides, so a setting toggled off vanishes from both or neither.
+  This module used to decide what an invoice document showed, because the
+  document was rendered twice from separate markup and something had to keep the
+  two honest. That job now belongs to the layout itself: `InvoiceDoc.Layout`
+  reads it, `InvoiceDoc.Renderer` renders it, and every surface goes through the
+  same component, so there is no longer a pair of markups that could disagree.
 
-  `sample/0` builds an unsaved invoice for the settings preview, so the preview
-  is driven by the same fields and the same config as the real thing.
+  What is left is the fixture. The settings preview and the design pad have no
+  invoice to show — they are configuration screens — so they render this one.
+  It is deliberately realistic rather than empty: a preview built from blanks
+  cannot show whether the column widths work or the totals box fits.
   """
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
-  alias QuantumBilling.Settings.Organization
-
-  defstruct template: "Classic",
-            accent: "#18181b",
-            logo: nil,
-            heading: nil,
-            footer: nil,
-            show_hsn: true,
-            show_unit: true,
-            show_tax_rate: true,
-            show_remarks: true,
-            show_amount_words: true,
-            show_cess: false
-
-  @doc "Resolves the document settings for `organization`."
-  def config(%Organization{} = organization) do
-    %__MODULE__{
-      template: organization.doc_template || "Classic",
-      accent: organization.doc_accent_color || "#18181b",
-      logo: presence(organization.doc_logo_path),
-      heading: presence(organization.doc_heading),
-      footer: presence(organization.doc_footer_text),
-      show_hsn: organization.doc_show_hsn,
-      show_unit: organization.doc_show_unit,
-      show_tax_rate: organization.doc_show_tax_rate,
-      show_remarks: organization.doc_show_remarks,
-      show_amount_words: organization.doc_show_amount_words,
-      show_cess: organization.doc_show_cess
-    }
-  end
-
-  @doc """
-  The title printed on the document.
-
-  Falls back to the invoice's own type, so a Credit Note does not announce
-  itself as a Tax Invoice just because nobody filled the heading in.
-  """
-  def heading(%__MODULE__{heading: nil}, %Invoice{} = invoice), do: invoice.invoice_type
-  def heading(%__MODULE__{heading: heading}, _invoice), do: heading
-
-  @doc """
-  How many columns the item table has, for a row that has to span all of them.
-
-  Four are fixed — the description, quantity, rate and amount are what an
-  invoice *is* — plus the serial and whichever optional columns are on.
-  """
-  def column_count(%__MODULE__{} = config) do
-    5 +
-      count_true([config.show_hsn, config.show_unit, config.show_tax_rate])
-  end
-
-  @doc """
-  Whether the cess row should be printed.
-
-  Both the setting and a non-zero figure: an always-zero row teaches the reader
-  nothing, and cess is not something most businesses charge.
-  """
-  def show_cess?(%__MODULE__{show_cess: false}, _invoice), do: false
-  def show_cess?(%__MODULE__{}, %Invoice{cess_amount: amount}), do: (amount || 0) > 0
 
   @doc """
   A representative invoice for the settings preview.
@@ -134,10 +76,4 @@ defmodule QuantumBillingWeb.InvoiceDocument do
       ]
     }
   end
-
-  defp presence(nil), do: nil
-  defp presence(""), do: nil
-  defp presence(value), do: value
-
-  defp count_true(flags), do: Enum.count(flags, & &1)
 end
