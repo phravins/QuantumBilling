@@ -29,6 +29,7 @@ defmodule QuantumBilling.Events do
       {:invoice_changed, invoice}
       {:e_way_bill_changed, e_way_bill}
       {:settings_updated, organization}
+      {:invoice_template_changed, template}
       {:profile_updated, user}
   """
 
@@ -75,6 +76,15 @@ defmodule QuantumBilling.Events do
 
   @doc "Organisation settings."
   def settings_topic, do: "settings"
+
+  @doc """
+  Invoice layouts created, edited, archived or made default.
+
+  Separate from `settings_topic/0` even though the design pad is reached through
+  Settings: the pad autosaves on every drag, and a settings window has no reason
+  to rebuild its form each time somebody nudges a block in another tab.
+  """
+  def invoice_templates_topic, do: "invoice_templates"
 
   @doc """
   One user's own account details.

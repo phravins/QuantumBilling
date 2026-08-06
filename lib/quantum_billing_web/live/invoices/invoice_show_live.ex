@@ -19,8 +19,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Invoices
-  alias QuantumBilling.Settings
-  alias QuantumBillingWeb.InvoiceDoc.Layout
+  alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
   def mount(%{"id" => id}, _session, socket) do
@@ -32,25 +31,21 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
-        # The figures and party details come from the invoice's own snapshot;
-        # only how it looks is read live, so rebranding restyles every invoice
-        # instead of only the next one.
-        organization = Settings.get_organization()
+        # The figures and party details come from the invoice's own snapshot,
+        # and so does the layout. Only the branding is read live, so recolouring
+        # restyles every invoice instead of only the next one.
+        {doc, accent, logo} = Templates.document_for(invoice)
 
         {:ok,
          socket
          |> assign(:page_title, invoice.invoice_number)
          |> assign(:active_nav, :invoices)
          |> assign(:invoice, invoice)
-         |> assign(:doc, Layout.from_legacy(organization))
-         |> assign(:accent, organization.doc_accent_color || "#18181b")
-         |> assign(:logo, presence(organization.doc_logo_path))}
+         |> assign(:doc, doc)
+         |> assign(:accent, accent)
+         |> assign(:logo, logo)}
     end
   end
-
-  defp presence(nil), do: nil
-  defp presence(""), do: nil
-  defp presence(value), do: value
 
   def render(assigns) do
     ~H"""
@@ -65,8 +60,32 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         {@invoice.invoice_number}
         <:subtitle>{@invoice.invoice_type}</:subtitle>
         <:actions>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <.status_badge status={@invoice.status} />
+
+            <%!-- Real navigations, not LiveView events: both hand the browser a
+            file it has to load before it can offer to save it. --%>
+            <.link
+              href={~p"/invoices/#{@invoice.id}/pdf"}
+              target="_blank"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-arrow-down-tray" class="size-4" /> PDF
+            </.link>
+
+            <div class="flex items-center gap-1">
+              <.link href={~p"/invoices/#{@invoice.id}/e-invoice.xml"} class={secondary_button_class()}>
+                <.icon name="hero-code-bracket" class="size-4" /> E-Invoice XML
+              </.link>
+
+              <.help_popover id="e-invoice-help" label="About the e-invoice export">
+                This is the invoice's data in the GST e-invoice (INV-01) schema, for your
+                accountant, your GSP or your records. It is <strong>not</strong>
+                a registered e-invoice: it carries no IRN and no signed QR code, because only
+                the Invoice Registration Portal can issue those.
+              </.help_popover>
+            </div>
+
             <.link navigate={~p"/invoices"} class={secondary_button_class()}>
               <.icon name="hero-arrow-left" class="size-4" /> Back to Invoices
             </.link>

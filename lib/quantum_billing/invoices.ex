@@ -24,6 +24,9 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Catalog
+  alias QuantumBillingWeb.InvoiceDoc.Layout
 
   @doc """
   Every invoice, newest first, shaped for the list page.
@@ -104,7 +107,14 @@ defmodule QuantumBilling.Invoices do
     # Outside the transaction on purpose: the lock below can only lock a row
     # that already exists, and racing to create it *inside* the transaction is
     # what deadlocks concurrent callers.
-    Settings.ensure_organization()
+    organization = Settings.ensure_organization() || %Organization{}
+
+    # Read-only, and outside the transaction. Issuing an invoice must not create
+    # a design: two saves racing to insert the first one contend on the partial
+    # unique index over `is_default` and deadlock each other. Seeding belongs to
+    # the screens that are about to write anyway — the settings panel and the
+    # design pad.
+    template = resolve_template(attrs)
 
     Multi.new()
     # Locked for update, so two transactions cannot read the same next number
@@ -115,10 +125,11 @@ defmodule QuantumBilling.Invoices do
         organization -> {:ok, organization}
       end
     end)
-    |> Multi.insert(:invoice, fn %{organization: organization} ->
+    |> Multi.insert(:invoice, fn %{organization: locked} ->
       attrs
-      |> with_number(organization)
-      |> with_company_snapshot(organization)
+      |> with_number(locked)
+      |> with_company_snapshot(locked)
+      |> with_layout_snapshot(template, organization)
       |> then(&Invoice.changeset(%Invoice{}, &1))
     end)
     |> Multi.run(:advance_number, fn repo, %{organization: organization} ->
@@ -157,11 +168,16 @@ defmodule QuantumBilling.Invoices do
   quietly rewrite history whenever Settings changed. Items are replaced wholesale
   — `has_many :items, on_replace: :delete` is what makes a removed row actually
   go.
+
+  The layout snapshot is refreshed only while the invoice is still a draft. A
+  draft has not been sent to anybody, so re-taking it is how a template change
+  reaches an invoice still being written; once it has left the building, the
+  document it was is the document it stays.
   """
   def update_invoice(%Invoice{} = invoice, attrs) do
     invoice
     |> Repo.preload(:items)
-    |> Invoice.changeset(attrs)
+    |> Invoice.changeset(refresh_layout(attrs, invoice))
     |> Repo.update()
     |> case do
       {:ok, invoice} ->
@@ -201,6 +217,67 @@ defmodule QuantumBilling.Invoices do
     |> put_attr("company_address", organization.address)
     |> put_attr("company_gstin", organization.gstin)
     |> put_attr("company_state", organization.state)
+  end
+
+  # The caller may name a template; without one it gets whichever is default at
+  # the moment of issue. Read-only by design — see `create_invoice/1`.
+  defp resolve_template(attrs) do
+    case template_id_from(attrs) do
+      nil -> Templates.default_template()
+      id -> Templates.get_template(id) || Templates.default_template()
+    end
+  end
+
+  # Freezes the design onto the invoice.
+  defp with_layout_snapshot(attrs, %{id: id, layout_xml: xml}, _organization) do
+    attrs |> put_attr("template_id", id) |> put_attr("layout_xml", xml)
+  end
+
+  # No design exists yet — this installation has never opened the design pad.
+  # The layout is still frozen, so an invoice issued now keeps its document even
+  # if a design is created and edited afterwards. Freezing the XML rather than
+  # creating a template row is what keeps issuing an invoice a read as far as
+  # designs are concerned.
+  defp with_layout_snapshot(attrs, nil, _organization) do
+    xml = Catalog.classic() |> Layout.to_xml()
+
+    attrs |> put_attr("template_id", nil) |> put_attr("layout_xml", xml)
+  end
+
+  # Only while it is a draft, and judged by the *stored* status rather than the
+  # incoming params: reading it from params would let a save that also flips the
+  # status re-freeze a document that has already gone out.
+  defp refresh_layout(attrs, %Invoice{status: "Draft"}) do
+    with_layout_snapshot(attrs, resolve_template(attrs), Settings.get_organization())
+  end
+
+  defp refresh_layout(attrs, %Invoice{}), do: drop_layout_attrs(attrs)
+
+  # A non-draft must not have its snapshot rewritten even by a caller that sends
+  # the fields explicitly.
+  defp drop_layout_attrs(attrs) do
+    Enum.reduce(["layout_xml", "template_id"], attrs, fn key, acc ->
+      Map.drop(acc, [key, String.to_existing_atom(key)])
+    end)
+  end
+
+  defp template_id_from(attrs) do
+    case Map.get(attrs, "template_id", Map.get(attrs, :template_id)) do
+      nil ->
+        nil
+
+      "" ->
+        nil
+
+      id when is_integer(id) ->
+        id
+
+      id when is_binary(id) ->
+        case Integer.parse(id) do
+          {n, ""} -> n
+          _other -> nil
+        end
+    end
   end
 
   # The form submits string-keyed params; tests and other callers may pass

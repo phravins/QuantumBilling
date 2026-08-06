@@ -117,14 +117,14 @@ defmodule QuantumBillingWeb.InvoicesLive do
       <.header>
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
-        
+
         <:actions>
           <.link navigate={~p"/invoices/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Create New GST Invoice
           </.link>
         </:actions>
       </.header>
-      
+
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="invoice-search"
@@ -145,14 +145,14 @@ defmodule QuantumBillingWeb.InvoicesLive do
             class={filter_input_class()}
           />
         </form>
-        
+
         <div class="flex items-center gap-2">
           <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class={filter_button_class()}>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
             </div>
-            
+
             <ul
               tabindex="0"
               class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -162,13 +162,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
               </li>
             </ul>
           </div>
-          
+
           <button type="button" class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
           </button>
         </div>
       </div>
-      
+
       <.card class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
@@ -190,38 +190,38 @@ defmodule QuantumBillingWeb.InvoicesLive do
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
-                
+
                 <th>
                   <.sortable_th
                     label="Invoice"
                     field={:seq}
                   />
                 </th>
-                
+
                 <th>Client</th>
-                
+
                 <th>
                   <.sortable_th
                     label="Invoice Date"
                     field={:invoice_date}
                   />
                 </th>
-                
+
                 <th>
                   <.sortable_th
                     label="Due Date"
                     field={:due_date}
                   />
                 </th>
-                
+
                 <th>Total Amount</th>
-                
+
                 <th>Status</th>
-                
+
                 <th class="text-right">Actions</th>
               </tr>
             </thead>
-            
+
             <tbody>
               <%!-- The serial carries on across pages rather than restarting at
               1, so it reads as a position in the list, not on the screen. --%>
@@ -231,19 +231,19 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 class={table_row_class()}
               >
                 <td class="text-base-content/45">{@row_offset + index + 1}</td>
-                
+
                 <td class="font-medium">{row.number}</td>
-                
+
                 <td>{row.client}</td>
-                
+
                 <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
-                
+
                 <td class="text-base-content/60">{format_date(row.due_date)}</td>
-                
+
                 <td class="font-medium">{rupees(row.amount)}</td>
-                
+
                 <td><.status_badge status={row.status} /></td>
-                
+
                 <td>
                   <div class="flex justify-end gap-1">
                     <.link
@@ -253,7 +253,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
-                    
+
                     <div class="dropdown dropdown-end">
                       <div
                         tabindex="0"
@@ -263,7 +263,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                       >
                         <.icon name="hero-ellipsis-vertical" class="size-4" />
                       </div>
-                      
+
                       <ul
                         tabindex="0"
                         class="dropdown-content menu z-10 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
@@ -273,7 +273,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                             <.icon name="hero-pencil-square" class="size-4" /> Edit
                           </.link>
                         </li>
-                        
+
                         <li>
                           <%!-- A real navigation, not a LiveView event: the
                           print view is a plain page the browser has to load
@@ -282,7 +282,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>
                         </li>
-                        
+
                         <li>
                           <a
                             phx-click="delete"
@@ -301,7 +301,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
             </tbody>
           </table>
         </div>
-        
+
         <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>

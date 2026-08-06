@@ -62,6 +62,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :client_billing_address, :string
     field :client_email, :string
     field :client_state, :string
+    # Snapshotted beside the address blob, which is what prints. These are what
+    # the e-invoice export needs as their own fields.
+    field :client_city, :string
+    field :client_pincode, :string
 
     field :company_name, :string
     field :company_address, :string
@@ -83,6 +87,11 @@ defmodule QuantumBilling.Invoices.Invoice do
 
     field :status, :string, default: "Draft"
 
+    # The design this was issued under, frozen at issue. See the migration for
+    # why the structure is snapshotted while the accent and logo stay live.
+    field :layout_xml, :string
+
+    belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
     belongs_to :client, QuantumBilling.Clients.Client
     has_many :items, InvoiceItem, on_replace: :delete, preload_order: [asc: :position]
 
@@ -92,8 +101,9 @@ defmodule QuantumBilling.Invoices.Invoice do
   @castable ~w(invoice_number invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
+               client_city client_pincode
                company_name company_address company_gstin company_state
-               remarks terms status)a
+               remarks terms status template_id layout_xml)a
 
   @doc """
   Builds an invoice changeset, including its line items.

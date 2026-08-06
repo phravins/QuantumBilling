@@ -6,7 +6,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   """
   use ExUnit.Case, async: true
 
-  alias QuantumBilling.Settings.Organization
   alias QuantumBillingWeb.InvoiceDoc.Block
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Document
@@ -280,17 +279,21 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
 
   # -- helpers --------------------------------------------------------------
 
+  # A plain map, which is what `from_legacy/1` takes: the columns these describe
+  # have been dropped, and the only caller left is the migration that dropped
+  # them, which reads them with raw SQL because no struct declares them any more.
   defp organization(overrides \\ %{}) do
-    defaults = %Organization{
-      doc_show_hsn: true,
-      doc_show_unit: true,
-      doc_show_tax_rate: true,
-      doc_show_remarks: true,
-      doc_show_amount_words: true,
-      doc_show_cess: false
-    }
-
-    struct!(defaults, overrides)
+    Map.merge(
+      %{
+        doc_show_hsn: true,
+        doc_show_unit: true,
+        doc_show_tax_rate: true,
+        doc_show_remarks: true,
+        doc_show_amount_words: true,
+        doc_show_cess: false
+      },
+      overrides
+    )
   end
 
   defp update_block(%Document{} = document, type, fun) do

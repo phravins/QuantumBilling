@@ -45,25 +45,53 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
   @transport_modes ["Road", "Rail", "Air", "Ship"]
 
+  # Every GST state and union territory code, in code order.
+  #
+  # This used to carry eighteen of them, which meant a business in Uttarakhand,
+  # Jharkhand, Goa or any other omission could not record its own state — and
+  # since `Organization.state`, `Client.billing_state` and
+  # `Invoice.place_of_supply` all validate against this list, it could not issue
+  # a correct invoice either. The codes are the ones the GSTN publishes and the
+  # ones a GSTIN's first two digits carry, so they are also what the e-invoice
+  # export reads back out.
   @states [
-    "Andhra Pradesh (37)",
-    "Assam (18)",
-    "Bihar (10)",
-    "Chhattisgarh (22)",
-    "Delhi (07)",
-    "Gujarat (24)",
-    "Haryana (06)",
-    "Karnataka (29)",
-    "Kerala (32)",
-    "Madhya Pradesh (23)",
-    "Maharashtra (27)",
-    "Odisha (21)",
+    "Jammu & Kashmir (01)",
+    "Himachal Pradesh (02)",
     "Punjab (03)",
+    "Chandigarh (04)",
+    "Uttarakhand (05)",
+    "Haryana (06)",
+    "Delhi (07)",
     "Rajasthan (08)",
-    "Tamil Nadu (33)",
-    "Telangana (36)",
     "Uttar Pradesh (09)",
-    "West Bengal (19)"
+    "Bihar (10)",
+    "Sikkim (11)",
+    "Arunachal Pradesh (12)",
+    "Nagaland (13)",
+    "Manipur (14)",
+    "Mizoram (15)",
+    "Tripura (16)",
+    "Meghalaya (17)",
+    "Assam (18)",
+    "West Bengal (19)",
+    "Jharkhand (20)",
+    "Odisha (21)",
+    "Chhattisgarh (22)",
+    "Madhya Pradesh (23)",
+    "Gujarat (24)",
+    "Dadra & Nagar Haveli and Daman & Diu (26)",
+    "Maharashtra (27)",
+    "Karnataka (29)",
+    "Goa (30)",
+    "Lakshadweep (31)",
+    "Kerala (32)",
+    "Tamil Nadu (33)",
+    "Puducherry (34)",
+    "Andaman & Nicobar Islands (35)",
+    "Telangana (36)",
+    "Andhra Pradesh (37)",
+    "Ladakh (38)",
+    "Other Territory (97)"
   ]
 
   # Two letters, one or two digits, up to three letters, four digits: MH01AB1234.

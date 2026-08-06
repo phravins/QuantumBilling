@@ -59,6 +59,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   def version, do: @version
 
   @doc """
+  The page setup's attribute spec, in emit order.
+
+  Exposed so the design pad's page controls cast through the same declarations
+  the parser uses, rather than keeping a second list of what a margin may be.
+  """
+  def page_attrs, do: @page_attrs
+
+  @doc """
   Parses stored layout XML.
 
   Unknown elements and unknown field names are dropped with a warning rather
@@ -146,17 +154,32 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   changing what anybody's invoice looks like: every one of the old booleans is
   expressed here as the presence or absence of a block or a column.
   """
-  @spec from_legacy(Organization.t()) :: Document.t()
+  @spec from_legacy(map()) :: Document.t()
   def from_legacy(%Organization{} = organization) do
+    organization |> Map.from_struct() |> from_legacy()
+  end
+
+  # Takes a plain map rather than only the struct so the migration that drops
+  # these columns can read them straight out of the database and preserve what
+  # they said. By the time that migration runs the schema no longer declares the
+  # fields, so a struct is not available to it.
+  def from_legacy(settings) when is_map(settings) do
     Catalog.classic()
-    |> put_heading(organization.doc_heading)
-    |> put_footer(organization.doc_footer_text)
-    |> drop_columns_unless(organization.doc_show_hsn, "hsn_sac")
-    |> drop_columns_unless(organization.doc_show_unit, "unit")
-    |> drop_columns_unless(organization.doc_show_tax_rate, "tax_rate")
-    |> drop_total_unless(organization.doc_show_cess, "cess")
-    |> drop_block_unless(organization.doc_show_amount_words, :amount_in_words)
-    |> drop_block_unless(organization.doc_show_remarks, :remarks)
+    |> put_heading(get(settings, :doc_heading))
+    |> put_footer(get(settings, :doc_footer_text))
+    |> drop_columns_unless(get(settings, :doc_show_hsn, true), "hsn_sac")
+    |> drop_columns_unless(get(settings, :doc_show_unit, true), "unit")
+    |> drop_columns_unless(get(settings, :doc_show_tax_rate, true), "tax_rate")
+    |> drop_total_unless(get(settings, :doc_show_cess, false), "cess")
+    |> drop_block_unless(get(settings, :doc_show_amount_words, true), :amount_in_words)
+    |> drop_block_unless(get(settings, :doc_show_remarks, true), :remarks)
+  end
+
+  defp get(settings, key, default \\ nil) do
+    case Map.get(settings, key, Map.get(settings, to_string(key), default)) do
+      nil -> default
+      value -> value
+    end
   end
 
   defp put_heading(document, heading) do

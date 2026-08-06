@@ -154,7 +154,7 @@ defmodule QuantumBilling.Clients.Client do
     state = get_field(changeset, :billing_state)
 
     with true <- GST.valid_gstin?(gstin),
-         code when is_binary(code) <- state_code(state),
+         code when is_binary(code) <- GST.state_code(state),
          false <- String.starts_with?(gstin, code) do
       add_error(
         changeset,
@@ -163,15 +163,6 @@ defmodule QuantumBilling.Clients.Client do
       )
     else
       _ -> changeset
-    end
-  end
-
-  defp state_code(nil), do: nil
-
-  defp state_code(state) do
-    case Regex.run(~r/\((\d{2})\)$/, state) do
-      [_, code] -> code
-      _ -> nil
     end
   end
 

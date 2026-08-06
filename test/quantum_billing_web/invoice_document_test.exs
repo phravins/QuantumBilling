@@ -8,6 +8,10 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
   rather than maintained by hand. These stay as the contract that says so: they
   are what caught the print page labelling its money columns differently from
   the screen, and they are what a future change to the renderer has to survive.
+
+  What a document shows is now decided by its template rather than by the
+  organisation's `doc_*` columns, so the helpers below edit the layout and
+  re-save the draft — which is the path a user takes through the design pad.
   """
   use QuantumBillingWeb.ConnCase, async: true
 
@@ -15,6 +19,10 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Settings
+  alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Catalog
+  alias QuantumBillingWeb.InvoiceDoc.Document
+  alias QuantumBillingWeb.InvoiceDoc.Layout
 
   setup :register_and_log_in_user
 
@@ -40,9 +48,64 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     %{invoice: invoice}
   end
 
-  defp customize(attrs) do
+  # Edits the default template's layout, then re-saves the draft so it picks the
+  # change up. A non-draft would deliberately keep the document it was issued
+  # with — `QuantumBilling.TemplatesTest` covers that rule; these are about what
+  # the two surfaces do once a change has landed.
+  defp relayout(invoice, fun) do
+    template = Templates.ensure_default()
+    document = fun.(Templates.document_of(template))
+
+    {:ok, _template} =
+      Templates.update_template(template, %{"layout_xml" => Layout.to_xml(document)})
+
+    {:ok, invoice} = Invoices.update_invoice(invoice, %{})
+    invoice
+  end
+
+  # Branding is read live, so it needs no re-save — which is the whole point of
+  # keeping it off the layout.
+  defp recolour(accent) do
+    {:ok, template} = Templates.update_template(Templates.ensure_default(), %{"accent" => accent})
+    template
+  end
+
+  defp drop_block(document, type) do
+    %{document | blocks: Enum.reject(document.blocks, &(&1.type == type))}
+  end
+
+  # What the palette does. The stock layout carries no footer block until one is
+  # added, because an organisation with no footer text has never printed one.
+  defp add_block(document, type) do
+    block = Catalog.new(type, Document.next_id(document))
+    %{document | blocks: document.blocks ++ [block]}
+  end
+
+  defp drop_columns(document, fields) do
+    update_block(document, :items, fn block ->
+      %{block | children: Enum.reject(block.children, &(&1.field in fields))}
+    end)
+  end
+
+  defp put_opt(document, type, key, value) do
+    update_block(document, type, fn block -> %{block | opts: Map.put(block.opts, key, value)} end)
+  end
+
+  defp put_text(document, type, text) do
+    update_block(document, type, fn block -> %{block | text: text} end)
+  end
+
+  defp update_block(document, type, fun) do
+    %{document | blocks: Enum.map(document.blocks, &if(&1.type == type, do: fun.(&1), else: &1))}
+  end
+
+  defp set_logo(path) do
     {:ok, organization} =
-      Settings.update_section(Settings.get_organization(), attrs, :customization)
+      Settings.update_section(
+        Settings.get_organization(),
+        %{"doc_logo_path" => path},
+        :customization
+      )
 
     organization
   end
@@ -78,11 +141,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
 
     test "turning them off removes them from both documents", %{conn: conn, invoice: invoice} do
-      customize(%{
-        "doc_show_hsn" => "false",
-        "doc_show_unit" => "false",
-        "doc_show_tax_rate" => "false"
-      })
+      invoice = relayout(invoice, &drop_columns(&1, ["hsn_sac", "unit", "tax_rate"]))
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -100,7 +159,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
 
   describe "branding" do
     test "the accent reaches both documents", %{conn: conn, invoice: invoice} do
-      customize(%{"doc_accent_color" => "#1D4ED8"})
+      recolour("#1D4ED8")
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -109,7 +168,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
 
     test "a heading overrides the invoice type on both", %{conn: conn, invoice: invoice} do
-      customize(%{"doc_heading" => "ORIGINAL FOR RECIPIENT"})
+      invoice = relayout(invoice, &put_opt(&1, :heading, :text, "ORIGINAL FOR RECIPIENT"))
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -126,7 +185,10 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
 
     test "a footer reaches both documents", %{conn: conn, invoice: invoice} do
-      customize(%{"doc_footer_text" => "Thank you for your business."})
+      invoice =
+        relayout(invoice, fn document ->
+          document |> add_block(:footer) |> put_text(:footer, "Thank you for your business.")
+        end)
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -149,7 +211,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
 
     test "an uploaded logo replaces the mark on both", %{conn: conn, invoice: invoice} do
-      customize(%{"doc_logo_path" => "/uploads/pretend-logo.png"})
+      set_logo("/uploads/pretend-logo.png")
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -171,7 +233,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert screen =~ "Delivered against PO-8842."
       assert printed =~ "Delivered against PO-8842."
 
-      customize(%{"doc_show_remarks" => "false"})
+      invoice = relayout(invoice, &drop_block(&1, :remarks))
 
       %{screen: screen, printed: printed} = both(conn, invoice)
       refute screen =~ "Delivered against PO-8842."
@@ -183,18 +245,17 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert screen =~ "Amount in Words"
       assert printed =~ "Amount in Words"
 
-      customize(%{"doc_show_amount_words" => "false"})
+      invoice = relayout(invoice, &drop_block(&1, :amount_in_words))
 
       %{screen: screen, printed: printed} = both(conn, invoice)
       refute screen =~ "Amount in Words"
       refute printed =~ "Amount in Words"
     end
 
-    # The setting alone is not enough: an always-zero cess row would teach the
-    # reader nothing, so a figure has to exist too.
-    test "cess stays hidden when enabled but zero", %{conn: conn, invoice: invoice} do
-      customize(%{"doc_show_cess" => "true"})
-
+    # Presence in the layout is not enough: an always-zero cess row would teach
+    # the reader nothing, so a figure has to exist too. The stock layout carries
+    # the line already, at `when="non-zero"`.
+    test "cess stays hidden when the figure is zero", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
 
       assert invoice.cess_amount == 0
@@ -228,7 +289,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
 
     test "dropping a column shifts neither document's remaining order",
          %{conn: conn, invoice: invoice} do
-      customize(%{"doc_show_unit" => "false"})
+      invoice = relayout(invoice, &drop_columns(&1, ["unit"]))
 
       %{screen: screen, printed: printed} = both(conn, invoice)
 

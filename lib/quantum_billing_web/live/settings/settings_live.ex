@@ -22,22 +22,32 @@ defmodule QuantumBillingWeb.SettingsLive do
   use QuantumBillingWeb, :live_view
 
   import QuantumBillingWeb.SettingsComponents
+  import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
+  alias QuantumBillingWeb.InvoiceDocument
 
   @saveable ~w(general invoice e_way_bill tax notifications preferences customization)a
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Settings.subscribe()
+    if connected?(socket) do
+      Settings.subscribe()
+      Templates.subscribe()
+    end
 
     {:ok,
      socket
      |> assign(:page_title, "Settings")
      |> assign(:active_nav, :settings)
      |> assign(:organization, Settings.get_organization())
+     # The thumbnails render a real invoice rather than an empty shell, so a
+     # design can be judged by how it handles figures and a long description.
+     |> assign(:sample, InvoiceDocument.sample())
+     |> assign(:templates, [])
      # Declared for every section rather than only Customization: `mount/3` runs
      # before `handle_params/3` has picked one, and an upload cannot be allowed
      # later.
@@ -64,6 +74,12 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign_form(socket.assigns.section)}
   end
 
+  # A template edited in the pad, or in another window. Same reasoning as the
+  # settings broadcast: re-read rather than adopt the payload.
+  def handle_info({:invoice_template_changed, _template}, socket) do
+    {:noreply, assign_templates(socket)}
+  end
+
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
@@ -71,7 +87,27 @@ defmodule QuantumBillingWeb.SettingsLive do
      socket
      |> assign(:section, section)
      |> assign(:page_title, section(section).title)
-     |> assign_form(section)}
+     |> assign_form(section)
+     |> assign_templates(section)}
+  end
+
+  # Only the Customization panel lists templates, and `ensure_default/0` writes —
+  # so this is called from the one place a user has actually asked to see them,
+  # rather than on every settings page load.
+  defp assign_templates(socket, :customization) do
+    Templates.ensure_default()
+    assign_templates(socket)
+  end
+
+  defp assign_templates(socket, _section), do: socket
+
+  defp assign_templates(socket) do
+    templates =
+      Enum.map(Templates.list_templates(), fn template ->
+        Map.put(template, :document, Templates.document_of(template))
+      end)
+
+    assign(socket, :templates, templates)
   end
 
   defp section_from(nil), do: :general
@@ -86,6 +122,34 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
+
+  # ── Invoice designs ───────────────────────────────────────────────────────
+  #
+  # These are list actions rather than form fields, so they are plain clicks and
+  # do not go through the section's changeset. The design itself is edited in
+  # `InvoiceTemplateDesignLive`.
+
+  def handle_event("new_template", _params, socket) do
+    case Templates.duplicate_template(Templates.ensure_default()) do
+      {:ok, template} ->
+        {:noreply, push_navigate(socket, to: ~p"/invoice-templates/#{template.id}")}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "That design could not be created.")}
+    end
+  end
+
+  def handle_event("duplicate_template", %{"id" => id}, socket) do
+    with_template(socket, id, &Templates.duplicate_template/1, "That design could not be copied.")
+  end
+
+  def handle_event("set_default_template", %{"id" => id}, socket) do
+    with_template(socket, id, &Templates.set_default/1, "That design could not be made default.")
+  end
+
+  def handle_event("delete_template", %{"id" => id}, socket) do
+    with_template(socket, id, &Templates.delete_template/1, "That design could not be removed.")
+  end
 
   def handle_event("validate", %{"organization" => params}, socket) do
     changeset =
@@ -139,6 +203,22 @@ defmodule QuantumBillingWeb.SettingsLive do
   # Writes the newly uploaded file, if there is one, and puts its path into the
   # params so the changeset saves it alongside everything else in the panel.
   # Nothing else in the form knows the logo is a file rather than a field.
+  # Runs a template action by id, refreshing the list either way. An id the list
+  # no longer holds — a stale click from a window opened before it was removed —
+  # is a no-op that re-reads rather than an error.
+  defp with_template(socket, id, fun, message) do
+    case Templates.get_template(id) do
+      nil ->
+        {:noreply, assign_templates(socket)}
+
+      template ->
+        case fun.(template) do
+          {:ok, _template} -> {:noreply, assign_templates(socket)}
+          {:error, _reason} -> {:noreply, put_flash(socket, :error, message)}
+        end
+    end
+  end
+
   defp put_uploaded_logo(params, socket) do
     previous = socket.assigns.organization.doc_logo_path
 
@@ -252,6 +332,16 @@ defmodule QuantumBillingWeb.SettingsLive do
         type="select"
         prompt="Select state"
         options={EWayBillForm.states()}
+      />
+
+      <%!-- Beside the address rather than inside it: the e-invoice export needs
+      the city and the PIN as their own fields. --%>
+      <.field field={f[:city]} label="City" placeholder="Mumbai" />
+      <.field
+        field={f[:pincode]}
+        label="PIN Code"
+        placeholder="400001"
+        hint="Needed for the e-invoice export."
       />
 
       <.field field={f[:email]} label="Email Address" type="email" />
@@ -484,128 +574,88 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # The preview reads the changeset rather than the saved row, so it answers
   # "what will this look like" while you are still deciding, not after.
+  # Customization is no longer a form of toggles over one fixed layout — it is a
+  # list of designs, each edited in the design pad. What stays here is the logo,
+  # because it belongs to the organisation rather than to any one template, and
+  # because this is where the previews that show it are.
   defp render_panel(%{section: :customization} = assigns) do
-    assigns = assign(assigns, :draft, Ecto.Changeset.apply_changes(assigns.form.source))
-
     ~H"""
-    <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+    <div class="space-y-6">
       <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-        <h3 class="text-sm font-semibold tracking-tight">Branding</h3>
-
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <.field
-            field={f[:doc_template]}
-            label="Template"
-            type="select"
-            options={Organization.doc_templates()}
-            hint="Density and emphasis. Every template shows the same statutory fields."
-          />
-          <.field
-            field={f[:doc_accent_color]}
-            label="Accent Colour"
-            type="color"
-            hint="Used for the total and the rules on the document."
-          />
-        </div>
-
-        <div class="mt-4">
-          <span class="mb-1.5 block text-xs font-medium text-base-content/60">Logo</span>
-
-          <div class="flex flex-wrap items-center gap-3">
-            <span
-              :if={@organization.doc_logo_path}
-              class="flex h-12 w-28 items-center justify-center rounded-field border border-base-300 bg-base-100 p-1"
-            >
-              <img src={@organization.doc_logo_path} alt="Current logo" class="max-h-10 max-w-full" />
-            </span>
-
-            <label class={[secondary_button_class(), "cursor-pointer"]}>
-              <.icon name="hero-arrow-up-tray" class="size-4" />
-              {if @organization.doc_logo_path, do: "Replace", else: "Upload"}
-              <.live_file_input upload={@uploads.logo} class="hidden" />
-            </label>
-
-            <button
-              :if={@organization.doc_logo_path}
-              type="button"
-              phx-click="remove_logo"
-              class={secondary_button_class()}
-            >
-              <.icon name="hero-trash" class="size-4" /> Remove
-            </button>
-          </div>
-
-          <p class="mt-1 text-2xs text-base-content/45">
-            PNG, JPEG, GIF, WebP or SVG, up to {div(Uploads.max_bytes(), 1_000_000)}MB. Falls back
-            to the QuantumBilling mark while empty.
-          </p>
-
-          <div :for={entry <- @uploads.logo.entries} class="mt-2 flex items-center gap-2 text-xs">
-            <span class="truncate text-base-content/60">{entry.client_name}</span>
-            <span class="text-base-content/45">{entry.progress}%</span>
-            <button
-              type="button"
-              phx-click="cancel_logo"
-              phx-value-ref={entry.ref}
-              class="text-error hover:underline"
-            >
-              Cancel
-            </button>
-          </div>
-
-          <p
-            :for={error <- upload_errors(@uploads.logo)}
-            class="mt-1 flex items-center gap-1 text-2xs text-error"
-          >
-            <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{upload_message(error)}
-          </p>
-        </div>
-
-        <hr class="my-6 border-base-300" />
-
-        <h3 class="text-sm font-semibold tracking-tight">Columns &amp; Sections</h3>
-        <p class="mt-1 text-xs text-base-content/45">
-          Turn off anything you do not bill on. Description, quantity, rate and amount always show.
+        <h3 class="text-sm font-semibold tracking-tight">Logo</h3>
+        <p class="mt-1 text-sm text-base-content/60">
+          Used by every template. Falls back to the QuantumBilling mark while empty.
         </p>
 
-        <div class="mt-3 space-y-3">
-          <.toggle field={f[:doc_show_hsn]} label="HSN / SAC column" />
-          <.toggle field={f[:doc_show_unit]} label="Unit column" />
-          <.toggle field={f[:doc_show_tax_rate]} label="Tax % column" />
-          <.toggle
-            field={f[:doc_show_cess]}
-            label="Cess row in the totals"
-            hint="Only useful once you bill cess-attracting goods."
-          />
-          <.toggle field={f[:doc_show_amount_words]} label="Amount in words" />
-          <.toggle field={f[:doc_show_remarks]} label="Remarks block" />
+        <input type="hidden" name={f[:doc_logo_path].name} value={f[:doc_logo_path].value} />
+
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <span
+            :if={@organization.doc_logo_path}
+            class="flex h-12 w-28 items-center justify-center rounded-field border border-base-300 bg-base-100 p-1"
+          >
+            <img src={@organization.doc_logo_path} alt="Current logo" class="max-h-10 max-w-full" />
+          </span>
+
+          <label class={[secondary_button_class(), "cursor-pointer"]}>
+            <.icon name="hero-arrow-up-tray" class="size-4" />
+            {if @organization.doc_logo_path, do: "Replace", else: "Upload"}
+            <.live_file_input upload={@uploads.logo} class="hidden" />
+          </label>
+
+          <button
+            :if={@organization.doc_logo_path}
+            type="button"
+            phx-click="remove_logo"
+            class={secondary_button_class()}
+          >
+            <.icon name="hero-trash" class="size-4" /> Remove
+          </button>
         </div>
 
-        <hr class="my-6 border-base-300" />
+        <p class="mt-1 text-2xs text-base-content/45">
+          PNG, JPEG, GIF, WebP or SVG, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
+        </p>
 
-        <h3 class="text-sm font-semibold tracking-tight">Wording</h3>
-
-        <div class="mt-3 grid grid-cols-1 gap-4">
-          <.field
-            field={f[:doc_heading]}
-            label="Document Heading"
-            placeholder="Tax Invoice"
-            hint="Leave blank to use the invoice's own type."
-          />
-          <.field
-            field={f[:doc_footer_text]}
-            label="Footer"
-            type="textarea"
-            rows="3"
-            placeholder="Thank you for your business."
-            hint="Printed at the very bottom, under the terms."
-          />
+        <div :for={entry <- @uploads.logo.entries} class="mt-2 flex items-center gap-2 text-xs">
+          <span class="truncate text-base-content/60">{entry.client_name}</span>
+          <span class="text-base-content/45">{entry.progress}%</span>
+          <button
+            type="button"
+            phx-click="cancel_logo"
+            phx-value-ref={entry.ref}
+            class="text-error hover:underline"
+          >
+            Cancel
+          </button>
         </div>
+
+        <p
+          :for={error <- upload_errors(@uploads.logo)}
+          class="mt-1 flex items-center gap-1 text-2xs text-error"
+        >
+          <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{upload_message(error)}
+        </p>
       </.form>
 
-      <div class="xl:sticky xl:top-16 xl:self-start">
-        <p class={["mb-2", micro_label_class()]}>Preview</p>
-        <.invoice_preview settings={@draft} organization={@organization} />
+      <hr class="border-base-300" />
+
+      <div>
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold tracking-tight">Invoice designs</h3>
+            <p class="mt-1 text-sm text-base-content/60">
+              Build your own layout block by block. New invoices use the default;
+              an invoice keeps the design it was issued with.
+            </p>
+          </div>
+
+          <button type="button" phx-click="new_template" class={action_button_class()}>
+            <.icon name="hero-plus" class="size-4" /> New design
+          </button>
+        </div>
+
+        <.template_list templates={@templates} invoice={@sample} logo={@organization.doc_logo_path} />
       </div>
     </div>
     """

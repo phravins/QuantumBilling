@@ -53,6 +53,31 @@ defmodule QuantumBilling.GST do
   def valid_gstin?(_gstin), do: false
 
   @doc """
+  The two-digit GST state code inside a state label.
+
+  States are stored as `"Maharashtra (27)"` — the label a user picks and the code
+  a GSTIN starts with, in one string — so the code is read back out rather than
+  looked up. Returns `nil` for anything that is not one of those labels.
+
+  ## Examples
+
+      iex> QuantumBilling.GST.state_code("Maharashtra (27)")
+      "27"
+
+      iex> QuantumBilling.GST.state_code("Nowhere")
+      nil
+
+  """
+  def state_code(state) when is_binary(state) do
+    case Regex.run(~r/\((\d{2})\)$/, state) do
+      [_match, code] -> code
+      _no_code -> nil
+    end
+  end
+
+  def state_code(_state), do: nil
+
+  @doc """
   Validates `field` as a GSTIN, upcasing it first so lower-case input is
   accepted rather than rejected on a technicality.
   """

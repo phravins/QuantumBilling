@@ -52,11 +52,16 @@ defmodule QuantumBillingWeb.Router do
       # The open section lives in the URL so a panel can be linked to directly
       # and survives a reload.
       live "/settings/:section", SettingsLive, :section
+      # The design pad is reached from Settings > Customization but is its own
+      # page: it needs three columns and autosaves per interaction, neither of
+      # which fits the settings shell's single form and header Save button.
+      live "/invoice-templates/:id", InvoiceTemplateDesignLive, :design
     end
 
     # Outside the live_session above: that block takes only `live` routes.
     get "/reports/export", ReportsController, :export
     get "/invoices/:id/pdf", InvoicePdfController, :show
+    get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
   end
 
   # Other scopes may use custom stacks.

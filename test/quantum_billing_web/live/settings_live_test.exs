@@ -4,6 +4,8 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   import Phoenix.LiveViewTest
 
   alias QuantumBilling.Settings
+  alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Layout
 
   setup :register_and_log_in_user
 
@@ -103,7 +105,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
             {"tax", "Default GST Rate (%)"},
             {"notifications", "Remind me this many days ahead"},
             {"preferences", "Rows Per Page"},
-            {"customization", "Accent Colour"},
+            {"customization", "Invoice designs"},
             {"security", "Manage account security"}
           ] do
         {:ok, _view, html} = live(conn, ~p"/settings/#{path}")
@@ -271,43 +273,68 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   end
 
   describe "customization" do
-    test "saves the document settings", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+    # The panel used to be a form of toggles over one fixed layout. It is now a
+    # list of designs, each edited in the pad — so what it owns is the logo and
+    # the list, and the rules about a design itself live with `Templates`.
+    test "seeds a default design and lists it", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/settings/customization")
 
-      view
-      |> form("#settings-form", %{
-        "organization" => %{
-          "doc_template" => "Modern",
-          "doc_accent_color" => "#1D4ED8",
-          "doc_heading" => "TAX INVOICE",
-          "doc_footer_text" => "Thank you for your business.",
-          "doc_show_hsn" => "false",
-          "doc_show_unit" => "false"
-        }
-      })
-      |> render_submit()
-
-      organization = Settings.get_organization()
-      assert organization.doc_template == "Modern"
-      assert organization.doc_accent_color == "#1D4ED8"
-      assert organization.doc_heading == "TAX INVOICE"
-      assert organization.doc_footer_text == "Thank you for your business."
-      refute organization.doc_show_hsn
-      refute organization.doc_show_unit
-      # Untouched toggles keep their defaults rather than being cleared.
-      assert organization.doc_show_tax_rate
+      assert html =~ "Invoice designs"
+      assert html =~ "Classic"
+      assert html =~ "Default"
+      assert Templates.default_template().name == "Classic"
     end
 
-    test "rejects a colour that is not a hex value", %{conn: conn} do
+    test "duplicating adds a copy that is not the default", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
 
       html =
         view
-        |> form("#settings-form", %{"organization" => %{"doc_accent_color" => "red"}})
-        |> render_submit()
+        |> element("button[phx-click=duplicate_template]")
+        |> render_click()
 
-      assert html =~ "must be a hex colour"
-      assert Settings.get_organization().doc_accent_color == "#18181b"
+      assert html =~ "Classic copy"
+      assert Templates.default_template().name == "Classic"
+      assert length(Templates.list_templates()) == 2
+    end
+
+    test "a new design opens the pad", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               view |> element("button[phx-click=new_template]") |> render_click()
+
+      assert to =~ "/invoice-templates/"
+    end
+
+    test "making another design default swaps which one is", %{conn: conn} do
+      original = Templates.ensure_default()
+      {:ok, copy} = Templates.duplicate_template(original)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      view
+      |> element(~s(button[phx-click="set_default_template"][phx-value-id="#{copy.id}"]))
+      |> render_click()
+
+      assert Templates.default_template().id == copy.id
+    end
+
+    test "a design can be removed, and the default cannot", %{conn: conn} do
+      original = Templates.ensure_default()
+      {:ok, copy} = Templates.duplicate_template(original)
+
+      {:ok, view, html} = live(conn, ~p"/settings/customization")
+
+      # The default carries no Delete button at all, rather than offering one
+      # that errors: removing it would leave new invoices with no design.
+      refute html =~ "phx-value-id=\"#{original.id}\" data-confirm"
+
+      view
+      |> element(~s(button[phx-click="delete_template"][phx-value-id="#{copy.id}"]))
+      |> render_click()
+
+      assert Enum.map(Templates.list_templates(), & &1.id) == [original.id]
     end
 
     # The whole point of the upload is a file that survives the request and is
@@ -359,24 +386,23 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       refute File.exists?(on_disk)
     end
 
-    # The preview is the only feedback before saving, so it has to move with the
-    # form rather than with the stored row.
-    test "the preview follows the form before anything is saved", %{conn: conn} do
-      {:ok, view, html} = live(conn, ~p"/settings/customization")
+    # Each card is a real render of the design, not a name in a list, so a
+    # change made in the pad is visible here without opening it.
+    test "the list shows each design as it will print", %{conn: conn} do
+      template = Templates.ensure_default()
 
-      assert html =~ "HSN"
+      document =
+        template
+        |> Templates.document_of()
+        |> Map.update!(:blocks, &Enum.reject(&1, fn b -> b.type == :amount_in_words end))
 
-      changed =
-        view
-        |> form("#settings-form", %{
-          "organization" => %{"doc_show_hsn" => "false", "doc_heading" => "PROFORMA"}
-        })
-        |> render_change()
+      {:ok, _template} =
+        Templates.update_template(template, %{"layout_xml" => Layout.to_xml(document)})
 
-      assert changed =~ "PROFORMA"
-      refute changed =~ ">HSN<"
-      # Nothing has been written yet.
-      assert Settings.get_organization().doc_show_hsn
+      {:ok, _view, html} = live(conn, ~p"/settings/customization")
+
+      assert html =~ "qb-doc__items"
+      refute html =~ "Amount in Words"
     end
   end
 

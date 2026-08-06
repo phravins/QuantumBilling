@@ -8,9 +8,18 @@ config :pbkdf2_elixir, :rounds, 1
 # Credentials and the database name live in config/runtime.exs, which reads
 # them from the environment (and from .env if present). MIX_TEST_PARTITION is
 # appended there, so built-in test partitioning still works in CI.
+# `pool_size` has to exceed ExUnit's `max_cases`, which defaults to
+# `schedulers_online() * 2`. At exactly that number every async test is holding
+# the only connection it will get, leaving nothing for the sandbox owner a new
+# test checks out during setup, and checkouts start timing out under load rather
+# than waiting. The symptom is unrelated tests failing in `setup_sandbox` with
+# "connection not available", and it moves around with the seed.
 config :quantum_billing, QuantumBilling.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  pool_size: System.schedulers_online() * 4,
+  # A checkout that has to wait is normal here — the alternative is dropping it.
+  queue_target: 500,
+  queue_interval: 2_000
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

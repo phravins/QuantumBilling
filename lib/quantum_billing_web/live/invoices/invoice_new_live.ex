@@ -24,6 +24,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   alias QuantumBilling.Invoices.InvoiceItem
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Templates
 
   # Serves both /invoices/new and /invoices/:id/edit. The form, the totals and
   # the validation are identical either way — only what the save writes to
@@ -37,11 +38,20 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       |> assign(:organization, organization)
       |> assign(:clients, Clients.list_clients())
       |> assign(:selected_client_id, nil)
+      # Read-only here: the picker offers designs, it does not create them, so
+      # this must not seed one just because somebody opened the form.
+      |> assign(:template_options, template_options())
 
     case params do
       %{"id" => id} -> mount_edit(id, organization, socket)
       _new -> {:ok, mount_new(organization, socket)}
     end
+  end
+
+  # `{label, value}` pairs for the select. Empty when no design has been created
+  # yet, in which case the picker is hidden and `create_invoice/1` seeds one.
+  defp template_options do
+    Enum.map(Templates.list_templates(), fn template -> {template.name, template.id} end)
   end
 
   defp mount_new(organization, socket) do
@@ -156,7 +166,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           "client_pan" => client.pan,
           "client_email" => client.email,
           "client_state" => client.billing_state,
-          "client_billing_address" => billing_address(client)
+          "client_billing_address" => billing_address(client),
+          # Copied as their own fields as well as into the printed blob: the
+          # e-invoice export needs the city and the PIN separately, and reading
+          # them back out of the blob would mean parsing an address.
+          "client_city" => client.billing_city,
+          "client_pincode" => client.billing_pin
         })
 
       {params, assign(socket, :selected_client_id, id)}
@@ -259,6 +274,21 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 type="select"
                 required
                 options={Invoices.invoice_types()}
+              />
+
+              <%!-- The design is frozen onto the invoice when it is saved, so
+              this is only editable while it is a draft. --%>
+              <.field
+                :if={@template_options != []}
+                field={f[:template_id]}
+                label="Design"
+                type="select"
+                options={@template_options}
+                disabled={@invoice.status != "Draft"}
+                hint={
+                  if @invoice.status != "Draft",
+                    do: "Locked — this invoice keeps the design it was issued with."
+                }
               />
 
               <div>
