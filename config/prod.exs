@@ -15,7 +15,6 @@ config :quantum_billing, QuantumBillingWeb.Endpoint,
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
     exclude: [
-      # paths: ["/health"],
       hosts: ["localhost", "127.0.0.1"]
     ]
   ]
