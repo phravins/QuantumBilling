@@ -242,7 +242,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
       refute TwoFactor.enabled?(Accounts.get_user(user.id))
     end
 
-    test "enrolling needs a recent sign-in", %{conn: conn} do
+    test "enrolling needs a recent sign-in", %{conn: _conn} do
       user = user_fixture()
 
       conn =

@@ -271,7 +271,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           </button>
         </:actions>
       </.header>
-
+      
       <%!-- `gap-4` rather than `space-y-4`: this is a flex column now, so the
       panel can take the height left over instead of stopping under its last
       field. The Logo card below it keeps its natural height. --%>
@@ -279,7 +279,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <.card padding="p-6" class="flex flex-1 flex-col">
           {render_panel(assigns)}
         </.card>
-
+        
         <%!-- The logo moved to Customization, where it sits beside the preview
         that shows what it will look like. This card points at it rather than
         offering a second upload that would fight the first over the same
@@ -288,10 +288,12 @@ defmodule QuantumBillingWeb.SettingsLive do
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
+              
               <p class="mt-1 text-sm text-base-content/60">
                 Your logo, colours and the fields your invoices show live in Customization.
               </p>
             </div>
+            
             <.link navigate={~p"/settings/customization"} class={secondary_button_class()}>
               <.icon name="hero-paint-brush" class="size-4" /> Customization
             </.link>
@@ -318,14 +320,12 @@ defmodule QuantumBillingWeb.SettingsLive do
         label="GSTIN"
         placeholder="27AABCA1234A1Z5"
         hint="15 characters. The PAN is embedded in it."
-      />
-
-      <.field field={f[:trade_name]} label="Trade Name" />
+      /> <.field field={f[:trade_name]} label="Trade Name" />
       <.field field={f[:pan]} label="PAN" placeholder="AABCA1234A" />
-
       <div class="sm:row-span-2">
         <.field field={f[:address]} label="Address" type="textarea" rows="4" />
       </div>
+      
       <.field
         field={f[:state]}
         label="State"
@@ -333,7 +333,6 @@ defmodule QuantumBillingWeb.SettingsLive do
         prompt="Select state"
         options={EWayBillForm.states()}
       />
-
       <%!-- Beside the address rather than inside it: the e-invoice export needs
       the city and the PIN as their own fields. --%>
       <.field field={f[:city]} label="City" placeholder="Mumbai" />
@@ -342,10 +341,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         label="PIN Code"
         placeholder="400001"
         hint="Needed for the e-invoice export."
-      />
-
-      <.field field={f[:email]} label="Email Address" type="email" />
-
+      /> <.field field={f[:email]} label="Email Address" type="email" />
       <.field field={f[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
       <.field
         field={f[:financial_year]}
@@ -354,7 +350,6 @@ defmodule QuantumBillingWeb.SettingsLive do
         prompt="Select financial year"
         options={Settings.financial_years()}
       />
-
       <.field
         field={f[:currency]}
         label="Currency"
@@ -367,7 +362,6 @@ defmodule QuantumBillingWeb.SettingsLive do
         type="select"
         options={Organization.date_formats()}
       />
-
       <.field
         field={f[:timezone]}
         label="Time Zone"
@@ -392,14 +386,15 @@ defmodule QuantumBillingWeb.SettingsLive do
           hint="Leading zeros."
         />
       </div>
-
+      
       <div class="mt-4 rounded-field border border-base-300 bg-base-200 px-3.5 py-3">
         <p class="text-xs text-base-content/60">Next invoice will be numbered</p>
+        
         <p class="mt-0.5 text-sm font-semibold tracking-tight">
           {Settings.next_invoice_number(Ecto.Changeset.apply_changes(@form.source))}
         </p>
       </div>
-
+      
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
           field={f[:invoice_due_days]}
@@ -408,7 +403,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           min="0"
         />
       </div>
-
+      
       <div class="mt-4">
         <.field
           field={f[:invoice_terms]}
@@ -446,7 +441,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           hint="An e-way bill is required above this consignment value."
         />
       </div>
-
+      
       <div class="mt-4">
         <.toggle
           field={f[:ewb_auto_generate]}
@@ -470,7 +465,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           hint="The statutory slabs."
         />
       </div>
-
+      
       <div class="mt-4 space-y-3">
         <.toggle
           field={f[:cess_enabled]}
@@ -481,8 +476,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           field={f[:composition_scheme]}
           label="Registered under the composition scheme"
           hint="Files CMP-08 quarterly instead of GSTR-1 and GSTR-3B monthly."
-        />
-        <.toggle field={f[:tds_enabled]} label="Deduct TDS on applicable invoices" />
+        /> <.toggle field={f[:tds_enabled]} label="Deduct TDS on applicable invoices" />
       </div>
     </.form>
     """
@@ -500,7 +494,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           hint="Uses the compliance calendar."
         />
       </div>
-
+      
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
           field={f[:reminder_lead_days]}
@@ -535,9 +529,11 @@ defmodule QuantumBillingWeb.SettingsLive do
 
     <div class="mt-6 border-t border-base-300 pt-5">
       <p class="text-sm font-medium">Theme</p>
+      
       <p class="mt-1 text-sm text-base-content/60">
         Applies immediately and is remembered in this browser, so it is not part of Save Changes.
       </p>
+      
       <div class="mt-3 w-fit">
         <Layouts.theme_toggle />
       </div>
@@ -551,15 +547,18 @@ defmodule QuantumBillingWeb.SettingsLive do
       <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
         <div>
           <dt class="text-sm font-medium">Email address</dt>
+          
           <dd class="mt-0.5 text-sm text-base-content/60">{@current_scope.user.email}</dd>
         </div>
+        
         <span :if={@current_scope.user.confirmed_at} class="shrink-0">
           <.status_badge status="Active" />
         </span>
       </div>
-
+      
       <div>
         <dt class="text-sm font-medium">Password</dt>
+        
         <dd class="mt-0.5 text-sm text-base-content/60">
           Changing your email or password asks you to confirm it is you first.
         </dd>
@@ -583,12 +582,11 @@ defmodule QuantumBillingWeb.SettingsLive do
     <div class="space-y-6">
       <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
         <h3 class="text-sm font-semibold tracking-tight">Logo</h3>
+        
         <p class="mt-1 text-sm text-base-content/60">
           Used by every template. Falls back to the QuantumBilling mark while empty.
         </p>
-
-        <input type="hidden" name={f[:doc_logo_path].name} value={f[:doc_logo_path].value} />
-
+         <input type="hidden" name={f[:doc_logo_path].name} value={f[:doc_logo_path].value} />
         <div class="mt-3 flex flex-wrap items-center gap-3">
           <span
             :if={@organization.doc_logo_path}
@@ -596,13 +594,13 @@ defmodule QuantumBillingWeb.SettingsLive do
           >
             <img src={@organization.doc_logo_path} alt="Current logo" class="max-h-10 max-w-full" />
           </span>
-
+          
           <label class={[secondary_button_class(), "cursor-pointer"]}>
-            <.icon name="hero-arrow-up-tray" class="size-4" />
-            {if @organization.doc_logo_path, do: "Replace", else: "Upload"}
-            <.live_file_input upload={@uploads.logo} class="hidden" />
+            <.icon name="hero-arrow-up-tray" class="size-4" /> {if @organization.doc_logo_path,
+              do: "Replace",
+              else: "Upload"} <.live_file_input upload={@uploads.logo} class="hidden" />
           </label>
-
+          
           <button
             :if={@organization.doc_logo_path}
             type="button"
@@ -612,11 +610,11 @@ defmodule QuantumBillingWeb.SettingsLive do
             <.icon name="hero-trash" class="size-4" /> Remove
           </button>
         </div>
-
+        
         <p class="mt-1 text-2xs text-base-content/45">
           PNG, JPEG, GIF, WebP or SVG, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
         </p>
-
+        
         <div :for={entry <- @uploads.logo.entries} class="mt-2 flex items-center gap-2 text-xs">
           <span class="truncate text-base-content/60">{entry.client_name}</span>
           <span class="text-base-content/45">{entry.progress}%</span>
@@ -629,7 +627,7 @@ defmodule QuantumBillingWeb.SettingsLive do
             Cancel
           </button>
         </div>
-
+        
         <p
           :for={error <- upload_errors(@uploads.logo)}
           class="mt-1 flex items-center gap-1 text-2xs text-error"
@@ -637,24 +635,23 @@ defmodule QuantumBillingWeb.SettingsLive do
           <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{upload_message(error)}
         </p>
       </.form>
-
-      <hr class="border-base-300" />
-
+       <hr class="border-base-300" />
       <div>
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="text-sm font-semibold tracking-tight">Invoice designs</h3>
+            
             <p class="mt-1 text-sm text-base-content/60">
               Build your own layout block by block. New invoices use the default;
               an invoice keeps the design it was issued with.
             </p>
           </div>
-
+          
           <button type="button" phx-click="new_template" class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> New design
           </button>
         </div>
-
+        
         <.template_list templates={@templates} invoice={@sample} logo={@organization.doc_logo_path} />
       </div>
     </div>

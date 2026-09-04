@@ -10,7 +10,7 @@ defmodule QuantumBillingWeb.UserLive.Login do
       <:top_link>
         <.link navigate={~p"/users/register"} class="hover:underline">Sign up</.link>
       </:top_link>
-
+      
       <Layouts.auth_heading
         title="Welcome back"
         subtitle={
@@ -61,9 +61,9 @@ defmodule QuantumBillingWeb.UserLive.Login do
             Sign In
           </.button>
         </.form>
-        <.or_divider /> <.github_button />
+         <.or_divider /> <.github_button />
       </div>
-      <.legal_note />
+       <.legal_note />
     </Layouts.auth>
     """
   end

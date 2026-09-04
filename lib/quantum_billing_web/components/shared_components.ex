@@ -204,7 +204,7 @@ defmodule QuantumBillingWeb.SharedComponents do
           class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
         />
       </label>
-      <%!-- The trigger usually sits in an <h1>, whose type would otherwise cascade in. --%>
+       <%!-- The trigger usually sits in an <h1>, whose type would otherwise cascade in. --%>
       <span class={[
         "invisible absolute left-0 top-full z-20 mt-1 block w-80 space-y-4 opacity-0",
         "rounded-box border border-base-300 bg-base-100 p-4 shadow-lg",
@@ -306,7 +306,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <label for={@field.id} class="mb-1.5 block text-xs font-medium text-base-content/60">
         {@label}<span :if={@required} class="ml-0.5 text-error">*</span>
       </label>
-
+      
       <.input
         field={@field}
         type={@type}
@@ -316,7 +316,7 @@ defmodule QuantumBillingWeb.SharedComponents do
         {@rest}
       />
       <p :if={@hint && @errors == []} class="mt-1 text-2xs text-base-content/45">{@hint}</p>
-
+      
       <p :for={msg <- @errors} class="mt-1 flex items-center gap-1 text-2xs text-error">
         <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" /> {msg}
       </p>
@@ -355,7 +355,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <span class="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name="hero-wrench-screwdriver" class="size-4.5" />
       </span>
-
+      
       <p class="text-sm text-base-content/60">{@title}</p>
     </.card>
     """
@@ -390,11 +390,11 @@ defmodule QuantumBillingWeb.SharedComponents do
       <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name={@icon} class="size-4.5" />
       </span>
-
+      
       <p class="text-sm font-medium">{@title}</p>
-
+      
       <p :if={@description} class="mt-1 max-w-sm text-sm text-base-content/60">{@description}</p>
-
+      
       <div :if={@action != []} class="mt-4">{render_slot(@action)}</div>
     </div>
     """
@@ -453,7 +453,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       >
         <.icon name="hero-chevron-left" class="size-4" />
       </button>
-
+      
       <span
         aria-current="page"
         aria-label={"Page #{@current_page} of #{@total_pages}"}
@@ -464,7 +464,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       >
         {@current_page}
       </span>
-
+      
       <button
         type="button"
         aria-label="Next page"

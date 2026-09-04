@@ -53,13 +53,13 @@ defmodule QuantumBillingWeb.ReportsComponents do
       <div class="flex h-64 shrink-0 flex-col justify-between text-xs text-base-content/45">
         <span :for={label <- @gridlines}>{label}</span>
       </div>
-
+      
       <div class="min-w-0 flex-1">
         <div class="relative h-64">
           <div class="absolute inset-0 flex flex-col justify-between">
             <div :for={_line <- @gridlines} class="h-0 border-t border-base-200" />
           </div>
-
+          
           <svg
             :if={not @empty?}
             viewBox="0 0 100 100"
@@ -78,13 +78,12 @@ defmodule QuantumBillingWeb.ReportsComponents do
               vector-effect="non-scaling-stroke"
             />
           </svg>
-
+          
           <span
             :for={point <- @plotted}
             class="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-blue-500 bg-base-100"
             style={"left: #{fmt(point.x)}%; top: #{fmt(point.y)}%"}
           />
-
           <p
             :if={@empty?}
             class="absolute inset-0 flex items-center justify-center text-sm text-base-content/45"
@@ -92,7 +91,7 @@ defmodule QuantumBillingWeb.ReportsComponents do
             No invoices in this period.
           </p>
         </div>
-
+        
         <div class="relative mt-2 h-4">
           <span
             :for={point <- @plotted}
@@ -166,13 +165,13 @@ defmodule QuantumBillingWeb.ReportsComponents do
       <label for={"filter-#{@name}"} class="mb-1.5 block text-xs font-medium text-base-content/60">
         {@label}
       </label>
-
+      
       <select :if={@type == "select"} id={"filter-#{@name}"} name={@name} class={form_select_class()}>
         <option :for={option <- @options} value={option} selected={option == @value}>
           {option}
         </option>
       </select>
-
+      
       <input
         :if={@type == "text"}
         type="text"
@@ -201,7 +200,7 @@ defmodule QuantumBillingWeb.ReportsComponents do
         <span class="w-4 shrink-0 text-xs text-base-content/45">{@rank}.</span>
         <span class="truncate text-base-content/80">{@name}</span>
       </span>
-      <span class="whitespace-nowrap font-medium">{@value}</span>
+       <span class="whitespace-nowrap font-medium">{@value}</span>
     </li>
     """
   end

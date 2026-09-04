@@ -187,7 +187,9 @@ defmodule QuantumBillingWeb.SettingsComponents do
       <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name={@icon} class="size-4.5" />
       </span>
+      
       <p class="text-sm font-medium">{@title} is not available yet</p>
+      
       <p class="mt-1 max-w-sm text-sm text-base-content/60">{@needs}</p>
     </div>
     """

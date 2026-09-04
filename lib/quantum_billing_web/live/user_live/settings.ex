@@ -282,12 +282,12 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         <.icon name="hero-chevron-right" class="size-3" />
         <span class="text-base-content/60">Account Settings</span>
       </nav>
-
+      
       <.header>
         Account Settings
         <:subtitle>Manage your personal information and sign-in security</:subtitle>
       </.header>
-
+      
       <.card padding="p-0" class="flex flex-1 flex-col">
         <div class="flex items-center gap-1 overflow-x-auto border-b border-base-300 px-2">
           <.link
@@ -304,7 +304,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
             <.icon name={icon} class="size-4" />{label}
           </.link>
         </div>
-
+        
         <div class="flex-1 p-6">
           {render_tab(assigns)}
         </div>
@@ -316,6 +316,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
   defp render_tab(%{tab: :profile} = assigns) do
     ~H"""
     <h2 class="text-sm font-semibold tracking-tight">Profile Information</h2>
+
     <p class="mt-1 text-sm text-base-content/60">
       Update your personal information and contact details.
     </p>
@@ -333,10 +334,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           field={@profile_form[:designation]}
           label="Designation"
           placeholder="e.g. GST Officer"
-        />
-        <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
+        /> <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
       </div>
-
+      
       <button type="submit" class={[action_button_class(), "mt-5"]}>
         <.icon name="hero-check" class="size-4" /> Save Changes
       </button>
@@ -344,17 +344,19 @@ defmodule QuantumBillingWeb.UserLive.Settings do
 
     <div class="mt-8 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Profile Picture</h2>
-
+      
       <div class="mt-3 flex flex-wrap items-center gap-4">
         <%!-- current_scope, not the page's own copy: the on_mount hook keeps it in
         step when the profile is edited in another window. --%>
         <span class={[avatar_class(), "size-14 bg-base-300 text-base text-base-content"]}>
           {initials(@current_scope.user)}
         </span>
+        
         <div>
           <p class="text-sm text-base-content/60">
             Your initials are used until an image can be uploaded.
           </p>
+          
           <span class="mt-2 inline-flex h-9 items-center gap-2 rounded-field border border-base-300 px-3 text-sm text-base-content/45">
             <.icon name="hero-photo" class="size-4" /> Uploading needs file storage
           </span>
@@ -364,11 +366,12 @@ defmodule QuantumBillingWeb.UserLive.Settings do
 
     <div class="mt-8 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Email Address</h2>
+      
       <p class="mt-1 text-sm text-base-content/60">
         Changing this sends a confirmation link to the new address, so it saves on its own
         rather than with the rest of your profile.
       </p>
-
+      
       <.form
         for={@email_form}
         id="email_form"
@@ -385,7 +388,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
             required
           />
         </div>
-
+        
         <button type="submit" class={[secondary_button_class(), "mt-4"]}>
           <.icon name="hero-envelope" class="size-4" /> Send confirmation link
         </button>
@@ -397,6 +400,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
   defp render_tab(%{tab: :password} = assigns) do
     ~H"""
     <h2 class="text-sm font-semibold tracking-tight">Change Password</h2>
+
     <p class="mt-1 text-sm text-base-content/60">
       Choose a strong password to keep your account secure. You may be asked to sign in
       again first.
@@ -419,7 +423,6 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         spellcheck="false"
         value={@current_email}
       />
-
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <.field
           field={@password_form[:password]}
@@ -436,7 +439,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           autocomplete="new-password"
         />
       </div>
-
+      
       <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-5"]}>
         <.icon name="hero-lock-closed" class="size-4" /> Update Password
       </button>
@@ -447,6 +450,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
   defp render_tab(%{tab: :two_factor} = assigns) do
     ~H"""
     <h2 class="text-sm font-semibold tracking-tight">Two Factor Authentication</h2>
+
     <p class="mt-1 text-sm text-base-content/60">
       Add an extra layer of security to your account.
     </p>
@@ -457,6 +461,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <div class="flex items-start justify-between gap-4">
         <div>
           <p class="text-sm font-semibold tracking-tight">Save your recovery codes</p>
+          
           <p class="mt-1 text-sm text-base-content/60">
             Each one works once, and they are the only way in if you lose your device.
             <strong class="font-medium text-base-content">
@@ -464,6 +469,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
             </strong>
           </p>
         </div>
+        
         <button
           type="button"
           phx-click="dismiss_recovery_codes"
@@ -473,7 +479,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           <.icon name="hero-x-mark" class="size-4" />
         </button>
       </div>
-
+      
       <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm sm:grid-cols-3">
         <li :for={code <- @new_recovery_codes}>{code}</li>
       </ul>
@@ -486,11 +492,12 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           Codes are required whenever you sign in. {TwoFactor.recovery_codes_remaining(@user)} recovery codes remain.
         </p>
       </div>
-
+      
       <div class="mt-4 flex flex-wrap gap-2">
         <button type="button" phx-click="regenerate_recovery_codes" class={secondary_button_class()}>
           <.icon name="hero-arrow-path" class="size-4" /> Issue new recovery codes
         </button>
+        
         <button
           type="button"
           phx-click="disable_totp"
@@ -506,9 +513,11 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <ol class="space-y-5">
         <li>
           <p class="text-sm font-medium">1. Scan this with your authenticator app</p>
+          
           <p class="mt-1 text-sm text-base-content/60">
             Google Authenticator, Microsoft Authenticator, 1Password and others all work.
           </p>
+          
           <%!-- Literally white, not `bg-base-100`: the QR modules are black, so
           on a dark theme a themed surface would leave nothing for a camera to
           read. --%>
@@ -516,17 +525,18 @@ defmodule QuantumBillingWeb.UserLive.Settings do
             {Phoenix.HTML.raw(TwoFactor.qr_svg(@user))}
           </div>
         </li>
-
+        
         <li>
           <p class="text-sm font-medium">2. Or enter this key by hand</p>
+          
           <p class="mt-2 w-fit rounded-field border border-base-300 bg-base-200 px-3 py-2 font-mono text-sm">
             {TwoFactor.manual_entry_key(@user)}
           </p>
         </li>
-
+        
         <li>
           <p class="text-sm font-medium">3. Enter the 6-digit code it shows</p>
-
+          
           <.form for={%{}} as={:totp} phx-submit="confirm_totp" class="mt-3">
             <div class="flex flex-wrap items-start gap-2">
               <input
@@ -543,11 +553,12 @@ defmodule QuantumBillingWeb.UserLive.Settings do
               <button type="submit" class={action_button_class()}>
                 <.icon name="hero-check" class="size-4" /> Verify and turn on
               </button>
+              
               <button type="button" phx-click="cancel_totp_enrolment" class={secondary_button_class()}>
                 Cancel
               </button>
             </div>
-
+            
             <p :if={@totp_error} class="mt-2 flex items-center gap-1 text-2xs text-error">
               <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@totp_error}
             </p>
@@ -560,6 +571,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <p class="text-sm text-base-content/60">
         With this on, signing in asks for a code from your phone as well as your password.
       </p>
+      
       <button type="button" phx-click="start_totp_enrolment" class={[action_button_class(), "mt-4"]}>
         <.icon name="hero-shield-check" class="size-4" /> Set up two-factor authentication
       </button>

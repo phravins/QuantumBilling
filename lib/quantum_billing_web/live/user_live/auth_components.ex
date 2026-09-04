@@ -50,7 +50,7 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
       <div class="absolute inset-0 flex items-center">
         <span class="w-full border-t border-base-300"></span>
       </div>
-
+      
       <div class="relative flex justify-center text-xs uppercase">
         <span class="bg-base-100 px-2 text-base-content/60">{@label}</span>
       </div>

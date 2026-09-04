@@ -18,6 +18,7 @@ defmodule QuantumBillingWeb.Legal.LegalComponents do
     ~H"""
     <section class="space-y-3">
       <h2 class="text-lg font-semibold text-base-content">{@title}</h2>
+      
       <div class="space-y-3 text-sm leading-relaxed text-base-content/60">
         {render_slot(@inner_block)}
       </div>

@@ -30,12 +30,62 @@ defmodule QuantumBilling.Reports do
 
   @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
 
+  import Ecto.Query, warn: false
+
+  alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Repo
+
   @doc """
   Every invoice available to report on.
 
-  Returns `[]` until the invoices table exists.
+  Reads all invoices from the database, newest first, and transforms them into
+  report rows.
   """
-  def invoices, do: []
+  def invoices do
+    Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
+    |> Enum.map(&to_row/1)
+  end
+
+  @doc """
+  Converts an `Invoice` struct or map into a report row.
+  """
+  def to_row(%Invoice{} = invoice) do
+    tax_type =
+      cond do
+        (invoice.cgst_amount || 0) > 0 or (invoice.sgst_amount || 0) > 0 ->
+          "CGST + SGST"
+
+        (invoice.igst_amount || 0) > 0 ->
+          "IGST"
+
+        (invoice.cess_amount || 0) > 0 ->
+          "CESS"
+
+        Invoice.intra_state?(invoice) ->
+          "CGST + SGST"
+
+        true ->
+          "IGST"
+      end
+
+    %{
+      id: invoice.id,
+      number: invoice.invoice_number,
+      date: invoice.invoice_date,
+      client: invoice.client_name || "Unknown Client",
+      gstin: invoice.client_gstin || "",
+      status: invoice.status,
+      tax_type: tax_type,
+      taxable_value: invoice.taxable_value || 0,
+      cgst: invoice.cgst_amount || 0,
+      sgst: invoice.sgst_amount || 0,
+      igst: invoice.igst_amount || 0,
+      cess: invoice.cess_amount || 0
+    }
+  end
+
+  def to_row(row) when is_map(row), do: row
 
   @doc """
   Narrows `invoices` by the active filters.
@@ -299,7 +349,17 @@ defmodule QuantumBilling.Reports do
   @doc """
   Names for the client filter.
 
-  Only the "all" sentinel until clients come from the database.
+  Returns "All Clients" followed by distinct client names from registered clients
+  and issued invoices, sorted alphabetically.
   """
-  def client_names, do: ["All Clients"]
+  def client_names do
+    names =
+      (Repo.all(from c in Client, select: c.name, where: not is_nil(c.name)) ++
+         Repo.all(from i in Invoice, select: i.client_name, where: not is_nil(i.client_name)))
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    ["All Clients" | names]
+  end
 end

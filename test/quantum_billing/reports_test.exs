@@ -1,6 +1,9 @@
 defmodule QuantumBilling.ReportsTest do
-  use ExUnit.Case, async: true
+  use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Repo
   alias QuantumBilling.Reports
 
   # The aggregations all take a list, so they stay fully testable with no sample
@@ -39,8 +42,37 @@ defmodule QuantumBilling.ReportsTest do
   end
 
   describe "invoices/0" do
-    test "returns nothing until the schema lands" do
+    test "returns empty list when no invoices exist" do
       assert Reports.invoices() == []
+    end
+
+    test "returns formatted report rows from database" do
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-001",
+        invoice_date: ~D[2024-05-15],
+        client_name: "Acme Corp",
+        client_gstin: "27AAACP8542D1ZS",
+        place_of_supply: "Maharashtra (27)",
+        company_state: "Maharashtra (27)",
+        status: "E-Invoice Generated",
+        taxable_value: 10_000,
+        cgst_amount: 900,
+        sgst_amount: 900,
+        igst_amount: 0,
+        cess_amount: 0,
+        grand_total: 11_800
+      })
+
+      assert [row] = Reports.invoices()
+      assert row.number == "INV-001"
+      assert row.date == ~D[2024-05-15]
+      assert row.client == "Acme Corp"
+      assert row.gstin == "27AAACP8542D1ZS"
+      assert row.tax_type == "CGST + SGST"
+      assert row.taxable_value == 10_000
+      assert row.cgst == 900
+      assert row.sgst == 900
+      assert row.igst == 0
     end
   end
 
@@ -315,8 +347,21 @@ defmodule QuantumBilling.ReportsTest do
   end
 
   describe "option lists" do
-    test "clients are just the sentinel until the database lands" do
+    test "clients are just the sentinel when no records exist" do
       assert Reports.client_names() == ["All Clients"]
+    end
+
+    test "clients include registered clients and invoice clients" do
+      Repo.insert!(%Client{name: "Zenith Corp"})
+
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-002",
+        invoice_date: ~D[2024-05-16],
+        client_name: "Apex Ind",
+        place_of_supply: "Maharashtra (27)"
+      })
+
+      assert Reports.client_names() == ["All Clients", "Apex Ind", "Zenith Corp"]
     end
 
     test "statuses and report types are reference data, not records" do

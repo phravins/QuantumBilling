@@ -73,7 +73,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       <p class="px-1 pb-1 text-2xs font-medium uppercase tracking-wider text-base-content/45">
         Add a block
       </p>
-
+      
       <button
         :for={{type, label, icon} <- @available}
         type="button"
@@ -84,7 +84,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         <.icon name={icon} class="size-4 shrink-0 text-base-content/45" />
         <span class="truncate">{label}</span>
       </button>
-
+      
       <p :if={@available == []} class="px-1 py-2 text-xs text-base-content/45">
         Every block is already on the page.
       </p>
@@ -128,10 +128,9 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       ]}
     >
       <div class="pointer-events-none absolute -top-2 left-2 z-10 hidden items-center gap-1 rounded-field border border-base-300 bg-base-100 px-1.5 py-0.5 text-2xs text-base-content/60 shadow-sm group-hover:flex">
-        <.icon name={icon_for(@block.type)} class="size-3" />
-        {label_for(@block.type)}
+        <.icon name={icon_for(@block.type)} class="size-3" /> {label_for(@block.type)}
       </div>
-
+      
       <div class="absolute -top-2 right-2 z-10 hidden items-center gap-0.5 rounded-field border border-base-300 bg-base-100 px-0.5 py-0.5 shadow-sm group-hover:flex">
         <span
           class="flex size-6 cursor-grab items-center justify-center text-base-content/45"
@@ -139,6 +138,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-bars-2" class="size-3.5" />
         </span>
+        
         <button
           type="button"
           phx-click="move_block"
@@ -150,6 +150,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-arrow-up" class="size-3.5" />
         </button>
+        
         <button
           type="button"
           phx-click="move_block"
@@ -161,6 +162,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-arrow-down" class="size-3.5" />
         </button>
+        
         <button
           type="button"
           phx-click="remove_block"
@@ -171,7 +173,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           <.icon name="hero-x-mark" class="size-3.5" />
         </button>
       </div>
-
+      
       <%!-- The real thing, not a placeholder: the pad's whole promise is that
       what is on the canvas is what prints. --%>
       <div class="pointer-events-none">
@@ -203,12 +205,11 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         <.icon name={icon_for(@block.type)} class="size-4 text-base-content/45" />
         <p class="text-sm font-medium">{label_for(@block.type)}</p>
       </div>
-
+      
       <form id={"block-form-#{@block.id}"} phx-change="update_block" class="space-y-3">
         <%!-- `_id` rather than `id`: a form input named `id` overrides the DOM
         id of the form element it sits in, which LiveView needs to track it. --%>
         <input type="hidden" name="_id" value={@block.id} />
-
         <.option
           :for={{xml, key, kind, _default} <- Catalog.attrs(@block.type)}
           name={xml}
@@ -216,18 +217,15 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           kind={kind}
           value={Map.get(@block.opts, key)}
         />
-
         <label :if={@block.type in [:signature, :footer]} class="block">
-          <span class="mb-1 block text-xs text-base-content/60">Text</span>
-          <textarea
+          <span class="mb-1 block text-xs text-base-content/60">Text</span> <textarea
             name="text"
             rows="2"
             class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
           >{@block.text}</textarea>
         </label>
       </form>
-
-      <.children_editor :if={Catalog.child_element(@block.type)} block={@block} />
+       <.children_editor :if={Catalog.child_element(@block.type)} block={@block} />
     </div>
     """
   end
@@ -247,8 +245,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         value="true"
         checked={@value == true}
         class="size-3.5 accent-base-content"
-      />
-      <span class="text-xs text-base-content/70">{@label}</span>
+      /> <span class="text-xs text-base-content/70">{@label}</span>
     </label>
     """
   end
@@ -302,13 +299,12 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       <p class="pb-1 text-2xs font-medium uppercase tracking-wider text-base-content/45">
         {if @block.type == :items, do: "Columns", else: "Lines"}
       </p>
-
+      
       <div
         :for={{field, index} <- Enum.with_index(@present)}
         class="flex items-center gap-1 rounded-field px-1 py-0.5 hover:bg-base-200/60"
       >
         <span class="flex-1 truncate text-xs">{field_label(@block, field)}</span>
-
         <button
           type="button"
           phx-click="move_child"
@@ -319,6 +315,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-arrow-up" class="size-3" />
         </button>
+        
         <button
           type="button"
           phx-click="move_child"
@@ -329,7 +326,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-arrow-down" class="size-3" />
         </button>
-
+        
         <span
           :if={@block.type == :items and Catalog.required_item_field?(field)}
           class="flex size-5 items-center justify-center text-base-content/25"
@@ -337,6 +334,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         >
           <.icon name="hero-lock-closed" class="size-3" />
         </span>
+        
         <button
           :if={!(@block.type == :items and Catalog.required_item_field?(field))}
           type="button"
@@ -347,7 +345,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           <.icon name="hero-x-mark" class="size-3" />
         </button>
       </div>
-
+      
       <button
         :for={field <- @all -- @present}
         type="button"
@@ -355,8 +353,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         phx-value-field={field}
         class="flex w-full items-center gap-1.5 rounded-field px-1 py-0.5 text-left text-xs text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
       >
-        <.icon name="hero-plus" class="size-3" />
-        <span class="truncate">{humanise(field)}</span>
+        <.icon name="hero-plus" class="size-3" /> <span class="truncate">{humanise(field)}</span>
       </button>
     </div>
     """
@@ -395,9 +392,10 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             scale={0.34}
           />
         </div>
-
+        
         <div class="mb-2 flex items-start justify-between gap-2">
           <p class="min-w-0 flex-1 truncate text-sm font-medium">{template.name}</p>
+          
           <span
             :if={template.is_default}
             class="shrink-0 rounded-field bg-base-200 px-1.5 py-0.5 text-2xs font-medium text-base-content/70"
@@ -405,7 +403,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             Default
           </span>
         </div>
-
+        
         <div class="mt-auto flex flex-wrap items-center gap-1.5">
           <.link
             navigate={~p"/invoice-templates/#{template.id}"}
@@ -413,7 +411,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           >
             <.icon name="hero-paint-brush" class="size-3.5" /> Design
           </.link>
-
+          
           <button
             type="button"
             phx-click="duplicate_template"
@@ -422,7 +420,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           >
             Duplicate
           </button>
-
+          
           <button
             :if={!template.is_default}
             type="button"
@@ -432,7 +430,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           >
             Make default
           </button>
-
+          
           <button
             :if={!template.is_default}
             type="button"

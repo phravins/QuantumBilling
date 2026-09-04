@@ -55,14 +55,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <.icon name="hero-chevron-right" class="size-3" />
         <span class="text-base-content/60">{@invoice.invoice_number}</span>
       </nav>
-
+      
       <.header>
         {@invoice.invoice_number}
         <:subtitle>{@invoice.invoice_type}</:subtitle>
+        
         <:actions>
           <div class="flex flex-wrap items-center gap-2">
             <.status_badge status={@invoice.status} />
-
             <%!-- Real navigations, not LiveView events: both hand the browser a
             file it has to load before it can offer to save it. --%>
             <.link
@@ -72,7 +72,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             >
               <.icon name="hero-arrow-down-tray" class="size-4" /> PDF
             </.link>
-
+            
             <div class="flex items-center gap-1">
               <.link
                 href={~p"/invoices/#{@invoice.id}/e-invoice.xml"}
@@ -80,7 +80,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               >
                 <.icon name="hero-code-bracket" class="size-4" /> E-Invoice XML
               </.link>
-
+              
               <.help_popover id="e-invoice-help" label="About the e-invoice export">
                 This is the invoice's data in the GST e-invoice (INV-01) schema, for your
                 accountant, your GSP or your records. It is <strong>not</strong>
@@ -88,13 +88,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 the Invoice Registration Portal can issue those.
               </.help_popover>
             </div>
-
+            
             <.link navigate={~p"/invoices"} class={secondary_button_class()}>
               <.icon name="hero-arrow-left" class="size-4" /> Back to Invoices
             </.link>
           </div>
         </:actions>
       </.header>
+      
       <.card padding="p-8">
         <Renderer.stylesheet doc={@doc} />
         <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />

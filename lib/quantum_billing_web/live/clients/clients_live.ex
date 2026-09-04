@@ -96,14 +96,14 @@ defmodule QuantumBillingWeb.ClientsLive do
       <.header>
         Clients
         <:subtitle>Manage your clients and their details</:subtitle>
-
+        
         <:actions>
           <.link navigate={~p"/clients/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Add New Client
           </.link>
         </:actions>
       </.header>
-
+      
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form
           phx-change="search"
@@ -124,14 +124,14 @@ defmodule QuantumBillingWeb.ClientsLive do
             class={filter_input_class()}
           />
         </form>
-
+        
         <div class="flex items-center gap-2">
           <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class={filter_button_class()}>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
             </div>
-
+            
             <ul
               tabindex="0"
               class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -141,13 +141,13 @@ defmodule QuantumBillingWeb.ClientsLive do
               </li>
             </ul>
           </div>
-
+          
           <button type="button" class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
           </button>
         </div>
       </div>
-
+      
       <%!-- No `mt-4`: the toolbar's `mb-4` used to collapse into it, and inside
       a flex column the two would stack into a double gap instead. Stretches
       whether or not there are rows — a short table floating above a band of
@@ -173,33 +173,33 @@ defmodule QuantumBillingWeb.ClientsLive do
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
-
+                
                 <th>
                   <.sortable_th
                     label="Client Name"
                     field={:name}
                   />
                 </th>
-
+                
                 <th>GSTIN</th>
-
+                
                 <th>Email</th>
-
+                
                 <th>Phone</th>
-
+                
                 <th>
                   <.sortable_th
                     label="Outstanding"
                     field={:outstanding}
                   />
                 </th>
-
+                
                 <th>Status</th>
-
+                
                 <th class="text-right">Actions</th>
               </tr>
             </thead>
-
+            
             <tbody>
               <tr
                 :for={{row, index} <- Enum.with_index(@rows)}
@@ -207,29 +207,29 @@ defmodule QuantumBillingWeb.ClientsLive do
                 class={table_row_class()}
               >
                 <td class="text-base-content/45">{@row_offset + index + 1}</td>
-
+                
                 <td>
                   <div class="flex items-center gap-3">
                     <.client_avatar name={row.name} /> <span class="font-medium">{row.name}</span>
                   </div>
                 </td>
-
+                
                 <td class="text-base-content/60">{row.gstin}</td>
-
+                
                 <td class="text-base-content/60">{row.email}</td>
-
+                
                 <td class="text-base-content/60">{row.phone}</td>
-
+                
                 <td class="font-medium">{rupees(row.outstanding, decimals: 2, space: true)}</td>
-
+                
                 <td><.status_badge status={row.status} /></td>
-
+                
                 <td>
                   <div class="flex justify-end gap-1">
                     <button type="button" class={row_action_class()} aria-label="View client">
                       <.icon name="hero-eye" class="size-4" />
                     </button>
-
+                    
                     <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />
                     </button>
@@ -239,7 +239,7 @@ defmodule QuantumBillingWeb.ClientsLive do
             </tbody>
           </table>
         </div>
-
+        
         <%!-- `mt-auto` rather than a fixed margin: the card stretches to the
         page, so this pins the pager to the bottom of it instead of leaving it
         floating under the last row. --%>

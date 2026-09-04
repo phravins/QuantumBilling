@@ -89,14 +89,14 @@ defmodule QuantumBillingWeb.EWayBillsLive do
       <.header>
         E-Way Bills
         <:subtitle>Track consignments and generate new e-way bills</:subtitle>
-
+        
         <:actions>
           <.link navigate={~p"/e-way-bills/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Generate New E-Way Bill
           </.link>
         </:actions>
       </.header>
-
+      
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="ewb-search"
@@ -117,14 +117,14 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             class={filter_input_class()}
           />
         </form>
-
+        
         <div class="flex items-center gap-2">
           <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class={filter_button_class()}>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
             </div>
-
+            
             <ul
               tabindex="0"
               class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -134,13 +134,13 @@ defmodule QuantumBillingWeb.EWayBillsLive do
               </li>
             </ul>
           </div>
-
+          
           <button type="button" class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
           </button>
         </div>
       </div>
-
+      
       <.card class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
@@ -162,40 +162,40 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
-
+                
                 <th>
                   <.sortable_th
                     label="EWB No."
                     field={:ewb_no}
                   />
                 </th>
-
+                
                 <th>Document No.</th>
-
+                
                 <th>
                   <.sortable_th
                     label="Issued On"
                     field={:issued_on}
                   />
                 </th>
-
+                
                 <th>To</th>
-
+                
                 <th>Route</th>
-
+                
                 <th>
                   <.sortable_th
                     label="Value"
                     field={:value}
                   />
                 </th>
-
+                
                 <th>Status</th>
-
+                
                 <th class="text-right">Actions</th>
               </tr>
             </thead>
-
+            
             <tbody>
               <tr
                 :for={{row, index} <- Enum.with_index(@rows)}
@@ -203,31 +203,31 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 class={table_row_class()}
               >
                 <td class="text-base-content/45">{@row_offset + index + 1}</td>
-
+                
                 <td class="font-medium">{row.ewb_no}</td>
-
+                
                 <td class="text-base-content/60">{row.document_no}</td>
-
+                
                 <td class="text-base-content/60">{format_date(row.issued_on)}</td>
-
+                
                 <td>{row.to_party}</td>
-
+                
                 <td class="text-base-content/60">{row.from_place} &rarr; {row.to_place}</td>
-
+                
                 <td class="font-medium">{rupees(row.value, decimals: 2, space: true)}</td>
-
+                
                 <td><.status_badge status={row.status} /></td>
-
+                
                 <td>
                   <div class="flex justify-end gap-1">
                     <button type="button" class={row_action_class()} aria-label="View e-way bill">
                       <.icon name="hero-eye" class="size-4" />
                     </button>
-
+                    
                     <button type="button" class={row_action_class()} aria-label="Print e-way bill">
                       <.icon name="hero-printer" class="size-4" />
                     </button>
-
+                    
                     <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />
                     </button>
@@ -237,7 +237,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             </tbody>
           </table>
         </div>
-
+        
         <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>

@@ -52,7 +52,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         Dashboard
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
       </.header>
-
+      
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           :for={stat <- @stats}
@@ -65,21 +65,23 @@ defmodule QuantumBillingWeb.DashboardLive do
           delta_icon={stat.delta_icon}
         />
       </div>
-
+      
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
+            
             <div class="flex items-center gap-4 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-base-content" /> CGST + SGST
               </span>
+              
               <span class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-base-content/25" /> IGST
               </span>
             </div>
           </div>
-          <.bar_chart :if={@chart_months != []} months={@chart_months} />
+           <.bar_chart :if={@chart_months != []} months={@chart_months} />
           <.empty_state
             :if={@chart_months == []}
             icon="hero-chart-bar"
@@ -87,9 +89,10 @@ defmodule QuantumBillingWeb.DashboardLive do
             description="This chart fills in once you have invoices to report on."
           />
         </.card>
-
+        
         <.card>
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
+          
           <.donut_chart
             :if={@donut_segments != []}
             segments={@donut_segments}
@@ -103,27 +106,33 @@ defmodule QuantumBillingWeb.DashboardLive do
           />
         </.card>
       </div>
-
+      
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
+          
           <.empty_state
             :if={@invoices == []}
             icon="hero-document-text"
             title="No invoices yet"
             description="GST invoices you create will appear here."
           />
-
           <div :if={@invoices != []} class="overflow-x-auto">
             <.table id="invoices" rows={@invoices}>
               <:col :let={row} label="Invoice #">{row.number}</:col>
+              
               <:col :let={row} label="Date">{format_date(row.invoice_date)}</:col>
+              
               <:col :let={row} label="Customer GSTIN">{row.gstin || "—"}</:col>
+              
               <:col :let={row} label="Tax Type">{row.tax_type}</:col>
+              
               <:col :let={row} label="Total Amount">
                 {rupees(row.amount, decimals: 2, space: true)}
               </:col>
+              
               <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
+              
               <:action>
                 <button class={row_action_class()} aria-label="View QR code">
                   <.icon name="hero-qr-code" class="size-4" />
@@ -131,6 +140,7 @@ defmodule QuantumBillingWeb.DashboardLive do
               </:action>
             </.table>
           </div>
+          
           <div class="mt-4 flex items-center justify-between text-sm text-base-content/60">
             <span :if={@invoices != []}>Showing 1 to {length(@invoices)} entries</span>
             <.link
@@ -141,19 +151,21 @@ defmodule QuantumBillingWeb.DashboardLive do
             </.link>
           </div>
         </.card>
-
+        
         <.card>
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+          
           <ul :if={@compliance_items != []} class="space-y-4">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
               <.compliance_date_badge month={item.month} day={item.day} />
               <div>
                 <p class="text-sm font-medium">{item.title}</p>
+                
                 <p class={["text-xs", item.due_class]}>{item.due_text}</p>
               </div>
             </li>
           </ul>
-
+          
           <.empty_state
             :if={@compliance_items == []}
             icon="hero-calendar-days"

@@ -79,7 +79,9 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </span>
           </.help_popover>
         </span>
+        
         <:subtitle>Fill in the consignment details to generate a new e-way bill</:subtitle>
+        
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/e-way-bills"} class={secondary_button_class()}>Cancel</.link>
@@ -89,7 +91,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
           </div>
         </:actions>
       </.header>
-
+      
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.form
           :let={f}
@@ -127,13 +129,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 label="Document No."
                 required
                 placeholder="Document number"
-              />
-              <.field field={f[:document_date]} label="Document Date" type="date" required />
-
+              /> <.field field={f[:document_date]} label="Document Date" type="date" required />
               <div class="sm:col-span-2">
                 <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                   Transaction Type<span class="ml-0.5 text-error">*</span>
                 </span>
+                
                 <div class="flex h-9 items-center gap-6">
                   <.radio_option
                     :for={type <- EWayBillForm.transaction_types()}
@@ -145,7 +146,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               </div>
             </div>
           </.form_section>
-
+          
           <.form_section step="2" title="Parties Details">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div class="space-y-4">
@@ -170,7 +171,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                   options={EWayBillForm.states()}
                 />
               </div>
-
+              
               <div class="space-y-4">
                 <.field
                   field={f[:to_party]}
@@ -195,7 +196,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               </div>
             </div>
           </.form_section>
-
+          
           <.form_section step="3" title="Item Details">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <.field
@@ -205,16 +206,15 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 required
                 min="0"
                 placeholder="60000"
-              />
-              <.field field={f[:cgst_value]} label="Total CGST Value" type="number" min="0" />
+              /> <.field field={f[:cgst_value]} label="Total CGST Value" type="number" min="0" />
               <.field field={f[:sgst_value]} label="Total SGST Value" type="number" min="0" />
               <.field field={f[:igst_value]} label="Total IGST Value" type="number" min="0" />
               <.field field={f[:other_amount]} label="Other Amount (+)" type="number" min="0" />
-
               <div class="sm:col-span-2">
                 <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                   Total Invoice Value
                 </span>
+                
                 <div
                   id="total-invoice-value"
                   class="flex h-9 items-center rounded-field border border-base-300 bg-base-200 px-3 text-sm font-semibold"
@@ -224,7 +224,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               </div>
             </div>
           </.form_section>
-
+          
           <.form_section step="4" title="Transport Details">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <.field
@@ -250,12 +250,11 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 required
                 placeholder="MH01AB1234"
                 hint="Format: MH01AB1234"
-              />
-              <.field field={f[:from_place]} label="From Place" required placeholder="Mumbai" />
+              /> <.field field={f[:from_place]} label="From Place" required placeholder="Mumbai" />
               <.field field={f[:to_place]} label="To Place" required placeholder="Pune" />
             </div>
           </.form_section>
-
+          
           <.form_section step="5" title="Other Details (Optional)">
             <.field
               field={f[:remarks]}
@@ -269,13 +268,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </p>
           </.form_section>
         </.form>
-
+        
         <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
           <.card>
             <.brand_mark class="mb-4 border-b border-base-300 pb-4" icon_class="size-6" />
-
             <h2 class="mb-4 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
-
+            
             <div class="space-y-2.5">
               <.summary_row label="Supply Type" value={@summary.supply_type} />
               <.summary_row label="Sub Type" value={@summary.sub_type} />
@@ -284,39 +282,36 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               <.summary_row label="Document Date" value={format_date(@summary.document_date)} />
               <.summary_row label="Transaction Type" value={@summary.transaction_type} />
             </div>
-
-            <hr class="my-4 border-base-300" />
-
+             <hr class="my-4 border-base-300" />
             <div class="space-y-2.5">
               <.summary_row label="From">
                 <span class="block">{blank(@summary.from_party)}</span>
                 <span :if={@summary.from_gstin} class="block text-base-content/60">
                   {@summary.from_gstin}
                 </span>
+                
                 <span :if={@summary.from_state} class="block text-base-content/60">
                   {@summary.from_state}
                 </span>
               </.summary_row>
-
+              
               <.summary_row label="To">
                 <span class="block">{blank(@summary.to_party)}</span>
                 <span :if={@summary.to_gstin} class="block text-base-content/60">
                   {@summary.to_gstin}
                 </span>
+                
                 <span :if={@summary.to_state} class="block text-base-content/60">
                   {@summary.to_state}
                 </span>
               </.summary_row>
-
+              
               <.summary_row label="Route">
                 {blank(@summary.from_place)} &rarr; {blank(@summary.to_place)}
               </.summary_row>
-
-              <.summary_row label="Vehicle No." value={@summary.vehicle_no} />
+               <.summary_row label="Vehicle No." value={@summary.vehicle_no} />
             </div>
-
-            <hr class="my-4 border-base-300" />
-
+             <hr class="my-4 border-base-300" />
             <div class="space-y-2.5">
               <.summary_row
                 label="Total Value of Goods"
@@ -339,7 +334,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 value={rupees(@summary.other_amount || 0, decimals: 2, space: true)}
               />
             </div>
-
+            
             <div class="mt-4">
               <.summary_row
                 label="Total Invoice Value"

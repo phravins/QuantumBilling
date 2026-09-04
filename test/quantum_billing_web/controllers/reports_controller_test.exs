@@ -69,6 +69,23 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
       assert body =~ "Tax Type,Taxable Value,CGST,SGST,IGST,Total Tax"
     end
 
+    test "exports sales register when report_type is Sales Register", %{conn: conn} do
+      conn =
+        get(
+          conn,
+          ~p"/reports/export?#{[report_type: "Sales Register", date_range: "This Month"]}"
+        )
+
+      assert conn.status == 200
+      assert [disposition] = get_resp_header(conn, "content-disposition")
+      assert disposition =~ "gst-sales-register-this-month.csv"
+
+      body = response(conn, 200)
+
+      assert body =~
+               "Date,Invoice Number,Client,GSTIN,Status,Tax Type,Taxable Value,CGST,SGST,IGST,Cess,Total Tax,Grand Total"
+    end
+
     test "requires authentication" do
       conn = get(build_conn(), ~p"/reports/export")
 

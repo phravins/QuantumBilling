@@ -54,7 +54,6 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
             else: "Enter the 6-digit code from your authenticator app"
         }
       />
-
       <div class="grid gap-6">
         <.form for={%{}} action={~p"/users/two-factor"} method="post" class="space-y-3">
           <input
@@ -70,7 +69,6 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
             autofocus
             class={[input_class(), "text-center text-lg tracking-[0.4em]"]}
           />
-
           <input
             :if={@recovery?}
             type="text"
@@ -81,11 +79,9 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
             required
             autofocus
             class={[input_class(), "text-center tracking-widest uppercase"]}
-          />
-
-          <button type="submit" class={primary_button_class()}>Verify</button>
+          /> <button type="submit" class={primary_button_class()}>Verify</button>
         </.form>
-
+        
         <button
           :if={not @recovery?}
           type="button"
@@ -94,7 +90,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
         >
           Lost your device? Use a recovery code
         </button>
-
+        
         <button
           :if={@recovery?}
           type="button"
@@ -103,7 +99,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
         >
           Use your authenticator app instead
         </button>
-
+        
         <.link
           href={~p"/users/log-out"}
           method="delete"
