@@ -44,7 +44,8 @@ defmodule QuantumBilling.Uploads do
   """
   def store(source_path, content_type) do
     with {:ok, extension} <- extension_for(content_type),
-         {:ok, contents} <- read_within_limit(source_path) do
+         {:ok, contents} <- read_within_limit(source_path),
+         :ok <- validate_content(contents, content_type) do
       name = "#{hash(contents)}#{extension}"
       destination = Path.join(directory(), name)
 
@@ -56,6 +57,27 @@ defmodule QuantumBilling.Uploads do
       end
     end
   end
+
+  defp validate_content(contents, "image/svg+xml") do
+    cond do
+      Regex.match?(~r/<\s*script\b/i, contents) ->
+        {:error, "SVG contains unsafe script elements"}
+
+      Regex.match?(~r/<\s*foreignObject\b/i, contents) ->
+        {:error, "SVG contains unsafe embedded elements"}
+
+      Regex.match?(~r/\bon\w+\s*=/i, contents) ->
+        {:error, "SVG contains unsafe event handlers"}
+
+      Regex.match?(~r/\b(href|src)\s*=\s*['"]\s*javascript:/i, contents) ->
+        {:error, "SVG contains unsafe javascript links"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_content(_contents, _other_type), do: :ok
 
   @doc """
   Removes a previously stored file, given the path `store/2` returned.

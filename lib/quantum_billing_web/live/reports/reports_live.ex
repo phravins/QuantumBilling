@@ -87,7 +87,7 @@ defmodule QuantumBillingWeb.ReportsLive do
       <.header>
         Reports
         <:subtitle>Analyze your business data and GST performance</:subtitle>
-        
+
         <:actions>
           <div class="flex items-center gap-2">
             <.link
@@ -96,14 +96,14 @@ defmodule QuantumBillingWeb.ReportsLive do
             >
               <.icon name="hero-arrow-down-tray" class="size-4" /> Export Report
             </.link>
-            
+
             <div class="dropdown dropdown-end">
               <div tabindex="0" role="button" class={secondary_button_class()}>
                 <.icon name="hero-calendar-days" class="size-4" /> {Reports.range_label(
                   @filters.date_range
                 )} <.icon name="hero-chevron-down" class="size-4" />
               </div>
-              
+
               <ul
                 tabindex="0"
                 class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -116,7 +116,7 @@ defmodule QuantumBillingWeb.ReportsLive do
           </div>
         </:actions>
       </.header>
-      
+
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           label="Total Invoices"
@@ -151,19 +151,19 @@ defmodule QuantumBillingWeb.ReportsLive do
           delta_icon={delta_icon(@summary.invoice_delta)}
         />
       </div>
-      
+
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
         <.card class="lg:col-span-5">
           <div class="mb-4 flex items-center justify-between gap-4">
             <h2 class="text-sm font-semibold tracking-tight">Invoice Value Trend</h2>
-             <span class="text-xs text-base-content/45">{@filters.date_range}</span>
+            <span class="text-xs text-base-content/45">{@filters.date_range}</span>
           </div>
-           <.line_chart points={@trend} />
+          <.line_chart points={@trend} />
         </.card>
-        
+
         <.card class="lg:col-span-4">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
-          
+
           <.donut_chart
             :if={@breakdown != []}
             segments={@breakdown}
@@ -175,10 +175,10 @@ defmodule QuantumBillingWeb.ReportsLive do
             No invoices match these filters.
           </p>
         </.card>
-        
+
         <.card class="lg:col-span-3">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Filters</h2>
-          
+
           <form
             id="reports-filters"
             phx-change="filter"
@@ -214,50 +214,50 @@ defmodule QuantumBillingWeb.ReportsLive do
               Apply Filters
             </button>
           </form>
-           <.reset_link />
+          <.reset_link />
         </.card>
       </div>
-      
+
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
         <.card class="lg:col-span-8">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
-          
+
           <div class="overflow-x-auto">
             <table class="w-full">
               <thead>
                 <tr class={table_head_class()}>
                   <th class="pr-4 text-left">Tax Type</th>
-                  
+
                   <th class="pr-4 text-right">Taxable Value (₹)</th>
-                  
+
                   <th class="pr-4 text-right">CGST (₹)</th>
-                  
+
                   <th class="pr-4 text-right">SGST (₹)</th>
-                  
+
                   <th class="pr-4 text-right">IGST (₹)</th>
-                  
+
                   <th class="text-right">Total Tax (₹)</th>
                 </tr>
               </thead>
-              
+
               <tbody>
                 <tr
                   :for={row <- @tax_rows}
                   class={[table_row_class(), row.total? && "font-semibold [&>td]:underline"]}
                 >
                   <td class="py-2.5 pr-4">{row.label}</td>
-                  
+
                   <td class="py-2.5 pr-4 text-right">{rupees(row.taxable_value, decimals: 2)}</td>
-                  
+
                   <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.cgst} /></td>
-                  
+
                   <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.sgst} /></td>
-                  
+
                   <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.igst} /></td>
-                  
+
                   <td class="py-2.5 text-right">{rupees(row.total_tax, decimals: 2)}</td>
                 </tr>
-                
+
                 <tr :if={@tax_rows == []}>
                   <td colspan="6" class="py-8 text-center text-sm text-base-content/45">
                     No invoices match these filters.
@@ -267,10 +267,10 @@ defmodule QuantumBillingWeb.ReportsLive do
             </table>
           </div>
         </.card>
-        
+
         <.card class="lg:col-span-4">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Top Clients by Invoice Value</h2>
-          
+
           <ul class="space-y-3.5">
             <.top_client_row
               :for={{client, index} <- Enum.with_index(@top_clients, 1)}
@@ -279,11 +279,11 @@ defmodule QuantumBillingWeb.ReportsLive do
               value={rupees(client.value)}
             />
           </ul>
-          
+
           <p :if={@top_clients == []} class="py-8 text-center text-sm text-base-content/45">
             No invoices match these filters.
           </p>
-          
+
           <.link
             navigate={~p"/clients"}
             class="mt-4 flex items-center justify-center gap-1.5 text-sm font-medium text-base-content hover:underline"

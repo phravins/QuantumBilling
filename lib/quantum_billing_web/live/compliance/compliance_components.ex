@@ -60,12 +60,12 @@ defmodule QuantumBillingWeb.ComplianceComponents do
         <p class="truncate text-sm font-medium">
           {@obligation.type} - {@obligation.period_label}
         </p>
-        
+
         <p class={["text-xs", countdown_class(@obligation.days_until)]}>
           {countdown(@obligation.days_until)}
         </p>
       </div>
-      
+
       <span class={[
         "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium",
         status_tone(@obligation.status)
@@ -123,11 +123,11 @@ defmodule QuantumBillingWeb.ComplianceComponents do
         >
           <.icon name="hero-chevron-left" class="size-4" />
         </button>
-        
+
         <p class="text-sm font-medium">
           {Calendar.strftime(Date.new!(@year, @month, 1), "%B %Y")}
         </p>
-        
+
         <button
           type="button"
           phx-click="next_month"
@@ -137,12 +137,12 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           <.icon name="hero-chevron-right" class="size-4" />
         </button>
       </div>
-      
+
       <div class="grid grid-cols-7 gap-y-1 text-center">
         <span :for={day <- ~w(Sun Mon Tue Wed Thu Fri Sat)} class="pb-1 text-2xs text-base-content/45">
           {day}
         </span>
-        
+
         <div :for={cell <- List.flatten(@weeks)} class="flex flex-col items-center gap-0.5 py-0.5">
           <span class={[
             "flex size-7 items-center justify-center rounded-full text-xs",
@@ -155,7 +155,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           ]}>
             {cell.date.day}
           </span>
-          
+
           <span class="flex h-1.5 items-center gap-0.5">
             <span
               :for={obligation <- Enum.take(cell.obligations, 3)}
@@ -165,7 +165,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           </span>
         </div>
       </div>
-      
+
       <div class="mt-3 flex items-center justify-center gap-4 border-t border-base-300 pt-3">
         <span
           :for={status <- ~w(Filed Pending Overdue)}
@@ -194,10 +194,10 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           <p class="text-sm font-semibold tracking-tight">
             {@obligation.type} &mdash; {@obligation.period_label}
           </p>
-          
+
           <p class="mt-0.5 text-xs text-base-content/60">{@obligation.subtitle}</p>
         </div>
-        
+
         <button
           type="button"
           phx-click="close_detail"
@@ -207,29 +207,29 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           <.icon name="hero-x-mark" class="size-4" />
         </button>
       </div>
-      
+
       <dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
           <dt class="text-2xs uppercase tracking-wider text-base-content/45">Due date</dt>
-          
+
           <dd class="mt-0.5 text-sm">{Format.format_date(@obligation.due_date)}</dd>
         </div>
-        
+
         <div>
           <dt class="text-2xs uppercase tracking-wider text-base-content/45">Status</dt>
-          
+
           <dd class="mt-0.5 text-sm">{@obligation.status}</dd>
         </div>
-        
+
         <div>
           <dt class="text-2xs uppercase tracking-wider text-base-content/45">Filed on</dt>
-          
+
           <dd class="mt-0.5 text-sm">{Format.format_date(@obligation.filed_on)}</dd>
         </div>
-        
+
         <div>
           <dt class="text-2xs uppercase tracking-wider text-base-content/45">Statutory rule</dt>
-          
+
           <dd class="mt-0.5 text-sm">{rule(@obligation.type)}</dd>
         </div>
       </dl>

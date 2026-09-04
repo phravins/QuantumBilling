@@ -92,6 +92,19 @@ defmodule QuantumBillingWeb.TwoFactorLoginTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "not valid"
     end
 
+    test "repeated invalid codes trigger rate limiting", %{conn: conn, user: user} do
+      conn = sign_in_with_password(conn, user)
+
+      # 5 attempts permitted within the window; 6th is rate limited
+      conn =
+        Enum.reduce(1..5, conn, fn _, c ->
+          post(recycle(c), ~p"/users/two-factor", %{"user" => %{"code" => "000000"}})
+        end)
+
+      blocked = post(recycle(conn), ~p"/users/two-factor", %{"user" => %{"code" => "000000"}})
+      assert Phoenix.Flash.get(blocked.assigns.flash, :error) =~ "Too many invalid 2FA attempts"
+    end
+
     test "a recovery code completes it, and only once", %{
       conn: conn,
       user: user,

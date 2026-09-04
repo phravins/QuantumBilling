@@ -13,7 +13,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
       <:top_link>
         <.link navigate={~p"/users/log-in"} class="hover:underline">Login</.link>
       </:top_link>
-      
+
       <Layouts.auth_heading
         title="Create an account"
         subtitle="Enter your details below to create your account"
@@ -68,14 +68,14 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             error_class="border-red-500"
           />
           <p class="text-xs text-base-content/60">Use at least 8 characters.</p>
-          
+
           <.button phx-disable-with="Creating account..." class={primary_button_class()}>
             Create Account
           </.button>
         </.form>
-         <.or_divider /> <.github_button />
+        <.or_divider /> <.github_button />
       </div>
-       <.legal_note />
+      <.legal_note />
     </Layouts.auth>
     """
   end

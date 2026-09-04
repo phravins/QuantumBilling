@@ -81,7 +81,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
             class={[input_class(), "text-center tracking-widest uppercase"]}
           /> <button type="submit" class={primary_button_class()}>Verify</button>
         </.form>
-        
+
         <button
           :if={not @recovery?}
           type="button"
@@ -90,7 +90,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
         >
           Lost your device? Use a recovery code
         </button>
-        
+
         <button
           :if={@recovery?}
           type="button"
@@ -99,7 +99,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
         >
           Use your authenticator app instead
         </button>
-        
+
         <.link
           href={~p"/users/log-out"}
           method="delete"

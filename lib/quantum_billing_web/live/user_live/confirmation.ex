@@ -30,12 +30,12 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
           >
             Confirm and stay logged in
           </.button>
-          
+
           <.button phx-disable-with="Confirming..." class={outline_button_class()}>
             Confirm and log in only this time
           </.button>
         </.form>
-        
+
         <.form
           :if={@user.confirmed_at}
           for={@form}
@@ -60,13 +60,13 @@ defmodule QuantumBillingWeb.UserLive.Confirmation do
             >
               Keep me logged in on this device
             </.button>
-            
+
             <.button phx-disable-with="Logging in..." class={outline_button_class()}>
               Log me in only this time
             </.button>
           <% end %>
         </.form>
-        
+
         <p :if={!@user.confirmed_at} class="px-8 text-center text-sm text-base-content/60">
           Tip: If you prefer passwords, you can enable them in the user settings.
         </p>

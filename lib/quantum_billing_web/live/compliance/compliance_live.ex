@@ -106,14 +106,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
       <.header>
         Compliance
         <:subtitle>Track your GST compliance and filing status</:subtitle>
-        
+
         <:actions>
           <a href="#filing-calendar" phx-click="show_all" class={action_button_class()}>
             <.icon name="hero-calendar-days" class="size-4" /> View Filing Calendar
           </a>
         </:actions>
       </.header>
-      
+
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           label="Total Returns"
@@ -144,18 +144,18 @@ defmodule QuantumBillingWeb.ComplianceLive do
           delta_class="text-error"
         />
       </div>
-      
+
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
-            
+
             <div class="dropdown dropdown-end">
               <div tabindex="0" role="button" class={secondary_button_class()}>
                 <.icon name="hero-funnel" class="size-4" /> {@status_filter}
                 <.icon name="hero-chevron-down" class="size-4" />
               </div>
-              
+
               <ul
                 tabindex="0"
                 class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -166,11 +166,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
               </ul>
             </div>
           </div>
-           <.tabs categories={Compliance.categories()} active={@category} />
+          <.tabs categories={Compliance.categories()} active={@category} />
           <div :if={@selected} class="mt-4">
             <.obligation_detail obligation={@selected} />
           </div>
-          
+
           <%!-- Two different empty states: nothing tracked at all is not the
           same as a filter that excluded everything, and telling someone with
           no data to "try another status" sends them chasing rows that do not
@@ -192,19 +192,19 @@ defmodule QuantumBillingWeb.ComplianceLive do
               <thead>
                 <tr class={table_head_class()}>
                   <th class="pr-4 text-left">Compliance Type</th>
-                  
+
                   <th class="pr-4 text-left">Period</th>
-                  
+
                   <th class="pr-4 text-left">Due Date</th>
-                  
+
                   <th class="pr-4 text-left">Status</th>
-                  
+
                   <th class="pr-4 text-left">Filed Date</th>
-                  
+
                   <th class="text-left">Actions</th>
                 </tr>
               </thead>
-              
+
               <tbody>
                 <tr
                   :for={row <- @rows}
@@ -213,18 +213,18 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 >
                   <td class="py-2.5 pr-4">
                     <p class="font-medium">{row.type}</p>
-                    
+
                     <p class="text-xs text-base-content/60">{row.subtitle}</p>
                   </td>
-                  
+
                   <td class="py-2.5 pr-4 text-base-content/60">{row.period_label}</td>
-                  
+
                   <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.due_date)}</td>
-                  
+
                   <td class="py-2.5 pr-4"><.status_badge status={row.status} /></td>
-                  
+
                   <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.filed_on)}</td>
-                  
+
                   <td class="py-2.5">
                     <div class="flex gap-1">
                       <button
@@ -237,7 +237,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                       >
                         <.icon name="hero-eye" class="size-4" />
                       </button>
-                      
+
                       <%!-- Only a filed return has an acknowledgement to download,
                       so this stays absent rather than rendering a dead button. --%>
                       <button
@@ -254,17 +254,17 @@ defmodule QuantumBillingWeb.ComplianceLive do
               </tbody>
             </table>
           </div>
-          
+
           <p :if={@rows != []} class="mt-4 text-sm text-base-content/60">
             Showing 1 to {length(@rows)} of {length(@rows)} entries
           </p>
         </.card>
-        
+
         <div class="space-y-4">
           <.card>
             <div class="mb-4 flex items-center justify-between">
               <h2 class="text-sm font-semibold tracking-tight">Upcoming Due Dates</h2>
-              
+
               <button
                 type="button"
                 phx-click="show_all"
@@ -273,11 +273,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 View All
               </button>
             </div>
-            
+
             <ul :if={@upcoming != []} class="space-y-4">
               <.due_date_row :for={obligation <- @upcoming} obligation={obligation} />
             </ul>
-            
+
             <.empty_state
               :if={@upcoming == []}
               icon="hero-check-circle"
@@ -289,10 +289,10 @@ defmodule QuantumBillingWeb.ComplianceLive do
               }
             />
           </.card>
-          
+
           <.card id="filing-calendar">
             <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
-            
+
             <.month_calendar
               weeks={@weeks}
               year={@calendar_year}

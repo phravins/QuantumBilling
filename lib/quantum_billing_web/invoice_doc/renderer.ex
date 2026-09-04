@@ -172,7 +172,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
           d="m9 14.25 6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185ZM9.75 9h.008v.008H9.75V9Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 4.5h.008v.008h-.008V13.5Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
         />
       </svg>
-       <span class="qb-doc__brand-name">QuantumBilling</span>
+      <span class="qb-doc__brand-name">QuantumBilling</span>
     </div>
     """
   end
@@ -243,7 +243,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
         class={["qb-doc__meta-line", line.emphasis == "strong" && "qb-doc__meta-line--strong"]}
       >
         <dt :if={line.label != ""}>{line.label}</dt>
-        
+
         <dd>{meta_value(line.field, @invoice)}</dd>
       </div>
     </dl>
@@ -277,7 +277,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
           </th>
         </tr>
       </thead>
-      
+
       <tbody>
         <tr :for={{item, index} <- Enum.with_index(@invoice.items, 1)}>
           <td :for={column <- @columns} class={align_class(column)}>
@@ -320,7 +320,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     ~H"""
     <div :if={present?(@invoice.remarks)}>
       <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
-      
+
       <p class="qb-doc__muted">{@invoice.remarks}</p>
     </div>
     """
@@ -330,7 +330,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     ~H"""
     <div :if={present?(@invoice.terms)}>
       <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
-      
+
       <p class="qb-doc__muted">{@invoice.terms}</p>
     </div>
     """
@@ -340,7 +340,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     ~H"""
     <div class="qb-doc__signature">
       <div class="qb-doc__signature-space" style={"height: #{@block.opts.height}px"}></div>
-      
+
       <p class="qb-doc__signature-caption qb-doc__muted">{@block.text}</p>
     </div>
     """

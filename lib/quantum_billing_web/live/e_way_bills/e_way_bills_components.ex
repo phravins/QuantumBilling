@@ -32,10 +32,10 @@ defmodule QuantumBillingWeb.EWayBillsComponents do
         <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
           {@step}
         </span>
-        
+
         <h2 class="text-sm font-semibold tracking-tight">{@title}</h2>
       </div>
-       {render_slot(@inner_block)}
+      {render_slot(@inner_block)}
     </.card>
     """
   end
@@ -86,7 +86,7 @@ defmodule QuantumBillingWeb.EWayBillsComponents do
       ]}>
         {@label}
       </span>
-      
+
       <span class={[
         "text-right text-xs",
         if(@emphasis, do: "text-sm font-semibold tracking-tight", else: "font-medium")

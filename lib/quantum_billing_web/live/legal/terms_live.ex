@@ -33,7 +33,7 @@ defmodule QuantumBillingWeb.TermsLive do
           you confirm you are authorised to bind that business.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="2. The service">
         <p>
           QuantumBilling provides tools to create and manage GST invoices, generate e-invoices
@@ -41,7 +41,7 @@ defmodule QuantumBillingWeb.TermsLive do
           change over time as tax rules and our product evolve.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="3. Accounts and eligibility">
         <p>
           You must provide accurate registration details and keep your login credentials
@@ -49,7 +49,7 @@ defmodule QuantumBillingWeb.TermsLive do
           least 18 years old and legally able to enter into contracts.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="4. Your data and its accuracy">
         <p>
           You retain ownership of the business data you enter, including customer records,
@@ -63,7 +63,7 @@ defmodule QuantumBillingWeb.TermsLive do
           </.link>.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="5. Not tax or legal advice">
         <p>
           QuantumBilling is software, not a tax advisor. Nothing in the service constitutes
@@ -72,7 +72,7 @@ defmodule QuantumBillingWeb.TermsLive do
           your obligations under the GST law and should consult a qualified professional.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="6. Fees and payment">
         <p>
           Paid plans are billed
@@ -85,23 +85,23 @@ defmodule QuantumBillingWeb.TermsLive do
           notice.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="7. Acceptable use">
         <p>You agree not to:</p>
-        
+
         <.legal_list>
           <li>use the service to issue false, fraudulent or misleading tax documents;</li>
-          
+
           <li>upload unlawful content or infringe anyone's rights;</li>
-          
+
           <li>attempt to breach, probe or disrupt the service or its security;</li>
-          
+
           <li>reverse engineer, resell or sublicense the service without our written consent;</li>
-          
+
           <li>use automated means to place unreasonable load on the service.</li>
         </.legal_list>
       </.legal_section>
-      
+
       <.legal_section title="8. Government portals and third-party services">
         <p>
           Certain features depend on third parties, including the GST Network, Invoice
@@ -110,7 +110,7 @@ defmodule QuantumBillingWeb.TermsLive do
           them through our service.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="9. Availability and support">
         <p>
           We aim to keep the service available but do not guarantee uninterrupted access.
@@ -119,7 +119,7 @@ defmodule QuantumBillingWeb.TermsLive do
           level commitments are set out at <.blank>SLA URL, if offered</.blank>.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="10. Intellectual property">
         <p>
           The service, including its software, design and branding, remains our property.
@@ -127,7 +127,7 @@ defmodule QuantumBillingWeb.TermsLive do
           business while your account is active and fees are paid.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="11. Limitation of liability">
         <p>
           To the maximum extent permitted by law, we are not liable for indirect or
@@ -136,7 +136,7 @@ defmodule QuantumBillingWeb.TermsLive do
           Nothing here excludes liability that cannot lawfully be excluded.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="12. Suspension and termination">
         <p>
           You may stop using the service at any time. We may suspend or terminate access for
@@ -145,7 +145,7 @@ defmodule QuantumBillingWeb.TermsLive do
           in line with our retention policy.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="13. Changes to these terms">
         <p>
           We may update these terms. Material changes will be notified in the product or by
@@ -155,7 +155,7 @@ defmodule QuantumBillingWeb.TermsLive do
           use the service after that constitutes acceptance.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="14. Governing law and disputes">
         <p>
           These terms are governed by the laws of India, and the courts at
@@ -164,7 +164,7 @@ defmodule QuantumBillingWeb.TermsLive do
           dispute resolution process set out at <.blank>arbitration clause, if any</.blank>.
         </p>
       </.legal_section>
-      
+
       <.legal_section title="15. Contact">
         <p>
           Questions about these terms can be sent to

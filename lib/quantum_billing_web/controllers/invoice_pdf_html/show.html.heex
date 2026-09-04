@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{@invoice.invoice_number}</title>
-    
+
     <%!-- The same stylesheet the on-screen document uses, in `:print` mode so
     it also carries the paper rules. This page deliberately loads none of
     `app.css`: its mask-based icon classes and daisyUI theme are not available
     to a saved file, and an icon rendered through them came out blank. --%>
     <Renderer.stylesheet doc={@doc} mode={:print} />
   </head>
-  
+
   <body>
     <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
     <%!-- A raw script rather than a colocated hook: this is a controller-

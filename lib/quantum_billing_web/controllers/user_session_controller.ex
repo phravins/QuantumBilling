@@ -3,6 +3,7 @@ defmodule QuantumBillingWeb.UserSessionController do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.TwoFactor
+  alias QuantumBilling.RateLimiter
   alias QuantumBillingWeb.UserAuth
 
   def create(conn, %{"_action" => "confirmed"} = params) do
@@ -30,23 +31,51 @@ defmodule QuantumBillingWeb.UserSessionController do
   # email + password login
   defp create(conn, %{"user" => user_params}, info) do
     %{"email" => email, "password" => password} = user_params
+    ip_key = {:login_ip, conn.remote_ip}
+    email_key = {:login_email, String.downcase(String.trim(email || ""))}
 
-    case Accounts.get_user_by_email_and_password(email, password) do
-      %{confirmed_at: nil} ->
+    cond do
+      RateLimiter.limited?(ip_key, 10) ->
         conn
-        |> put_flash(:error, "Please confirm your email first — check your inbox for the link.")
-        |> put_flash(:email, String.slice(email, 0, 160))
+        |> put_flash(
+          :error,
+          "Too many login attempts from this network. Please wait a minute and try again."
+        )
         |> redirect(to: ~p"/users/log-in")
 
-      nil ->
-        # In order to prevent user enumeration attacks, don't disclose whether the email is registered.
+      RateLimiter.limited?(email_key, 5) ->
         conn
-        |> put_flash(:error, "Invalid email or password")
-        |> put_flash(:email, String.slice(email, 0, 160))
+        |> put_flash(
+          :error,
+          "Too many failed attempts for this account. Please wait a minute and try again."
+        )
         |> redirect(to: ~p"/users/log-in")
 
-      user ->
-        finish_login(conn, user, user_params, info)
+      true ->
+        case Accounts.get_user_by_email_and_password(email, password) do
+          %{confirmed_at: nil} ->
+            conn
+            |> put_flash(
+              :error,
+              "Please confirm your email first — check your inbox for the link."
+            )
+            |> put_flash(:email, String.slice(email, 0, 160))
+            |> redirect(to: ~p"/users/log-in")
+
+          nil ->
+            RateLimiter.hit(ip_key, 10, 60)
+            RateLimiter.hit(email_key, 5, 60)
+
+            conn
+            |> put_flash(:error, "Invalid email or password")
+            |> put_flash(:email, String.slice(email, 0, 160))
+            |> redirect(to: ~p"/users/log-in")
+
+          user ->
+            RateLimiter.reset(ip_key)
+            RateLimiter.reset(email_key)
+            finish_login(conn, user, user_params, info)
+        end
     end
   end
 
@@ -99,16 +128,33 @@ defmodule QuantumBillingWeb.UserSessionController do
         |> redirect(to: ~p"/users/log-in")
 
       {user, pending} ->
-        case TwoFactor.verify(user, code) do
-          {:ok, user} ->
-            conn
-            |> put_flash(:info, "Welcome back!")
-            |> UserAuth.complete_two_factor_login(user, pending)
+        rate_key = {:two_factor, user.id}
 
-          {:error, _reason} ->
+        case RateLimiter.hit(rate_key, 5, 300) do
+          {:error, :rate_limited, retry_after} ->
+            minutes = max(1, div(retry_after + 59, 60))
+
             conn
-            |> put_flash(:error, "That code is not valid. Please try again.")
+            |> put_flash(
+              :error,
+              "Too many invalid 2FA attempts. Please wait #{minutes} minute(s) before trying again."
+            )
             |> redirect(to: ~p"/users/two-factor")
+
+          {:ok, _remaining} ->
+            case TwoFactor.verify(user, code) do
+              {:ok, user} ->
+                RateLimiter.reset(rate_key)
+
+                conn
+                |> put_flash(:info, "Welcome back!")
+                |> UserAuth.complete_two_factor_login(user, pending)
+
+              {:error, _reason} ->
+                conn
+                |> put_flash(:error, "That code is not valid. Please try again.")
+                |> redirect(to: ~p"/users/two-factor")
+            end
         end
     end
   end

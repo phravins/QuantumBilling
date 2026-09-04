@@ -85,10 +85,10 @@ defmodule QuantumBillingWeb.CoreComponents do
         <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-4 shrink-0" />
         <div>
           <p :if={@title} class="font-semibold">{@title}</p>
-          
+
           <p>{msg}</p>
         </div>
-         <div class="flex-1" />
+        <div class="flex-1" />
         <button type="button" class="group self-start cursor-pointer" aria-label={gettext("close")}>
           <.icon name="hero-x-mark" class="size-4 opacity-40 group-hover:opacity-70" />
         </button>
@@ -272,7 +272,7 @@ defmodule QuantumBillingWeb.CoreComponents do
           />{@label}
         </span>
       </label>
-      
+
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -291,10 +291,10 @@ defmodule QuantumBillingWeb.CoreComponents do
           {@rest}
         >
           <option :if={@prompt} value="">{@prompt}</option>
-           {Phoenix.HTML.Form.options_for_select(@options, @value)}
+          {Phoenix.HTML.Form.options_for_select(@options, @value)}
         </select>
       </label>
-      
+
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -314,7 +314,7 @@ defmodule QuantumBillingWeb.CoreComponents do
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
       </label>
-      
+
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -338,7 +338,7 @@ defmodule QuantumBillingWeb.CoreComponents do
           {@rest}
         />
       </label>
-      
+
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -369,12 +369,12 @@ defmodule QuantumBillingWeb.CoreComponents do
         <h1 class="text-xl font-semibold tracking-tight">
           {render_slot(@inner_block)}
         </h1>
-        
+
         <p :if={@subtitle != []} class="mt-1 text-sm text-base-content/60">
           {render_slot(@subtitle)}
         </p>
       </div>
-      
+
       <div class="flex-none">{render_slot(@actions)}</div>
     </header>
     """
@@ -416,13 +416,13 @@ defmodule QuantumBillingWeb.CoreComponents do
       <thead>
         <tr class={QuantumBillingWeb.SharedComponents.table_head_class()}>
           <th :for={col <- @col}>{col[:label]}</th>
-          
+
           <th :if={@action != []}>
             <span class="sr-only">{gettext("Actions")}</span>
           </th>
         </tr>
       </thead>
-      
+
       <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
         <tr
           :for={row <- @rows}
@@ -436,7 +436,7 @@ defmodule QuantumBillingWeb.CoreComponents do
           >
             {render_slot(col, @row_item.(row))}
           </td>
-          
+
           <td :if={@action != []} class="w-0">
             <div class="flex gap-1">
               <%= for action <- @action do %>
@@ -470,7 +470,7 @@ defmodule QuantumBillingWeb.CoreComponents do
       <li :for={item <- @item} class="list-row">
         <div class="list-col-grow">
           <div class="font-semibold">{item.title}</div>
-          
+
           <div>{render_slot(item)}</div>
         </div>
       </li>

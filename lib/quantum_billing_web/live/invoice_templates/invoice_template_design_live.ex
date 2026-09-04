@@ -344,10 +344,10 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         <.link navigate={~p"/settings/customization"} class="hover:text-base-content">
           Invoice Customization
         </.link>
-         <.icon name="hero-chevron-right" class="size-3" />
+        <.icon name="hero-chevron-right" class="size-3" />
         <span class="text-base-content/60">{@template.name}</span>
       </nav>
-      
+
       <.header>
         <form
           id="template-name-form"
@@ -363,7 +363,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             class="w-full max-w-sm rounded-field border border-transparent bg-transparent px-1 py-0.5 text-xl font-semibold tracking-tight hover:border-base-300 focus:border-base-300 focus:outline-none focus:ring-2 focus:ring-base-content/10"
           />
         </form>
-        
+
         <:subtitle>
           <span :if={@error} class="text-red-600">{@error}</span>
           <span :if={is_nil(@error) and @saved_at} class="text-base-content/45">Saved</span>
@@ -371,7 +371,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             {@count} blocks · changes save as you make them
           </span>
         </:subtitle>
-        
+
         <:actions>
           <div class="flex items-center gap-2">
             <form
@@ -388,7 +388,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
                 class="size-8 cursor-pointer rounded-field border border-base-300 bg-base-100 p-0.5"
               />
             </form>
-            
+
             <button
               :if={!@template.is_default}
               type="button"
@@ -397,21 +397,21 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             >
               Make default
             </button>
-            
+
             <span
               :if={@template.is_default}
               class="inline-flex h-9 items-center rounded-field bg-base-200 px-3 text-sm text-base-content/70"
             >
               Default
             </span>
-            
+
             <.link navigate={~p"/settings/customization"} class={secondary_button_class()}>
               Done
             </.link>
           </div>
         </:actions>
       </.header>
-      
+
       <div class="flex flex-1 gap-3">
         <%!-- Palette --%>
         <.card padding="p-2" class="hidden w-44 shrink-0 self-start lg:block">
@@ -420,7 +420,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             <p class="px-1 text-2xs font-medium uppercase tracking-wider text-base-content/45">
               Page
             </p>
-            
+
             <form id="template-page-form" phx-change="update_page" class="space-y-2 px-1">
               <label class="block">
                 <span class="mb-1 block text-xs text-base-content/60">Margin</span>
@@ -437,7 +437,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
                   </option>
                 </select>
               </label>
-              
+
               <label class="block">
                 <span class="mb-1 block text-xs text-base-content/60">Text size</span>
                 <select
@@ -449,7 +449,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
                   </option>
                 </select>
               </label>
-              
+
               <label class="block">
                 <span class="mb-1 block text-xs text-base-content/60">Typeface</span>
                 <select
@@ -462,7 +462,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
                 </select>
               </label>
             </form>
-            
+
             <button
               type="button"
               phx-click="reset_layout"
@@ -473,7 +473,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             </button>
           </div>
         </.card>
-         <%!-- Canvas --%>
+        <%!-- Canvas --%>
         <.card padding="p-6" class="min-w-0 flex-1">
           <Renderer.stylesheet doc={@doc} />
           <%!-- The hook listens on this container and delegates, rather than
@@ -495,17 +495,17 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
               last={index == @count - 1}
             />
           </div>
-          
+
           <p :if={@count == 0} class="py-10 text-center text-sm text-base-content/45">
             This template is empty. Add a block from the left to begin.
           </p>
         </.card>
-         <%!-- Inspector --%>
+        <%!-- Inspector --%>
         <.card padding="p-3" class="hidden w-72 shrink-0 self-start xl:block">
           <.inspector block={@selected} page={@doc.page} />
         </.card>
       </div>
-      
+
       <script :type={Phoenix.LiveView.ColocatedHook} name=".BlockSort">
         // Reorders canvas blocks by dragging. The up/down buttons are the
         // primary path -- they work from the keyboard, which this does not --

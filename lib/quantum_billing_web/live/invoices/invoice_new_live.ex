@@ -244,14 +244,14 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 do: "Save Changes",
                 else: "Save Draft"}
             </button>
-            
+
             <button type="submit" form="invoice-form" class={action_button_class()}>
               <.icon name="hero-eye" class="size-4" /> Preview Invoice
             </button>
           </div>
         </:actions>
       </.header>
-      
+
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <.form
           :let={f}
@@ -266,10 +266,10 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 1
               </span>
-              
+
               <h2 class="text-sm font-semibold tracking-tight">Invoice Details</h2>
             </div>
-            
+
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <.field
                 field={f[:invoice_type]}
@@ -296,18 +296,18 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                   Invoice No.<span class="ml-0.5 text-error">*</span>
                 </span>
-                
+
                 <div class="flex h-9 items-center rounded-field border border-base-300 bg-base-200 px-3 text-sm font-medium">
                   {@invoice.invoice_number || Settings.next_invoice_number(@organization)}
                 </div>
-                
+
                 <p class="mt-1 text-2xs text-base-content/45">
                   {if @invoice.id,
                     do: "Fixed once issued — it belongs to the numbering series.",
                     else: "Assigned on save. Change the series in Settings."}
                 </p>
               </div>
-               <.field field={f[:invoice_date]} label="Invoice Date" type="date" required />
+              <.field field={f[:invoice_date]} label="Invoice Date" type="date" required />
               <.field
                 field={f[:place_of_supply]}
                 label="Place of Supply"
@@ -324,16 +324,16 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               /> <.field field={f[:due_date]} label="Due Date" type="date" />
             </div>
           </.card>
-          
+
           <.card padding="p-6">
             <div class="mb-4 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 2
               </span>
-              
+
               <h2 class="text-sm font-semibold tracking-tight">Client Details</h2>
             </div>
-            
+
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label
@@ -342,7 +342,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 >
                   Client Name<span class="ml-0.5 text-error">*</span>
                 </label>
-                
+
                 <div class="flex gap-2">
                   <select
                     id={f[:client_id].id}
@@ -350,7 +350,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                     class={[form_select_class(), "min-w-0 flex-1"]}
                   >
                     <option value="">Select a client</option>
-                    
+
                     <option
                       :for={client <- @clients}
                       value={client.id}
@@ -359,7 +359,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       {client.name}
                     </option>
                   </select>
-                  
+
                   <.link
                     navigate={~p"/clients/new"}
                     class={[secondary_button_class(), "shrink-0"]}
@@ -368,12 +368,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                     <.icon name="hero-plus" class="size-4" />
                   </.link>
                 </div>
-                
+
                 <p :if={@clients == []} class="mt-1 text-2xs text-base-content/45">
                   No clients yet — add one first, or type the details in below.
                 </p>
               </div>
-              
+
               <.field
                 field={f[:client_state]}
                 label="State"
@@ -394,44 +394,44 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               </div>
             </div>
           </.card>
-          
+
           <.card padding="p-6">
             <div class="mb-4 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 3
               </span>
-              
+
               <h2 class="text-sm font-semibold tracking-tight">Item Details</h2>
             </div>
-            
+
             <div class="overflow-x-auto">
               <table class="w-full">
                 <thead>
                   <tr class={table_head_class()}>
                     <th class="w-8 pr-2 text-left">#</th>
-                    
+
                     <th class="pr-2 text-left">
                       Item / Description<span class="ml-0.5 text-error">*</span>
                     </th>
-                    
+
                     <th class="w-28 pr-2 text-left">HSN / SAC</th>
-                    
+
                     <th class="w-20 pr-2 text-left">Qty</th>
-                    
+
                     <th class="w-24 pr-2 text-left">Unit</th>
-                    
+
                     <th class="w-28 pr-2 text-left">Rate (₹)</th>
-                    
+
                     <th class="w-24 pr-2 text-left">Tax (%)</th>
-                    
+
                     <th class="w-28 pr-2 text-right">Amount (₹)</th>
-                    
+
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
                     </th>
                   </tr>
                 </thead>
-                
+
                 <tbody>
                   <tr
                     :for={{item, index} <- Enum.with_index(f[:items].value || [])}
@@ -439,7 +439,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                   >
                     <% item_form = item_form(item, index) %>
                     <td class="py-2 pr-2 align-top text-sm text-base-content/45">{index + 1}</td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <input type="hidden" name="invoice[items_sort][]" value={index} />
                       <input
@@ -456,7 +456,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         class={form_input_class()}
                       />
                     </td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <input
                         type="text"
@@ -466,7 +466,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         class={form_input_class()}
                       />
                     </td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <input
                         type="number"
@@ -476,7 +476,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         class={form_input_class()}
                       />
                     </td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <select name={item_form[:unit].name} class={form_select_class()}>
                         <option
@@ -488,7 +488,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         </option>
                       </select>
                     </td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <input
                         type="number"
@@ -498,7 +498,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         class={form_input_class()}
                       />
                     </td>
-                    
+
                     <td class="py-2 pr-2 align-top">
                       <select name={item_form[:tax_rate].name} class={form_select_class()}>
                         <option
@@ -513,11 +513,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         </option>
                       </select>
                     </td>
-                    
+
                     <td class="py-2 pr-2 text-right align-middle text-sm font-medium">
                       {rupees(line_amount(item), decimals: 2)}
                     </td>
-                    
+
                     <td class="py-2 text-right align-middle">
                       <label class={[row_action_class(), "ml-auto cursor-pointer"]}>
                         <input
@@ -532,29 +532,29 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 </tbody>
               </table>
             </div>
-            
+
             <p
               :for={msg <- item_errors(@form)}
               class="mt-2 flex items-center gap-1 text-2xs text-error"
             >
               <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{msg}
             </p>
-            
+
             <label class={[secondary_button_class(), "mt-4 cursor-pointer"]}>
               <input type="checkbox" name="invoice[items_sort][]" class="hidden" />
               <.icon name="hero-plus" class="size-4" /> Add New Item
             </label>
           </.card>
-          
+
           <.card padding="p-6">
             <div class="mb-4 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 4
               </span>
-              
+
               <h2 class="text-sm font-semibold tracking-tight">Additional Information</h2>
             </div>
-            
+
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <.field
                 field={f[:remarks]}
@@ -574,7 +574,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                   Attachments
                 </span>
-                
+
                 <div class="flex h-[6.5rem] flex-col items-center justify-center rounded-field border border-dashed border-base-300 px-3 text-center">
                   <.icon name="hero-paper-clip" class="size-4 text-base-content/45" />
                   <p class="mt-1 text-xs text-base-content/45">Needs file storage</p>
@@ -583,11 +583,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
           </.card>
         </.form>
-        
+
         <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
           <.card>
             <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoice Summary</h2>
-            
+
             <div class="space-y-2.5">
               <.summary_line label="Total Items" value={@summary.total_items} />
               <.summary_line label="Total Quantity" value={@summary.total_quantity} />
@@ -596,7 +596,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 value={rupees(@summary.taxable_value, decimals: 2, space: true)}
               />
             </div>
-             <hr class="my-4 border-base-300" />
+            <hr class="my-4 border-base-300" />
             <div class="space-y-2.5">
               <.summary_line
                 label="CGST"
@@ -615,7 +615,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 value={rupees(@summary.cess_amount, decimals: 2, space: true)}
               />
             </div>
-             <hr class="my-4 border-base-300" />
+            <hr class="my-4 border-base-300" />
             <.summary_line
               label="Round Off"
               value={rupees(@summary.round_off, decimals: 2, space: true)}
@@ -626,26 +626,26 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 {rupees(@summary.grand_total, decimals: 2, space: true)}
               </span>
             </div>
-            
+
             <p class="mt-3 text-2xs uppercase tracking-wider text-base-content/45">
               Amount in Words
             </p>
-            
+
             <p class="mt-1 text-xs text-base-content/60">
               {QuantumBillingWeb.Format.rupees_in_words(@summary.grand_total)}
             </p>
-            
+
             <p class="mt-3 text-2xs text-base-content/45">
               {if @intra_state?,
                 do: "Same state as your business — CGST and SGST apply.",
                 else: "Different state from your business — IGST applies."}
             </p>
           </.card>
-          
+
           <.card>
             <div class="flex items-start justify-between gap-4">
               <h2 class="text-sm font-semibold tracking-tight">From (Your Company)</h2>
-              
+
               <.link
                 navigate={~p"/settings"}
                 class="flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
@@ -653,23 +653,23 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 <.icon name="hero-pencil-square" class="size-3.5" /> Edit
               </.link>
             </div>
-            
+
             <div :if={@organization.company_name} class="mt-3 space-y-1 text-xs">
               <p class="text-sm font-medium">{@organization.company_name}</p>
-              
+
               <p :if={@organization.address} class="whitespace-pre-line text-base-content/60">
                 {@organization.address}
               </p>
-              
+
               <p :if={@organization.gstin} class="text-base-content/60">
                 GSTIN: {@organization.gstin}
               </p>
-              
+
               <p :if={@organization.state} class="text-base-content/60">
                 State: {@organization.state}
               </p>
             </div>
-            
+
             <p :if={is_nil(@organization.company_name)} class="mt-3 text-xs text-base-content/60">
               Your company details are not set up yet. Add them in Settings so they appear on
               every invoice.

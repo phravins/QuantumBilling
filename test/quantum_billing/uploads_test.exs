@@ -65,6 +65,58 @@ defmodule QuantumBilling.UploadsTest do
       assert {:error, message} = Uploads.store(big, "image/png")
       assert message =~ "smaller than"
     end
+
+    test "accepts a valid safe SVG" do
+      svg_path = Path.join(System.tmp_dir!(), "valid-#{System.unique_integer([:positive])}.svg")
+      File.write!(svg_path, ~s[<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>])
+      on_exit(fn -> File.rm(svg_path) end)
+
+      assert {:ok, path} = Uploads.store(svg_path, "image/svg+xml")
+      cleanup(path)
+      assert String.ends_with?(path, ".svg")
+    end
+
+    test "refuses an SVG containing script elements" do
+      svg_path =
+        Path.join(System.tmp_dir!(), "xss-script-#{System.unique_integer([:positive])}.svg")
+
+      File.write!(svg_path, ~s[<svg><script>alert(1)</script></svg>])
+      on_exit(fn -> File.rm(svg_path) end)
+
+      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
+      assert message =~ "unsafe script elements"
+    end
+
+    test "refuses an SVG containing inline event handlers" do
+      svg_path =
+        Path.join(System.tmp_dir!(), "xss-event-#{System.unique_integer([:positive])}.svg")
+
+      File.write!(svg_path, ~s[<svg onload="alert(1)"><circle cx="10" cy="10" r="5"/></svg>])
+      on_exit(fn -> File.rm(svg_path) end)
+
+      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
+      assert message =~ "unsafe event handlers"
+    end
+
+    test "refuses an SVG containing foreignObject elements" do
+      svg_path = Path.join(System.tmp_dir!(), "xss-fo-#{System.unique_integer([:positive])}.svg")
+      File.write!(svg_path, ~s[<svg><foreignObject><div>test</div></foreignObject></svg>])
+      on_exit(fn -> File.rm(svg_path) end)
+
+      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
+      assert message =~ "unsafe embedded elements"
+    end
+
+    test "refuses an SVG containing javascript links" do
+      svg_path =
+        Path.join(System.tmp_dir!(), "xss-link-#{System.unique_integer([:positive])}.svg")
+
+      File.write!(svg_path, ~s[<svg><a href="javascript:alert(1)"><text>Click</text></a></svg>])
+      on_exit(fn -> File.rm(svg_path) end)
+
+      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
+      assert message =~ "unsafe javascript links"
+    end
   end
 
   describe "delete/1" do

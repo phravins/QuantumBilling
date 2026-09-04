@@ -14,8 +14,7 @@ defmodule QuantumBilling.Application do
       QuantumBilling.Repo,
       {DNSCluster, query: Application.get_env(:quantum_billing, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QuantumBilling.PubSub},
-      # Start a worker by calling: QuantumBilling.Worker.start_link(arg)
-      # {QuantumBilling.Worker, arg},
+      QuantumBilling.RateLimiter,
       # Start to serve requests, typically the last entry
       QuantumBillingWeb.Endpoint
     ]
