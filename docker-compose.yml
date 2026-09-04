@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-quantum_billing_prod}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_NAME:-quantum_billing_prod}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: ecto://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_billing_prod}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-kR2vQ8xLmNfW5tYcJ7bPdA3hZgE6sU9nX1oI4jT0aVwK8yBrC5eM2pD7lF3qGnHu}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-dev-only-totp-key-Xq7Pm2Lw9Rt4Yv6Bn8Kc3Fh5Jd1Sa0Zg}
+      PHX_HOST: ${PHX_HOST:-localhost}
+      PORT: 4000
+      PHX_SERVER: "true"
+      AUTO_MIGRATE: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/priv/static/uploads
+
+volumes:
+  postgres_data:
+  uploads_data:

@@ -1,0 +1,11 @@
+.git
+.gitignore
+_build
+deps
+priv/static/uploads/*
+!priv/static/uploads/.gitkeep
+tmp
+.env
+.env.*
+!entrypoint.sh
+*.md
