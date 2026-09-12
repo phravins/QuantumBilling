@@ -201,9 +201,54 @@ sample_invoices = [
 
 Enum.each(sample_invoices, fn inv_attrs ->
   case Invoices.create_invoice(inv_attrs) do
-    {:ok, inv} -> IO.puts("  + Created invoice #{inv.invoice_number} for #{inv.client_name}")
-    {:error, cs} -> IO.puts("  ! Failed to create invoice: #{inspect(cs.errors)}")
+    {:ok, inv} ->
+      IO.puts("  + Created invoice #{inv.invoice_number} for #{inv.client_name}")
+      # Seed an audit log for invoice creation
+      QuantumBilling.Audit.log_event("invoice.create", "Invoice", inv.id, details: %{invoice_number: inv.invoice_number, amount: inv.grand_total})
+    {:error, cs} ->
+      IO.puts("  ! Failed to create invoice: #{inspect(cs.errors)}")
   end
 end)
+
+# 4. Seed Recurring Profiles
+alias QuantumBilling.Recurring
+
+if c1 do
+  case Recurring.create_profile(%{
+         title: "Monthly Software License Retainer",
+         client_id: c1.id,
+         frequency: "Monthly",
+         status: "Active",
+         next_run_date: Date.add(Date.utc_today(), 15),
+         items_json: Jason.encode!([
+           %{
+             "description" => "Enterprise Software Maintenance",
+             "hsn_sac" => "998314",
+             "quantity" => "1",
+             "unit" => "Nos",
+             "rate" => "150000",
+             "tax_rate" => "18"
+           }
+         ])
+       }) do
+    {:ok, _profile} -> IO.puts("✓ Seeded Recurring Profile.")
+    {:error, _} -> IO.puts("! Recurring profile already exists.")
+  end
+end
+
+# 5. Seed Credit Notes
+invoices = Invoices.list_invoices()
+if first_invoice = List.first(invoices) do
+  db_invoice = Invoices.get_invoice!(first_invoice.id)
+  {:ok, _cn} = QuantumBilling.CreditNotes.create_credit_note_for_invoice(db_invoice, %{
+    "note_type" => "Credit",
+    "reason" => "Annual Volume Discount Adjustment"
+  })
+  IO.puts("✓ Seeded Credit Note.")
+end
+
+# 6. Seed Audit Logs
+QuantumBilling.Audit.log_event("system.bootstrap", "Database", "1", details: %{mode: "seeds_populated"})
+QuantumBilling.Audit.log_event("settings.update", "Organization", "1", details: %{gstin: org_attrs.gstin})
 
 IO.puts("✓ Demo setup completed successfully!")

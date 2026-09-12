@@ -77,7 +77,8 @@ defmodule QuantumBilling.MixProject do
       # Both are pure Elixir with no runtime services, so the secret never
       # leaves the application.
       {:nimble_totp, "~> 1.0"},
-      {:eqrcode, "~> 0.2"}
+      {:eqrcode, "~> 0.2"},
+      {:oban, "~> 2.18"}
     ]
   end
 

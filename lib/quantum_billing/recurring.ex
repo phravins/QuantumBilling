@@ -79,6 +79,13 @@ defmodule QuantumBilling.Recurring do
     Enum.map(due_profiles, &process_single_profile(&1, today))
   end
 
+  @doc """
+  Processes a single recurring profile.
+  """
+  def process_profile(%RecurringProfile{} = profile) do
+    process_single_profile(profile, Date.utc_today())
+  end
+
   defp process_single_profile(%RecurringProfile{} = profile, today) do
     client = profile.client || Clients.get_client!(profile.client_id)
 

@@ -85,8 +85,13 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-# Use Jason for JSON parsing in Phoenix
-config :phoenix, :json_library, Jason
+# Configure Oban Persistent Job Processor
+config :quantum_billing, Oban,
+  repo: QuantumBilling.Repo,
+  queues: [default: 10, mailers: 20, recurring: 5],
+  plugins: [
+    Oban.Plugins.Pruner
+  ]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

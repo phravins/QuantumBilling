@@ -38,6 +38,9 @@ config :swoosh, :api_client, false
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Configure Oban for inline testing
+config :quantum_billing, Oban, testing: :inline
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
@@ -48,3 +51,6 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Disable background recurring scheduler in test
+config :quantum_billing, start_scheduler: false

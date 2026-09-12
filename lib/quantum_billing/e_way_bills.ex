@@ -1,24 +1,55 @@
 defmodule QuantumBilling.EWayBills do
   @moduledoc """
-  Issued e-way bills.
-
-  A placeholder pending the multi-tenant Ecto schema: `list_e_way_bills/0`
-  returns nothing because no e-way bill table exists yet. It is here so the
-  LiveViews stop owning their own records — when the schema lands this becomes a
-  `Repo` query and no caller has to change.
-
-  `QuantumBilling.EWayBills.EWayBillForm` already models the generate form and
-  is unaffected; it validates input rather than reading stored records.
+  Context for managing E-Way Bills and communicating with Govt NIC API.
   """
 
+  import Ecto.Query, warn: false
+
   alias QuantumBilling.Events
+  alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.EWayBills.NICClient
+  alias QuantumBilling.Audit
+  alias QuantumBilling.Repo
+
+  @doc """
+  Generates an E-Way Bill for an invoice and stores the details on the invoice.
+  """
+  def generate_e_way_bill(%Invoice{} = invoice, params \\ %{}) do
+    case NICClient.generate_ewb(invoice, params) do
+      {:ok, ewb_attrs} ->
+        changeset = Ecto.Changeset.change(invoice, ewb_attrs)
+
+        case Repo.update(changeset) do
+          {:ok, updated_invoice} ->
+            Audit.log_event(
+              :generate_e_way_bill,
+              "Invoice",
+              updated_invoice.id,
+              details: %{
+                ewb_number: updated_invoice.ewb_number,
+                distance_km: updated_invoice.distance_km,
+                vehicle_number: updated_invoice.vehicle_number
+              }
+            )
+
+            broadcast_change(updated_invoice)
+            {:ok, updated_invoice}
+
+          {:error, cs} ->
+            {:error, cs}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 
   @doc """
   Every e-way bill, newest first.
-
-  Returns `[]` until the e-way bills table exists.
   """
-  def list_e_way_bills, do: []
+  def list_e_way_bills do
+    Repo.all(from i in Invoice, where: not is_nil(i.ewb_number), order_by: [desc: i.ewb_date])
+  end
 
   @doc """
   Subscribes the caller to e-way bill changes.

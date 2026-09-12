@@ -68,6 +68,40 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
+  Fetches an invoice by its unique invoice_number.
+  """
+  def get_invoice_by_number(invoice_number) when is_binary(invoice_number) do
+    Invoice
+    |> Repo.get_by(invoice_number: invoice_number)
+    |> case do
+      nil ->
+        nil
+
+      invoice ->
+        Repo.preload(invoice,
+          items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
+        )
+    end
+  end
+
+  @doc """
+  Fetches an invoice by its unique public_token for the public portal.
+  """
+  def get_invoice_by_token(token) when is_binary(token) do
+    Invoice
+    |> Repo.get_by(public_token: token)
+    |> case do
+      nil ->
+        nil
+
+      invoice ->
+        Repo.preload(invoice,
+          items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
+        )
+    end
+  end
+
+  @doc """
   Fetches an invoice with its line items, or `nil`.
   """
   def get_invoice(id) do

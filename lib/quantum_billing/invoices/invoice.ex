@@ -44,7 +44,14 @@ defmodule QuantumBilling.Invoices.Invoice do
     {"Custom", nil}
   ]
 
-  @statuses ["Draft", "Pending E-Invoice", "E-Invoice Generated", "E-Invoice Failed", "Cancelled"]
+  @statuses [
+    "Draft",
+    "Pending E-Invoice",
+    "E-Invoice Generated",
+    "E-Invoice Failed",
+    "Paid",
+    "Cancelled"
+  ]
 
   schema "invoices" do
     field :invoice_number, :string
@@ -94,6 +101,30 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :signed_qr_code, :string
     field :signed_invoice, :string
 
+    # E-Way Bill Details
+    field :ewb_number, :string
+    field :ewb_date, :date
+    field :ewb_valid_until, :naive_datetime
+    field :distance_km, :integer
+    field :transporter_id, :string
+    field :transporter_name, :string
+    field :vehicle_number, :string
+    field :mode_of_transport, :string, default: "Road"
+
+    # Multi-Currency & LUT Export Details
+    field :currency, :string, default: "INR"
+    field :exchange_rate, :decimal, default: 1.0
+    field :export_type, :string, default: "DOMESTIC"
+    field :lut_number, :string
+
+    # Razorpay / UPI Details
+    field :razorpay_payment_link_id, :string
+    field :razorpay_payment_url, :string
+    field :razorpay_payment_id, :string
+
+    # Public Client Portal Access Token
+    field :public_token, :string
+
     # The design this was issued under, frozen at issue. See the migration for
     # why the structure is snapshotted while the accent and logo stay live.
     field :layout_xml, :string
@@ -111,7 +142,11 @@ defmodule QuantumBilling.Invoices.Invoice do
                client_city client_pincode
                company_name company_address company_gstin company_state
                remarks terms status template_id layout_xml
-               irn ack_number ack_date signed_qr_code signed_invoice)a
+               irn ack_number ack_date signed_qr_code signed_invoice
+               ewb_number ewb_date ewb_valid_until distance_km transporter_id transporter_name vehicle_number mode_of_transport
+               currency exchange_rate export_type lut_number
+               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id
+               public_token)a
 
   @doc """
   Builds an invoice changeset, including its line items.
@@ -122,6 +157,7 @@ defmodule QuantumBilling.Invoices.Invoice do
   def changeset(invoice, attrs) do
     invoice
     |> cast(attrs, @castable)
+    |> ensure_public_token()
     |> cast_assoc(:items,
       with: &InvoiceItem.changeset/2,
       sort_param: :items_sort,
@@ -268,6 +304,18 @@ defmodule QuantumBilling.Invoices.Invoice do
     case get_field(changeset, field) do
       blank when blank in [nil, ""] -> changeset
       _present -> validate_inclusion(changeset, field, allowed)
+    end
+  end
+
+  def generate_public_token do
+    "tok_" <> Enum.map_join(1..24, fn _ -> to_string(Enum.random(0..9)) end)
+  end
+
+  defp ensure_public_token(changeset) do
+    case get_field(changeset, :public_token) do
+      nil -> put_change(changeset, :public_token, generate_public_token())
+      "" -> put_change(changeset, :public_token, generate_public_token())
+      _present -> changeset
     end
   end
 

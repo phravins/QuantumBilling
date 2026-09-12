@@ -22,6 +22,7 @@ defmodule QuantumBilling.EInvoiceTest do
           "city" => "Mumbai",
           "pincode" => "400001",
           "gstin" => "27AABCA1234A1Z5",
+          "pan" => "AABCA1234A",
           "state" => "Maharashtra (27)"
         },
         :general

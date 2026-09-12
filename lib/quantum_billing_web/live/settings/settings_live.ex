@@ -200,6 +200,29 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, cancel_upload(socket, :logo, ref)}
   end
 
+  def handle_event("send_test_email", _params, socket) do
+    recipient =
+      socket.assigns.current_scope.user.email || socket.assigns.organization.email ||
+        "test@example.com"
+
+    sample_invoice = socket.assigns.sample
+
+    case QuantumBilling.InvoiceNotifier.deliver_invoice_pdf(recipient, sample_invoice) do
+      {:ok, _email} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Test email with sample PDF successfully dispatched to #{recipient}!"
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Failed to send test email: #{inspect(reason)}")}
+    end
+  end
+
   # Writes the newly uploaded file, if there is one, and puts its path into the
   # params so the changeset saves it alongside everything else in the panel.
   # Nothing else in the form knows the logo is a file rather than a field.
@@ -505,6 +528,25 @@ defmodule QuantumBillingWeb.SettingsLive do
         />
       </div>
     </.form>
+
+    <div class="mt-6 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 class="text-sm font-semibold tracking-tight">SMTP Mailer Test</h3>
+          <p class="mt-1 text-xs text-base-content/60">
+            Send a sample invoice PDF email to test your SMTP server configuration.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          phx-click="send_test_email"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+        >
+          <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
+        </button>
+      </div>
+    </div>
     """
   end
 

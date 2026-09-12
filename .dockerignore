@@ -1,11 +1,9 @@
-.git
-.gitignore
 _build
 deps
-priv/static/uploads/*
-!priv/static/uploads/.gitkeep
-tmp
+.git
 .env
 .env.*
-!entrypoint.sh
-*.md
+assets/node_modules
+*.tar.gz
+*.log
+docker-compose*.yml

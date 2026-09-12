@@ -26,6 +26,7 @@ defmodule QuantumBillingWeb.Router do
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
       live "/terms", TermsLive, :index
       live "/privacy", PrivacyLive, :index
+      live "/pay/:token", PublicInvoiceLive, :show
     end
   end
 
@@ -49,6 +50,7 @@ defmodule QuantumBillingWeb.Router do
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
       live "/recurring", RecurringLive, :index
+      live "/settings/audit-logs", AuditLogsLive, :index
       live "/settings", SettingsLive, :index
       # The open section lives in the URL so a panel can be linked to directly
       # and survives a reload.
@@ -61,8 +63,15 @@ defmodule QuantumBillingWeb.Router do
 
     # Outside the live_session above: that block takes only `live` routes.
     get "/reports/export", ReportsController, :export
+    get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
+  end
+
+  scope "/api", QuantumBillingWeb do
+    pipe_through :api
+
+    post "/webhooks/razorpay", PaymentWebhookController, :handle_razorpay
   end
 
   if Application.compile_env(:quantum_billing, :dev_routes) do

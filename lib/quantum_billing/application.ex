@@ -14,6 +14,7 @@ defmodule QuantumBilling.Application do
       {Phoenix.PubSub, name: QuantumBilling.PubSub},
       QuantumBilling.RateLimiter,
       QuantumBilling.Recurring.Scheduler,
+      {Oban, Application.fetch_env!(:quantum_billing, Oban)},
       QuantumBillingWeb.Endpoint
     ]
 

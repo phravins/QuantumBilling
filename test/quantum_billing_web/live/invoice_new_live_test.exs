@@ -16,6 +16,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
         %{
           "company_name" => "ABC Solutions Private Limited",
           "gstin" => "27AABCA1234A1Z5",
+          "pan" => "AABCA1234A",
           "state" => "Maharashtra (27)"
         },
         :general

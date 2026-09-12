@@ -16,8 +16,10 @@ defmodule QuantumBilling.Recurring.Scheduler do
 
   @impl true
   def init(_opts) do
-    # Schedule initial check after 5 seconds
-    Process.send_after(self(), :check_due_profiles, 5000)
+    if Application.get_env(:quantum_billing, :start_scheduler, true) do
+      Process.send_after(self(), :check_due_profiles, 5000)
+    end
+
     {:ok, %{}}
   end
 

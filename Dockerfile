@@ -1,67 +1,73 @@
-# ==============================================================================
-# 1. Build Stage
-# ==============================================================================
-FROM hexpm/elixir:1.17.3-erlang-27.1.2-alpine-3.20.3 AS build
+# Find eligible builder image at https://hub.docker.com/_/elixir/tags
+ARG ELIXIR_VERSION=1.18.3
+ARG OTP_VERSION=27.2
+ARG DEBIAN_VERSION=bookworm-20250126-slim
 
-# Install build dependencies
-RUN apk add --no-cache build-base git curl
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 
+FROM ${BUILDER_IMAGE} as builder
+
+# install build dependencies
+RUN apt-get update -y && apt-get install -y build-essential git \
+    && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+# prepare build dir
 WORKDIR /app
 
-ENV MIX_ENV=prod
-
-# Install Hex and Rebar build tools
+# install hex + rebar
 RUN mix local.hex --force && \
     mix local.rebar --force
 
-# Copy dependency specifications
+# set build env
+ENV MIX_ENV="prod"
+
+# install dependencies
 COPY mix.exs mix.lock ./
+RUN mix deps.get --only $MIX_ENV
+RUN mkdir config
 
-# Fetch production dependencies
-RUN mix deps.get --only prod
-
-# Copy configuration files
-COPY config config
-
-# Compile dependencies
+# copy compile-time config files before compiling dependencies
+COPY config/config.exs config/prod.exs config/
 RUN mix deps.compile
 
-# Copy static assets and source code
 COPY priv priv
 COPY assets assets
 COPY lib lib
 
-# Build assets and generate digest
+# Compile assets
 RUN mix assets.deploy
 
-# Compile application and assemble OTP release
+# Compile app
 RUN mix compile
+
+# Changes to config/runtime.exs don't require recompiling the code
+COPY config/runtime.exs config/
+
+COPY rel rel
 RUN mix release
 
-# ==============================================================================
-# 2. Runtime Stage
-# ==============================================================================
-FROM alpine:3.20.3 AS runner
+# start a new build stage so that the final image doesn't contain the full Erlang/Elixir SDK
+FROM ${RUNNER_IMAGE}
 
-# Install essential runtime libraries
-RUN apk add --no-cache libstdc++ openssl ncurses-libs curl
+RUN apt-get update -y && \
+  apt-get install -y libstdc++6 openssl libssl-dev libncurses5-dev locales ca-certificates \
+  && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+# Set the locale
+RUN seed-locale en_US.UTF-8 || true
 
 WORKDIR /app
+RUN chown nobody /app
 
-# Run as non-root user
-RUN addgroup -S app && adduser -S -G app app
+# set execution env
+ENV MIX_ENV="prod"
 
-# Copy release and entrypoint from build
-COPY --from=build --chown=app:app /app/_build/prod/rel/quantum_billing ./
-COPY --chown=app:app entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+# Only copy the final release from the build stage
+COPY --from=builder --chown=nobody:root /app/_build/prod/rel/quantum_billing ./
 
-USER app
+USER nobody
 
 EXPOSE 4000
 
-ENV HOME=/app
-ENV PORT=4000
-ENV PHX_SERVER=true
-
-ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["bin/quantum_billing", "start"]

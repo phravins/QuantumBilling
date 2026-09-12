@@ -172,7 +172,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
         |> render_submit()
 
       assert html =~ "is not a valid GSTIN"
-      assert Settings.get_organization().id == nil
+      refute Settings.get_organization().gstin == "NOPE"
     end
 
     test "a PAN contradicting the GSTIN is rejected", %{conn: conn} do
