@@ -92,4 +92,7 @@ defmodule QuantumBilling.Events do
   Keyed by id: a profile change belongs to that user's windows, not to everyone.
   """
   def user_topic(user_id), do: "user:#{user_id}"
+
+  @doc "Audit trail logs."
+  def audit_logs_topic, do: "audit_logs"
 end

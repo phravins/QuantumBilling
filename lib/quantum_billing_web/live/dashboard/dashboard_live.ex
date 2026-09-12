@@ -18,11 +18,21 @@ defmodule QuantumBillingWeb.DashboardLive do
   import QuantumBillingWeb.DashboardComponents
 
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Payments.QRCode
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Invoices.subscribe()
 
-    {:ok, assign_dashboard(socket)}
+    {:ok, socket |> assign(:qr_modal_invoice, nil) |> assign_dashboard()}
+  end
+
+  def handle_event("show_qr_modal", %{"id" => id}, socket) do
+    invoice = Invoices.get_invoice(id)
+    {:noreply, assign(socket, :qr_modal_invoice, invoice)}
+  end
+
+  def handle_event("close_qr_modal", _params, socket) do
+    {:noreply, assign(socket, :qr_modal_invoice, nil)}
   end
 
   # Every panel is derived from the invoice set, so a change to it rebuilds all
@@ -133,8 +143,13 @@ defmodule QuantumBillingWeb.DashboardLive do
 
               <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
 
-              <:action>
-                <button class={row_action_class()} aria-label="View QR code">
+              <:action :let={row}>
+                <button
+                  class={row_action_class()}
+                  aria-label="View QR code"
+                  phx-click="show_qr_modal"
+                  phx-value-id={row.id}
+                >
                   <.icon name="hero-qr-code" class="size-4" />
                 </button>
               </:action>
@@ -179,6 +194,67 @@ defmodule QuantumBillingWeb.DashboardLive do
             View all due dates &rarr;
           </.link>
         </.card>
+      </div>
+
+      <%!-- Dashboard Quick Invoice QR Modal --%>
+      <div
+        :if={@qr_modal_invoice}
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      >
+        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between border-b border-base-200 pb-3">
+            <div>
+              <h3 class="text-base font-bold">UPI Payment QR Code</h3>
+              <p class="text-xs text-base-content/60">
+                Invoice {@qr_modal_invoice.invoice_number} &bull; Total:
+                <strong class="text-emerald-600">₹{@qr_modal_invoice.grand_total ||
+                  @qr_modal_invoice.amount}</strong>
+              </p>
+            </div>
+            <button
+              type="button"
+              phx-click="close_qr_modal"
+              class="text-base-content/50 hover:text-base-content"
+            >
+              <.icon name="hero-x-mark" class="size-5" />
+            </button>
+          </div>
+
+          <div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-base-200 shadow-inner">
+            <div class="w-48 h-48">
+              {raw(QRCode.generate_invoice_upi_qr(@qr_modal_invoice))}
+            </div>
+            <p class="mt-3 text-xs font-semibold text-gray-800 text-center">
+              Scan with GPay, PhonePe, Paytm, BHIM or any UPI App
+            </p>
+          </div>
+
+          <div :if={@qr_modal_invoice.signed_qr_code} class="border-t border-base-200 pt-3">
+            <p class="text-xs font-bold mb-1 text-center">
+              Government E-Invoice Verified (Signed QR)
+            </p>
+            <div class="w-32 h-32 mx-auto bg-white p-2 rounded-lg border border-base-200">
+              {raw(QRCode.generate_svg(@qr_modal_invoice.signed_qr_code))}
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 pt-2 border-t border-base-200">
+            <.link
+              href={~p"/pay/#{@qr_modal_invoice.public_token || "tok_123"}"}
+              target="_blank"
+              class="btn btn-sm btn-outline btn-primary text-xs"
+            >
+              <.icon name="hero-globe-alt" class="size-3.5" /> Public Payment Link
+            </.link>
+            <button
+              type="button"
+              phx-click="close_qr_modal"
+              class="btn btn-sm btn-ghost text-xs"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       </div>
     </Layouts.app>
     """

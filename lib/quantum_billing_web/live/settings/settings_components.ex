@@ -66,24 +66,31 @@ defmodule QuantumBillingWeb.SettingsComponents do
       icon: "hero-bell"
     },
     %{
+      key: :smtp,
+      title: "SMTP Server Configuration",
+      short_title: "SMTP Server",
+      subtitle: "Configure custom SMTP mail server for sending invoices",
+      icon: "hero-envelope"
+    },
+    %{
       key: :backup,
       title: "Backup & Restore",
       short_title: "Backup & Restore",
-      subtitle: "Backup your data and restore",
+      subtitle: "Backup your data and restore database",
       icon: "hero-cloud-arrow-up"
     },
     %{
       key: :integrations,
       title: "Integrations",
       short_title: "Integrations",
-      subtitle: "Third party integrations",
+      subtitle: "API, Razorpay & E-Invoice credentials",
       icon: "hero-squares-2x2"
     },
     %{
       key: :security,
-      title: "Security",
+      title: "Security & Access",
       short_title: "Security",
-      subtitle: "Password and security settings",
+      subtitle: "IP Whitelisting, session timeout & security policies",
       icon: "hero-lock-closed"
     },
     %{

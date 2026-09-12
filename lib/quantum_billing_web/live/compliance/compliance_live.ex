@@ -240,14 +240,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
                       <%!-- Only a filed return has an acknowledgement to download,
                       so this stays absent rather than rendering a dead button. --%>
-                      <button
+                      <.link
                         :if={row.status == "Filed"}
-                        type="button"
+                        href={~p"/reports/gstr1/export"}
                         class={row_action_class()}
                         aria-label={"Download #{row.type} acknowledgement"}
                       >
                         <.icon name="hero-arrow-down-tray" class="size-4" />
-                      </button>
+                      </.link>
                     </div>
                   </td>
                 </tr>

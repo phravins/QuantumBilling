@@ -163,9 +163,9 @@ defmodule QuantumBillingWeb.InvoicesLive do
             </ul>
           </div>
 
-          <button type="button" class={filter_button_class()}>
+          <.link href={~p"/reports/export"} class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
-          </button>
+          </.link>
         </div>
       </div>
 

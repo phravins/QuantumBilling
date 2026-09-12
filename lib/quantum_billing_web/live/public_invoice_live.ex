@@ -7,6 +7,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments
+  alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
@@ -121,6 +122,38 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           <.icon name="hero-check-badge" class="size-5 shrink-0" />
           <span>Payment of ₹{@invoice.grand_total} was successfully received. Transaction Ref:
           <strong class="font-mono">{@invoice.razorpay_payment_id || "Direct Receipt"}</strong></span>
+        </div>
+
+        <%!-- UPI Instant Scan & Pay Card (Unpaid Invoices) --%>
+        <div
+          :if={@invoice.status != "Paid"}
+          class="bg-base-100 p-6 rounded-2xl border border-emerald-500/30 shadow-md flex flex-col sm:flex-row items-center justify-between gap-6"
+        >
+          <div class="space-y-2 flex-1 text-center sm:text-left">
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 font-bold text-xs">
+              <.icon name="hero-qr-code" class="size-4" /> Instant UPI Payment
+            </div>
+            <h2 class="text-lg font-bold text-base-content">Scan & Pay ₹{@invoice.grand_total}</h2>
+            <p class="text-xs text-base-content/70">
+              Open Google Pay, PhonePe, Paytm, BHIM, or any banking app on your phone and scan this QR code to complete payment instantly.
+            </p>
+            <div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              <button
+                type="button"
+                phx-click="pay_now"
+                class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow transition"
+              >
+                <.icon name="hero-credit-card" class="size-4" /> Pay via Card / NetBanking
+              </button>
+            </div>
+          </div>
+
+          <div class="shrink-0 flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-base-300 shadow-sm">
+            <div class="w-40 h-40">
+              {raw(QRCode.generate_invoice_upi_qr(@invoice))}
+            </div>
+            <span class="mt-2 text-2xs font-mono font-semibold text-gray-600">Scan with any UPI App</span>
+          </div>
         </div>
 
         <%!-- Main Invoice Document Render --%>

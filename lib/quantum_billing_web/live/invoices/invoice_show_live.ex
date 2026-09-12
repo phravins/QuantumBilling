@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
@@ -301,14 +302,20 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
       </.card>
 
-      <%!-- Signed QR Modal --%>
+      <%!-- Signed & UPI QR Modal --%>
       <div
         :if={@show_qr_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
-            <h3 class="text-base font-bold">Government E-Invoice QR Payload</h3>
+            <div>
+              <h3 class="text-base font-bold">QR Codes & Payments</h3>
+              <p class="text-xs text-base-content/60">
+                Invoice {@invoice.invoice_number} &bull; Total Due:
+                <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
+              </p>
+            </div>
             <button
               type="button"
               phx-click="toggle_qr_modal"
@@ -317,13 +324,44 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
-          <div class="p-3 bg-base-200 rounded-lg text-xs font-mono break-all max-h-60 overflow-y-auto">
-            {@invoice.signed_qr_code}
+
+          <%!-- Instant UPI Payment QR Code --%>
+          <div class="p-4 bg-base-200/50 rounded-xl border border-base-200 flex flex-col items-center justify-center space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/70">
+              Instant UPI Payment QR
+            </h4>
+            <div class="w-48 h-48 bg-white p-3 rounded-xl shadow-sm border border-base-200">
+              {raw(QRCode.generate_invoice_upi_qr(@invoice))}
+            </div>
+            <p class="text-xs text-center font-medium text-base-content/80">
+              Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay
+              <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
+            </p>
           </div>
+
+          <%!-- Government Signed E-Invoice QR Code --%>
+          <div
+            :if={@invoice.signed_qr_code}
+            class="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3"
+          >
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600">
+                Government E-Invoice Verified QR
+              </h4>
+              <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
+            </div>
+            <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-emerald-500/20 shadow-sm">
+              {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
+            </div>
+            <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
+              {@invoice.signed_qr_code}
+            </div>
+          </div>
+
           <button
             type="button"
             phx-click="toggle_qr_modal"
-            class="w-full py-2 bg-base-200 hover:bg-base-300 rounded-lg text-xs font-semibold"
+            class="w-full py-2.5 bg-base-200 hover:bg-base-300 rounded-xl text-xs font-semibold"
           >
             Close
           </button>

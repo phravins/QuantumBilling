@@ -142,9 +142,9 @@ defmodule QuantumBillingWeb.ClientsLive do
             </ul>
           </div>
 
-          <button type="button" class={filter_button_class()}>
+          <.link href={~p"/reports/export?report_type=Clients"} class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
-          </button>
+          </.link>
         </div>
       </div>
 
@@ -226,9 +226,13 @@ defmodule QuantumBillingWeb.ClientsLive do
 
                 <td>
                   <div class="flex justify-end gap-1">
-                    <button type="button" class={row_action_class()} aria-label="View client">
+                    <.link
+                      navigate={~p"/invoices?q=#{row.name}"}
+                      class={row_action_class()}
+                      aria-label="View client invoices"
+                    >
                       <.icon name="hero-eye" class="size-4" />
-                    </button>
+                    </.link>
 
                     <button type="button" class={row_action_class()} aria-label="More actions">
                       <.icon name="hero-ellipsis-vertical" class="size-4" />

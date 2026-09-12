@@ -5,8 +5,13 @@ defmodule QuantumBillingWeb.AuditLogsLive do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Audit
+  alias QuantumBilling.Events
 
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Events.subscribe(Events.audit_logs_topic())
+    end
+
     logs = Audit.list_audit_logs(200)
 
     {:ok,
@@ -17,6 +22,10 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> assign(:logs, logs)
      |> assign(:filter_action, "")
      |> assign(:selected_log, nil)}
+  end
+
+  def handle_info({:audit_log_created, log}, socket) do
+    {:noreply, update(socket, :logs, fn logs -> [log | logs] end)}
   end
 
   def handle_event("filter", %{"action" => action}, socket) do

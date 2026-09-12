@@ -14,16 +14,32 @@ defmodule QuantumBilling.Audit do
     details = Keyword.get(opts, :details, %{})
     ip_address = Keyword.get(opts, :ip_address)
 
-    %AuditLog{}
-    |> AuditLog.changeset(%{
-      user_id: user_id,
-      action: to_string(action),
-      resource_type: to_string(resource_type),
-      resource_id: to_string(resource_id),
-      details: details,
-      ip_address: ip_address
-    })
-    |> Repo.insert()
+    result =
+      %AuditLog{}
+      |> AuditLog.changeset(%{
+        user_id: user_id,
+        action: to_string(action),
+        resource_type: to_string(resource_type),
+        resource_id: to_string(resource_id),
+        details: details,
+        ip_address: ip_address
+      })
+      |> Repo.insert()
+
+    case result do
+      {:ok, log} ->
+        log = Repo.preload(log, :user)
+
+        QuantumBilling.Events.broadcast(
+          QuantumBilling.Events.audit_logs_topic(),
+          {:audit_log_created, log}
+        )
+
+        {:ok, log}
+
+      error ->
+        error
+    end
   end
 
   @doc """

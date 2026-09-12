@@ -109,7 +109,10 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
             {"notifications", "Remind me this many days ahead"},
             {"preferences", "Rows Per Page"},
             {"customization", "Invoice designs"},
-            {"security", "Manage account security"}
+            {"security", "Allowed IP Ranges"},
+            {"smtp", "SMTP Server Host"},
+            {"backup", "1-Click Full System Backup"},
+            {"integrations", "Webhook Signing Secret"}
           ] do
         {:ok, _view, html} = live(conn, ~p"/settings/#{path}")
         assert html =~ marker, "expected #{path} panel to render #{inspect(marker)}"
@@ -260,18 +263,55 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
   end
 
-  describe "sections that are not built" do
-    test "say so rather than offering dead controls", %{conn: conn} do
-      for {path, needs} <- [
-            {"backup", "backup tooling"},
-            {"integrations", "credentials"}
-          ] do
-        {:ok, _view, html} = live(conn, ~p"/settings/#{path}")
+  describe "smtp" do
+    test "renders and saves custom SMTP configuration", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
 
-        assert html =~ "is not available yet"
-        assert html =~ needs
-        refute html =~ "Save Changes"
-      end
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "smtp_host" => "smtp.sendgrid.net",
+          "smtp_port" => "587",
+          "smtp_username" => "apikey",
+          "smtp_from_email" => "billing@company.com"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.smtp_host == "smtp.sendgrid.net"
+      assert org.smtp_port == 587
+      assert org.smtp_username == "apikey"
+      assert org.smtp_from_email == "billing@company.com"
+    end
+  end
+
+  describe "backup" do
+    test "renders backup download button and restore options", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/settings/backup")
+
+      assert html =~ "Export &amp; Download JSON Backup"
+      assert html =~ "Restore Database from Backup"
+      assert html =~ ~s(href="/settings/backup/download")
+    end
+  end
+
+  describe "integrations" do
+    test "renders and updates API & payment integrations", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "razorpay_key_id" => "rzp_test_999",
+          "webhook_secret" => "whsec_abc123"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.razorpay_key_id == "rzp_test_999"
+      assert org.webhook_secret == "whsec_abc123"
     end
   end
 
@@ -410,12 +450,27 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   end
 
   describe "security" do
-    test "links to the account page instead of duplicating it", %{conn: conn, user: user} do
-      {:ok, _view, html} = live(conn, ~p"/settings/security")
+    test "renders security policies and account settings link", %{conn: conn, user: user} do
+      {:ok, view, html} = live(conn, ~p"/settings/security")
 
       assert html =~ user.email
       assert html =~ ~s(href="/users/settings")
-      refute html =~ "Save Changes"
+      assert html =~ "Allowed IP Ranges"
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "allowed_ips" => "192.168.1.0/24",
+          "session_timeout_minutes" => "30",
+          "audit_retention_days" => "90"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.allowed_ips == "192.168.1.0/24"
+      assert org.session_timeout_minutes == 30
+      assert org.audit_retention_days == 90
     end
   end
 

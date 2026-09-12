@@ -22,11 +22,12 @@ defmodule QuantumBilling.Release do
     load_app()
 
     for repo <- repos() do
-      {:ok, _, _} = Ecto.Migrator.with_repo(repo, fn _repo ->
-        priv_dir = :code.priv_dir(@app)
-        seeds_file = Path.join(priv_dir, "repo/seeds.exs")
-        if File.exists?(seeds_file), do: Code.eval_file(seeds_file)
-      end)
+      {:ok, _, _} =
+        Ecto.Migrator.with_repo(repo, fn _repo ->
+          priv_dir = :code.priv_dir(@app)
+          seeds_file = Path.join(priv_dir, "repo/seeds.exs")
+          if File.exists?(seeds_file), do: Code.eval_file(seeds_file)
+        end)
     end
   end
 

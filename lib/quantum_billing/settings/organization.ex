@@ -77,9 +77,30 @@ defmodule QuantumBilling.Settings.Organization do
     field :language, :string, default: "en"
     field :rows_per_page, :integer, default: 10
 
-    # What the invoice document looks like is now a layout, held by
-    # `QuantumBilling.Templates`. The logo stays here because it belongs to the
-    # organisation rather than to any one design — one company, one logo.
+    # Custom SMTP Settings
+    field :smtp_host, :string
+    field :smtp_port, :integer, default: 587
+    field :smtp_username, :string
+    field :smtp_password, :string
+    field :smtp_ssl, :boolean, default: false
+    field :smtp_from_email, :string
+    field :smtp_from_name, :string
+
+    # API & Webhook Integrations
+    field :razorpay_key_id, :string
+    field :razorpay_key_secret, :string
+    field :irp_username, :string
+    field :irp_password, :string
+    field :irp_client_id, :string
+    field :webhook_url, :string
+    field :webhook_secret, :string
+
+    # Security Settings
+    field :allowed_ips, :string
+    field :session_timeout_minutes, :integer, default: 60
+    field :enforce_2fa, :boolean, default: false
+    field :audit_retention_days, :integer, default: 90
+
     field :doc_logo_path, :string
 
     field :singleton, :boolean, default: true
@@ -103,12 +124,13 @@ defmodule QuantumBilling.Settings.Organization do
 
   @preferences ~w(language rows_per_page)a
 
-  # Everything that used to be here — the template name, the accent, the heading,
-  # the footer and the six column toggles — is now structure in an invoice
-  # layout, held by `QuantumBilling.Templates`. What remains is the logo, and it
-  # is cast rather than typed into: the panel writes it from the stored upload's
-  # path, not from a text box.
   @customization ~w(doc_logo_path)a
+
+  @smtp ~w(smtp_host smtp_port smtp_username smtp_password smtp_ssl smtp_from_email smtp_from_name)a
+
+  @integrations ~w(razorpay_key_id razorpay_key_secret irp_username irp_password irp_client_id webhook_url webhook_secret)a
+
+  @security ~w(allowed_ips session_timeout_minutes enforce_2fa audit_retention_days)a
 
   @doc """
   Builds the changeset for one section.
@@ -192,6 +214,23 @@ defmodule QuantumBilling.Settings.Organization do
     cast(organization, attrs, @customization)
   end
 
+  def changeset(organization, attrs, :smtp) do
+    organization
+    |> cast(attrs, @smtp)
+    |> validate_number(:smtp_port, greater_than: 0, less_than: 65536)
+  end
+
+  def changeset(organization, attrs, :integrations) do
+    cast(organization, attrs, @integrations)
+  end
+
+  def changeset(organization, attrs, :security) do
+    organization
+    |> cast(attrs, @security)
+    |> validate_number(:session_timeout_minutes, greater_than: 0)
+    |> validate_number(:audit_retention_days, greater_than: 0)
+  end
+
   # The transporter ID is optional, but must be a GSTIN when supplied.
   defp maybe_validate_transporter_id(changeset) do
     case get_field(changeset, :ewb_transporter_id) do
@@ -208,6 +247,9 @@ defmodule QuantumBilling.Settings.Organization do
   def fields(:notifications), do: @notifications
   def fields(:preferences), do: @preferences
   def fields(:customization), do: @customization
+  def fields(:smtp), do: @smtp
+  def fields(:integrations), do: @integrations
+  def fields(:security), do: @security
 
   def gst_rates, do: @gst_rates
   def currencies, do: @currencies

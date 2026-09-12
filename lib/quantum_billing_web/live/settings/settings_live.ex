@@ -31,7 +31,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   alias QuantumBilling.Uploads
   alias QuantumBillingWeb.InvoiceDocument
 
-  @saveable ~w(general invoice e_way_bill tax notifications preferences customization)a
+  @saveable ~w(general invoice e_way_bill tax notifications preferences customization smtp integrations security)a
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -48,13 +48,15 @@ defmodule QuantumBillingWeb.SettingsLive do
      # design can be judged by how it handles figures and a long description.
      |> assign(:sample, InvoiceDocument.sample())
      |> assign(:templates, [])
-     # Declared for every section rather than only Customization: `mount/3` runs
-     # before `handle_params/3` has picked one, and an upload cannot be allowed
-     # later.
      |> allow_upload(:logo,
        accept: Uploads.accepted_extensions(),
        max_entries: 1,
        max_file_size: Uploads.max_bytes()
+     )
+     |> allow_upload(:backup_file,
+       accept: ~w(.json),
+       max_entries: 1,
+       max_file_size: 50_000_000
      )}
   end
 
@@ -220,6 +222,30 @@ defmodule QuantumBillingWeb.SettingsLive do
         {:noreply,
          socket
          |> put_flash(:error, "Failed to send test email: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("restore_backup", _params, socket) do
+    entries =
+      consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
+        {:ok, File.read!(path)}
+      end)
+
+    case entries do
+      [json_content] ->
+        case QuantumBilling.Backup.restore_json(json_content) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Database backup successfully restored!")
+             |> assign(:organization, Settings.get_organization())}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Restore failed: #{reason}")}
+        end
+
+      [] ->
+        {:noreply, put_flash(socket, :error, "Please upload a valid JSON backup file first.")}
     end
   end
 
@@ -585,40 +611,130 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :security} = assigns) do
     ~H"""
-    <dl class="space-y-4">
-      <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
-        <div>
-          <dt class="text-sm font-medium">Email address</dt>
-
-          <dd class="mt-0.5 text-sm text-base-content/60">{@current_scope.user.email}</dd>
+    <div class="space-y-6">
+      <.form
+        :let={f}
+        for={@form}
+        id="settings-form"
+        phx-change="validate"
+        phx-submit="save"
+        class="space-y-4"
+      >
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field
+            field={f[:allowed_ips]}
+            label="Allowed IP Ranges (Whitelisting)"
+            placeholder="e.g. 192.168.1.0/24, 10.0.0.1"
+            hint="Comma-separated IPv4/IPv6 CIDRs. Leave blank to allow all IPs."
+          />
+          <.field
+            field={f[:session_timeout_minutes]}
+            label="Session Timeout (Minutes)"
+            type="number"
+            min="5"
+            max="1440"
+          />
+          <.field
+            field={f[:audit_retention_days]}
+            label="Audit Log Retention (Days)"
+            type="number"
+            min="7"
+            max="3650"
+          />
         </div>
 
-        <span :if={@current_scope.user.confirmed_at} class="shrink-0">
-          <.status_badge status="Active" />
-        </span>
-      </div>
+        <.toggle
+          field={f[:enforce_2fa]}
+          label="Enforce 2FA for all organization users"
+          hint="Requires two-factor authentication on every login."
+        />
+      </.form>
 
-      <div>
-        <dt class="text-sm font-medium">Password</dt>
+      <hr class="border-base-300" />
 
-        <dd class="mt-0.5 text-sm text-base-content/60">
-          Changing your email or password asks you to confirm it is you first.
-        </dd>
-      </div>
-    </dl>
+      <dl class="space-y-4">
+        <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
+          <div>
+            <dt class="text-sm font-medium">Account Email</dt>
+            <dd class="mt-0.5 text-sm text-base-content/60">{@current_scope.user.email}</dd>
+          </div>
 
-    <.link navigate={~p"/users/settings"} class={[action_button_class(), "mt-6"]}>
-      <.icon name="hero-lock-closed" class="size-4" /> Manage account security
-    </.link>
+          <span :if={@current_scope.user.confirmed_at} class="shrink-0">
+            <.status_badge status="Active" />
+          </span>
+        </div>
+
+        <div>
+          <dt class="text-sm font-medium">Account Security & Credentials</dt>
+          <dd class="mt-0.5 text-sm text-base-content/60">
+            Update your email, password, TOTP 2FA keys, and recovery codes.
+          </dd>
+        </div>
+      </dl>
+
+      <.link navigate={~p"/users/settings"} class={secondary_button_class()}>
+        <.icon name="hero-lock-closed" class="size-4" /> Account Security Page
+      </.link>
+    </div>
     """
   end
 
-  # The preview reads the changeset rather than the saved row, so it answers
-  # "what will this look like" while you are still deciding, not after.
-  # Customization is no longer a form of toggles over one fixed layout — it is a
-  # list of designs, each edited in the design pad. What stays here is the logo,
-  # because it belongs to the organisation rather than to any one template, and
-  # because this is where the previews that show it are.
+  defp render_panel(%{section: :smtp} = assigns) do
+    ~H"""
+    <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <.field field={f[:smtp_host]} label="SMTP Server Host" placeholder="smtp.mailgun.org" />
+        <.field field={f[:smtp_port]} label="Port" type="number" placeholder="587" />
+        <.field
+          field={f[:smtp_username]}
+          label="SMTP Username"
+          placeholder="postmaster@yourdomain.com"
+        />
+        <.field
+          field={f[:smtp_password]}
+          label="SMTP Password"
+          type="password"
+          placeholder="••••••••••••"
+        />
+        <.field field={f[:smtp_from_name]} label="Sender Name" placeholder="QuantumBilling Invoicing" />
+        <.field
+          field={f[:smtp_from_email]}
+          label="Sender Email"
+          type="email"
+          placeholder="billing@yourcompany.com"
+        />
+      </div>
+
+      <div class="mt-4">
+        <.toggle
+          field={f[:smtp_ssl]}
+          label="Use SSL / TLS Connection"
+          hint="Enable for port 465 (SSL) or STARTTLS on port 587."
+        />
+      </div>
+    </.form>
+
+    <div class="mt-6 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 class="text-sm font-semibold tracking-tight">Test SMTP Mail Dispatch</h3>
+          <p class="mt-1 text-xs text-base-content/60">
+            Dispatch a test invoice PDF email using your configured SMTP settings.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          phx-click="send_test_email"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+        >
+          <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
+        </button>
+      </div>
+    </div>
+    """
+  end
+
   defp render_panel(%{section: :customization} = assigns) do
     ~H"""
     <div class="space-y-6">
@@ -702,21 +818,131 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :backup} = assigns) do
     ~H"""
-    <.unbuilt_panel
-      title="Backup & Restore"
-      icon="hero-cloud-arrow-up"
-      needs="Exporting and restoring your data needs backup tooling and somewhere durable to store the archives."
-    />
+    <div class="space-y-6">
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">1-Click Full System Backup</h3>
+        <p class="mt-1 text-sm text-base-content/60">
+          Export and download a complete JSON archive containing all organization settings, clients, invoices, recurring schedules, credit notes, and audit logs.
+        </p>
+
+        <div class="mt-4">
+          <.link
+            href={~p"/settings/backup/download"}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-content text-sm font-semibold shadow transition"
+          >
+            <.icon name="hero-arrow-down-tray" class="size-4" /> Export & Download JSON Backup
+          </.link>
+        </div>
+      </div>
+
+      <hr class="border-base-300" />
+
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">Restore Database from Backup</h3>
+        <p class="mt-1 text-sm text-base-content/60">
+          Upload a previously generated QuantumBilling JSON backup file to restore system state.
+        </p>
+
+        <form id="restore-form" phx-submit="restore_backup" class="mt-4 space-y-3">
+          <div class="flex items-center gap-3">
+            <label class={[secondary_button_class(), "cursor-pointer"]}>
+              <.icon name="hero-arrow-up-tray" class="size-4" /> Choose Backup File
+              <.live_file_input upload={@uploads.backup_file} class="hidden" />
+            </label>
+
+            <div :for={entry <- @uploads.backup_file.entries} class="flex items-center gap-2 text-xs">
+              <span class="font-mono text-base-content">{entry.client_name}</span>
+              <span class="text-base-content/45">({div(entry.client_size, 1024)} KB)</span>
+            </div>
+          </div>
+
+          <p :for={error <- upload_errors(@uploads.backup_file)} class="text-xs text-error">
+            {inspect(error)}
+          </p>
+
+          <button
+            type="submit"
+            disabled={@uploads.backup_file.entries == []}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold shadow transition"
+          >
+            <.icon name="hero-arrow-path" class="size-4" /> Execute Restore
+          </button>
+        </form>
+      </div>
+    </div>
     """
   end
 
   defp render_panel(%{section: :integrations} = assigns) do
     ~H"""
-    <.unbuilt_panel
-      title="Integrations"
-      icon="hero-squares-2x2"
-      needs="Connecting a GST Suvidha Provider, payment gateway or accounting tool needs credentials for those services."
-    />
+    <.form
+      :let={f}
+      for={@form}
+      id="settings-form"
+      phx-change="validate"
+      phx-submit="save"
+      class="space-y-6"
+    >
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">Razorpay / UPI Payment Gateway</h3>
+        <p class="mt-1 text-xs text-base-content/60">
+          Enter your live or sandbox API key credentials for automatic invoice payment link generation.
+        </p>
+
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field field={f[:razorpay_key_id]} label="Razorpay Key ID" placeholder="rzp_live_..." />
+          <.field
+            field={f[:razorpay_key_secret]}
+            label="Razorpay Key Secret"
+            type="password"
+            placeholder="••••••••••••"
+          />
+        </div>
+      </div>
+
+      <hr class="border-base-300" />
+
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">Government IRP / NIC E-Invoice API</h3>
+        <p class="mt-1 text-xs text-base-content/60">
+          Configure direct IRP / ClearTax API credentials for 1-click IRN & Signed QR code fetching.
+        </p>
+
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <.field field={f[:irp_username]} label="IRP Username" placeholder="GSTIN_USER" />
+          <.field
+            field={f[:irp_password]}
+            label="IRP Password"
+            type="password"
+            placeholder="••••••••••••"
+          />
+          <.field field={f[:irp_client_id]} label="GSP Client ID" placeholder="GSP_CLIENT_..." />
+        </div>
+      </div>
+
+      <hr class="border-base-300" />
+
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">Custom Event Webhooks</h3>
+        <p class="mt-1 text-xs text-base-content/60">
+          Stream realtime webhooks on invoice creation, payment completion, e-invoicing, and e-way bill events.
+        </p>
+
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field
+            field={f[:webhook_url]}
+            label="Webhook Payload Endpoint URL"
+            placeholder="https://api.yourcompany.com/webhooks"
+          />
+          <.field
+            field={f[:webhook_secret]}
+            label="Webhook Signing Secret (HMAC SHA256)"
+            type="password"
+            placeholder="whsec_..."
+          />
+        </div>
+      </div>
+    </.form>
     """
   end
 end

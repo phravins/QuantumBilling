@@ -34,7 +34,7 @@ defmodule QuantumBilling.PaymentsTest do
       status: "Draft"
     }
 
-    invoice = Repo.insert!(invoice)
+    _invoice = Repo.insert!(invoice)
 
     webhook_payload = %{
       "event" => "payment_link.paid",

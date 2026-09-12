@@ -3,11 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="csrf-token" content={get_csrf_token()} /> <.live_title
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title
       default="QuantumBilling"
-      suffix=" · Phoenix Framework"
+      suffix=" · GST Billing & Compliance"
       phx-no-format
     >{assigns[:page_title]}</.live_title>
+    <link rel="icon" type="image/svg+xml" href={~p"/favicon.svg"} />
+    <link rel="shortcut icon" type="image/svg+xml" href={~p"/images/logo.svg"} />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>

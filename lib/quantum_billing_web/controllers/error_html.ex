@@ -13,6 +13,10 @@ defmodule QuantumBillingWeb.ErrorHTML do
 
   # Every other status falls back to a plain text page based on the template
   # name. For example, "403.html" becomes "Forbidden".
+  def render("403.html", %{message: message}) when is_binary(message) do
+    message
+  end
+
   def render(template, _assigns) do
     Phoenix.Controller.status_message_from_template(template)
   end

@@ -11,6 +11,7 @@ defmodule QuantumBillingWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :fetch_current_scope_for_user
+    plug QuantumBillingWeb.Plugs.EnforceSecurityPolicies
   end
 
   pipeline :api do
@@ -66,6 +67,7 @@ defmodule QuantumBillingWeb.Router do
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
+    get "/settings/backup/download", BackupController, :download
   end
 
   scope "/api", QuantumBillingWeb do
