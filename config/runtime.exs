@@ -116,6 +116,16 @@ if config_env() in [:dev, :test] do
       )
 end
 
+if smtp_host = System.get_env("SMTP_HOST") do
+  config :quantum_billing, QuantumBilling.Mailer,
+    adapter: Swoosh.Adapters.SMTP,
+    relay: smtp_host,
+    port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+    username: System.get_env("SMTP_USERNAME"),
+    password: System.get_env("SMTP_PASSWORD"),
+    ssl: System.get_env("SMTP_SSL") in ["true", "1"]
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server
@@ -139,12 +149,12 @@ if config_env() == :dev do
       web_console_logger: true,
       patterns: [
         # Static assets, except user uploads
-        ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
+        ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
         # Gettext translations
-        ~r"priv/gettext/.*\.po$"E,
+        ~r"priv/gettext/.*\.po$",
         # Router, Controllers, LiveViews and LiveComponents
-        ~r"lib/quantum_billing_web/router\.ex$"E,
-        ~r"lib/quantum_billing_web/(controllers|live|components)/.*\.(ex|heex)$"E
+        ~r"lib/quantum_billing_web/router\.ex$",
+        ~r"lib/quantum_billing_web/(controllers|live|components)/.*\.(ex|heex)$"
       ]
     ]
 end

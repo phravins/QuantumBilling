@@ -190,6 +190,34 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
+  Generates an E-Invoice (IRN) for the given invoice via the IRP API or sandbox emulator.
+  Updates the invoice with the returned IRN, Ack Details, and Signed QR code, transitioning its
+  status to "E-Invoice Generated".
+  """
+  def generate_einvoice(%Invoice{} = invoice) do
+    invoice = Repo.preload(invoice, :items)
+
+    case QuantumBilling.EInvoice.IRPClient.generate_irn(invoice) do
+      {:ok,
+       %{irn: irn, ack_no: ack_no, ack_date: ack_date, signed_qr_code: qr, signed_invoice: jwt}} ->
+        update_attrs = %{
+          irn: irn,
+          ack_number: ack_no,
+          ack_date: ack_date,
+          signed_qr_code: qr,
+          signed_invoice: jwt,
+          status: "E-Invoice Generated"
+        }
+
+        update_invoice(invoice, update_attrs)
+
+      {:error, reason} ->
+        _ = update_invoice(invoice, %{status: "E-Invoice Failed"})
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Deletes an invoice and its line items.
 
   The number is not returned to the series: `invoice_next_number` only ever goes

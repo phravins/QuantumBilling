@@ -2,22 +2,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   @moduledoc """
   A saved invoice, rendered as the document it is.
 
-  Serves two entry points: the Preview action on the create form, and the eye
-  icon on the invoices list. Building it once for both is why it is a page
-  rather than an inline preview.
-
-  Everything shown here comes from the invoice's own columns, including the
-  company and client blocks. Those were snapshotted at issue precisely so this
-  page keeps showing what was billed even after the client or the organisation
-  settings change.
-
-  The document itself is not written here. It is rendered by
-  `InvoiceDoc.Renderer` from a layout, which is the same markup and the same
-  stylesheet the print page uses — the two used to be separate hand-written
-  copies that a third module had to keep honest about each other.
+  Serves preview and management actions: 1-click IRN generation, PDF downloads,
+  email notifications, and E-Invoice metadata display.
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
@@ -31,9 +21,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
-        # The figures and party details come from the invoice's own snapshot,
-        # and so does the layout. Only the branding is read live, so recolouring
-        # restyles every invoice instead of only the next one.
         {doc, accent, logo} = Templates.document_for(invoice)
 
         {:ok,
@@ -43,8 +30,49 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:invoice, invoice)
          |> assign(:doc, doc)
          |> assign(:accent, accent)
-         |> assign(:logo, logo)}
+         |> assign(:logo, logo)
+         |> assign(:show_qr_modal, false)}
     end
+  end
+
+  def handle_event("generate_einvoice", _params, socket) do
+    case Invoices.generate_einvoice(socket.assigns.invoice) do
+      {:ok, updated_invoice} ->
+        {doc, accent, logo} = Templates.document_for(updated_invoice)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "E-Invoice (IRN) generated successfully!")
+         |> assign(:invoice, updated_invoice)
+         |> assign(:doc, doc)
+         |> assign(:accent, accent)
+         |> assign(:logo, logo)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to generate E-Invoice: #{reason}")}
+    end
+  end
+
+  def handle_event("send_email", _params, socket) do
+    invoice = socket.assigns.invoice
+    recipient = invoice.client_email || "customer@example.com"
+
+    case InvoiceNotifier.deliver_invoice_pdf(recipient, invoice) do
+      {:ok, _email} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Invoice #{invoice.invoice_number} sent to #{recipient} with PDF attachment!"
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not send email: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("toggle_qr_modal", _params, socket) do
+    {:noreply, assign(socket, :show_qr_modal, !socket.assigns.show_qr_modal)}
   end
 
   def render(assigns) do
@@ -63,8 +91,24 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <:actions>
           <div class="flex flex-wrap items-center gap-2">
             <.status_badge status={@invoice.status} />
-            <%!-- Real navigations, not LiveView events: both hand the browser a
-            file it has to load before it can offer to save it. --%>
+
+            <button
+              :if={@invoice.status != "E-Invoice Generated"}
+              type="button"
+              phx-click="generate_einvoice"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition"
+            >
+              <.icon name="hero-bolt" class="size-4" /> 1-Click Generate IRN
+            </button>
+
+            <button
+              type="button"
+              phx-click="send_email"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+            >
+              <.icon name="hero-paper-airplane" class="size-4" /> Send PDF via Email
+            </button>
+
             <.link
               href={~p"/invoices/#{@invoice.id}/pdf"}
               target="_blank"
@@ -73,22 +117,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-arrow-down-tray" class="size-4" /> PDF
             </.link>
 
-            <div class="flex items-center gap-1">
-              <.link
-                href={~p"/invoices/#{@invoice.id}/e-invoice.xml"}
-                class={secondary_button_class()}
-              >
-                <.icon name="hero-code-bracket" class="size-4" /> E-Invoice XML
-              </.link>
-
-              <.help_popover id="e-invoice-help" label="About the e-invoice export">
-                This is the invoice's data in the GST e-invoice (INV-01) schema, for your
-                accountant, your GSP or your records. It is <strong>not</strong>
-                a registered e-invoice: it carries no IRN and no signed QR code, because only
-                the Invoice Registration Portal can issue those.
-              </.help_popover>
-            </div>
-
             <.link navigate={~p"/invoices"} class={secondary_button_class()}>
               <.icon name="hero-arrow-left" class="size-4" /> Back to Invoices
             </.link>
@@ -96,10 +124,70 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </:actions>
       </.header>
 
+      <%!-- Official E-Invoice IRP Banner --%>
+      <div
+        :if={@invoice.irn}
+        class="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4"
+      >
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
+                <.icon name="hero-check-badge" class="size-3.5" /> E-Invoice Verified (IRP)
+              </span>
+              <span class="text-xs text-base-content/60">
+                Ack No: <strong class="text-base-content">{@invoice.ack_number}</strong>
+              </span>
+            </div>
+            <p class="font-mono text-xs text-emerald-400 break-all">
+              IRN: {@invoice.irn}
+            </p>
+          </div>
+
+          <button
+            :if={@invoice.signed_qr_code}
+            type="button"
+            phx-click="toggle_qr_modal"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 text-xs font-medium hover:bg-emerald-500/20"
+          >
+            <.icon name="hero-qr-code" class="size-4" /> View Signed QR Code
+          </button>
+        </div>
+      </div>
+
       <.card padding="p-8">
         <Renderer.stylesheet doc={@doc} />
         <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
       </.card>
+
+      <%!-- Signed QR Modal --%>
+      <div
+        :if={@show_qr_modal}
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      >
+        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between border-b border-base-200 pb-3">
+            <h3 class="text-base font-bold">Government E-Invoice QR Payload</h3>
+            <button
+              type="button"
+              phx-click="toggle_qr_modal"
+              class="text-base-content/50 hover:text-base-content"
+            >
+              <.icon name="hero-x-mark" class="size-5" />
+            </button>
+          </div>
+          <div class="p-3 bg-base-200 rounded-lg text-xs font-mono break-all max-h-60 overflow-y-auto">
+            {@invoice.signed_qr_code}
+          </div>
+          <button
+            type="button"
+            phx-click="toggle_qr_modal"
+            class="w-full py-2 bg-base-200 hover:bg-base-300 rounded-lg text-xs font-semibold"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </Layouts.app>
     """
   end

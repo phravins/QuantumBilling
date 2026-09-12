@@ -292,6 +292,12 @@ defmodule QuantumBillingWeb.Layouts do
         path: ~p"/compliance",
         icon: "hero-shield-check"
       },
+      %{
+        key: :recurring,
+        label: "Recurring",
+        path: ~p"/recurring",
+        icon: "hero-arrow-path"
+      },
       %{key: :settings, label: "Settings", path: ~p"/settings", icon: "hero-cog-6-tooth"}
     ]
   end

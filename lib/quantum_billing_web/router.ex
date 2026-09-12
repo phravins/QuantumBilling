@@ -48,6 +48,7 @@ defmodule QuantumBillingWeb.Router do
       live "/hsn-finder", HsnFinderLive, :index
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
+      live "/recurring", RecurringLive, :index
       live "/settings", SettingsLive, :index
       # The open section lives in the URL so a panel can be linked to directly
       # and survives a reload.

@@ -13,6 +13,7 @@ defmodule QuantumBilling.Application do
       {DNSCluster, query: Application.get_env(:quantum_billing, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QuantumBilling.PubSub},
       QuantumBilling.RateLimiter,
+      QuantumBilling.Recurring.Scheduler,
       QuantumBillingWeb.Endpoint
     ]
 

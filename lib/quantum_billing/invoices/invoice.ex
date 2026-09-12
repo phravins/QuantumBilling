@@ -87,6 +87,13 @@ defmodule QuantumBilling.Invoices.Invoice do
 
     field :status, :string, default: "Draft"
 
+    # Government E-Invoice (IRP) Details
+    field :irn, :string
+    field :ack_number, :string
+    field :ack_date, :utc_datetime
+    field :signed_qr_code, :string
+    field :signed_invoice, :string
+
     # The design this was issued under, frozen at issue. See the migration for
     # why the structure is snapshotted while the accent and logo stay live.
     field :layout_xml, :string
@@ -103,7 +110,8 @@ defmodule QuantumBilling.Invoices.Invoice do
                client_billing_address client_email client_state
                client_city client_pincode
                company_name company_address company_gstin company_state
-               remarks terms status template_id layout_xml)a
+               remarks terms status template_id layout_xml
+               irn ack_number ack_date signed_qr_code signed_invoice)a
 
   @doc """
   Builds an invoice changeset, including its line items.

@@ -64,6 +64,67 @@ defmodule QuantumBilling.EInvoice do
   end
 
   @doc """
+  Converts the invoice into the official NIC JSON payload format for the IRP API.
+  """
+  def to_json(%Invoice{} = invoice) do
+    organization = Settings.get_organization() || %Organization{}
+
+    %{
+      "Version" => "1.1",
+      "TranDetails" => %{
+        "TaxSch" => "GST",
+        "SupTyp" => if(invoice.client_gstin, do: "B2B", else: "B2C"),
+        "RegRev" => "N"
+      },
+      "DocDetails" => %{
+        "Typ" => "INV",
+        "No" => invoice.invoice_number,
+        "Dt" => to_string(invoice.invoice_date)
+      },
+      "SellerDetails" => %{
+        "Gstin" => organization.gstin,
+        "LglName" => organization.company_name,
+        "Addr1" => organization.address,
+        "Loc" => organization.city,
+        "Pin" => organization.pincode,
+        "Stcd" => GST.state_code(organization.state)
+      },
+      "BuyerDetails" => %{
+        "Gstin" => invoice.client_gstin,
+        "LglName" => invoice.client_name,
+        "Pos" => GST.state_code(invoice.place_of_supply),
+        "Addr1" => invoice.client_billing_address,
+        "Loc" => invoice.client_city,
+        "Pin" => invoice.client_pincode,
+        "Stcd" => GST.state_code(invoice.client_state || invoice.place_of_supply)
+      },
+      "ItemList" =>
+        Enum.map(invoice.items || [], fn item ->
+          %{
+            "SlNo" => to_string(item.position || 1),
+            "PrdDesc" => item.description,
+            "HsnCd" => item.hsn_sac,
+            "Qty" => item.quantity,
+            "Unit" => item.unit,
+            "UnitPrice" => item.rate,
+            "TotAmt" => item.amount,
+            "GstRt" => item.tax_rate,
+            "TotItemVal" => item.amount
+          }
+        end),
+      "ValDetails" => %{
+        "AssVal" => invoice.taxable_value,
+        "CgstVal" => invoice.cgst_amount,
+        "SgstVal" => invoice.sgst_amount,
+        "IgstVal" => invoice.igst_amount,
+        "CesVal" => invoice.cess_amount,
+        "RndOffAmt" => invoice.round_off,
+        "TotInvVal" => invoice.grand_total
+      }
+    }
+  end
+
+  @doc """
   Everything that would stop this invoice being submitted, in one list.
   """
   @spec validate(Invoice.t(), Organization.t()) :: :ok | {:error, [String.t()]}
