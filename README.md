@@ -101,10 +101,33 @@ Open [http://localhost:4000](http://localhost:4000) in your browser.
 ## 📜 Technology Stack
 
 - **Backend**: [Elixir](https://elixir-lang.org/) & [Phoenix Framework 1.8](https://phoenixframework.org/) on Erlang/OTP
-- **Real-Time UI**: [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view/)
+- **Real-Time UI**: [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view/) over Phoenix PubSub
 - **Database**: [PostgreSQL](https://www.postgresql.org/) with [Ecto](https://hexdocs.pm/ecto/)
+- **Background jobs**: [Oban](https://hexdocs.pm/oban) — durable, retried, scheduled
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) & [daisyUI](https://daisyui.com/)
 - **Server**: [Bandit](https://github.com/mtrudel/bandit) HTTP/2 server
+
+---
+
+## ⚙️ How It Holds Up Under Load
+
+- **The database does the work.** Lists, reports and the audit trail are
+  searched, filtered, sorted, counted and paged in SQL, so a page costs the same
+  whether the business has issued a thousand invoices or a million. Report
+  exports stream from a database cursor rather than being built in memory.
+- **Slow work is queued, not waited on.** Sending an invoice, registering it
+  with the government portal, billing a recurring profile and posting a webhook
+  are all background jobs: they survive a restart, retry with backoff, and are
+  recorded whether they succeed or fail. Nothing is lost because a mail server
+  or a government API was briefly unavailable.
+- **Scheduled work runs once.** Recurring billing and data retention are driven
+  by Oban's leader election, so running several application nodes does not bill
+  a customer twice.
+- **Everything is visible.** Outgoing mail has a delivery history in Settings,
+  jobs and their errors are in the database, and queries slower than a threshold
+  are logged with the table they hit.
+
+See [RUN.md](RUN.md) for the queue layout, the schedule and the security notes.
 
 ---
 

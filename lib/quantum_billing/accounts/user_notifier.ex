@@ -1,19 +1,22 @@
 defmodule QuantumBilling.Accounts.UserNotifier do
   import Swoosh.Email
 
-  alias QuantumBilling.Mailer
   alias QuantumBilling.Accounts.User
+  alias QuantumBilling.Mail
 
-  # Delivers the email using the application mailer.
+  # Account mail goes out over the same relay as everything else — the
+  # organisation's own SMTP server when one is configured — and from the same
+  # sender address. A confirmation link arriving from a stranger's domain is
+  # how a sign-in mail ends up in a spam folder.
   defp deliver(recipient, subject, body) do
     email =
       new()
       |> to(recipient)
-      |> from({"QuantumBilling", "contact@example.com"})
+      |> from(Mail.sender())
       |> subject(subject)
       |> text_body(body)
 
-    with {:ok, _metadata} <- Mailer.deliver(email) do
+    with {:ok, _metadata} <- Mail.deliver(email) do
       {:ok, email}
     end
   end

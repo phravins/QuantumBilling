@@ -37,14 +37,303 @@ defmodule QuantumBilling.Reports do
   alias QuantumBilling.Repo
 
   @doc """
-  Every invoice available to report on.
+  Every invoice available to report on, newest first, as report rows.
 
-  Reads all invoices from the database, newest first, and transforms them into
-  report rows.
+  Unfiltered and unbounded, so it is only for a caller that genuinely wants the
+  lot — a test, or a console. The page uses `aggregate/1`, which never loads a
+  row into memory at all, and the CSV export uses `stream_rows/2`, which reads
+  in chunks.
   """
   def invoices do
     Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
+  end
+
+  @doc """
+  The invoices matching `filters`, newest first, as report rows.
+
+  The filtering happens in the database. It used to happen in Elixir over every
+  invoice ever issued: a report on one month still read the whole table, and
+  the cost of opening the Reports page grew with the age of the business.
+  """
+  def invoices(filters) when is_map(filters) do
+    filters
+    |> query()
+    |> order_by([i], desc: i.invoice_date, desc: i.id)
+    |> Repo.all()
+    |> Enum.map(&to_row/1)
+  end
+
+  @doc """
+  Runs `fun` over the filtered invoices as a stream of report rows.
+
+  For exports. `Repo.stream/1` holds a database cursor and hands over rows in
+  chunks, so a sales register covering a year is written out in constant memory
+  rather than materialising every row first. It has to run inside a
+  transaction, which is what this wraps.
+  """
+  def stream_rows(filters, fun) when is_map(filters) and is_function(fun, 1) do
+    Repo.transaction(
+      fn ->
+        filters
+        |> query()
+        |> order_by([i], asc: i.invoice_date, asc: i.id)
+        |> Repo.stream(max_rows: 500)
+        |> Stream.map(&to_row/1)
+        |> fun.()
+      end,
+      timeout: :timer.minutes(5)
+    )
+  end
+
+  @doc """
+  The query behind every report, with `filters` applied.
+
+  One place, so the page, the export and any future report cannot disagree
+  about what "This Quarter, Tax Liability, client X" means.
+  """
+  def query(filters) when is_map(filters) do
+    Invoice
+    |> filter_dates(range_bounds(filters[:date_range]))
+    |> filter_equal(:status, filters[:status], "All Status")
+    |> filter_equal(:client_name, filters[:client], "All Clients")
+    |> filter_gstin(filters[:gstin])
+    |> filter_report_type(filters[:report_type])
+  end
+
+  defp filter_dates(query, {nil, nil}), do: query
+
+  defp filter_dates(query, {from, to}) do
+    where(query, [i], i.invoice_date >= ^from and i.invoice_date <= ^to)
+  end
+
+  defp filter_equal(query, _field, nil, _all), do: query
+  defp filter_equal(query, _field, all, all), do: query
+  defp filter_equal(query, _field, "", _all), do: query
+
+  defp filter_equal(query, field, value, _all) do
+    where(query, [i], field(i, ^field) == ^value)
+  end
+
+  defp filter_gstin(query, blank) when blank in [nil, ""], do: query
+
+  defp filter_gstin(query, gstin) do
+    pattern = "%" <> String.trim(gstin) <> "%"
+    where(query, [i], ilike(i.client_gstin, ^pattern))
+  end
+
+  defp filter_report_type(query, "Tax Liability"),
+    do: where(query, [i], i.status == "E-Invoice Generated")
+
+  defp filter_report_type(query, "ITC Summary"),
+    do: where(query, [i], coalesce(i.cess_amount, 0) == 0)
+
+  defp filter_report_type(query, _all_or_sales_register), do: query
+
+  @doc """
+  Every panel on the Reports page, computed by the database.
+
+  Five aggregate queries rather than one full table scan followed by five
+  passes in Elixir. What comes back is the same shape the pure list functions
+  below produce, so the page renders identically — it simply stops caring how
+  many invoices exist.
+  """
+  def aggregate(filters) when is_map(filters) do
+    months = monthly_breakdown(filters)
+    totals = totals(filters)
+
+    %{
+      summary: %{
+        count: totals.count,
+        taxable_value: totals.taxable_value,
+        tax_amount: totals.tax_amount,
+        invoice_value: totals.taxable_value + totals.tax_amount,
+        count_delta: month_delta(months, & &1.count),
+        taxable_delta: month_delta(months, & &1.taxable_value),
+        tax_delta: month_delta(months, & &1.tax_amount),
+        invoice_delta: month_delta(months, &(&1.taxable_value + &1.tax_amount))
+      },
+      trend: Enum.map(months, &%{label: &1.label, value: &1.taxable_value + &1.tax_amount}),
+      breakdown: breakdown_rows(status_counts(filters)),
+      tax_rows: tax_rows_from(tax_type_totals(filters)),
+      top_clients: top_client_rows(filters),
+      total_count: totals.count
+    }
+  end
+
+  @doc "Row count and money totals for the filtered set."
+  def totals(filters) when is_map(filters) do
+    filters
+    |> query()
+    |> select([i], %{
+      count: count(i.id),
+      taxable_value: coalesce(sum(i.taxable_value), 0),
+      tax_amount:
+        coalesce(
+          sum(
+            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          ),
+          0
+        )
+    })
+    |> Repo.one()
+    |> case do
+      nil -> %{count: 0, taxable_value: 0, tax_amount: 0}
+      totals -> totals
+    end
+  end
+
+  @doc """
+  Per-month totals for the filtered set, oldest first.
+
+  Feeds both the trend chart and the month-over-month deltas on the cards, so
+  the two cannot tell different stories about the same month.
+  """
+  def monthly_breakdown(filters) when is_map(filters) do
+    filters
+    |> query()
+    |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
+    |> order_by([i], asc: fragment("date_trunc('month', ?)", i.invoice_date))
+    |> select([i], %{
+      month: fragment("date_trunc('month', ?)", i.invoice_date),
+      count: count(i.id),
+      taxable_value: coalesce(sum(i.taxable_value), 0),
+      tax_amount:
+        coalesce(
+          sum(
+            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          ),
+          0
+        )
+    })
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      Map.put(row, :label, Calendar.strftime(to_date(row.month), "%b"))
+    end)
+  end
+
+  defp to_date(%Date{} = date), do: date
+  defp to_date(%NaiveDateTime{} = naive), do: NaiveDateTime.to_date(naive)
+  defp to_date(%DateTime{} = datetime), do: DateTime.to_date(datetime)
+
+  defp month_delta(months, measure) do
+    case Enum.take(months, -2) do
+      [previous, current] ->
+        previous_value = measure.(previous)
+
+        if previous_value == 0 do
+          nil
+        else
+          (measure.(current) - previous_value) / previous_value * 100
+        end
+
+      _fewer_than_two_months ->
+        nil
+    end
+  end
+
+  defp status_counts(filters) do
+    filters
+    |> query()
+    |> group_by([i], i.status)
+    |> select([i], {i.status, count(i.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp breakdown_rows(counts) do
+    [
+      %{label: "E-Invoice Generated", value: counts["E-Invoice Generated"] || 0, tone: :strong},
+      %{label: "Pending", value: counts["Pending E-Invoice"] || 0, tone: :medium},
+      %{label: "Failed", value: counts["E-Invoice Failed"] || 0, tone: :soft},
+      %{label: "Cancelled", value: counts["Cancelled"] || 0, tone: :faint}
+    ]
+    |> Enum.reject(&(&1.value == 0))
+  end
+
+  # The same rule `to_row/1` applies in Elixir, expressed in SQL so the
+  # grouping can happen in the database: which taxes were actually charged,
+  # falling back to where the supply went when an invoice carries no tax at all.
+  @tax_type_sql """
+  CASE
+    WHEN COALESCE(cgst_amount, 0) > 0 OR COALESCE(sgst_amount, 0) > 0 THEN 'CGST + SGST'
+    WHEN COALESCE(igst_amount, 0) > 0 THEN 'IGST'
+    WHEN COALESCE(cess_amount, 0) > 0 THEN 'CESS'
+    WHEN company_state IS NULL OR company_state = '' OR place_of_supply = company_state
+      THEN 'CGST + SGST'
+    ELSE 'IGST'
+  END
+  """
+
+  defp tax_type_totals(filters) do
+    filters
+    |> query()
+    |> group_by([i], fragment(@tax_type_sql))
+    |> select([i], %{
+      tax_type: fragment(@tax_type_sql),
+      taxable_value: coalesce(sum(i.taxable_value), 0),
+      cgst: coalesce(sum(i.cgst_amount), 0),
+      sgst: coalesce(sum(i.sgst_amount), 0),
+      igst: coalesce(sum(i.igst_amount), 0),
+      cess: coalesce(sum(i.cess_amount), 0)
+    })
+    |> Repo.all()
+    |> Map.new(&{&1.tax_type, &1})
+  end
+
+  defp tax_rows_from(totals_by_type) do
+    rows =
+      [
+        aggregated_tax_row(totals_by_type["CGST + SGST"], "CGST + SGST", :intra),
+        aggregated_tax_row(totals_by_type["IGST"], "IGST", :inter),
+        aggregated_tax_row(totals_by_type["CESS"], "CESS", :cess)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    # The totals row is present even with nothing to total, matching
+    # `tax_summary/1`: the table always shows its bottom line, reading zero.
+    rows ++ [totals_row(rows)]
+  end
+
+  defp aggregated_tax_row(nil, _label, _kind), do: nil
+
+  defp aggregated_tax_row(totals, label, kind) do
+    %{
+      label: label,
+      taxable_value: totals.taxable_value,
+      cgst: if(kind == :intra, do: totals.cgst),
+      sgst: if(kind == :intra, do: totals.sgst),
+      igst: if(kind == :inter, do: totals.igst),
+      total_tax: totals.cgst + totals.sgst + totals.igst + totals.cess,
+      total?: false
+    }
+  end
+
+  defp top_client_rows(filters, limit \\ 5) do
+    filters
+    |> query()
+    |> group_by([i], i.client_name)
+    |> select([i], %{
+      client: i.client_name,
+      value:
+        selected_as(
+          coalesce(
+            sum(
+              coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
+                coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
+                coalesce(i.cess_amount, 0)
+            ),
+            0
+          ),
+          :value
+        )
+    })
+    |> order_by(desc: selected_as(:value))
+    |> limit(^limit)
+    |> Repo.all()
+    |> Enum.map(fn row -> %{client: row.client || "Unknown Client", value: row.value} end)
   end
 
   @doc """

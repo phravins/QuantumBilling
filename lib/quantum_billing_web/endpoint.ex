@@ -46,6 +46,9 @@ defmodule QuantumBillingWeb.Endpoint do
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
+    # Webhook signatures cover the bytes that were sent, so those bytes have to
+    # survive parsing. See `QuantumBillingWeb.RawBodyReader`.
+    body_reader: {QuantumBillingWeb.RawBodyReader, :read_body, []},
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride

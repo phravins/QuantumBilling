@@ -262,15 +262,36 @@ defmodule QuantumBillingWeb.UserAuth do
   def on_mount(:require_authenticated, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
-    if socket.assigns.current_scope && socket.assigns.current_scope.user do
-      {:cont, watch_own_account(socket)}
-    else
-      socket =
-        socket
-        |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
-        |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
+    cond do
+      session_expired?(session) ->
+        # A tab that has been open and idle past the organisation's inactivity
+        # window. The plug cannot see it — no HTTP request has been made — so
+        # without this check a long-lived LiveView outlives the policy it is
+        # supposed to obey.
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(
+            :error,
+            "Your session has expired due to inactivity. Please log in again."
+          )
+          # Sent to the sign-in page rather than logged out from here: a
+          # LiveView cannot clear a session cookie. The full page load this
+          # causes goes through `EnforceSecurityPolicies`, which does the
+          # actual sign-out with the same message.
+          |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
-      {:halt, socket}
+        {:halt, socket}
+
+      socket.assigns.current_scope && socket.assigns.current_scope.user ->
+        {:cont, watch_own_account(socket)}
+
+      true ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+          |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
+
+        {:halt, socket}
     end
   end
 
@@ -286,6 +307,18 @@ defmodule QuantumBillingWeb.UserAuth do
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
+    end
+  end
+
+  # Reads the same session stamp and the same setting the plug does, so the two
+  # cannot disagree about when a session has gone stale.
+  defp session_expired?(session) do
+    with last_activity when is_integer(last_activity) <- session["last_activity_at"],
+         minutes when is_integer(minutes) and minutes > 0 <-
+           QuantumBilling.Settings.get_organization().session_timeout_minutes do
+      System.system_time(:second) - last_activity > minutes * 60
+    else
+      _no_stamp_or_setting -> false
     end
   end
 

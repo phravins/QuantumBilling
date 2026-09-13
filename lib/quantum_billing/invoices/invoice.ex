@@ -145,8 +145,7 @@ defmodule QuantumBilling.Invoices.Invoice do
                irn ack_number ack_date signed_qr_code signed_invoice
                ewb_number ewb_date ewb_valid_until distance_km transporter_id transporter_name vehicle_number mode_of_transport
                currency exchange_rate export_type lut_number
-               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id
-               public_token)a
+               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
 
   @doc """
   Builds an invoice changeset, including its line items.
@@ -307,8 +306,17 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
+  @doc """
+  A fresh token for the public `/pay/:token` page.
+
+  The token is the only thing standing between a URL and an invoice's client
+  name, GSTIN, address and amounts, so it is a bearer credential and comes from
+  the cryptographic generator. 24 random bytes is 192 bits — far past guessing,
+  and past reconstructing from any number of issued tokens, which is what the
+  VM's `Enum.random/1` generator would not have survived.
+  """
   def generate_public_token do
-    "tok_" <> Enum.map_join(1..24, fn _ -> to_string(Enum.random(0..9)) end)
+    "inv_" <> Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
   end
 
   defp ensure_public_token(changeset) do

@@ -1,200 +1,221 @@
 defmodule QuantumBilling.InvoiceNotifier do
   @moduledoc """
-  Notifier for dispatching GST Invoices with PDF attachments via email.
-  Supports both default mailer and custom Organization SMTP server configuration.
+  Composes the mail that carries an invoice to its customer.
+
+  Transport is `QuantumBilling.Mail`'s business — this module decides what the
+  message says and what is attached to it.
+
+  ## Queued, not sent inline
+
+  `deliver_invoice_pdf_async/3` is what the application uses. Rendering a PDF
+  and waiting on a relay takes seconds that a LiveView, a webhook or a
+  recurring-billing sweep does not have: a slow relay used to stall the request
+  that triggered it, and a failed one lost the message entirely once the flash
+  faded. The work now belongs to `QuantumBilling.Workers.EmailWorker`, which
+  retries with backoff and records every attempt in the delivery ledger.
+
+  `deliver_invoice_pdf/2` still sends inline, for the one case that genuinely
+  needs the answer immediately: the "send test email" button in Settings, whose
+  entire purpose is to report what the relay said.
   """
 
   import Swoosh.Email
 
   alias QuantumBilling.Invoices.Invoice
-  alias QuantumBilling.Mailer
+  alias QuantumBilling.Mail
   alias QuantumBilling.Settings
+  alias QuantumBilling.Workers.EmailWorker
   alias QuantumBillingWeb.InvoicePdfGenerator
 
   @doc """
-  Delivers an invoice email with attached PDF to the specified recipient email address.
+  Queues an invoice email and returns the ledger row for it.
+
+  Returns `{:ok, delivery}` once the work is durably recorded — not once the
+  mail has arrived — or `{:error, reason}` if the recipient is unusable or the
+  job cannot be enqueued.
   """
-  def deliver_invoice_pdf(recipient_email, %Invoice{} = invoice)
-      when is_binary(recipient_email) do
-    {:ok, pdf_content} = InvoicePdfGenerator.generate_pdf(invoice)
+  def deliver_invoice_pdf_async(recipient_email, %Invoice{} = invoice, opts \\ []) do
+    kind = Keyword.get(opts, :kind, "invoice")
 
-    org = Settings.get_organization()
+    with {:ok, recipient} <- validate_recipient(recipient_email),
+         {:ok, delivery} <-
+           Mail.record_queued(%{
+             to_email: recipient,
+             kind: kind,
+             subject: subject_for(invoice, sender_name(invoice)),
+             invoice_id: invoice.id
+           }),
+         {:ok, _job} <-
+           %{"delivery_id" => delivery.id, "invoice_id" => invoice.id, "kind" => kind}
+           |> EmailWorker.new()
+           |> Oban.insert() do
+      {:ok, delivery}
+    else
+      {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-    from_email =
-      cond do
-        org && org.smtp_from_email && String.trim(org.smtp_from_email) != "" ->
-          String.trim(org.smtp_from_email)
+  @doc """
+  Builds and sends the invoice email immediately.
 
-        org && org.email && String.trim(org.email) != "" ->
-          String.trim(org.email)
+  Returns `{:ok, metadata}` or `{:error, message}`, where the message is
+  already readable — it is shown to whoever pressed the button.
+  """
+  def deliver_invoice_pdf(recipient_email, %Invoice{} = invoice) do
+    with {:ok, recipient} <- validate_recipient(recipient_email),
+         {:ok, email} <- build_email(recipient, invoice) do
+      Mail.deliver(email, Settings.get_organization())
+    end
+  end
 
-        true ->
-          System.get_env("MAILER_FROM_EMAIL", "invoices@quantumbilling.in")
-      end
+  @doc """
+  The finished `Swoosh.Email` for an invoice, or `{:error, message}`.
 
-    from_name =
-      cond do
-        org && org.smtp_from_name && String.trim(org.smtp_from_name) != "" ->
-          String.trim(org.smtp_from_name)
+  Public so the mail worker can compose and send in one step without repeating
+  any of this.
+  """
+  def build_email(recipient, %Invoice{} = invoice) do
+    organization = Settings.get_organization()
+    {from_name, from_email} = Mail.sender(organization, invoice.company_name)
 
-        invoice.company_name && String.trim(invoice.company_name) != "" ->
-          String.trim(invoice.company_name)
+    # A PDF that will not render is a broken invoice, not a broken mail server,
+    # and it used to take the caller down with a MatchError.
+    case InvoicePdfGenerator.generate_pdf(invoice) do
+      {:ok, pdf} ->
+        attachment =
+          Swoosh.Attachment.new({:data, pdf},
+            filename: "#{invoice.invoice_number || "invoice"}.pdf",
+            content_type: "application/pdf"
+          )
 
-        org && org.company_name && String.trim(org.company_name) != "" ->
-          String.trim(org.company_name)
+        email =
+          new()
+          |> to(recipient)
+          |> from({from_name, from_email})
+          |> subject(subject_for(invoice, from_name))
+          |> html_body(html_content(invoice, from_name))
+          |> text_body(text_content(invoice, from_name))
+          |> attachment(attachment)
 
-        true ->
-          "QuantumBilling"
-      end
+        {:ok, email}
 
-    attachment =
-      Swoosh.Attachment.new(
-        {:data, pdf_content},
-        filename: "#{invoice.invoice_number}.pdf",
-        content_type: "application/pdf"
-      )
+      {:error, reason} ->
+        {:error, "The invoice PDF could not be generated: #{inspect(reason)}"}
 
-    subject = "Tax Invoice #{invoice.invoice_number} from #{from_name}"
+      other ->
+        {:error, "The invoice PDF could not be generated: #{inspect(other)}"}
+    end
+  end
 
-    html_body = """
+  @doc "The subject line for an invoice, used by both the ledger and the mail."
+  def subject_for(%Invoice{} = invoice, from_name) do
+    "#{invoice.invoice_type || "Tax Invoice"} #{invoice.invoice_number} from #{from_name}"
+  end
+
+  defp sender_name(%Invoice{} = invoice) do
+    {name, _email} = Mail.sender(Settings.get_organization(), invoice.company_name)
+    name
+  end
+
+  # Checked here rather than at the relay: a blank or malformed recipient is a
+  # bug in the caller, and finding out three retries later costs a customer
+  # their invoice.
+  defp validate_recipient(email) when is_binary(email) do
+    trimmed = String.trim(email)
+
+    if Regex.match?(~r/^[^@,;\s]+@[^@,;\s]+$/, trimmed) do
+      {:ok, trimmed}
+    else
+      {:error, :invalid_recipient}
+    end
+  end
+
+  defp validate_recipient(_email), do: {:error, :invalid_recipient}
+
+  defp html_content(%Invoice{} = invoice, from_name) do
+    """
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
       <h2 style="color: #1f2937; margin-top: 0;">Tax Invoice Details</h2>
       <p style="color: #4b5563; font-size: 15px;">
-        Dear Customer,
+        Dear #{escape(invoice.client_name || "Customer")},
       </p>
       <p style="color: #4b5563; font-size: 15px;">
-        Please find attached your Tax Invoice <strong>#{invoice.invoice_number}</strong> for <strong>₹#{invoice.grand_total}</strong> issued on <strong>#{invoice.invoice_date}</strong>.
+        Please find attached your #{escape(invoice.invoice_type || "Tax Invoice")}
+        <strong>#{escape(invoice.invoice_number)}</strong> for
+        <strong>&#8377;#{invoice.grand_total}</strong> issued on
+        <strong>#{invoice.invoice_date}</strong>.
       </p>
       <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
           <tr>
             <td style="padding: 4px 0; color: #6b7280;">Invoice Number:</td>
-            <td style="padding: 4px 0; font-weight: bold; color: #111827;">#{invoice.invoice_number}</td>
+            <td style="padding: 4px 0; font-weight: bold; color: #111827;">#{escape(invoice.invoice_number)}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #6b7280;">Grand Total:</td>
-            <td style="padding: 4px 0; font-weight: bold; color: #059669;">₹#{invoice.grand_total}</td>
+            <td style="padding: 4px 0; font-weight: bold; color: #059669;">&#8377;#{invoice.grand_total}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #6b7280;">Due Date:</td>
-            <td style="padding: 4px 0; color: #111827;">#{invoice.due_date}</td>
+            <td style="padding: 4px 0; color: #111827;">#{invoice.due_date || invoice.invoice_date}</td>
           </tr>
-          #{if invoice.irn, do: "<tr><td style=\"padding: 4px 0; color: #6b7280;\">IRN:</td><td style=\"padding: 4px 0; font-family: monospace; font-size: 12px; color: #2563eb;\">#{invoice.irn}</td></tr>", else: ""}
+          #{irn_row(invoice)}
         </table>
       </div>
       <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
         Thank you for your business!<br/>
-        <strong>#{from_name}</strong>
+        <strong>#{escape(from_name)}</strong>
       </p>
     </div>
     """
-
-    email =
-      new()
-      |> to(recipient_email)
-      |> from({from_name, from_email})
-      |> subject(subject)
-      |> html_body(html_body)
-      |> attachment(attachment)
-
-    deliver_email(email, org)
   end
 
-  defp deliver_email(email, org) do
-    if org && org.smtp_host && String.trim(org.smtp_host) != "" do
-      ssl_opts = [
-        cacerts: :public_key.cacerts_get(),
-        verify: :verify_none,
-        versions: [:"tlsv1.2", :"tlsv1.3"]
-      ]
+  defp irn_row(%Invoice{irn: nil}), do: ""
 
-      port = org.smtp_port || 587
-      ssl? = org.smtp_ssl == true or port == 465
-      has_username? = org.smtp_username && String.trim(org.smtp_username) != ""
-
-      smtp_config = [
-        relay: String.trim(org.smtp_host),
-        port: port,
-        username: (org.smtp_username && String.trim(org.smtp_username)) || "",
-        password: org.smtp_password || "",
-        ssl: ssl?,
-        ssl_options: ssl_opts,
-        tls_options: ssl_opts,
-        auth: if(has_username?, do: :always, else: :never),
-        no_mx_lookups: true
-      ]
-
-      smtp_config =
-        if ssl? do
-          smtp_config
-        else
-          Keyword.put(smtp_config, :tls, :always)
-        end
-
-      case Swoosh.Adapters.SMTP.deliver(email, smtp_config) do
-        {:ok, result} ->
-          {:ok, result}
-
-        {:error, reason} ->
-          {:error, format_smtp_error(reason)}
-      end
-    else
-      case Mailer.deliver(email) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, format_smtp_error(reason)}
-      end
-    end
+  defp irn_row(%Invoice{irn: irn}) do
+    """
+    <tr>
+      <td style="padding: 4px 0; color: #6b7280;">IRN:</td>
+      <td style="padding: 4px 0; font-family: monospace; font-size: 12px; color: #2563eb;">#{escape(irn)}</td>
+    </tr>
+    """
   end
 
-  def format_smtp_error({:retries_exceeded, inner_reason}) do
-    "SMTP retries exceeded: #{format_smtp_error(inner_reason)}"
+  # Mail clients that refuse HTML, and spam filters that score its absence,
+  # both want this — and it costs one function.
+  defp text_content(%Invoice{} = invoice, from_name) do
+    """
+    Dear #{invoice.client_name || "Customer"},
+
+    Please find attached your #{invoice.invoice_type || "Tax Invoice"} #{invoice.invoice_number}
+    for Rs. #{invoice.grand_total}, issued on #{invoice.invoice_date}.
+
+    Invoice number: #{invoice.invoice_number}
+    Grand total:    Rs. #{invoice.grand_total}
+    Due date:       #{invoice.due_date || invoice.invoice_date}
+    #{if invoice.irn, do: "IRN:            #{invoice.irn}\n", else: ""}
+    Thank you for your business.
+    #{from_name}
+    """
   end
 
-  def format_smtp_error({:network_failure, host, {:error, :timeout}}) do
-    "Network timeout connecting to #{to_string(host)}. Check host, port, and firewall."
+  # Customer-supplied names and numbers go into an HTML document, so they are
+  # escaped rather than trusted — the same rule that applies on a page.
+  defp escape(nil), do: ""
+
+  defp escape(value) do
+    value
+    |> to_string()
+    |> Phoenix.HTML.html_escape()
+    |> Phoenix.HTML.safe_to_string()
   end
 
-  def format_smtp_error({:network_failure, host, {:error, :econnrefused}}) do
-    "Connection refused by #{to_string(host)}. Check host and port."
-  end
+  @doc """
+  Kept for callers that formatted their own transport errors.
 
-  def format_smtp_error({:network_failure, host, {:error, {:options, :incompatible, _}}}) do
-    "SSL/TLS handshake failed with #{to_string(host)}. Please verify port and SSL settings."
-  end
-
-  def format_smtp_error({:network_failure, host, detail}) do
-    "Network failure connecting to #{to_string(host)}: #{format_smtp_error(detail)}"
-  end
-
-  def format_smtp_error({:missing_requirement, _host, :auth}) do
-    "SMTP server requires STARTTLS or authentication. Verify port (587 vs 465) and SSL toggle."
-  end
-
-  def format_smtp_error(:auth_failed),
-    do: "SMTP authentication failed. Please check username & password."
-
-  def format_smtp_error({:auth_failed, _}),
-    do: "SMTP authentication failed. Please check username & password."
-
-  def format_smtp_error(:econnrefused),
-    do: "Connection refused by SMTP server. Check host and port."
-
-  def format_smtp_error(:timeout), do: "Connection to SMTP server timed out."
-  def format_smtp_error(:nxdomain), do: "SMTP host not found (DNS lookup failed)."
-
-  def format_smtp_error(charlist) when is_list(charlist) do
-    case List.to_string(charlist) do
-      str when is_binary(str) -> str
-      _ -> inspect(charlist)
-    end
-  rescue
-    _ -> inspect(charlist)
-  end
-
-  def format_smtp_error({reason, detail}),
-    do: "#{format_smtp_error(reason)}: #{format_smtp_error(detail)}"
-
-  def format_smtp_error(reason) when is_atom(reason), do: Atom.to_string(reason)
-  def format_smtp_error(reason) when is_binary(reason), do: reason
-  def format_smtp_error(reason), do: inspect(reason)
+  Delegates to `QuantumBilling.Mail.error_message/1`, which is now the single
+  place that turns an SMTP failure into a sentence.
+  """
+  defdelegate format_smtp_error(reason), to: Mail, as: :error_message
 end

@@ -1,57 +1,88 @@
 defmodule QuantumBillingWeb.AuditLogsLive do
   @moduledoc """
-  LiveView page for searching, viewing, and auditing immutable system activity logs.
+  The audit trail: an immutable record of the actions the system took, and who
+  asked for it.
+
+  Paged by the database rather than read into the socket. The trail only grows,
+  and filtering a fixed window of the newest rows in Elixir quietly hid every
+  older match — a filter that misses the event being looked for is worse than
+  no filter.
   """
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Audit
   alias QuantumBilling.Events
 
+  @per_page 50
+
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Events.subscribe(Events.audit_logs_topic())
     end
-
-    logs = Audit.list_audit_logs(200)
 
     {:ok,
      socket
      |> assign(:page_title, "Audit Logs")
      |> assign(:active_nav, :settings)
      |> assign(:section, :audit_logs)
-     |> assign(:logs, logs)
      |> assign(:filter_action, "")
-     |> assign(:selected_log, nil)}
+     |> assign(:page, 1)
+     |> assign(:selected_log, nil)
+     |> load_page()}
   end
 
-  def handle_info({:audit_log_created, log}, socket) do
-    {:noreply, update(socket, :logs, fn logs -> [log | logs] end)}
+  # Only the first page shows live arrivals: an event appearing at the top of
+  # page four would push everything down by one and change what page five is.
+  def handle_info({:audit_log_created, _log}, socket) do
+    if socket.assigns.page == 1 do
+      {:noreply, load_page(socket)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("filter", %{"action" => action}, socket) do
-    logs = Audit.list_audit_logs(200)
-
-    filtered =
-      if action == "" or is_nil(action) do
-        logs
-      else
-        Enum.filter(logs, &(&1.action == action))
-      end
-
     {:noreply,
      socket
-     |> assign(:filter_action, action)
-     |> assign(:logs, filtered)}
+     |> assign(:filter_action, action || "")
+     |> assign(:page, 1)
+     |> load_page()}
+  end
+
+  def handle_event("paginate", %{"page" => page_str}, socket) do
+    case Integer.parse(page_str) do
+      {page, ""} -> {:noreply, socket |> assign(:page, page) |> load_page()}
+      _not_a_page -> {:noreply, socket}
+    end
   end
 
   def handle_event("select_log", %{"id" => id}, socket) do
-    id_num = String.to_integer(id)
-    log = Enum.find(socket.assigns.logs, &(&1.id == id_num))
-    {:noreply, assign(socket, :selected_log, log)}
+    case Integer.parse(id) do
+      {id, ""} ->
+        {:noreply, assign(socket, :selected_log, Enum.find(socket.assigns.logs, &(&1.id == id)))}
+
+      _not_an_id ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("close_modal", _params, socket) do
     {:noreply, assign(socket, :selected_log, nil)}
+  end
+
+  defp load_page(socket) do
+    result =
+      Audit.page(
+        action: socket.assigns.filter_action,
+        page: socket.assigns.page,
+        per_page: @per_page
+      )
+
+    socket
+    |> assign(:logs, result.rows)
+    |> assign(:total, result.total)
+    |> assign(:total_pages, result.total_pages)
+    |> assign(:page, result.page)
   end
 
   def render(assigns) do
@@ -132,6 +163,13 @@ defmodule QuantumBillingWeb.AuditLogsLive do
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div :if={@total_pages > 1} class="mt-auto flex items-center justify-between gap-4 pt-4">
+          <p class="text-xs text-base-content/45">
+            {@total} recorded {if @total == 1, do: "event", else: "events"}
+          </p>
+          <.pagination current_page={@page} total_pages={@total_pages} />
         </div>
       </.card>
 

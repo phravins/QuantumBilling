@@ -157,15 +157,20 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* Global Tactile Click Effects & Micro-Interactions */
+/* Global Tactile Click Effects & Micro-Interactions
+ *
+ * Buttons only. A checkbox is a state control, not an action: pressing one
+ * must not shrink, dim or otherwise behave like a button, and the label that
+ * wraps it is part of the control's hit area rather than a button of its own.
+ * `:has()` is what keeps those labels out — they are selected by the input
+ * they contain, not by a class somebody has to remember to leave off. */
 button,
 [role="button"],
 .btn,
 input[type="submit"],
 input[type="button"],
 a.btn,
-label.cursor-pointer,
-[phx-click] {
+[phx-click]:not(:has(input[type="checkbox"])):not(:has(input[type="radio"])) {
   transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
               background-color 0.15s ease,
@@ -181,10 +186,26 @@ button:active:not(:disabled),
 input[type="submit"]:active:not(:disabled),
 input[type="button"]:active:not(:disabled),
 a.btn:active:not(:disabled),
-label.cursor-pointer:active,
-[phx-click]:active:not(:disabled) {
+[phx-click]:active:not(:disabled):not(:has(input[type="checkbox"])):not(:has(input[type="radio"])) {
   transform: scale(0.96) translateY(1px) !important;
   filter: brightness(0.94);
+}
+
+/* Checkboxes, radios and their labels keep the plain colour transition and
+ * nothing else — no press animation, no brightness shift, and text stays
+ * selectable so a label can be read and copied like any other text. */
+input[type="checkbox"],
+input[type="radio"],
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]) {
+  transform: none !important;
+  filter: none !important;
+  user-select: auto;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
 }
 
 /* Focus Ring for Keyboard Accessibility & Click State */

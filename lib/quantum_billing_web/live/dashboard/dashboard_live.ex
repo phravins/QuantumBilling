@@ -41,17 +41,22 @@ defmodule QuantumBillingWeb.DashboardLive do
     {:noreply, assign_dashboard(socket)}
   end
 
+  # Counts come from aggregate queries and the table from a limited one. The
+  # dashboard used to load every invoice in the database in order to count them
+  # and show five, on every page load and on every change anywhere in the
+  # application.
   defp assign_dashboard(socket) do
-    invoices = Invoices.list_invoices()
+    totals = Invoices.totals()
+    status_counts = Invoices.status_counts()
 
     socket
     |> assign(:page_title, "Dashboard")
     |> assign(:active_nav, :dashboard)
-    |> assign(:stats, stats(invoices))
-    |> assign(:chart_months, chart_months(invoices))
-    |> assign(:donut_segments, donut_segments(invoices))
-    |> assign(:donut_total, length(invoices))
-    |> assign(:invoices, recent_invoices(invoices))
+    |> assign(:stats, stats(totals))
+    |> assign(:chart_months, chart_months(totals))
+    |> assign(:donut_segments, donut_segments(status_counts))
+    |> assign(:donut_total, totals.count)
+    |> assign(:invoices, Invoices.recent_invoices(5))
     |> assign(:compliance_items, compliance_items())
   end
 
@@ -260,17 +265,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     """
   end
 
-  # Each helper takes the invoice set so it becomes a real derivation the moment
-  # `Invoices.list_invoices/0` returns rows. Until then every panel is empty
-  # rather than showing invented figures.
-
-  defp stats(invoices) do
-    count = length(invoices)
-
+  defp stats(totals) do
     [
       %{
         label: "Total E-Invoices Generated",
-        value: Integer.to_string(count),
+        value: Integer.to_string(totals.count),
         icon: "hero-document-text",
         icon_class: "bg-base-200 text-base-content/60",
         delta_text: nil,
@@ -307,11 +306,26 @@ defmodule QuantumBillingWeb.DashboardLive do
     ]
   end
 
-  defp chart_months(_invoices), do: []
+  # The six-month bar chart needs a per-month CGST/IGST split, which is a
+  # report rather than a count; it stays empty until that is built, rather than
+  # showing invented figures.
+  defp chart_months(_totals), do: []
 
-  defp donut_segments(_invoices), do: []
-
-  defp recent_invoices(invoices), do: Enum.take(invoices, 5)
+  # Real counts, in a fixed order so the ring's colours stay stable, with empty
+  # statuses dropped.
+  defp donut_segments(status_counts) do
+    [
+      %{
+        label: "E-Invoice Generated",
+        value: status_counts["E-Invoice Generated"] || 0,
+        tone: :strong
+      },
+      %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
+      %{label: "Paid", value: status_counts["Paid"] || 0, tone: :soft},
+      %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
+    ]
+    |> Enum.reject(&(&1.value == 0))
+  end
 
   # GST return deadlines are statutory, not tenant data — they belong in a
   # filing calendar rather than a table, which is still to be built.

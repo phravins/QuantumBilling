@@ -26,29 +26,63 @@ defmodule QuantumBillingWeb.ReportsController do
     "Grand Total"
   ]
 
+  @doc """
+  Streams the filtered report as a CSV download.
+
+  A sales register is sent as chunks straight from a database cursor: the rows
+  never all exist at once, in the database result, in this process, or in the
+  response buffer. Building the whole file in memory first — which is what
+  `send_download/3` does — is fine for a summary of a handful of rows and is a
+  way to run a server out of memory on a year of invoices.
+  """
   def export(conn, params) do
     filters = filters_from(params)
 
-    {headers, rows, prefix} =
-      if filters.report_type == "Sales Register" do
-        rows =
-          Reports.invoices()
-          |> Reports.filter(filters)
-          |> sales_register_rows()
+    if filters.report_type == "Sales Register" do
+      stream_sales_register(conn, filters)
+    else
+      rows =
+        filters
+        |> Reports.aggregate()
+        |> Map.fetch!(:tax_rows)
+        |> tax_summary_rows()
 
-        {@sales_register_headers, rows, "gst-sales-register"}
-      else
-        rows =
-          Reports.invoices()
-          |> Reports.filter(filters)
-          |> Reports.tax_summary()
-          |> tax_summary_rows()
+      send_download(conn, {:binary, to_csv(@headers, rows)},
+        filename: filename("gst-tax-summary", filters)
+      )
+    end
+  end
 
-        {@headers, rows, "gst-tax-summary"}
-      end
+  defp stream_sales_register(conn, filters) do
+    conn =
+      conn
+      |> put_resp_content_type("text/csv")
+      |> put_resp_header(
+        "content-disposition",
+        ~s(attachment; filename="#{filename("gst-sales-register", filters)}")
+      )
+      |> send_chunked(200)
 
-    csv = to_csv(headers, rows)
-    send_download(conn, {:binary, csv}, filename: filename(prefix, filters))
+    {:ok, conn} =
+      Reports.stream_rows(filters, fn rows ->
+        rows
+        |> Stream.map(&csv_line(sales_register_row(&1)))
+        |> Enum.reduce_while(chunk!(conn, csv_line(@sales_register_headers)), fn line, conn ->
+          case chunk(conn, line) do
+            {:ok, conn} -> {:cont, conn}
+            # The browser went away mid-download. Stop reading rather than
+            # finish streaming a file nobody is receiving.
+            {:error, :closed} -> {:halt, conn}
+          end
+        end)
+      end)
+
+    conn
+  end
+
+  defp chunk!(conn, data) do
+    {:ok, conn} = chunk(conn, data)
+    conn
   end
 
   defp filters_from(params) do
@@ -80,27 +114,25 @@ defmodule QuantumBillingWeb.ReportsController do
     end)
   end
 
-  defp sales_register_rows(invoices) do
-    Enum.map(invoices, fn row ->
-      total_tax = row.cgst + row.sgst + row.igst + row.cess
-      grand_total = row.taxable_value + total_tax
+  defp sales_register_row(row) do
+    total_tax = row.cgst + row.sgst + row.igst + row.cess
+    grand_total = row.taxable_value + total_tax
 
-      [
-        QuantumBillingWeb.Format.format_date(row.date),
-        to_string(row[:number] || ""),
-        row.client,
-        row.gstin,
-        row.status,
-        row.tax_type,
-        amount(row.taxable_value),
-        amount(row.cgst),
-        amount(row.sgst),
-        amount(row.igst),
-        amount(row.cess),
-        amount(total_tax),
-        amount(grand_total)
-      ]
-    end)
+    [
+      QuantumBillingWeb.Format.format_date(row.date),
+      to_string(row[:number] || ""),
+      row.client,
+      row.gstin,
+      row.status,
+      row.tax_type,
+      amount(row.taxable_value),
+      amount(row.cgst),
+      amount(row.sgst),
+      amount(row.igst),
+      amount(row.cess),
+      amount(total_tax),
+      amount(grand_total)
+    ]
   end
 
   # Plain numbers, not the ₹-prefixed display strings: a spreadsheet has to be
@@ -121,9 +153,11 @@ defmodule QuantumBillingWeb.ReportsController do
   # than supplied by a user, but quoting is still handled properly so a client
   # name containing a comma cannot shift every following column.
   defp to_csv(headers, rows) do
-    [headers | rows]
-    |> Enum.map_join("\r\n", fn row -> Enum.map_join(row, ",", &escape/1) end)
-    |> Kernel.<>("\r\n")
+    Enum.map_join([headers | rows], "", &csv_line/1)
+  end
+
+  defp csv_line(fields) do
+    Enum.map_join(fields, ",", &escape/1) <> "\r\n"
   end
 
   defp escape(field) do

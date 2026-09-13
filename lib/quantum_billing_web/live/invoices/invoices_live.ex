@@ -1,14 +1,14 @@
 defmodule QuantumBillingWeb.InvoicesLive do
   @moduledoc """
   The Invoices list page: search, status filter, sortable columns, and
-  pagination over the full set of GST invoices.
+  pagination.
 
-  Invoices come from `QuantumBilling.Invoices`, which has nothing to return
-  until the multi-tenant Ecto schema lands. `mount/3` loads them once;
-  `handle_event/3` only ever updates raw filter/sort/page state, and `render/1`
-  re-derives the visible rows fresh on every render so there is a single source
-  of truth. The search, sort and pagination code below is already correct at
-  zero rows and needs no change when real records arrive.
+  All four are the database's job — `QuantumBilling.Invoices.page/1` searches,
+  filters, sorts, counts and slices in one query pair, and this LiveView holds
+  only the controls and the ten rows on screen. It used to hold every invoice
+  in the system and do the work in Elixir on every render, which meant one full
+  copy of the invoice table per open tab and a full reload whenever anything
+  changed anywhere in the application.
   """
   use QuantumBillingWeb, :live_view
 
@@ -32,37 +32,49 @@ defmodule QuantumBillingWeb.InvoicesLive do
      socket
      |> assign(:page_title, "Invoices")
      |> assign(:active_nav, :invoices)
-     |> assign(:all_invoices, Invoices.list_invoices())
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
      |> assign(:sort_dir, :desc)
-     |> assign(:page, 1)}
+     |> assign(:page, 1)
+     |> load_page()}
   end
 
   def handle_event("search", %{"q" => q}, socket) do
-    {:noreply, socket |> assign(:search, q) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:search, q) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("filter_status", %{"status" => status}, socket) do
-    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    field = String.to_existing_atom(field_str)
+    # Matched against the context's allowlist rather than converted: a sort
+    # field is user input on its way to an ORDER BY.
+    case Enum.find(Invoices.sortable_fields(), &(to_string(&1) == field_str)) do
+      nil ->
+        {:noreply, socket}
 
-    {sort_field, sort_dir} =
-      if socket.assigns.sort_field == field do
-        {field, if(socket.assigns.sort_dir == :asc, do: :desc, else: :asc)}
-      else
-        {field, :asc}
-      end
+      field ->
+        {sort_field, sort_dir} =
+          if socket.assigns.sort_field == field do
+            {field, if(socket.assigns.sort_dir == :asc, do: :desc, else: :asc)}
+          else
+            {field, :asc}
+          end
 
-    {:noreply, assign(socket, sort_field: sort_field, sort_dir: sort_dir, page: 1)}
+        {:noreply,
+         socket
+         |> assign(sort_field: sort_field, sort_dir: sort_dir, page: 1)
+         |> load_page()}
+    end
   end
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
-    {:noreply, assign(socket, :page, String.to_integer(page_str))}
+    case Integer.parse(page_str) do
+      {page, ""} -> {:noreply, socket |> assign(:page, page) |> load_page()}
+      _not_a_page -> {:noreply, socket}
+    end
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
@@ -78,7 +90,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
             {:noreply,
              socket
              |> put_flash(:info, "Invoice #{invoice.invoice_number} deleted.")
-             |> assign(:all_invoices, Invoices.list_invoices())}
+             |> load_page()}
 
           {:error, _changeset} ->
             {:noreply, put_flash(socket, :error, "That invoice could not be deleted.")}
@@ -87,30 +99,33 @@ defmodule QuantumBillingWeb.InvoicesLive do
   end
 
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, assign(socket, :all_invoices, Invoices.list_invoices())}
+    {:noreply, load_page(socket)}
+  end
+
+  # One query pair — a count and a page — per interaction. The page number is
+  # re-clamped by the context, so deleting the last row of the last page lands
+  # on a page that exists instead of an empty one.
+  defp load_page(socket) do
+    result =
+      Invoices.page(
+        search: socket.assigns.search,
+        status: socket.assigns.status_filter,
+        sort_field: socket.assigns.sort_field,
+        sort_dir: socket.assigns.sort_dir,
+        page: socket.assigns.page,
+        per_page: @per_page
+      )
+
+    socket
+    |> assign(:rows, result.rows)
+    |> assign(:total, result.total)
+    |> assign(:total_pages, result.total_pages)
+    |> assign(:page, result.page)
+    |> assign(:row_offset, (result.page - 1) * result.per_page)
   end
 
   def render(assigns) do
-    filtered =
-      assigns.all_invoices
-      |> filter_search(assigns.search)
-      |> filter_status(assigns.status_filter)
-      |> sort_rows(assigns.sort_field, assigns.sort_dir)
-
-    total = length(filtered)
-    total_pages = max(ceil(total / @per_page), 1)
-    page = assigns.page |> max(1) |> min(total_pages)
-    rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
-
-    assigns =
-      assign(assigns,
-        rows: rows,
-        total: total,
-        total_pages: total_pages,
-        page: page,
-        row_offset: (page - 1) * @per_page,
-        status_options: @status_options
-      )
+    assigns = assign(assigns, status_options: @status_options)
 
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
@@ -309,22 +324,4 @@ defmodule QuantumBillingWeb.InvoicesLive do
     </Layouts.app>
     """
   end
-
-  defp filter_search(rows, ""), do: rows
-
-  defp filter_search(rows, search) do
-    needle = String.downcase(search)
-
-    Enum.filter(rows, fn r ->
-      String.contains?(String.downcase(r.number), needle) or
-        String.contains?(String.downcase(r.client), needle)
-    end)
-  end
-
-  defp filter_status(rows, "All Status"), do: rows
-  defp filter_status(rows, status), do: Enum.filter(rows, &(&1.status == status))
-
-  defp sort_rows(rows, :seq, dir), do: Enum.sort_by(rows, & &1.seq, dir)
-  defp sort_rows(rows, :invoice_date, dir), do: Enum.sort_by(rows, & &1.invoice_date, {dir, Date})
-  defp sort_rows(rows, :due_date, dir), do: Enum.sort_by(rows, & &1.due_date, {dir, Date})
 end

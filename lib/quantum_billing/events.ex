@@ -31,6 +31,8 @@ defmodule QuantumBilling.Events do
       {:settings_updated, organization}
       {:invoice_template_changed, template}
       {:profile_updated, user}
+      {:audit_log_created, log}
+      {:email_delivery_changed, delivery}
   """
 
   @pubsub QuantumBilling.PubSub
@@ -95,4 +97,14 @@ defmodule QuantumBilling.Events do
 
   @doc "Audit trail logs."
   def audit_logs_topic, do: "audit_logs"
+
+  @doc """
+  Outgoing mail: queued, sent, failed.
+
+  Its own topic rather than part of `settings_topic/0`, even though the
+  delivery list is shown in Settings: a background mail worker publishes here
+  several times per message, and a settings window has no reason to rebuild its
+  form each time an invoice goes out.
+  """
+  def mail_topic, do: "mail"
 end
