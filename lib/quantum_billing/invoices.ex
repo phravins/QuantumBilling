@@ -25,21 +25,177 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
+  alias QuantumBilling.Webhooks
+  alias QuantumBilling.Workers.EInvoiceWorker
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
+
+  # The list page's sortable columns, and the database column each one means.
+  # An allowlist rather than a lookup: the sort field arrives from a click in
+  # the browser, and turning user input into a column name — or into an atom —
+  # is how an ordering control becomes an injection point.
+  @sortable %{
+    seq: :id,
+    number: :invoice_number,
+    client: :client_name,
+    invoice_date: :invoice_date,
+    due_date: :due_date,
+    amount: :grand_total,
+    status: :status
+  }
+
+  @default_per_page 10
+  @max_per_page 200
 
   @doc """
   Every invoice, newest first, shaped for the list page.
 
-  The list renders `number`, `client`, `invoice_date`, `due_date`, `amount`,
-  `status` and sorts on `seq`, so those are what this returns — the page itself
-  needs no change to start showing real rows. The Dashboard's recent-invoices
-  table reads the same shape and additionally shows `gstin` and `tax_type`.
+  Unbounded, so it is for callers that genuinely want all of them — a backup, a
+  test. Anything user-facing should use `page/1`, which reads one screen.
   """
   def list_invoices do
     Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
+
+  @doc """
+  One page of invoices, filtered, sorted and counted by the database.
+
+  Returns `%{rows:, total:, page:, per_page:, total_pages:}`.
+
+  The searching, filtering, sorting and slicing used to happen in Elixir over
+  every invoice in the system, reloaded into the LiveView's memory on every
+  change anywhere in the application. At a few hundred invoices that is
+  invisible; at a hundred thousand it is a copy of the invoice table per open
+  browser tab. The database does all four now, and only the rows on screen are
+  ever loaded.
+
+  ## Options
+
+    * `:search` — matches the invoice number, client name or GSTIN
+    * `:status` — exact status, or `"All Status"`
+    * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
+    * `:page` / `:per_page`
+  """
+  def page(opts \\ []) do
+    per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
+
+    query =
+      Invoice
+      |> search_where(Keyword.get(opts, :search))
+      |> status_where(Keyword.get(opts, :status))
+
+    total = Repo.aggregate(query, :count, :id)
+    total_pages = max(ceil(total / per_page), 1)
+    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
+
+    rows =
+      query
+      |> order(Keyword.get(opts, :sort_field, :invoice_date), Keyword.get(opts, :sort_dir, :desc))
+      |> limit(^per_page)
+      |> offset(^((page - 1) * per_page))
+      |> Repo.all()
+      |> Enum.map(&to_row/1)
+
+    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+  end
+
+  @doc """
+  The most recently issued invoices, as list rows.
+
+  What the dashboard's "recent invoices" table wants, expressed as a query
+  rather than as the first few of everything.
+  """
+  def recent_invoices(limit \\ 5) do
+    Invoice
+    |> order_by([i], desc: i.invoice_date, desc: i.id)
+    |> limit(^limit)
+    |> Repo.all()
+    |> Enum.map(&to_row/1)
+  end
+
+  @doc """
+  Counts and money totals across every invoice, computed by the database.
+
+  Returns `%{count:, revenue:, tax:, outstanding:, paid_count:}`, where
+  `revenue` is the value of everything issued and `outstanding` is the part of
+  it that is neither paid nor cancelled.
+  """
+  def totals do
+    Invoice
+    |> select([i], %{
+      count: count(i.id),
+      revenue: coalesce(sum(i.grand_total), 0),
+      tax:
+        coalesce(
+          sum(
+            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          ),
+          0
+        ),
+      outstanding:
+        coalesce(
+          sum(
+            fragment(
+              "CASE WHEN ? IN ('Paid', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
+              i.status,
+              i.grand_total
+            )
+          ),
+          0
+        ),
+      paid_count: coalesce(count(i.id) |> filter(i.status == "Paid"), 0)
+    })
+    |> Repo.one()
+    |> case do
+      nil -> %{count: 0, revenue: 0, tax: 0, outstanding: 0, paid_count: 0}
+      totals -> totals
+    end
+  end
+
+  @doc "How many invoices are in each status."
+  def status_counts do
+    Invoice
+    |> group_by([i], i.status)
+    |> select([i], {i.status, count(i.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp search_where(query, blank) when blank in [nil, ""], do: query
+
+  defp search_where(query, search) do
+    pattern = "%" <> String.trim(search) <> "%"
+
+    where(
+      query,
+      [i],
+      ilike(i.invoice_number, ^pattern) or ilike(i.client_name, ^pattern) or
+        ilike(i.client_gstin, ^pattern)
+    )
+  end
+
+  defp status_where(query, status) when status in [nil, "", "All Status"], do: query
+  defp status_where(query, status), do: where(query, [i], i.status == ^status)
+
+  defp order(query, field, direction) do
+    column = Map.get(@sortable, field, :invoice_date)
+    direction = if direction == :asc, do: :asc, else: :desc
+
+    # The id is the tie-breaker. Without it, two invoices sharing a date can
+    # swap places between one page and the next, which shows a row twice and
+    # hides another.
+    order_by(query, [i], [{^direction, field(i, ^column)}, {^direction, i.id}])
+  end
+
+  defp clamp(value, minimum, maximum) when is_integer(value),
+    do: value |> max(minimum) |> min(maximum)
+
+  defp clamp(_value, minimum, _maximum), do: minimum
+
+  @doc "The columns the list page may sort on."
+  def sortable_fields, do: Map.keys(@sortable)
 
   defp to_row(%Invoice{} = invoice) do
     %{
@@ -183,6 +339,17 @@ defmodule QuantumBilling.Invoices do
         # The list, Dashboard and Reports pages already subscribe to this from
         # the realtime work, so they update without any further wiring.
         broadcast_change(invoice, :invoice_changed)
+
+        # And anything the business has pointed at its own webhook endpoint —
+        # an accounting system, an internal dashboard — hears about it too.
+        Webhooks.dispatch("invoice.created", %{
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          client_name: invoice.client_name,
+          grand_total: invoice.grand_total,
+          invoice_date: to_string(invoice.invoice_date)
+        })
+
         {:ok, Repo.preload(invoice, :items)}
 
       {:error, :invoice, changeset, _changes} ->
@@ -224,9 +391,50 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
+  Queues registration of an invoice with the IRP.
+
+  Returns `{:ok, :queued}`, `{:ok, :already_registered}` for an invoice that
+  already carries an IRN, or `{:error, reason}`.
+
+  The invoice is moved to `"Pending E-Invoice"` immediately so the page shows
+  what is happening; the job replaces that with the real outcome. Registering
+  inline used to hold the request open for however long the government portal
+  took, and left `"E-Invoice Failed"` behind with nothing that would ever try
+  again.
+  """
+  def queue_einvoice(%Invoice{irn: irn}) when is_binary(irn) and irn != "" do
+    {:ok, :already_registered}
+  end
+
+  def queue_einvoice(%Invoice{} = invoice) do
+    case %{"invoice_id" => invoice.id} |> EInvoiceWorker.new() |> Oban.insert() do
+      {:ok, _job} ->
+        # Deliberately not through `update_invoice/2`: this is a status stamp,
+        # not an edit, and it must not re-take the layout snapshot.
+        invoice
+        |> Ecto.Changeset.change(%{status: "Pending E-Invoice"})
+        |> Repo.update()
+        |> case do
+          {:ok, updated} ->
+            broadcast_change(updated, :invoice_changed)
+            {:ok, :queued}
+
+          {:error, changeset} ->
+            {:error, changeset}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Generates an E-Invoice (IRN) for the given invoice via the IRP API or sandbox emulator.
   Updates the invoice with the returned IRN, Ack Details, and Signed QR code, transitioning its
   status to "E-Invoice Generated".
+
+  Called by `QuantumBilling.Workers.EInvoiceWorker`; use `queue_einvoice/1`
+  from anything a person is waiting on.
   """
   def generate_einvoice(%Invoice{} = invoice) do
     invoice = Repo.preload(invoice, :items)

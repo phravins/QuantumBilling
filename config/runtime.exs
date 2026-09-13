@@ -113,17 +113,78 @@ if config_env() in [:dev, :test] do
       System.get_env(
         "TOTP_ENCRYPTION_KEY",
         "dev-only-totp-key-Xq7Pm2Lw9Rt4Yv6Bn8Kc3Fh5Jd1Sa0Zg"
+      ),
+    # Encrypts the credentials the organisation stores for other systems — the
+    # SMTP password, the Razorpay key secret, the IRP password, the webhook
+    # signing secret. Same reasoning as above, and a separate key so rotating
+    # one does not invalidate two-factor enrolments as well.
+    secrets_encryption_key:
+      System.get_env(
+        "SECRETS_ENCRYPTION_KEY",
+        "dev-only-secrets-key-Bv4Nz8Qr1Tm6Wk3Hy7Lc5Pd2Jf9Xs0A"
       )
 end
 
+# Queries slower than this are logged with the source that ran them. See
+# `QuantumBilling.SlowQueryLogger` — this is the only thing that surfaces a
+# query which has quietly stopped using an index.
+config :quantum_billing,
+  slow_query_ms: String.to_integer(System.get_env("SLOW_QUERY_MS") || "500")
+
+# TLS verification for the outgoing mail relay. On everywhere by default; set
+# it to false only for a relay presenting a self-signed certificate on a
+# network you already trust.
+config :quantum_billing,
+  smtp_tls_verify: System.get_env("SMTP_TLS_VERIFY") not in ["false", "0"]
+
+# Reverse proxies whose `x-forwarded-for` header may be believed, as a
+# comma-separated list of addresses or CIDR blocks. Empty — the default —
+# means the header is ignored and the peer address is used, because anyone can
+# send that header. See `QuantumBillingWeb.ClientIP`.
+config :quantum_billing,
+  trusted_proxies:
+    (System.get_env("TRUSTED_PROXIES") || "")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+
 if smtp_host = System.get_env("SMTP_HOST") do
+  smtp_port = String.to_integer(System.get_env("SMTP_PORT", "587"))
+  implicit_tls? = System.get_env("SMTP_SSL") in ["true", "1"] or smtp_port == 465
+
+  # The same verified TLS the per-organisation relay gets (see
+  # `QuantumBilling.Mail`): the certificate is checked against the system trust
+  # store and against the hostname, and a relay that cannot do STARTTLS fails
+  # rather than being sent the password in the clear.
+  smtp_tls_options =
+    if System.get_env("SMTP_TLS_VERIFY") in ["false", "0"] do
+      [verify: :verify_none, versions: [:"tlsv1.2", :"tlsv1.3"]]
+    else
+      [
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        depth: 3,
+        server_name_indication: to_charlist(smtp_host),
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ],
+        versions: [:"tlsv1.2", :"tlsv1.3"]
+      ]
+    end
+
   config :quantum_billing, QuantumBilling.Mailer,
     adapter: Swoosh.Adapters.SMTP,
     relay: smtp_host,
-    port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+    port: smtp_port,
     username: System.get_env("SMTP_USERNAME"),
     password: System.get_env("SMTP_PASSWORD"),
-    ssl: System.get_env("SMTP_SSL") in ["true", "1"]
+    ssl: implicit_tls?,
+    tls: if(implicit_tls?, do: :never, else: :always),
+    tls_options: smtp_tls_options,
+    sockopts: if(implicit_tls?, do: smtp_tls_options, else: []),
+    auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
+    no_mx_lookups: true,
+    retries: 0
 end
 
 # ## Using releases
@@ -172,7 +233,19 @@ if config_env() == :prod do
   config :quantum_billing, QuantumBilling.Repo,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+    socket_options: maybe_ipv6,
+    # How long a caller waits for a connection from the pool before the pool
+    # decides it is overloaded and starts refusing rather than queueing for
+    # ever. A request that fails in a second is recoverable; one that hangs
+    # holds a process, a socket and a browser tab.
+    queue_target: String.to_integer(System.get_env("DB_QUEUE_TARGET_MS") || "150"),
+    queue_interval: String.to_integer(System.get_env("DB_QUEUE_INTERVAL_MS") || "1000"),
+    # A single statement that runs longer than this is not serving a page.
+    # Reports that legitimately take longer pass their own timeout.
+    timeout: String.to_integer(System.get_env("DB_TIMEOUT_MS") || "15000"),
+    # Postgres closes idle connections and load balancers drop them; this
+    # notices before a request does.
+    idle_interval: 15_000
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
@@ -201,6 +274,25 @@ if config_env() == :prod do
       """
 
   config :quantum_billing, totp_encryption_key: totp_encryption_key
+
+  # Required for the same reason: the SMTP password and the other stored
+  # credentials are encrypted with it, and a deploy without it would fail the
+  # first time anybody opened Settings rather than at boot.
+  secrets_encryption_key =
+    System.get_env("SECRETS_ENCRYPTION_KEY") ||
+      raise """
+      environment variable SECRETS_ENCRYPTION_KEY is missing.
+
+      It encrypts stored integration credentials (SMTP password, Razorpay key
+      secret, IRP password, webhook secret) at rest. Generate one by calling:
+
+      mix phx.gen.secret
+
+      Changing it later makes the stored credentials unreadable and they have
+      to be entered again.
+      """
+
+  config :quantum_billing, secrets_encryption_key: secrets_encryption_key
 
   host = System.get_env("PHX_HOST") || "example.com"
 

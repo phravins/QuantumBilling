@@ -52,5 +52,5 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-# Disable background recurring scheduler in test
-config :quantum_billing, start_scheduler: false
+# Background jobs run inline in tests (see the Oban config above), so nothing
+# needs a scheduler switched off any more.

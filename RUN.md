@@ -117,7 +117,7 @@ Because demo administrator passwords are not hardcoded into the codebase for sec
 
 To verify that all features, tax rules, and security protections are functioning properly:
 
-- **Run the full test suite (754 tests)**:
+- **Run the full test suite (891 tests)**:
   ```bash
   mix test
   ```
@@ -131,6 +131,62 @@ To verify that all features, tax rules, and security protections are functioning
   ```bash
   mix hex.audit
   ```
+
+---
+
+## Background Jobs
+
+Anything slow, failure-prone, or too important to lose runs as an
+[Oban](https://hexdocs.pm/oban) job in Postgres rather than inside the request
+that asked for it: sending invoices, registering them with the IRP, billing
+recurring profiles, posting outbound webhooks, and pruning the audit trail.
+
+Queues (see `config/config.exs`): `mailers`, `webhooks`, `recurring`,
+`maintenance`, `default`. Jobs survive restarts, are retried with backoff, and
+can be inspected in the `oban_jobs` table:
+
+```sql
+-- What is waiting, and what has given up
+SELECT state, queue, worker, count(*) FROM oban_jobs GROUP BY 1, 2, 3;
+
+-- Why a job failed
+SELECT worker, args, errors FROM oban_jobs WHERE state = 'discarded';
+```
+
+Scheduled work is inserted by the Cron plugin on the Oban leader — one node,
+however many are running:
+
+| When (UTC) | Job | What it does |
+| --- | --- | --- |
+| 01:30 daily | `RecurringInvoiceWorker` | Queues one billing job per due recurring profile |
+| 02:00 daily | `AuditPruneWorker` | Deletes audit logs past the retention window, and mail/webhook ledgers past 90 days |
+
+Email delivery is visible in the application itself, under
+**Settings → SMTP → Recent Deliveries**: every attempt, its status, and the
+relay's own error message if it failed.
+
+---
+
+## Security Notes
+
+- **Secrets at rest.** The SMTP password, Razorpay key secret, IRP password and
+  webhook signing secret are encrypted with AES-256-GCM under
+  `SECRETS_ENCRYPTION_KEY`; TOTP secrets under `TOTP_ENCRYPTION_KEY`. Both are
+  required in production and the app refuses to boot without them. The settings
+  form is write-only for credentials — it never renders a stored one back.
+- **Incoming webhooks.** `/api/webhooks/razorpay` requires a valid signature
+  over the raw request body, keyed with `RAZORPAY_WEBHOOK_SECRET`. Without that
+  variable set, the endpoint refuses every delivery. Events are recorded by id
+  so a redelivery cannot mark an invoice paid twice.
+- **Outgoing webhooks.** Signed with HMAC-SHA256 in the
+  `x-quantumbilling-signature` header, using the secret from
+  Settings → Integrations.
+- **Behind a proxy.** `x-forwarded-for` is only believed from addresses listed
+  in `TRUSTED_PROXIES`. Leave it empty when the app is reached directly, or the
+  IP allowlist and per-address rate limiting can be bypassed with a header.
+- **Mail in transit.** Relay certificates are verified against the system trust
+  store and the hostname; STARTTLS is required on anything but port 465. Set
+  `SMTP_TLS_VERIFY=false` only for a self-signed relay on a trusted network.
 
 ---
 
@@ -150,3 +206,18 @@ To verify that all features, tax rules, and security protections are functioning
 
 ### "You must restart your server after changing configuration files"
 - If you edit `.env` or files under `config/`, stop the server process (`Ctrl + C` twice) and start it again with `mix phx.server`.
+
+### Invoice emails are not arriving
+1. Open **Settings → SMTP** and press **Send Test Email**. The flash message is
+   the relay's own answer, not a generic failure.
+2. Check **Recent Deliveries** on the same panel: a message stuck at `queued`
+   with a rising attempt count is being retried; `failed` means Oban has given
+   up, and the last error is shown.
+3. A host, a username and a password are all needed together — a username
+   without a password is rejected when saving rather than failing silently at
+   the relay.
+
+### Slow pages
+Queries taking longer than `SLOW_QUERY_MS` (default 500) are logged with the
+table they hit. A long *queue* time in that log means the connection pool is
+exhausted — raise `POOL_SIZE` — rather than the query itself being slow.

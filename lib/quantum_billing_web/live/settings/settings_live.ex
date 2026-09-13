@@ -25,6 +25,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
@@ -37,6 +38,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     if connected?(socket) do
       Settings.subscribe()
       Templates.subscribe()
+      Mail.subscribe()
     end
 
     {:ok,
@@ -44,6 +46,7 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign(:page_title, "Settings")
      |> assign(:active_nav, :settings)
      |> assign(:organization, Settings.get_organization())
+     |> assign(:deliveries, [])
      # The thumbnails render a real invoice rather than an empty shell, so a
      # design can be judged by how it handles figures and a long description.
      |> assign(:sample, InvoiceDocument.sample())
@@ -82,6 +85,16 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, assign_templates(socket)}
   end
 
+  # A message going out while the SMTP panel is open. The panel is the one
+  # place that shows delivery state, so nothing else needs rebuilding.
+  def handle_info({:email_delivery_changed, _delivery}, socket) do
+    if socket.assigns[:section] == :smtp do
+      {:noreply, assign_deliveries(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
@@ -90,7 +103,16 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign(:section, section)
      |> assign(:page_title, section(section).title)
      |> assign_form(section)
-     |> assign_templates(section)}
+     |> assign_templates(section)
+     |> assign_deliveries(section)}
+  end
+
+  # Read only for the panel that shows them.
+  defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
+  defp assign_deliveries(socket, _section), do: socket
+
+  defp assign_deliveries(socket) do
+    assign(socket, :deliveries, Mail.list_recent_deliveries(8))
   end
 
   # Only the Customization panel lists templates, and `ensure_default/0` writes —
@@ -118,8 +140,16 @@ defmodule QuantumBillingWeb.SettingsLive do
     Enum.find_value(sections(), :general, fn s -> if to_string(s.key) == value, do: s.key end)
   end
 
+  # Built from the scrubbed organisation: stored credentials must not travel
+  # back to the browser, and a `password` input renders whatever value it is
+  # given. Saving still works on the real struct — a blank secret box means
+  # "leave it as it is".
   defp assign_form(socket, section) when section in @saveable do
-    changeset = Settings.change_organization(socket.assigns.organization, %{}, section)
+    changeset =
+      socket.assigns.organization
+      |> Organization.scrub_secrets()
+      |> Settings.change_organization(%{}, section)
+
     assign(socket, :form, to_form(changeset, as: "organization"))
   end
 
@@ -156,6 +186,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   def handle_event("validate", %{"organization" => params}, socket) do
     changeset =
       socket.assigns.organization
+      |> Organization.scrub_secrets()
       |> Settings.change_organization(params, socket.assigns.section)
       |> Map.put(:action, :validate)
 
@@ -202,26 +233,33 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, cancel_upload(socket, :logo, ref)}
   end
 
+  # Synchronous on purpose — the whole point is to report what the relay said,
+  # to the person who just pressed the button. Every other message in the
+  # application goes through the queue.
   def handle_event("send_test_email", _params, socket) do
     recipient =
-      socket.assigns.current_scope.user.email || socket.assigns.organization.email ||
-        "test@example.com"
+      socket.assigns.current_scope.user.email || socket.assigns.organization.email
 
-    sample_invoice = socket.assigns.sample
-
-    case QuantumBilling.InvoiceNotifier.deliver_invoice_pdf(recipient, sample_invoice) do
-      {:ok, _email} ->
+    case recipient && Mail.send_test(recipient) do
+      {:ok, _metadata} ->
         {:noreply,
          socket
-         |> put_flash(
-           :info,
-           "Test email with sample PDF successfully dispatched to #{recipient}!"
+         |> put_flash(:info, "Test email sent to #{recipient}.")
+         |> assign_deliveries()}
+
+      {:error, message} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "The relay refused it: #{message}")
+         |> assign_deliveries()}
+
+      nil ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Set a contact email address first — there is nobody to send a test to."
          )}
-
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Failed to send test email: #{inspect(reason)}")}
     end
   end
 
@@ -719,7 +757,8 @@ defmodule QuantumBillingWeb.SettingsLive do
         <div>
           <h3 class="text-sm font-semibold tracking-tight">Test SMTP Mail Dispatch</h3>
           <p class="mt-1 text-xs text-base-content/60">
-            Dispatch a test invoice PDF email using your configured SMTP settings.
+            Sends a short message through these settings, right now, and reports exactly what the
+            relay said.
           </p>
         </div>
 
@@ -730,6 +769,54 @@ defmodule QuantumBillingWeb.SettingsLive do
         >
           <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
         </button>
+      </div>
+    </div>
+
+    <div class="mt-6 border-t border-base-300 pt-5">
+      <h3 class="text-sm font-semibold tracking-tight">Recent Deliveries</h3>
+      <p class="mt-1 text-xs text-base-content/60">
+        Every message the application has tried to send, whether it arrived, and what went wrong
+        if it did not. Invoice mail is queued and retried in the background, so a failure here
+        outlives the page that caused it.
+      </p>
+
+      <p :if={@deliveries == []} class="mt-4 text-xs text-base-content/45">
+        Nothing has been sent yet.
+      </p>
+
+      <div :if={@deliveries != []} class="mt-3 overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class={table_head_class()}>
+              <th>When</th>
+              <th>To</th>
+              <th>Subject</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={delivery <- @deliveries} id={"delivery-#{delivery.id}"} class="text-xs">
+              <td class="whitespace-nowrap text-base-content/50">
+                {Calendar.strftime(delivery.inserted_at, "%d %b %H:%M")}
+              </td>
+              <td class="truncate">{delivery.to_email}</td>
+              <td class="truncate text-base-content/60">{delivery.subject}</td>
+              <td>
+                <span class={[
+                  "badge badge-sm",
+                  delivery.status == "sent" && "badge-success",
+                  delivery.status == "failed" && "badge-error",
+                  delivery.status == "queued" && "badge-ghost"
+                ]}>
+                  {delivery.status}
+                </span>
+                <span :if={delivery.last_error} class="ml-1 block text-2xs text-error">
+                  {delivery.last_error}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
     """

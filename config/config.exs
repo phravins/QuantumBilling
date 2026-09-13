@@ -85,12 +85,44 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-# Configure Oban Persistent Job Processor
+# Background work.
+#
+# Everything that can be slow, can fail, or must survive a restart runs here
+# rather than in the request that asked for it: sending invoices, registering
+# them with the IRP, billing recurring profiles, posting webhooks, pruning the
+# audit trail. Oban keeps its jobs in Postgres, so a deploy or a crash loses
+# none of them, and the same jobs are visible and retriable afterwards.
+#
+# Queues are separated by what they wait on rather than by importance. Mail and
+# webhooks wait on other people's servers, so they get a wide concurrency and
+# cannot starve anything else while they do; maintenance is deliberately narrow
+# because its jobs delete in batches and there is no value in two at once.
 config :quantum_billing, Oban,
   repo: QuantumBilling.Repo,
-  queues: [default: 10, mailers: 20, recurring: 5],
+  queues: [
+    default: 10,
+    mailers: 20,
+    recurring: 5,
+    webhooks: 10,
+    maintenance: 2
+  ],
   plugins: [
-    Oban.Plugins.Pruner
+    # Completed jobs are a record for a week, then they are noise.
+    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},
+    # A node that dies mid-job leaves that job marked executing for ever.
+    # Lifeline hands it back to the queue.
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)},
+    # The jobs table churns heavily; its indexes bloat without this.
+    {Oban.Plugins.Reindexer, schedule: "@weekly"},
+    # Scheduled work. Inserted by the Oban leader — one node, no matter how
+    # many are running — which is exactly what a plain GenServer timer could
+    # not promise: on two nodes it billed every recurring profile twice.
+    {Oban.Plugins.Cron,
+     crontab: [
+       # Early morning, before the working day, in UTC.
+       {"30 1 * * *", QuantumBilling.Workers.RecurringInvoiceWorker},
+       {"0 2 * * *", QuantumBilling.Workers.AuditPruneWorker}
+     ]}
   ]
 
 # Import environment specific config. This must remain at the bottom

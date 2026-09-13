@@ -273,6 +273,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
           "smtp_host" => "smtp.sendgrid.net",
           "smtp_port" => "587",
           "smtp_username" => "apikey",
+          "smtp_password" => "SG.super-secret",
           "smtp_from_email" => "billing@company.com"
         }
       })
@@ -282,7 +283,60 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert org.smtp_host == "smtp.sendgrid.net"
       assert org.smtp_port == 587
       assert org.smtp_username == "apikey"
+      assert org.smtp_password == "SG.super-secret"
       assert org.smtp_from_email == "billing@company.com"
+    end
+
+    test "a username without a password is rejected rather than half-saved", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      html =
+        view
+        |> form("#settings-form", %{
+          "organization" => %{
+            "smtp_host" => "smtp.sendgrid.net",
+            "smtp_username" => "apikey",
+            "smtp_password" => ""
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "is required when a username is set"
+      assert Settings.get_organization().smtp_host == nil
+    end
+
+    test "the stored password is never rendered back into the form", %{conn: conn} do
+      {:ok, organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"smtp_host" => "smtp.example.com", "smtp_password" => "hunter2-in-the-page"},
+          :smtp
+        )
+
+      assert organization.smtp_password == "hunter2-in-the-page"
+
+      {:ok, _view, html} = live(conn, ~p"/settings/smtp")
+
+      refute html =~ "hunter2-in-the-page"
+    end
+
+    test "saving a panel with a blank password keeps the stored one", %{conn: conn} do
+      {:ok, _organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"smtp_host" => "smtp.example.com", "smtp_password" => "keep-me"},
+          :smtp
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{"smtp_host" => "smtp.example.com", "smtp_password" => ""}
+      })
+      |> render_submit()
+
+      assert Settings.get_organization().smtp_password == "keep-me"
     end
   end
 

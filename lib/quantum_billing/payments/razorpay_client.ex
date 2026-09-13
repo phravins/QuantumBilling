@@ -9,8 +9,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   Creates a Razorpay Payment Link and UPI QR payload for an invoice.
   """
   def create_payment_link(%Invoice{} = invoice) do
-    key_id = System.get_env("RAZORPAY_KEY_ID")
-    key_secret = System.get_env("RAZORPAY_KEY_SECRET")
+    {key_id, key_secret} = credentials()
 
     payload = %{
       "amount" => invoice.grand_total * 100,
@@ -65,6 +64,29 @@ defmodule QuantumBilling.Payments.RazorpayClient do
       false
     end
   end
+
+  @doc """
+  The API credentials, from Settings first and the environment second.
+
+  Settings is checked first because that is where the application asks for
+  them, and where they are encrypted at rest; the environment stays supported
+  so a deployment can keep them out of the database entirely.
+  """
+  def credentials do
+    organization = QuantumBilling.Settings.get_organization()
+
+    {presence(organization.razorpay_key_id) || System.get_env("RAZORPAY_KEY_ID"),
+     presence(organization.razorpay_key_secret) || System.get_env("RAZORPAY_KEY_SECRET")}
+  end
+
+  defp presence(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp presence(_value), do: nil
 
   defp sandbox_payment_link(invoice) do
     link_id = "plink_" <> Enum.map_join(1..12, fn _ -> to_string(Enum.random(0..9)) end)

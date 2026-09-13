@@ -22,6 +22,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
+        # Registering an e-invoice happens in a background job now, so this
+        # page has to be told when it finishes rather than holding the click
+        # open until it does.
+        if connected?(socket), do: Invoices.subscribe()
+
         {doc, accent, logo} = Templates.document_for(invoice)
 
         {:ok,
@@ -36,39 +41,50 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     end
   end
 
+  # Queued rather than called: the IRP is a government service over the public
+  # internet, and holding this click open for it meant a page that hung when it
+  # was slow and a failure that nothing ever retried. The job reports back
+  # through the invoice topic, which this page is subscribed to.
   def handle_event("generate_einvoice", _params, socket) do
-    case Invoices.generate_einvoice(socket.assigns.invoice) do
-      {:ok, updated_invoice} ->
-        {doc, accent, logo} = Templates.document_for(updated_invoice)
+    invoice = socket.assigns.invoice
 
+    case Invoices.queue_einvoice(invoice) do
+      {:ok, :queued} ->
         {:noreply,
          socket
-         |> put_flash(:info, "E-Invoice (IRN) generated successfully!")
-         |> assign(:invoice, updated_invoice)
-         |> assign(:doc, doc)
-         |> assign(:accent, accent)
-         |> assign(:logo, logo)}
+         |> put_flash(:info, "Registering #{invoice.invoice_number} with the IRP…")
+         |> refresh_invoice()}
+
+      {:ok, :already_registered} ->
+        {:noreply, put_flash(socket, :info, "This invoice already has an IRN.")}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to generate E-Invoice: #{reason}")}
+        {:noreply, put_flash(socket, :error, "Could not queue the E-Invoice: #{inspect(reason)}")}
     end
   end
 
   def handle_event("send_email", _params, socket) do
     invoice = socket.assigns.invoice
-    recipient = invoice.client_email || "customer@example.com"
 
-    case InvoiceNotifier.deliver_invoice_pdf(recipient, invoice) do
-      {:ok, _email} ->
+    case InvoiceNotifier.deliver_invoice_pdf_async(invoice.client_email, invoice) do
+      {:ok, delivery} ->
         {:noreply,
-         socket
-         |> put_flash(
+         put_flash(
+           socket,
            :info,
-           "Invoice #{invoice.invoice_number} sent to #{recipient} with PDF attachment!"
+           "Invoice #{invoice.invoice_number} queued for delivery to #{delivery.to_email}."
+         )}
+
+      {:error, :invalid_recipient} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This invoice has no valid client email address to send to."
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not send email: #{inspect(reason)}")}
+        {:noreply, put_flash(socket, :error, "Could not queue the email: #{inspect(reason)}")}
     end
   end
 
@@ -128,6 +144,33 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   def handle_event("toggle_cn_modal", _params, socket) do
     {:noreply, assign(socket, :show_cn_modal, !Map.get(socket.assigns, :show_cn_modal, false))}
+  end
+
+  # The job that registered the IRN, or an edit in another window.
+  def handle_info({:invoice_changed, %{id: id}}, socket) do
+    if id == socket.assigns.invoice.id do
+      {:noreply, refresh_invoice(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp refresh_invoice(socket) do
+    case Invoices.get_invoice(socket.assigns.invoice.id) do
+      nil ->
+        socket
+
+      invoice ->
+        {doc, accent, logo} = Templates.document_for(invoice)
+
+        socket
+        |> assign(:invoice, invoice)
+        |> assign(:doc, doc)
+        |> assign(:accent, accent)
+        |> assign(:logo, logo)
+    end
   end
 
   def render(assigns) do

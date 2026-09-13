@@ -4,10 +4,13 @@ defmodule QuantumBillingWeb.ReportsLive do
   breakdown, a tax summary by tax type and the top clients — all driven by one
   set of filters.
 
-  `mount/3` loads the dataset once and `handle_event/3` only ever updates raw
-  filter state; `render/1` re-derives every panel from
-  `QuantumBilling.Reports.filter/2` on each pass, so there is a single source of
-  truth and no chance of two panels disagreeing.
+  Filter state is the only thing this LiveView holds. Every panel comes from
+  one call to `QuantumBilling.Reports.aggregate/1`, which the database answers
+  with a handful of grouped queries — so there is a single source of truth, no
+  chance of two panels disagreeing, and no copy of the invoice table in the
+  socket. It used to load every invoice ever issued on mount and again on every
+  change elsewhere in the application, which is fine at a thousand invoices and
+  is a memory problem long before a million.
 
   Charts here carry colour. That is deliberate and confined to them — every
   other element uses the monochrome classes shared with the rest of the app.
@@ -27,14 +30,14 @@ defmodule QuantumBillingWeb.ReportsLive do
      socket
      |> assign(:page_title, "Reports")
      |> assign(:active_nav, :reports)
-     |> assign(:invoices, Reports.invoices())
-     |> assign(:filters, Reports.default_filters())}
+     |> assign(:filters, Reports.default_filters())
+     |> load_report()}
   end
 
-  # Only the underlying set is replaced. The active filters stay put, so a
-  # report someone is reading does not reset itself when an invoice changes.
+  # Recomputed, not reset: the active filters stay put, so a report someone is
+  # reading does not jump when an invoice changes in another window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, assign(socket, :invoices, Reports.invoices())}
+    {:noreply, load_report(socket)}
   end
 
   def handle_event("filter", params, socket) do
@@ -45,7 +48,7 @@ defmodule QuantumBillingWeb.ReportsLive do
       |> put_filter(params, "status", :status)
       |> put_filter(params, "gstin", :gstin)
 
-    {:noreply, assign(socket, :filters, filters)}
+    {:noreply, socket |> assign(:filters, filters) |> load_report()}
   end
 
   # The Apply button submits the same form; the change handler has already
@@ -55,11 +58,19 @@ defmodule QuantumBillingWeb.ReportsLive do
   end
 
   def handle_event("reset_filters", _params, socket) do
-    {:noreply, assign(socket, :filters, Reports.default_filters())}
+    {:noreply, socket |> assign(:filters, Reports.default_filters()) |> load_report()}
   end
 
   def handle_event("set_range", %{"range" => range}, socket) do
-    {:noreply, assign(socket, :filters, Map.put(socket.assigns.filters, :date_range, range))}
+    {:noreply,
+     socket
+     |> assign(:filters, Map.put(socket.assigns.filters, :date_range, range))
+     |> load_report()}
+  end
+
+  # One trip to the database per filter change, rather than per panel.
+  defp load_report(socket) do
+    assign(socket, :report, Reports.aggregate(socket.assigns.filters))
   end
 
   defp put_filter(filters, params, key, field) do
@@ -70,16 +81,14 @@ defmodule QuantumBillingWeb.ReportsLive do
   end
 
   def render(assigns) do
-    filtered = Reports.filter(assigns.invoices, assigns.filters)
-
     assigns =
       assign(assigns,
-        summary: Reports.summary(filtered),
-        trend: Reports.monthly_trend(filtered),
-        breakdown: Reports.status_breakdown(filtered),
-        tax_rows: Reports.tax_summary(filtered),
-        top_clients: Reports.top_clients(filtered),
-        total_count: length(filtered)
+        summary: assigns.report.summary,
+        trend: assigns.report.trend,
+        breakdown: assigns.report.breakdown,
+        tax_rows: assigns.report.tax_rows,
+        top_clients: assigns.report.top_clients,
+        total_count: assigns.report.total_count
       )
 
     ~H"""

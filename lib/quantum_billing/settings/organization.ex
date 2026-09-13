@@ -10,6 +10,7 @@ defmodule QuantumBilling.Settings.Organization do
 
   import Ecto.Changeset
 
+  alias QuantumBilling.Encrypted
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
 
@@ -77,23 +78,26 @@ defmodule QuantumBilling.Settings.Organization do
     field :language, :string, default: "en"
     field :rows_per_page, :integer, default: 10
 
-    # Custom SMTP Settings
+    # Custom SMTP Settings. The password is encrypted at rest — see
+    # `QuantumBilling.Encrypted.Secret` — because a mail relay has to be given
+    # it verbatim, so it cannot be hashed like a login password.
     field :smtp_host, :string
     field :smtp_port, :integer, default: 587
     field :smtp_username, :string
-    field :smtp_password, :string
+    field :smtp_password, Encrypted.Secret
     field :smtp_ssl, :boolean, default: false
     field :smtp_from_email, :string
     field :smtp_from_name, :string
 
-    # API & Webhook Integrations
+    # API & Webhook Integrations. Same treatment for the three credentials
+    # among them; the ids and the URL are configuration and stay readable.
     field :razorpay_key_id, :string
-    field :razorpay_key_secret, :string
+    field :razorpay_key_secret, Encrypted.Secret
     field :irp_username, :string
-    field :irp_password, :string
+    field :irp_password, Encrypted.Secret
     field :irp_client_id, :string
     field :webhook_url, :string
-    field :webhook_secret, :string
+    field :webhook_secret, Encrypted.Secret
 
     # Security Settings
     field :allowed_ips, :string
@@ -217,19 +221,172 @@ defmodule QuantumBilling.Settings.Organization do
   def changeset(organization, attrs, :smtp) do
     organization
     |> cast(attrs, @smtp)
+    |> keep_stored_secrets()
+    |> trim(@smtp)
     |> validate_number(:smtp_port, greater_than: 0, less_than: 65536)
+    |> validate_format(:smtp_from_email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    # A relay address with a scheme or a path in it is a copied-and-pasted URL,
+    # and gen_smtp would spend its connection timeout finding that out.
+    |> validate_format(:smtp_host, ~r|^[^\s/:]+$|,
+      message: "must be a hostname only, without https:// or a port"
+    )
+    # Anonymous relays exist, but a username with no password is always a
+    # half-filled form, and it fails at the relay with an error nobody can read.
+    |> validate_smtp_credentials_paired()
   end
 
   def changeset(organization, attrs, :integrations) do
-    cast(organization, attrs, @integrations)
+    organization
+    |> cast(attrs, @integrations)
+    |> keep_stored_secrets()
+    |> trim(@integrations)
+    |> validate_webhook_url()
   end
 
   def changeset(organization, attrs, :security) do
     organization
     |> cast(attrs, @security)
-    |> validate_number(:session_timeout_minutes, greater_than: 0)
-    |> validate_number(:audit_retention_days, greater_than: 0)
+    |> validate_number(:session_timeout_minutes, greater_than: 0, less_than_or_equal_to: 10_080)
+    |> validate_number(:audit_retention_days, greater_than: 0, less_than_or_equal_to: 3_650)
+    |> validate_allowed_ips()
   end
+
+  @write_only ~w(smtp_password razorpay_key_secret irp_password webhook_secret)a
+
+  @doc """
+  The fields that are never sent back to the browser.
+
+  These are credentials for other systems. The settings form is write-only for
+  them: a `password` input still renders its value into the HTML, so showing
+  the stored password would publish it in the page source of every settings
+  load — to a shoulder, a screen share, a cached page, a browser extension.
+  """
+  def secret_fields, do: @write_only
+
+  @doc """
+  The organisation with its stored credentials blanked out, for rendering.
+
+  Saving is unaffected: a blank secret in a submitted form means "leave it
+  alone" (see `keep_stored_secrets/1`), so a panel can be saved without
+  retyping credentials that were never displayed.
+  """
+  def scrub_secrets(%__MODULE__{} = organization) do
+    Enum.reduce(@write_only, organization, &Map.put(&2, &1, nil))
+  end
+
+  @doc "Whether `field` currently holds a stored credential."
+  def secret_present?(%__MODULE__{} = organization, field) when field in @write_only do
+    case Map.get(organization, field) do
+      value when is_binary(value) -> String.trim(value) != ""
+      _absent -> false
+    end
+  end
+
+  # An empty secret box means "unchanged", because the form never showed what
+  # was there. Clearing a credential is done by removing the host or the key it
+  # belongs to, which is visible in the form and therefore deliberate.
+  defp keep_stored_secrets(changeset) do
+    Enum.reduce(@write_only, changeset, fn field, acc ->
+      # `fetch_change/2` rather than `get_change/2`: an empty box casts to a
+      # `nil` change, and `get_change/2` cannot tell that apart from no change
+      # at all — which is exactly the difference between "clear the password"
+      # and "I did not touch it".
+      case fetch_change(acc, field) do
+        {:ok, nil} -> delete_change(acc, field)
+        {:ok, value} when is_binary(value) -> maybe_drop_blank(acc, field, value)
+        _no_change -> acc
+      end
+    end)
+  end
+
+  defp maybe_drop_blank(changeset, field, value) do
+    if String.trim(value) == "", do: delete_change(changeset, field), else: changeset
+  end
+
+  # Whitespace around a host, a username or a URL is invisible in the form and
+  # fatal at the other end, so it is removed on the way in rather than at every
+  # point of use.
+  defp trim(changeset, fields) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      case get_change(acc, field) do
+        value when is_binary(value) -> put_change(acc, field, String.trim(value))
+        _other -> acc
+      end
+    end)
+  end
+
+  defp validate_smtp_credentials_paired(changeset) do
+    username = get_field(changeset, :smtp_username)
+    password = get_field(changeset, :smtp_password)
+
+    if present?(username) and not present?(password) do
+      add_error(changeset, :smtp_password, "is required when a username is set")
+    else
+      changeset
+    end
+  end
+
+  defp validate_webhook_url(changeset) do
+    case get_field(changeset, :webhook_url) do
+      blank when blank in [nil, ""] ->
+        changeset
+
+      url ->
+        case URI.new(url) do
+          {:ok, %URI{scheme: scheme, host: host}}
+          when scheme in ["http", "https"] and is_binary(host) and host != "" ->
+            changeset
+
+          _invalid ->
+            add_error(changeset, :webhook_url, "must be a full http:// or https:// URL")
+        end
+    end
+  end
+
+  # Each entry is a single address or a CIDR block. Validating here means a
+  # typo is caught in the form rather than at the door, where a malformed entry
+  # would simply never match and lock everyone out.
+  defp validate_allowed_ips(changeset) do
+    case get_field(changeset, :allowed_ips) do
+      blank when blank in [nil, ""] ->
+        changeset
+
+      list ->
+        invalid =
+          list
+          |> String.split(",", trim: true)
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.reject(&valid_ip_entry?/1)
+
+        case invalid do
+          [] -> changeset
+          bad -> add_error(changeset, :allowed_ips, "not an IP or CIDR: #{Enum.join(bad, ", ")}")
+        end
+    end
+  end
+
+  defp valid_ip_entry?(entry) do
+    case String.split(entry, "/") do
+      [address] ->
+        match?({:ok, _}, :inet.parse_address(to_charlist(address)))
+
+      [address, prefix] ->
+        with {:ok, parsed} <- :inet.parse_address(to_charlist(address)),
+             {length, ""} <- Integer.parse(prefix) do
+          length >= 0 and length <= if(tuple_size(parsed) == 4, do: 32, else: 128)
+        else
+          _invalid -> false
+        end
+
+      _too_many_slashes ->
+        false
+    end
+  end
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
   # The transporter ID is optional, but must be a GSTIN when supplied.
   defp maybe_validate_transporter_id(changeset) do

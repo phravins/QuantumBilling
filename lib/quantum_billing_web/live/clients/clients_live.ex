@@ -27,69 +27,79 @@ defmodule QuantumBillingWeb.ClientsLive do
      socket
      |> assign(:page_title, "Clients")
      |> assign(:active_nav, :clients)
-     |> assign(:all_clients, Clients.list_clients())
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, nil)
      |> assign(:sort_dir, :asc)
-     |> assign(:page, 1)}
+     |> assign(:page, 1)
+     |> load_page()}
   end
 
   def handle_event("search", %{"q" => q}, socket) do
-    {:noreply, socket |> assign(:search, q) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:search, q) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("filter_status", %{"status" => status}, socket) do
-    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    field = String.to_existing_atom(field_str)
+    # Matched against the context's allowlist rather than converted to an atom:
+    # this is user input heading for an ORDER BY.
+    case Enum.find(Clients.sortable_fields(), &(to_string(&1) == field_str)) do
+      nil ->
+        {:noreply, socket}
 
-    {sort_field, sort_dir} =
-      if socket.assigns.sort_field == field do
-        {field, if(socket.assigns.sort_dir == :asc, do: :desc, else: :asc)}
-      else
-        {field, :asc}
-      end
+      field ->
+        {sort_field, sort_dir} =
+          if socket.assigns.sort_field == field do
+            {field, if(socket.assigns.sort_dir == :asc, do: :desc, else: :asc)}
+          else
+            {field, :asc}
+          end
 
-    {:noreply, assign(socket, sort_field: sort_field, sort_dir: sort_dir, page: 1)}
+        {:noreply,
+         socket
+         |> assign(sort_field: sort_field, sort_dir: sort_dir, page: 1)
+         |> load_page()}
+    end
   end
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
-    {:noreply, assign(socket, :page, String.to_integer(page_str))}
+    case Integer.parse(page_str) do
+      {page, ""} -> {:noreply, socket |> assign(:page, page) |> load_page()}
+      _not_a_page -> {:noreply, socket}
+    end
   end
 
-  # A client added or edited in another window. Reload the whole set rather than
-  # splicing the one row in: the active search and the sort order both have to
-  # agree with it, and `render/1` already derives them from `all_clients`.
+  # A client added or edited in another window. The page is re-read rather than
+  # the row spliced in: the active search, filter and sort all have to agree
+  # with where — or whether — it belongs on this screen.
   def handle_info({event, _client}, socket) when event in [:client_created, :client_updated] do
-    {:noreply, assign(socket, :all_clients, Clients.list_clients())}
+    {:noreply, load_page(socket)}
+  end
+
+  defp load_page(socket) do
+    result =
+      Clients.page(
+        search: socket.assigns.search,
+        status: socket.assigns.status_filter,
+        sort_field: socket.assigns.sort_field,
+        sort_dir: socket.assigns.sort_dir,
+        page: socket.assigns.page,
+        per_page: @per_page
+      )
+
+    socket
+    |> assign(:rows, result.rows)
+    |> assign(:total, result.total)
+    |> assign(:total_pages, result.total_pages)
+    |> assign(:page, result.page)
+    |> assign(:row_offset, (result.page - 1) * result.per_page)
   end
 
   def render(assigns) do
-    all = assigns.all_clients
-
-    filtered =
-      all
-      |> filter_search(assigns.search)
-      |> filter_status(assigns.status_filter)
-      |> sort_rows(assigns.sort_field, assigns.sort_dir)
-
-    total = length(filtered)
-    total_pages = max(ceil(total / @per_page), 1)
-    page = assigns.page |> max(1) |> min(total_pages)
-    rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
-
-    assigns =
-      assign(assigns,
-        rows: rows,
-        total: total,
-        total_pages: total_pages,
-        page: page,
-        row_offset: (page - 1) * @per_page,
-        status_options: @status_options
-      )
+    assigns = assign(assigns, status_options: @status_options)
 
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
@@ -254,27 +264,4 @@ defmodule QuantumBillingWeb.ClientsLive do
     </Layouts.app>
     """
   end
-
-  defp filter_search(rows, ""), do: rows
-
-  defp filter_search(rows, search) do
-    needle = String.downcase(search)
-
-    Enum.filter(rows, fn r ->
-      matches?(r.name, needle) or matches?(r.gstin, needle) or matches?(r.email, needle)
-    end)
-  end
-
-  # GSTIN and email are both legitimately absent — an unregistered client has no
-  # GSTIN — so a nil must simply not match rather than crash the search.
-  defp matches?(nil, _needle), do: false
-  defp matches?(value, needle), do: String.contains?(String.downcase(value), needle)
-
-  defp filter_status(rows, "All Status"), do: rows
-  defp filter_status(rows, status), do: Enum.filter(rows, &(&1.status == status))
-
-  # No explicit sort yet: keep the natural insertion order.
-  defp sort_rows(rows, nil, _dir), do: rows
-  defp sort_rows(rows, :name, dir), do: Enum.sort_by(rows, & &1.name, dir)
-  defp sort_rows(rows, :outstanding, dir), do: Enum.sort_by(rows, & &1.outstanding, dir)
 end

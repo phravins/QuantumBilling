@@ -9,6 +9,7 @@ defmodule QuantumBilling.Payments do
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Audit
   alias QuantumBilling.Repo
+  alias QuantumBilling.Webhooks
 
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
@@ -79,6 +80,17 @@ defmodule QuantumBilling.Payments do
 
   def process_razorpay_webhook(_other), do: {:ok, :ignored}
 
+  @doc """
+  Marks an invoice paid and tells everyone who needs to know.
+
+  Already-paid invoices are left alone and reported as `{:ok, invoice}`: a
+  webhook redelivery, a manual reconciliation and a second payment
+  notification all end up here, and none of them should re-stamp the invoice,
+  re-audit the payment or send the customer another receipt. The webhook ledger
+  catches most repeats; this catches the rest.
+  """
+  def reconcile_payment(%Invoice{status: "Paid"} = invoice, _payment_id), do: {:ok, invoice}
+
   def reconcile_payment(%Invoice{} = invoice, payment_id) do
     changeset =
       Ecto.Changeset.change(invoice, %{
@@ -95,11 +107,25 @@ defmodule QuantumBilling.Payments do
           }
         )
 
+        # Queued, not sent: this runs inside a webhook request the payment
+        # provider is timing, and a slow mail relay must not turn a successful
+        # payment into a retried delivery.
         if updated.client_email && updated.client_email != "" do
-          InvoiceNotifier.deliver_invoice_pdf(updated.client_email, updated)
+          InvoiceNotifier.deliver_invoice_pdf_async(updated.client_email, updated,
+            kind: "payment_receipt"
+          )
         end
 
         Invoices.broadcast_change(updated)
+
+        Webhooks.dispatch("invoice.paid", %{
+          invoice_number: updated.invoice_number,
+          invoice_id: updated.id,
+          amount: updated.grand_total,
+          payment_id: payment_id,
+          client_name: updated.client_name
+        })
+
         {:ok, updated}
 
       {:error, cs} ->
