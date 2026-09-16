@@ -93,15 +93,19 @@ config :logger, :default_formatter,
 # audit trail. Oban keeps its jobs in Postgres, so a deploy or a crash loses
 # none of them, and the same jobs are visible and retriable afterwards.
 #
-# Queues are separated by what they wait on rather than by importance. Mail and
-# webhooks wait on other people's servers, so they get a wide concurrency and
-# cannot starve anything else while they do; maintenance is deliberately narrow
-# because its jobs delete in batches and there is no value in two at once.
+# Queues are separated by what they wait on rather than by importance. Webhooks
+# wait on other people's servers, so they get a wide concurrency and cannot
+# starve anything else while they do; mail is narrower because each message
+# prints a PDF, and maintenance is narrower still because its jobs delete in
+# batches and there is no value in two at once.
 config :quantum_billing, Oban,
   repo: QuantumBilling.Repo,
   queues: [
     default: 10,
-    mailers: 20,
+    # Each invoice email prints a PDF, which starts a headless browser. Twenty
+    # at once is twenty browsers; five keeps the queue moving without the mail
+    # backlog becoming the thing that takes the machine down.
+    mailers: 5,
     recurring: 5,
     webhooks: 10,
     maintenance: 2

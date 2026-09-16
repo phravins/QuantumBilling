@@ -242,8 +242,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             </button>
 
             <.link
-              href={~p"/invoices/#{@invoice.id}/pdf"}
-              target="_blank"
+              href={~p"/invoices/#{@invoice.id}/pdf/download"}
               class={secondary_button_class()}
             >
               <.icon name="hero-arrow-down-tray" class="size-4" /> PDF
@@ -373,13 +372,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/70">
               Instant UPI Payment QR
             </h4>
-            <div class="w-48 h-48 bg-white p-3 rounded-xl shadow-sm border border-base-200">
-              {raw(QRCode.generate_invoice_upi_qr(@invoice))}
-            </div>
-            <p class="text-xs text-center font-medium text-base-content/80">
-              Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay
-              <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
-            </p>
+            <.upi_qr
+              invoice={@invoice}
+              size_class="w-48 h-48"
+              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay ₹#{@invoice.grand_total}"}
+              caption_class="mt-2 text-xs text-center font-medium text-base-content/80"
+            />
           </div>
 
           <%!-- Government Signed E-Invoice QR Code --%>

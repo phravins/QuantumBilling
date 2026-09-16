@@ -29,6 +29,10 @@ config :quantum_billing, QuantumBillingWeb.Endpoint,
     tailwind: {Tailwind, :install_and_run, [:quantum_billing, ~w(--watch)]}
   ]
 
+# Payment links are simulated here rather than calling Razorpay. In production
+# a missing or rejected key is an error, not a fake link.
+config :quantum_billing, razorpay_sandbox: true
+
 # Enable dev routes for dashboard and mailbox
 config :quantum_billing, dev_routes: true
 

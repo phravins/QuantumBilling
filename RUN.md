@@ -117,7 +117,7 @@ Because demo administrator passwords are not hardcoded into the codebase for sec
 
 To verify that all features, tax rules, and security protections are functioning properly:
 
-- **Run the full test suite (891 tests)**:
+- **Run the full test suite (929 tests)**:
   ```bash
   mix test
   ```
@@ -164,6 +164,63 @@ however many are running:
 Email delivery is visible in the application itself, under
 **Settings → SMTP → Recent Deliveries**: every attempt, its status, and the
 relay's own error message if it failed.
+
+---
+
+## Invoice Documents & PDFs
+
+The invoice document is one HTML page — `QuantumBillingWeb.InvoicePdfGenerator`
+— with the stylesheet embedded and the logo inlined as a `data:` URI, so it
+renders identically in the app, in an email and in a PDF viewer.
+
+PDFs are printed from that page by headless Chromium
+(`QuantumBillingWeb.InvoiceDoc.PDF`):
+
+| Where | What happens |
+| --- | --- |
+| `/invoices/:id/pdf` | The print view — your browser's Print › Save as PDF |
+| `/invoices/:id/pdf/download` | A real PDF file, printed server-side |
+| Emailed invoice | A real PDF attachment |
+
+Chromium is installed in the Docker image and found via `PDF_CHROME_PATH`
+(falling back to `chromium`/`google-chrome` on `PATH`). **Without it**, nothing
+breaks loudly: the download redirects to the print view, and emails attach the
+HTML document named `.html`. What never happens again is an HTML file sent as
+`INV-1234.pdf`.
+
+If PDFs come out with boxes instead of ₹ and other glyphs, the container is
+missing fonts — the image installs `fonts-liberation` and `fonts-dejavu-core`
+for exactly that reason.
+
+---
+
+## Payments & QR Codes
+
+- **UPI QR.** Set your UPI ID under **Settings › Integrations** (`yourbusiness@okhdfcbank`
+  — a VPA from a bank or PSP, not an email address, which is refused on save).
+  The QR encodes a proper `upi://pay` intent with the amount and invoice
+  reference. With no UPI ID set, the page says so instead of showing a blank
+  square.
+- **Razorpay payment links** need the key id and secret in the same panel (or
+  `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`). Without them the button reports
+  that Razorpay is not configured; it does not invent a link. Simulated links
+  exist only in development and test, and carry a `plink_sandbox_` id.
+
+---
+
+## Backup & Restore
+
+**Settings › Backup** downloads the whole business dataset as JSON — settings,
+clients, invoices and their line items, designs, recurring profiles, credit
+notes and the audit trail.
+
+Two things it deliberately does not contain: **credentials** (the SMTP
+password, API secrets, webhook secret — re-enter them in Settings after a
+restore) and **users or sign-in details**, which a restore never touches.
+
+Restoring replaces the business tables inside one transaction: it either
+applies completely or changes nothing, and it reports what came back. A file
+from a different version is refused rather than partially applied.
 
 ---
 

@@ -17,6 +17,7 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   import QuantumBillingWeb.DashboardComponents
 
+  alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments.QRCode
 
@@ -46,18 +47,23 @@ defmodule QuantumBillingWeb.DashboardLive do
   # and show five, on every page load and on every change anywhere in the
   # application.
   defp assign_dashboard(socket) do
+    today = Date.utc_today()
     totals = Invoices.totals()
+    month = Invoices.month_totals(today)
     status_counts = Invoices.status_counts()
+    chart_months = billed_months(Invoices.monthly_tax_split(6, today))
+    obligations = Compliance.obligations(today)
 
     socket
     |> assign(:page_title, "Dashboard")
     |> assign(:active_nav, :dashboard)
-    |> assign(:stats, stats(totals))
-    |> assign(:chart_months, chart_months(totals))
+    |> assign(:stats, stats(totals, month, obligations))
+    |> assign(:chart_months, chart_months)
+    |> assign(:chart_max, chart_max(chart_months))
     |> assign(:donut_segments, donut_segments(status_counts))
     |> assign(:donut_total, totals.count)
     |> assign(:invoices, Invoices.recent_invoices(5))
-    |> assign(:compliance_items, compliance_items())
+    |> assign(:compliance_items, compliance_items(obligations, today))
   end
 
   def render(assigns) do
@@ -96,7 +102,7 @@ defmodule QuantumBillingWeb.DashboardLive do
               </span>
             </div>
           </div>
-          <.bar_chart :if={@chart_months != []} months={@chart_months} />
+          <.bar_chart :if={@chart_months != []} months={@chart_months} max={@chart_max} />
           <.empty_state
             :if={@chart_months == []}
             icon="hero-chart-bar"
@@ -226,12 +232,12 @@ defmodule QuantumBillingWeb.DashboardLive do
           </div>
 
           <div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-base-200 shadow-inner">
-            <div class="w-48 h-48">
-              {raw(QRCode.generate_invoice_upi_qr(@qr_modal_invoice))}
-            </div>
-            <p class="mt-3 text-xs font-semibold text-gray-800 text-center">
-              Scan with GPay, PhonePe, Paytm, BHIM or any UPI App
-            </p>
+            <.upi_qr
+              invoice={@qr_modal_invoice}
+              size_class="w-48 h-48"
+              caption="Scan with GPay, PhonePe, Paytm, BHIM or any UPI App"
+              caption_class="mt-3 text-xs font-semibold text-gray-800 text-center"
+            />
           </div>
 
           <div :if={@qr_modal_invoice.signed_qr_code} class="border-t border-base-200 pt-3">
@@ -265,51 +271,81 @@ defmodule QuantumBillingWeb.DashboardLive do
     """
   end
 
-  defp stats(totals) do
+  # Every card is a figure this system actually holds. They used to be three
+  # hardcoded zeros and a count, which is indistinguishable from a business
+  # that has issued nothing — and stayed that way no matter how much was
+  # invoiced.
+  defp stats(totals, month, obligations) do
+    pending_returns =
+      Enum.count(obligations, &(&1.status in ["Pending", "Overdue"] and &1.category == :returns))
+
+    overdue_returns = Enum.count(obligations, &(&1.status == "Overdue"))
+
     [
       %{
-        label: "Total E-Invoices Generated",
+        label: "Invoices Issued",
         value: Integer.to_string(totals.count),
         icon: "hero-document-text",
         icon_class: "bg-base-200 text-base-content/60",
-        delta_text: nil,
-        delta_class: "text-success",
+        delta_text: "#{month.count} this month",
+        delta_class: "text-base-content/45",
         delta_icon: nil
       },
       %{
         label: "Current Month Tax Liability",
-        value: rupees(0),
+        value: rupees(month.tax),
         icon: "hero-currency-rupee",
         icon_class: "bg-base-200 text-base-content/60",
-        delta_text: nil,
-        delta_class: "text-success",
-        delta_icon: nil
-      },
-      %{
-        label: "Current Month ITC Available",
-        value: rupees(0),
-        icon: "hero-arrow-trending-down",
-        icon_class: "bg-base-200 text-base-content/60",
-        delta_text: nil,
-        delta_class: "text-success",
-        delta_icon: nil
-      },
-      %{
-        label: "Pending GSTR-3B Filings",
-        value: "0",
-        icon: "hero-calendar-days",
-        icon_class: "bg-base-200 text-base-content/60",
-        delta_text: nil,
+        delta_text: "on #{rupees(month.taxable_value)} taxable",
         delta_class: "text-base-content/45",
         delta_icon: nil
+      },
+      %{
+        label: "Outstanding Receivables",
+        value: rupees(totals.outstanding),
+        icon: "hero-banknotes",
+        icon_class: "bg-base-200 text-base-content/60",
+        delta_text: "#{totals.paid_count} paid in full",
+        delta_class: "text-base-content/45",
+        delta_icon: nil
+      },
+      %{
+        label: "Pending GST Returns",
+        value: Integer.to_string(pending_returns),
+        icon: "hero-calendar-days",
+        icon_class: "bg-base-200 text-base-content/60",
+        delta_text:
+          if(overdue_returns > 0, do: "#{overdue_returns} overdue", else: "None overdue"),
+        delta_class: if(overdue_returns > 0, do: "text-error", else: "text-base-content/45"),
+        delta_icon: if(overdue_returns > 0, do: "hero-exclamation-triangle", else: nil)
       }
     ]
   end
 
-  # The six-month bar chart needs a per-month CGST/IGST split, which is a
-  # report rather than a count; it stays empty until that is built, rather than
-  # showing invented figures.
-  defp chart_months(_totals), do: []
+  # Six months of zeros is not a chart, it is an empty state — and drawing one
+  # makes a business that has issued nothing look like one whose invoices went
+  # missing.
+  defp billed_months(months) do
+    if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
+  end
+
+  # The chart scales against the tallest bar, rounded up so the gridlines land
+  # on round numbers. A fixed ceiling made every real invoice overflow the box.
+  defp chart_max(months) do
+    tallest =
+      months
+      |> Enum.flat_map(&[&1.cgst_sgst, &1.igst])
+      |> Enum.max(fn -> 0 end)
+
+    if tallest <= 0 do
+      1_000
+    else
+      step = tallest |> div(4) |> max(1)
+      magnitude = :math.pow(10, max(0, floor(:math.log10(step)))) |> trunc()
+
+      4 * (ceil(step / magnitude) * magnitude)
+    end
+  end
 
   # Real counts, in a fixed order so the ring's colours stay stable, with empty
   # statuses dropped.
@@ -327,7 +363,32 @@ defmodule QuantumBillingWeb.DashboardLive do
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # GST return deadlines are statutory, not tenant data — they belong in a
-  # filing calendar rather than a table, which is still to be built.
-  defp compliance_items, do: []
+  # The next statutory deadlines, from the same calendar the Compliance page
+  # shows — so the dashboard and that page cannot disagree about what is due.
+  defp compliance_items(obligations, today) do
+    obligations
+    |> Compliance.upcoming(today, 4)
+    |> Enum.map(fn obligation ->
+      %{
+        month: Calendar.strftime(obligation.due_date, "%b"),
+        day: Calendar.strftime(obligation.due_date, "%d"),
+        title: "#{obligation.type} · #{obligation.period_label}",
+        due_text: due_text(obligation),
+        due_class: due_class(obligation)
+      }
+    end)
+  end
+
+  defp due_text(%{status: "Overdue", days_until: days}),
+    do: "Overdue by #{abs(days)} #{plural(abs(days), "day")}"
+
+  defp due_text(%{days_until: 0}), do: "Due today"
+  defp due_text(%{days_until: days}), do: "Due in #{days} #{plural(days, "day")}"
+
+  defp due_class(%{status: "Overdue"}), do: "text-error"
+  defp due_class(%{days_until: days}) when days <= 3, do: "text-warning"
+  defp due_class(_obligation), do: "text-base-content/45"
+
+  defp plural(1, word), do: word
+  defp plural(_count, word), do: word <> "s"
 end

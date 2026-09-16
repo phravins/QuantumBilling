@@ -50,9 +50,17 @@ RUN mix release
 # start a new build stage so that the final image doesn't contain the full Erlang/Elixir SDK
 FROM ${RUNNER_IMAGE}
 
+# `chromium` is what prints invoice PDFs — see QuantumBillingWeb.InvoiceDoc.PDF.
+# Without it the mailer falls back to attaching the HTML document, which opens
+# but is not the PDF customers expect on a tax invoice. The fonts are needed
+# too: a headless browser with no fonts renders every glyph as a box, including
+# the rupee sign.
 RUN apt-get update -y && \
   apt-get install -y libstdc++6 openssl libssl-dev libncurses5-dev locales ca-certificates \
+  chromium fonts-liberation fonts-dejavu-core \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+ENV PDF_CHROME_PATH="/usr/bin/chromium"
 
 # Set the locale
 RUN seed-locale en_US.UTF-8 || true

@@ -38,6 +38,10 @@ config :swoosh, :api_client, false
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Payment links are simulated here rather than calling Razorpay. In production
+# a missing or rejected key is an error, not a fake link.
+config :quantum_billing, razorpay_sandbox: true
+
 # Configure Oban for inline testing
 config :quantum_billing, Oban, testing: :inline
 

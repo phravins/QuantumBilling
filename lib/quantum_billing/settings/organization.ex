@@ -89,6 +89,11 @@ defmodule QuantumBilling.Settings.Organization do
     field :smtp_from_email, :string
     field :smtp_from_name, :string
 
+    # UPI. Printed on the invoice and encoded into its payment QR, so this is
+    # published information rather than a credential.
+    field :upi_vpa, :string
+    field :upi_payee_name, :string
+
     # API & Webhook Integrations. Same treatment for the three credentials
     # among them; the ids and the URL are configuration and stay readable.
     field :razorpay_key_id, :string
@@ -132,7 +137,8 @@ defmodule QuantumBilling.Settings.Organization do
 
   @smtp ~w(smtp_host smtp_port smtp_username smtp_password smtp_ssl smtp_from_email smtp_from_name)a
 
-  @integrations ~w(razorpay_key_id razorpay_key_secret irp_username irp_password irp_client_id webhook_url webhook_secret)a
+  @integrations ~w(upi_vpa upi_payee_name razorpay_key_id razorpay_key_secret irp_username
+                   irp_password irp_client_id webhook_url webhook_secret)a
 
   @security ~w(allowed_ips session_timeout_minutes enforce_2fa audit_retention_days)a
 
@@ -243,6 +249,7 @@ defmodule QuantumBilling.Settings.Organization do
     |> keep_stored_secrets()
     |> trim(@integrations)
     |> validate_webhook_url()
+    |> validate_upi_vpa()
   end
 
   def changeset(organization, attrs, :security) do
@@ -325,6 +332,27 @@ defmodule QuantumBilling.Settings.Organization do
       add_error(changeset, :smtp_password, "is required when a username is set")
     else
       changeset
+    end
+  end
+
+  # A VPA is `name@handle`, and the common mistake is an email address — which
+  # every UPI app rejects when it is scanned, long after the settings page said
+  # nothing was wrong.
+  defp validate_upi_vpa(changeset) do
+    case get_field(changeset, :upi_vpa) do
+      blank when blank in [nil, ""] ->
+        changeset
+
+      vpa ->
+        if Regex.match?(~r/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/, String.trim(vpa)) do
+          changeset
+        else
+          add_error(
+            changeset,
+            :upi_vpa,
+            "must be a UPI ID like yourbusiness@okhdfcbank, not an email address"
+          )
+        end
     end
   end
 
