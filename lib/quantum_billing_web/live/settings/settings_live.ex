@@ -272,11 +272,12 @@ defmodule QuantumBillingWeb.SettingsLive do
     case entries do
       [json_content] ->
         case QuantumBilling.Backup.restore_json(json_content) do
-          {:ok, _} ->
+          {:ok, counts} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Database backup successfully restored!")
-             |> assign(:organization, Settings.get_organization())}
+             |> put_flash(:info, "Restored #{restored_summary(counts)}.")
+             |> assign(:organization, Settings.get_organization())
+             |> assign_form(socket.assigns.section)}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Restore failed: #{reason}")}
@@ -285,6 +286,20 @@ defmodule QuantumBillingWeb.SettingsLive do
       [] ->
         {:noreply, put_flash(socket, :error, "Please upload a valid JSON backup file first.")}
     end
+  end
+
+  # Says what actually came back, so "restored" is a statement of fact rather
+  # than an assurance.
+  defp restored_summary(counts) do
+    [
+      {:clients, "clients"},
+      {:invoices, "invoices"},
+      {:templates, "designs"},
+      {:recurring_profiles, "recurring profiles"},
+      {:credit_notes, "credit notes"}
+    ]
+    |> Enum.map(fn {key, label} -> "#{Map.get(counts, key, 0)} #{label}" end)
+    |> Enum.join(", ")
   end
 
   # Writes the newly uploaded file, if there is one, and puts its path into the
@@ -971,9 +986,34 @@ defmodule QuantumBillingWeb.SettingsLive do
       class="space-y-6"
     >
       <div>
-        <h3 class="text-sm font-semibold tracking-tight">Razorpay / UPI Payment Gateway</h3>
+        <h3 class="text-sm font-semibold tracking-tight">UPI Payments</h3>
         <p class="mt-1 text-xs text-base-content/60">
-          Enter your live or sandbox API key credentials for automatic invoice payment link generation.
+          The UPI ID customers pay into. It is printed on every invoice and encoded into its
+          payment QR code — without it, no payment QR is drawn.
+        </p>
+
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field
+            field={f[:upi_vpa]}
+            label="UPI ID (VPA)"
+            placeholder="yourbusiness@okhdfcbank"
+            hint="A UPI ID from your bank or PSP — not an email address."
+          />
+          <.field
+            field={f[:upi_payee_name]}
+            label="Payee Name (optional)"
+            placeholder="Shown while the payer confirms"
+          />
+        </div>
+      </div>
+
+      <hr class="border-base-300" />
+
+      <div>
+        <h3 class="text-sm font-semibold tracking-tight">Razorpay Payment Gateway</h3>
+        <p class="mt-1 text-xs text-base-content/60">
+          API key credentials for generating invoice payment links. Without them, payment links
+          are refused rather than simulated.
         </p>
 
         <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">

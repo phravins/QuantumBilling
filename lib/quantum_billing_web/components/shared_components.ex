@@ -401,6 +401,64 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
+  The invoice's UPI payment QR, or an explanation of why there is none.
+
+  Shared by the invoice page, the dashboard modal and the public payment page
+  so all three agree — and so an organisation that has not set a UPI ID sees a
+  sentence saying that, rather than an empty white square that looks like a
+  broken image.
+  """
+  attr :invoice, :any, required: true
+  attr :size_class, :string, default: "size-48"
+  attr :caption, :string, default: nil
+  attr :caption_class, :string, default: "mt-2 text-2xs text-base-content/60"
+
+  def upi_qr(assigns) do
+    # The organisation is read once and handed to both calls: this component
+    # renders inside a modal that can be opened per row, and three settings
+    # queries per open adds up for something that never changes between them.
+    organization = QuantumBilling.Settings.get_organization()
+
+    assigns =
+      assigns
+      |> assign(
+        :svg,
+        QuantumBilling.Payments.QRCode.generate_invoice_upi_qr(assigns.invoice,
+          organization: organization
+        )
+      )
+      |> assign(:configured?, QuantumBilling.Payments.QRCode.upi_configured?(organization))
+
+    ~H"""
+    <div class="flex flex-col items-center">
+      <div :if={@svg != ""} class={[@size_class, "rounded-xl bg-white p-2"]}>
+        {Phoenix.HTML.raw(@svg)}
+      </div>
+
+      <div
+        :if={@svg == ""}
+        class={[
+          @size_class,
+          "flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed",
+          "border-base-300 bg-base-200/40 p-4 text-center"
+        ]}
+      >
+        <.icon name="hero-qr-code" class="size-6 text-base-content/30" />
+        <p class="text-2xs leading-snug text-base-content/50">
+          <%= if @configured? do %>
+            This invoice has no amount to collect yet.
+          <% else %>
+            Add your UPI ID in Settings › Integrations to show a payment QR here.
+          <% end %>
+        </p>
+      </div>
+
+      <p :if={@caption && @svg != ""} class={@caption_class}>{@caption}</p>
+    </div>
+    """
+  end
+
+  @doc """
   Renders a clickable `<th>` label that toggles sorting for `field`.
 
   `uppercase` is repeated here even though the header row already sets it: a

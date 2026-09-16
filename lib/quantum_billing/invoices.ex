@@ -154,6 +154,94 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
+  @doc """
+  Totals for the invoices dated within `month`.
+
+  What the dashboard's "this month" cards are actually about: the tax charged
+  on what was billed this month, which is the figure that becomes a GSTR-3B
+  liability. They used to be hardcoded zeros.
+  """
+  def month_totals(date \\ Date.utc_today()) do
+    from = Date.beginning_of_month(date)
+    to = Date.end_of_month(date)
+
+    Invoice
+    |> where([i], i.invoice_date >= ^from and i.invoice_date <= ^to)
+    |> where([i], i.status != "Cancelled")
+    |> select([i], %{
+      count: count(i.id),
+      taxable_value: coalesce(sum(i.taxable_value), 0),
+      cgst: coalesce(sum(i.cgst_amount), 0),
+      sgst: coalesce(sum(i.sgst_amount), 0),
+      igst: coalesce(sum(i.igst_amount), 0),
+      cess: coalesce(sum(i.cess_amount), 0),
+      invoice_value: coalesce(sum(i.grand_total), 0)
+    })
+    |> Repo.one()
+    |> case do
+      nil ->
+        %{
+          count: 0,
+          taxable_value: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          cess: 0,
+          invoice_value: 0,
+          tax: 0
+        }
+
+      totals ->
+        Map.put(totals, :tax, totals.cgst + totals.sgst + totals.igst + totals.cess)
+    end
+  end
+
+  @doc """
+  The CGST+SGST and IGST charged per month over the last `count` months,
+  oldest first, as `[%{label, cgst_sgst, igst}]`.
+
+  Months with no invoices are included as zeros: a gap in a bar chart has to
+  read as "nothing was billed", not as a month that does not exist.
+  """
+  def monthly_tax_split(count \\ 6, today \\ Date.utc_today()) do
+    first = today |> Date.beginning_of_month() |> shift_months(-(count - 1))
+    last = Date.end_of_month(today)
+
+    billed =
+      Invoice
+      |> where([i], i.invoice_date >= ^first and i.invoice_date <= ^last)
+      |> where([i], i.status != "Cancelled")
+      |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
+      |> select([i], %{
+        month: fragment("date_trunc('month', ?)", i.invoice_date),
+        cgst_sgst: coalesce(sum(coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0)), 0),
+        igst: coalesce(sum(i.igst_amount), 0)
+      })
+      |> Repo.all()
+      |> Map.new(fn row -> {month_key(row.month), row} end)
+
+    for offset <- 0..(count - 1) do
+      month = shift_months(first, offset)
+      row = Map.get(billed, {month.year, month.month})
+
+      %{
+        label: Calendar.strftime(month, "%b"),
+        cgst_sgst: (row && row.cgst_sgst) || 0,
+        igst: (row && row.igst) || 0
+      }
+    end
+  end
+
+  defp month_key(%Date{} = date), do: {date.year, date.month}
+  defp month_key(%NaiveDateTime{} = naive), do: {naive.year, naive.month}
+  defp month_key(%DateTime{} = datetime), do: {datetime.year, datetime.month}
+
+  defp shift_months(%Date{} = date, count) do
+    total = date.year * 12 + (date.month - 1) + count
+
+    Date.new!(div(total, 12), rem(total, 12) + 1, 1)
+  end
+
   @doc "How many invoices are in each status."
   def status_counts do
     Invoice

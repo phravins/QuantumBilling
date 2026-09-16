@@ -1,21 +1,42 @@
 defmodule QuantumBillingWeb.InvoicePdfGenerator do
   @moduledoc """
-  Generates clean, printable HTML and PDF document payloads for invoices.
+  The standalone invoice document: one HTML page, and the PDF printed from it.
 
-  Supports rendering full-bleed standalone documents suitable for PDF saving,
-  browser printing, and emailing as PDF attachments.
+  ## Two things the document has to carry itself
+
+  It is read outside the application — in a browser tab with no session, in a
+  mail client, in a PDF viewer — so every asset has to travel with it. The
+  stylesheet is inlined by `Renderer.stylesheet/1`, and the logo is inlined as
+  a data URI by `inline_logo/1`: it is stored as `/uploads/…`, a path that
+  resolves only against the running server, so in an emailed document and in a
+  browser printing from a local file it was simply a broken image. Customers
+  saw an unbranded invoice and the customisation looked like it had not worked.
+
+  ## The PDF is a PDF
+
+  `generate_pdf/1` prints the page with `QuantumBillingWeb.InvoiceDoc.PDF`.
+  It used to return the HTML string, which the mailer attached as `.pdf`.
   """
   use QuantumBillingWeb, :html
 
+  require Logger
+
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.PDF
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
   @doc """
-  Generates a standalone, self-contained HTML string of the invoice including all
-  embedded CSS, stylesheets, logo, and document layout markup.
+  A standalone, self-contained HTML string of the invoice: embedded stylesheet,
+  inlined logo, document layout.
+
+  ## Options
+
+    * `:print_button` — show the "Print / Save as PDF" button (default `true`).
+      Off for anything being printed or attached, where a button is either
+      invisible or nonsense.
   """
-  def generate_html(%Invoice{} = invoice) do
+  def generate_html(%Invoice{} = invoice, opts \\ []) do
     invoice = ensure_associations_loaded(invoice)
     {doc, accent, logo} = Templates.document_for(invoice)
 
@@ -23,12 +44,50 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
       doc: doc,
       invoice: invoice,
       accent: accent,
-      logo: logo
+      logo: inline_logo(logo),
+      print_button: Keyword.get(opts, :print_button, true)
     }
 
     rendered = render("document.html", assigns)
     {:safe, iodata} = Phoenix.HTML.html_escape(rendered)
     IO.iodata_to_binary(iodata)
+  end
+
+  @doc """
+  Reads a stored logo off disk and returns it as a `data:` URI.
+
+  The document is read where `/uploads/logo.png` means nothing, so the bytes
+  have to be in the file. An absolute URL, a missing file or anything too large
+  to be sensible inline is left alone — a document with a broken image still
+  has to render.
+  """
+  def inline_logo(nil), do: nil
+
+  def inline_logo("/uploads/" <> _rest = path) do
+    file = Path.join([:code.priv_dir(:quantum_billing), "static", path])
+
+    with {:ok, %File.Stat{size: size}} when size <= 2_000_000 <- File.stat(file),
+         {:ok, contents} <- File.read(file) do
+      "data:#{content_type(path)};base64,#{Base.encode64(contents)}"
+    else
+      _unreadable_or_too_large ->
+        Logger.warning("[InvoicePdfGenerator] could not inline logo #{path}")
+        path
+    end
+  end
+
+  def inline_logo(path), do: path
+
+  defp content_type(path) do
+    case Path.extname(path) |> String.downcase() do
+      ".png" -> "image/png"
+      ".jpg" -> "image/jpeg"
+      ".jpeg" -> "image/jpeg"
+      ".gif" -> "image/gif"
+      ".webp" -> "image/webp"
+      ".svg" -> "image/svg+xml"
+      _other -> "application/octet-stream"
+    end
   end
 
   defp ensure_associations_loaded(%Invoice{} = invoice) do
@@ -60,12 +119,23 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   end
 
   @doc """
-  Generates a binary payload suitable for email attachments or direct file downloads.
+  Prints the invoice to a PDF binary.
+
+  Returns `{:ok, pdf}` or `{:error, reason}`. `{:error, :no_renderer}` means no
+  headless browser is installed — see `QuantumBillingWeb.InvoiceDoc.PDF` — and
+  callers are expected to fall back to the HTML document rather than attach
+  something that is not a PDF.
   """
-  def generate_pdf(%Invoice{} = invoice) do
-    html = generate_html(invoice)
-    {:ok, html}
+  def generate_pdf(%Invoice{} = invoice, opts \\ []) do
+    invoice
+    |> generate_html(print_button: false)
+    |> PDF.render(opts)
   end
+
+  @doc """
+  Whether `generate_pdf/2` can produce anything on this machine.
+  """
+  def pdf_available?, do: PDF.available?()
 
   def render("document.html", assigns) do
     ~H"""
@@ -86,7 +156,7 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
         <Renderer.stylesheet doc={@doc} />
       </head>
       <body>
-        <div class="no-print" style="margin-bottom: 16px; text-align: right;">
+        <div :if={@print_button} class="no-print" style="margin-bottom: 16px; text-align: right;">
           <button
             onclick="window.print()"
             style="padding: 8px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"

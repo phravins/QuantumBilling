@@ -7,7 +7,6 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments
-  alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
@@ -105,7 +104,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </button>
 
             <.link
-              href={~p"/invoices/#{@invoice.id}/pdf"}
+              href={~p"/pay/#{@invoice.public_token}/pdf"}
               target="_blank"
               class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-base-300 hover:bg-base-200 text-xs font-semibold"
             >
@@ -149,10 +148,12 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           </div>
 
           <div class="shrink-0 flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-base-300 shadow-sm">
-            <div class="w-40 h-40">
-              {raw(QRCode.generate_invoice_upi_qr(@invoice))}
-            </div>
-            <span class="mt-2 text-2xs font-mono font-semibold text-gray-600">Scan with any UPI App</span>
+            <.upi_qr
+              invoice={@invoice}
+              size_class="w-40 h-40"
+              caption="Scan with any UPI App"
+              caption_class="mt-2 text-2xs font-mono font-semibold text-gray-600"
+            />
           </div>
         </div>
 

@@ -29,6 +29,10 @@ defmodule QuantumBillingWeb.Router do
       live "/privacy", PrivacyLive, :index
       live "/pay/:token", PublicInvoiceLive, :show
     end
+
+    # Outside the live_session above, which takes only `live` routes. The
+    # customer's copy of the document, addressed by the same token.
+    get "/pay/:token/pdf", InvoicePdfController, :public
   end
 
   scope "/", QuantumBillingWeb do
@@ -66,6 +70,7 @@ defmodule QuantumBillingWeb.Router do
     get "/reports/export", ReportsController, :export
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
+    get "/invoices/:id/pdf/download", InvoicePdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
     get "/settings/backup/download", BackupController, :download
   end

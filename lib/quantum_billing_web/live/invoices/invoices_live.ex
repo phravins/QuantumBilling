@@ -293,7 +293,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                           <%!-- A real navigation, not a LiveView event: the
                           print view is a plain page the browser has to load
                           before it can offer to save it. --%>
-                          <.link href={~p"/invoices/#{row.id}/pdf"} target="_blank">
+                          <.link href={~p"/invoices/#{row.id}/pdf/download"}>
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>
                         </li>
