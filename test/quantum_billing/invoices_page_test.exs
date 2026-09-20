@@ -1,8 +1,16 @@
 defmodule QuantumBilling.InvoicesPageTest do
   use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Clients.Client
+  alias QuantumBilling.CreditNotes
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+
+  # A credit note belongs to a client as well as to an invoice, so the netting
+  # tests need one behind their invoices.
+  defp billed_client do
+    Repo.insert!(%Client{name: "Acme Corp", email: "billing@acme.test"})
+  end
 
   defp insert_invoice(attrs) do
     Repo.insert!(
@@ -128,6 +136,103 @@ defmodule QuantumBilling.InvoicesPageTest do
 
     test "answers zero on an empty table rather than nil" do
       assert %{count: 0, revenue: 0, outstanding: 0} = Invoices.totals()
+    end
+
+    test "nets credit notes off what is still owed" do
+      invoice =
+        insert_invoice(%{
+          client_id: billed_client().id,
+          invoice_number: "INV-CN",
+          grand_total: 10_000
+        })
+
+      assert Invoices.totals().outstanding == 10_000
+
+      {:ok, _note} =
+        CreditNotes.create_credit_note_for_invoice(invoice, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("4000")
+        })
+
+      # An invoice partly credited is partly owed. The figure used to be the
+      # full invoice value however much of it had been credited back.
+      assert Invoices.totals().outstanding == 6_000
+    end
+
+    test "adds debit notes to what is owed" do
+      invoice =
+        insert_invoice(%{
+          client_id: billed_client().id,
+          invoice_number: "INV-DN",
+          grand_total: 10_000
+        })
+
+      {:ok, _note} =
+        CreditNotes.create_credit_note_for_invoice(invoice, %{
+          "note_type" => "Debit",
+          "grand_total" => Decimal.new("2500")
+        })
+
+      assert Invoices.totals().outstanding == 12_500
+    end
+
+    test "ignores notes against invoices that are no longer owed" do
+      paid =
+        insert_invoice(%{
+          client_id: billed_client().id,
+          invoice_number: "INV-PAID",
+          grand_total: 10_000,
+          status: "Paid"
+        })
+
+      owed = insert_invoice(%{invoice_number: "INV-OWED", grand_total: 3_000})
+
+      {:ok, _note} =
+        CreditNotes.create_credit_note_for_invoice(paid, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("10000")
+        })
+
+      # Crediting a settled invoice is a refund, not a reduction in
+      # receivables, and must not eat into what other customers still owe.
+      assert Invoices.totals().outstanding == 3_000
+      assert owed.grand_total == 3_000
+    end
+
+    test "never reports a negative receivable" do
+      invoice =
+        insert_invoice(%{
+          client_id: billed_client().id,
+          invoice_number: "INV-OVER",
+          grand_total: 5_000
+        })
+
+      {:ok, _note} =
+        CreditNotes.create_credit_note_for_invoice(invoice, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("9000")
+        })
+
+      assert Invoices.totals().outstanding == 0
+    end
+
+    test "ignores a cancelled note" do
+      invoice =
+        insert_invoice(%{
+          client_id: billed_client().id,
+          invoice_number: "INV-VOIDCN",
+          grand_total: 10_000
+        })
+
+      {:ok, note} =
+        CreditNotes.create_credit_note_for_invoice(invoice, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("4000")
+        })
+
+      Repo.update!(Ecto.Changeset.change(note, status: "Cancelled"))
+
+      assert Invoices.totals().outstanding == 10_000
     end
   end
 

@@ -1,180 +1,421 @@
 defmodule QuantumBilling.Compliance.GSTNExporter do
   @moduledoc """
-  Generates official Govt GSTN Schema compliant JSON payloads for GSTR-1 filings.
-  Compatible with the official GST Offline Tool (v3.1+).
+  Builds the GSTR-1 JSON the GST Offline Tool accepts, for one return period.
+
+  ## What this used to do
+
+  Three things, all wrong, and the first two in a way nobody could miss once
+  they tried it:
+
+    * it read `item.hsn_code`, a field that does not exist, so the download
+      raised `KeyError` for any organisation with a single line item — the
+      export had never produced a file;
+    * it ignored the return period entirely: every invoice ever issued went
+      into the file, labelled as that month's return;
+    * it reported every line at 18%, whatever rate was actually charged.
+
+  A GSTR-1 is a legal filing. A file with the wrong period, the wrong rates or
+  cancelled invoices in it is worse than no file, because it is plausible.
+
+  ## What it does now
+
+  One query for the period, one for its credit notes. Invoices are grouped the
+  way the schema expects — B2B by counterparty GSTIN, B2CL for large
+  inter-state consumer sales, B2CS summarised by place of supply, rate and
+  supply type — and within each invoice the line items are grouped **by their
+  own tax rate**, so a bill mixing 5% goods and 18% services reports two rate
+  lines. Cancelled invoices are excluded.
   """
 
+  import Ecto.Query, warn: false
+
+  alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
-  alias QuantumBilling.CreditNotes
+  alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
+  # Above this, an inter-state sale to an unregistered buyer is reported
+  # individually (B2CL) rather than summarised (B2CS). Whole rupees.
+  @b2cl_threshold 250_000
+
   @doc """
-  Builds the complete GSTR-1 JSON export structure for a given return period (e.g., "032026").
+  Validates a return period of the form `MMYYYY`.
+
+  Returns `{:ok, period}` or `{:error, message}`. Everything downstream — the
+  query, the file name, the header — depends on this, so it is checked once,
+  here, rather than trusted from a query string.
   """
-  def generate_gstr1_json(fp \\ "032026") do
-    org = Settings.get_organization() || %{gstin: "27AAAAA0000A1Z5"}
-    invoices = QuantumBilling.Repo.all(Invoice) |> QuantumBilling.Repo.preload(:items)
-    credit_notes = CreditNotes.list_credit_notes()
-
-    gstin = org.gstin || "27AAAAA0000A1Z5"
-
-    b2b_supplies = format_b2b(invoices, gstin)
-    b2cl_supplies = format_b2cl(invoices, gstin)
-    b2cs_supplies = format_b2cs(invoices, gstin)
-    cdnr_supplies = format_cdnr(credit_notes, gstin)
-    hsn_summary = format_hsn(invoices)
-
-    %{
-      "gstin" => gstin,
-      "fp" => fp,
-      "version" => "GSTR1_v3.1",
-      "hash" => "hash_" <> to_string(System.unique_integer([:positive])),
-      "b2b" => b2b_supplies,
-      "b2cl" => b2cl_supplies,
-      "b2cs" => b2cs_supplies,
-      "cdnr" => cdnr_supplies,
-      "hsn" => %{"data" => hsn_summary}
-    }
+  def validate_period(period) when is_binary(period) do
+    with <<month::binary-size(2), year::binary-size(4)>> <- String.trim(period),
+         {month_number, ""} when month_number in 1..12 <- Integer.parse(month),
+         {year_number, ""} when year_number in 2000..2999 <- Integer.parse(year) do
+      {:ok, %{period: period, month: month_number, year: year_number}}
+    else
+      _invalid -> {:error, "A return period looks like MMYYYY, for example 032026."}
+    end
   end
 
-  defp format_b2b(invoices, _company_gstin) do
+  def validate_period(_period), do: {:error, "A return period looks like MMYYYY."}
+
+  @doc """
+  The period a return would normally be filed for today: the month just gone.
+  """
+  def default_period(today \\ Date.utc_today()) do
+    previous = today |> Date.beginning_of_month() |> Date.add(-1)
+
+    String.pad_leading(to_string(previous.month), 2, "0") <> to_string(previous.year)
+  end
+
+  @doc """
+  Builds the GSTR-1 structure for `period` (`"MMYYYY"`).
+
+  Returns `{:ok, map}` or `{:error, message}`.
+  """
+  def generate_gstr1_json(period) do
+    with {:ok, %{period: period, month: month, year: year}} <- validate_period(period) do
+      from = Date.new!(year, month, 1)
+      to = Date.end_of_month(from)
+
+      organization = Settings.get_organization()
+      gstin = presence(organization.gstin) || "URP"
+
+      invoices = invoices_for(from, to)
+      credit_notes = credit_notes_for(from, to)
+
+      {:ok,
+       %{
+         "gstin" => gstin,
+         "fp" => period,
+         "version" => "GSTR1_v3.1",
+         "hash" => "hash",
+         "b2b" => format_b2b(invoices),
+         "b2cl" => format_b2cl(invoices),
+         "b2cs" => format_b2cs(invoices),
+         "cdnr" => format_cdnr(credit_notes),
+         "hsn" => %{"data" => format_hsn(invoices)}
+       }}
+    end
+  end
+
+  @doc """
+  A short summary of what a period contains, for the page offering the
+  download — so an empty month is visible before the file is opened.
+  """
+  def period_summary(period) do
+    with {:ok, %{month: month, year: year}} <- validate_period(period) do
+      from = Date.new!(year, month, 1)
+      to = Date.end_of_month(from)
+
+      summary =
+        Invoice
+        |> in_period(from, to)
+        |> select([i], %{
+          count: count(i.id),
+          value: coalesce(sum(i.grand_total), 0),
+          tax:
+            coalesce(
+              sum(
+                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+              ),
+              0
+            )
+        })
+        |> Repo.one()
+
+      {:ok, summary || %{count: 0, value: 0, tax: 0}}
+    end
+  end
+
+  # Cancelled invoices are not supplies and must not be filed. Drafts are
+  # included: in this application a draft has already consumed a number in the
+  # statutory series, so leaving it out would put a gap in the return.
+  defp in_period(query, from, to) do
+    query
+    |> where([i], i.invoice_date >= ^from and i.invoice_date <= ^to)
+    |> where([i], i.status != "Cancelled")
+  end
+
+  defp invoices_for(from, to) do
+    Invoice
+    |> in_period(from, to)
+    |> order_by([i], asc: i.invoice_date, asc: i.id)
+    |> preload(:items)
+    |> Repo.all()
+  end
+
+  defp credit_notes_for(from, to) do
+    from_at = DateTime.new!(from, ~T[00:00:00])
+    to_at = DateTime.new!(Date.add(to, 1), ~T[00:00:00])
+
+    CreditNote
+    |> where([n], n.inserted_at >= ^from_at and n.inserted_at < ^to_at)
+    |> where([n], n.status != "Cancelled")
+    |> order_by([n], asc: n.id)
+    |> preload(:invoice)
+    |> Repo.all()
+  end
+
+  # ── Sections ──────────────────────────────────────────────────────────────
+
+  defp format_b2b(invoices) do
     invoices
-    |> Enum.filter(
-      &(not is_nil(&1.client_gstin) and &1.client_gstin != "" and &1.invoice_type == "Tax Invoice")
-    )
+    |> Enum.filter(&registered_buyer?/1)
     |> Enum.group_by(& &1.client_gstin)
-    |> Enum.map(fn {ctin, inv_list} ->
-      inv_items =
-        Enum.map(inv_list, fn inv ->
-          pos_code = String.slice(inv.place_of_supply || "27", 0..1)
-
-          %{
-            "inum" => inv.invoice_number,
-            "idt" => format_date(inv.invoice_date),
-            "val" => inv.grand_total,
-            "pos" => pos_code,
-            "rchrg" => "N",
-            "inv_typ" => "R",
-            "irn" => inv.irn,
-            "itms" => [
-              %{
-                "num" => 1,
-                "itm_det" => %{
-                  "rt" => 18.0,
-                  "txval" => inv.taxable_value,
-                  "iamt" => inv.igst_amount,
-                  "camt" => inv.cgst_amount,
-                  "samt" => inv.sgst_amount,
-                  "csamt" => 0
-                }
-              }
-            ]
-          }
-        end)
-
-      %{"ctin" => ctin, "inv" => inv_items}
-    end)
-  end
-
-  defp format_b2cl(invoices, _company_gstin) do
-    invoices
-    |> Enum.filter(fn inv ->
-      (is_nil(inv.client_gstin) or inv.client_gstin == "") and
-        inv.grand_total > 250_000 and
-        not Invoice.intra_state?(inv)
-    end)
-    |> Enum.map(fn inv ->
-      pos_code = String.slice(inv.place_of_supply || "27", 0..1)
-
+    |> Enum.map(fn {ctin, list} ->
       %{
-        "pos" => pos_code,
-        "inum" => inv.invoice_number,
-        "idt" => format_date(inv.invoice_date),
-        "val" => inv.grand_total,
-        "itms" => [
-          %{
-            "num" => 1,
-            "itm_det" => %{
-              "rt" => 18.0,
-              "txval" => inv.taxable_value,
-              "iamt" => inv.igst_amount
+        "ctin" => ctin,
+        "inv" =>
+          Enum.map(list, fn invoice ->
+            %{
+              "inum" => invoice.invoice_number,
+              "idt" => format_date(invoice.invoice_date),
+              "val" => invoice.grand_total,
+              "pos" => state_code(invoice.place_of_supply),
+              "rchrg" => "N",
+              "inv_typ" => "R",
+              "irn" => invoice.irn,
+              "itms" => rate_lines(invoice)
             }
-          }
-        ]
+            |> drop_nils()
+          end)
       }
     end)
+    |> Enum.sort_by(& &1["ctin"])
   end
 
-  defp format_b2cs(invoices, _company_gstin) do
+  defp format_b2cl(invoices) do
     invoices
-    |> Enum.filter(fn inv ->
-      (is_nil(inv.client_gstin) or inv.client_gstin == "") and
-        (inv.grand_total <= 250_000 or Invoice.intra_state?(inv))
+    |> Enum.filter(fn invoice ->
+      not registered_buyer?(invoice) and (invoice.grand_total || 0) > @b2cl_threshold and
+        not Invoice.intra_state?(invoice)
     end)
-    |> Enum.group_by(& &1.place_of_supply)
-    |> Enum.map(fn {pos, inv_list} ->
-      txval = Enum.reduce(inv_list, 0, &(&1.taxable_value + &2))
-      iamt = Enum.reduce(inv_list, 0, &(&1.igst_amount + &2))
-      camt = Enum.reduce(inv_list, 0, &(&1.cgst_amount + &2))
-      samt = Enum.reduce(inv_list, 0, &(&1.sgst_amount + &2))
-      pos_code = String.slice(pos || "27", 0..1)
+    |> Enum.group_by(&state_code(&1.place_of_supply))
+    |> Enum.map(fn {pos, list} ->
+      %{
+        "pos" => pos,
+        "inv" =>
+          Enum.map(list, fn invoice ->
+            %{
+              "inum" => invoice.invoice_number,
+              "idt" => format_date(invoice.invoice_date),
+              "val" => invoice.grand_total,
+              "itms" => rate_lines(invoice)
+            }
+          end)
+      }
+    end)
+    |> Enum.sort_by(& &1["pos"])
+  end
+
+  # Summarised, as the schema requires, by place of supply *and* rate *and*
+  # whether the supply was inter-state — grouping on the place alone merged
+  # rates into one line and reported them at a rate nobody charged.
+  defp format_b2cs(invoices) do
+    invoices
+    |> Enum.filter(fn invoice ->
+      not registered_buyer?(invoice) and
+        ((invoice.grand_total || 0) <= @b2cl_threshold or Invoice.intra_state?(invoice))
+    end)
+    |> Enum.flat_map(fn invoice ->
+      intra? = Invoice.intra_state?(invoice)
+
+      invoice
+      |> rate_totals()
+      |> Enum.map(fn {rate, totals} ->
+        {{state_code(invoice.place_of_supply), rate, intra?}, totals}
+      end)
+    end)
+    |> Enum.group_by(fn {key, _totals} -> key end, fn {_key, totals} -> totals end)
+    |> Enum.map(fn {{pos, rate, intra?}, totals} ->
+      taxable = Enum.reduce(totals, 0, &(&1.taxable + &2))
+      tax = Enum.reduce(totals, 0, &(&1.tax + &2))
+      {cgst, sgst, igst} = split_tax(tax, intra?)
 
       %{
-        "sply_ty" => if(iamt > 0, do: "INTER", else: "INTRA"),
-        "pos" => pos_code,
-        "rt" => 18.0,
-        "txval" => txval,
-        "iamt" => iamt,
-        "camt" => camt,
-        "samt" => samt,
+        "sply_ty" => if(intra?, do: "INTRA", else: "INTER"),
+        "pos" => pos,
+        "typ" => "OE",
+        "rt" => rate / 1,
+        "txval" => taxable,
+        "iamt" => igst,
+        "camt" => cgst,
+        "samt" => sgst,
         "csamt" => 0
       }
     end)
+    |> Enum.sort_by(&{&1["pos"], &1["rt"]})
   end
 
-  defp format_cdnr(credit_notes, _company_gstin) do
+  defp format_cdnr(credit_notes) do
     credit_notes
-    |> Enum.map(fn cn ->
+    # A note whose invoice has since been deleted has nothing to amend, and
+    # reading through the association would have raised here.
+    |> Enum.filter(&match?(%Invoice{}, &1.invoice))
+    |> Enum.group_by(& &1.invoice.client_gstin)
+    |> Enum.reject(fn {ctin, _notes} -> ctin in [nil, ""] end)
+    |> Enum.map(fn {ctin, notes} ->
       %{
-        "nt_num" => cn.note_number,
-        "nt_dt" => format_date(cn.inserted_at),
-        "ntty" => if(cn.note_type == "Credit", do: "C", else: "D"),
-        "p_num" => cn.invoice.invoice_number,
-        "p_dt" => format_date(cn.invoice.invoice_date),
-        "val" => Decimal.to_float(cn.grand_total),
-        "reason" => cn.reason || "Adjustment"
+        "ctin" => ctin,
+        "nt" =>
+          Enum.map(notes, fn note ->
+            %{
+              "ntty" => if(note.note_type == "Credit", do: "C", else: "D"),
+              "nt_num" => note.note_number,
+              "nt_dt" => format_date(note.inserted_at),
+              "p_gst_flag" => "N",
+              "inum" => note.invoice.invoice_number,
+              "idt" => format_date(note.invoice.invoice_date),
+              "val" => decimal_to_number(note.grand_total),
+              "rsn" => note.reason || "Adjustment"
+            }
+          end)
       }
     end)
+    |> Enum.sort_by(& &1["ctin"])
   end
 
   defp format_hsn(invoices) do
-    all_items = Enum.flat_map(invoices, &(&1.items || []))
-
-    all_items
-    |> Enum.group_by(& &1.hsn_code)
-    |> Enum.map(fn {hsn, items} ->
-      qty = Enum.reduce(items, 0, &((&1.quantity || 0) + &2))
-      txval = Enum.reduce(items, 0, &(InvoiceItem.amount(&1) + &2))
+    invoices
+    |> Enum.flat_map(fn invoice -> invoice.items || [] end)
+    # The field is `hsn_sac`. Reading `hsn_code` is what raised on every
+    # export that had a line item to summarise.
+    |> Enum.group_by(&{&1.hsn_sac || "998311", &1.tax_rate || 0})
+    |> Enum.with_index(1)
+    |> Enum.map(fn {{{hsn, rate}, items}, index} ->
+      taxable = Enum.reduce(items, 0, &(InvoiceItem.amount(&1) + &2))
       tax = Enum.reduce(items, 0, &(InvoiceItem.tax(&1) + &2))
+      quantity = Enum.reduce(items, 0, &((&1.quantity || 0) + &2))
 
       %{
-        "num" => 1,
-        "hsn_sc" => hsn || "998311",
-        "desc" => hd(items).description || "Services",
-        "uqc" => "OTH",
-        "qty" => qty,
-        "val" => txval + tax,
-        "txval" => txval,
-        "iamt" => tax,
+        "num" => index,
+        "hsn_sc" => hsn,
+        "desc" => (List.first(items) && List.first(items).description) || "Goods or services",
+        "uqc" => uqc(List.first(items)),
+        "qty" => quantity,
+        "rt" => rate / 1,
+        "txval" => taxable,
+        "val" => taxable + tax,
+        "iamt" => 0,
         "camt" => 0,
         "samt" => 0,
         "csamt" => 0
       }
     end)
+    |> Enum.sort_by(&{&1["hsn_sc"], &1["rt"]})
   end
 
-  defp format_date(%Date{} = d), do: Calendar.strftime(d, "%d-%m-%Y")
-  defp format_date(%DateTime{} = dt), do: Calendar.strftime(dt, "%d-%m-%Y")
-  defp format_date(_), do: Calendar.strftime(Date.utc_today(), "%d-%m-%Y")
+  # ── Shared shaping ────────────────────────────────────────────────────────
+
+  # One entry per tax rate on the invoice, which is what `itms` means.
+  defp rate_lines(%Invoice{} = invoice) do
+    intra? = Invoice.intra_state?(invoice)
+
+    invoice
+    |> rate_totals()
+    |> Enum.sort_by(fn {rate, _totals} -> rate end)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {{rate, totals}, index} ->
+      {cgst, sgst, igst} = split_tax(totals.tax, intra?)
+
+      %{
+        "num" => index,
+        "itm_det" => %{
+          "rt" => rate / 1,
+          "txval" => totals.taxable,
+          "iamt" => igst,
+          "camt" => cgst,
+          "samt" => sgst,
+          "csamt" => 0
+        }
+      }
+    end)
+  end
+
+  # Falls back to the invoice's own stored totals when it has no line items —
+  # a return still has to balance against the invoice value.
+  defp rate_totals(%Invoice{items: items}) when is_list(items) and items != [] do
+    items
+    |> Enum.group_by(&(&1.tax_rate || 0))
+    |> Map.new(fn {rate, rate_items} ->
+      {rate,
+       %{
+         taxable: Enum.reduce(rate_items, 0, &(InvoiceItem.amount(&1) + &2)),
+         tax: Enum.reduce(rate_items, 0, &(InvoiceItem.tax(&1) + &2))
+       }}
+    end)
+  end
+
+  defp rate_totals(%Invoice{} = invoice) do
+    taxable = invoice.taxable_value || 0
+
+    tax =
+      (invoice.cgst_amount || 0) + (invoice.sgst_amount || 0) + (invoice.igst_amount || 0)
+
+    rate = if taxable > 0, do: round(tax * 100 / taxable), else: 0
+
+    %{rate => %{taxable: taxable, tax: tax}}
+  end
+
+  defp split_tax(tax, true) do
+    half = div(tax, 2)
+    {half, tax - half, 0}
+  end
+
+  defp split_tax(tax, false), do: {0, 0, tax}
+
+  defp registered_buyer?(%Invoice{client_gstin: gstin, invoice_type: type}) do
+    presence(gstin) != nil and type in [nil, "Tax Invoice", "Export Invoice", "Debit Note"]
+  end
+
+  # `"Maharashtra (27)"` and `"27"` both carry the code the schema wants; the
+  # two-digit prefix of a bare state name does not, so that falls back rather
+  # than filing "Ma" as a state code.
+  defp state_code(place) when is_binary(place) do
+    case Regex.run(~r/\((\d{2})\)|^(\d{2})\b/, place) do
+      [_match, code] -> code
+      [_match, "", code] -> code
+      [_match, code, _] -> code
+      _no_code -> "97"
+    end
+  end
+
+  defp state_code(_place), do: "97"
+
+  defp uqc(%InvoiceItem{unit: unit}) when is_binary(unit) do
+    case String.upcase(unit) do
+      "NOS" -> "NOS"
+      "KG" -> "KGS"
+      "LTR" -> "LTR"
+      "MTR" -> "MTR"
+      "BOX" -> "BOX"
+      "SET" -> "SET"
+      "PCS" -> "PCS"
+      "HRS" -> "OTH"
+      _other -> "OTH"
+    end
+  end
+
+  defp uqc(_item), do: "OTH"
+
+  defp decimal_to_number(%Decimal{} = decimal), do: Decimal.to_float(decimal)
+  defp decimal_to_number(number) when is_number(number), do: number
+  defp decimal_to_number(_other), do: 0
+
+  defp drop_nils(map), do: Map.reject(map, fn {_key, value} -> is_nil(value) end)
+
+  defp format_date(%Date{} = date), do: Calendar.strftime(date, "%d-%m-%Y")
+  defp format_date(%DateTime{} = datetime), do: format_date(DateTime.to_date(datetime))
+  defp format_date(%NaiveDateTime{} = naive), do: format_date(NaiveDateTime.to_date(naive))
+  defp format_date(_other), do: format_date(Date.utc_today())
+
+  defp presence(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp presence(_value), do: nil
 end
