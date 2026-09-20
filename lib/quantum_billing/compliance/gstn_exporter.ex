@@ -39,6 +39,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   # individually (B2CL) rather than summarised (B2CS). Whole rupees.
   @b2cl_threshold 250_000
 
+  # Rows per database round trip while streaming a period.
+  @stream_rows 500
+
   @doc """
   Validates a return period of the form `MMYYYY`.
 
@@ -80,7 +83,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
       organization = Settings.get_organization()
       gstin = presence(organization.gstin) || "URP"
 
-      invoices = invoices_for(from, to)
+      sections = accumulate(from, to)
       credit_notes = credit_notes_for(from, to)
 
       {:ok,
@@ -89,11 +92,11 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
          "fp" => period,
          "version" => "GSTR1_v3.1",
          "hash" => "hash",
-         "b2b" => format_b2b(invoices),
-         "b2cl" => format_b2cl(invoices),
-         "b2cs" => format_b2cs(invoices),
+         "b2b" => finish_b2b(sections.b2b),
+         "b2cl" => finish_b2cl(sections.b2cl),
+         "b2cs" => finish_b2cs(sections.b2cs),
          "cdnr" => format_cdnr(credit_notes),
-         "hsn" => %{"data" => format_hsn(invoices)}
+         "hsn" => %{"data" => finish_hsn(sections.hsn)}
        }}
     end
   end
@@ -137,13 +140,145 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     |> where([i], i.status != "Cancelled")
   end
 
-  defp invoices_for(from, to) do
-    Invoice
-    |> in_period(from, to)
-    |> order_by([i], asc: i.invoice_date, asc: i.id)
-    |> preload(:items)
-    |> Repo.all()
+  # One streamed pass, shaping each invoice into the small maps the schema
+  # needs and dropping the row before reading the next.
+  #
+  # This used to load every invoice in the period as a full struct with its
+  # items preloaded, hold all of them, and then traverse the list four separate
+  # times — once per section — so nothing was released in between. A month of
+  # 1,625 invoices cost 27 MB; a business filing 20,000 in a month would have
+  # needed a third of a gigabyte to produce one return, on the 11th, when
+  # everyone files at once.
+  #
+  # `Repo.stream/2` cannot preload, so items are fetched a chunk at a time and
+  # attached by hand, the same way the backup export does it.
+  defp accumulate(from, to) do
+    empty = %{b2b: %{}, b2cl: %{}, b2cs: %{}, hsn: %{}}
+
+    {:ok, sections} =
+      Repo.transaction(
+        fn ->
+          Invoice
+          |> in_period(from, to)
+          |> order_by([i], asc: i.invoice_date, asc: i.id)
+          |> Repo.stream(max_rows: @stream_rows)
+          |> Stream.chunk_every(@stream_rows)
+          |> Enum.reduce(empty, fn invoices, sections ->
+            invoices
+            |> attach_items()
+            |> Enum.reduce(sections, &absorb/2)
+          end)
+        end,
+        timeout: :infinity
+      )
+
+    sections
   end
+
+  defp attach_items(invoices) do
+    items_by_invoice =
+      InvoiceItem
+      |> where([i], i.invoice_id in ^Enum.map(invoices, & &1.id))
+      |> order_by([i], asc: i.position, asc: i.id)
+      |> Repo.all()
+      |> Enum.group_by(& &1.invoice_id)
+
+    Enum.map(invoices, fn invoice ->
+      %{invoice | items: Map.get(items_by_invoice, invoice.id, [])}
+    end)
+  end
+
+  # Where one invoice lands. Exactly one of b2b, b2cl and b2cs takes it — the
+  # same three-way split the four separate filters used to make — and its lines
+  # always contribute to the HSN summary.
+  defp absorb(%Invoice{} = invoice, sections) do
+    sections = %{sections | hsn: absorb_hsn(invoice, sections.hsn)}
+
+    cond do
+      registered_buyer?(invoice) ->
+        %{sections | b2b: absorb_b2b(invoice, sections.b2b)}
+
+      (invoice.grand_total || 0) > @b2cl_threshold and not Invoice.intra_state?(invoice) ->
+        %{sections | b2cl: absorb_b2cl(invoice, sections.b2cl)}
+
+      true ->
+        %{sections | b2cs: absorb_b2cs(invoice, sections.b2cs)}
+    end
+  end
+
+  defp absorb_b2b(invoice, groups) do
+    entry =
+      %{
+        "inum" => invoice.invoice_number,
+        "idt" => format_date(invoice.invoice_date),
+        "val" => invoice.grand_total,
+        "pos" => state_code(invoice.place_of_supply),
+        "rchrg" => "N",
+        "inv_typ" => "R",
+        "irn" => invoice.irn,
+        "itms" => rate_lines(invoice)
+      }
+      |> drop_nils()
+
+    Map.update(groups, invoice.client_gstin, [entry], &[entry | &1])
+  end
+
+  defp absorb_b2cl(invoice, groups) do
+    entry = %{
+      "inum" => invoice.invoice_number,
+      "idt" => format_date(invoice.invoice_date),
+      "val" => invoice.grand_total,
+      "itms" => rate_lines(invoice)
+    }
+
+    Map.update(groups, state_code(invoice.place_of_supply), [entry], &[entry | &1])
+  end
+
+  # Summarised, as the schema requires, by place of supply *and* rate *and*
+  # whether the supply was inter-state — grouping on the place alone merged
+  # rates into one line and reported them at a rate nobody charged.
+  defp absorb_b2cs(invoice, groups) do
+    intra? = Invoice.intra_state?(invoice)
+    pos = state_code(invoice.place_of_supply)
+
+    invoice
+    |> rate_totals()
+    |> Enum.reduce(groups, fn {rate, totals}, acc ->
+      Map.update(
+        acc,
+        {pos, rate, intra?},
+        totals,
+        &%{taxable: &1.taxable + totals.taxable, tax: &1.tax + totals.tax}
+      )
+    end)
+  end
+
+  defp absorb_hsn(%Invoice{items: items}, groups) when is_list(items) do
+    Enum.reduce(items, groups, fn item, acc ->
+      # The field is `hsn_sac`. Reading `hsn_code` is what raised on every
+      # export that had a line item to summarise.
+      key = {item.hsn_sac || "998311", item.tax_rate || 0}
+
+      line = %{
+        taxable: InvoiceItem.amount(item),
+        tax: InvoiceItem.tax(item),
+        quantity: item.quantity || 0,
+        description: item.description,
+        uqc: uqc(item)
+      }
+
+      Map.update(acc, key, line, fn held ->
+        %{
+          held
+          | taxable: held.taxable + line.taxable,
+            tax: held.tax + line.tax,
+            quantity: held.quantity + line.quantity
+        }
+      end)
+    end)
+  end
+
+  defp absorb_hsn(_invoice, groups), do: groups
 
   defp credit_notes_for(from, to) do
     from_at = DateTime.new!(from, ~T[00:00:00])
@@ -159,86 +294,29 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   # ── Sections ──────────────────────────────────────────────────────────────
 
-  defp format_b2b(invoices) do
-    invoices
-    |> Enum.filter(&registered_buyer?/1)
-    |> Enum.group_by(& &1.client_gstin)
-    |> Enum.map(fn {ctin, list} ->
-      %{
-        "ctin" => ctin,
-        "inv" =>
-          Enum.map(list, fn invoice ->
-            %{
-              "inum" => invoice.invoice_number,
-              "idt" => format_date(invoice.invoice_date),
-              "val" => invoice.grand_total,
-              "pos" => state_code(invoice.place_of_supply),
-              "rchrg" => "N",
-              "inv_typ" => "R",
-              "irn" => invoice.irn,
-              "itms" => rate_lines(invoice)
-            }
-            |> drop_nils()
-          end)
-      }
-    end)
+  defp finish_b2b(groups) do
+    groups
+    |> Enum.map(fn {ctin, entries} -> %{"ctin" => ctin, "inv" => Enum.reverse(entries)} end)
     |> Enum.sort_by(& &1["ctin"])
   end
 
-  defp format_b2cl(invoices) do
-    invoices
-    |> Enum.filter(fn invoice ->
-      not registered_buyer?(invoice) and (invoice.grand_total || 0) > @b2cl_threshold and
-        not Invoice.intra_state?(invoice)
-    end)
-    |> Enum.group_by(&state_code(&1.place_of_supply))
-    |> Enum.map(fn {pos, list} ->
-      %{
-        "pos" => pos,
-        "inv" =>
-          Enum.map(list, fn invoice ->
-            %{
-              "inum" => invoice.invoice_number,
-              "idt" => format_date(invoice.invoice_date),
-              "val" => invoice.grand_total,
-              "itms" => rate_lines(invoice)
-            }
-          end)
-      }
-    end)
+  defp finish_b2cl(groups) do
+    groups
+    |> Enum.map(fn {pos, entries} -> %{"pos" => pos, "inv" => Enum.reverse(entries)} end)
     |> Enum.sort_by(& &1["pos"])
   end
 
-  # Summarised, as the schema requires, by place of supply *and* rate *and*
-  # whether the supply was inter-state — grouping on the place alone merged
-  # rates into one line and reported them at a rate nobody charged.
-  defp format_b2cs(invoices) do
-    invoices
-    |> Enum.filter(fn invoice ->
-      not registered_buyer?(invoice) and
-        ((invoice.grand_total || 0) <= @b2cl_threshold or Invoice.intra_state?(invoice))
-    end)
-    |> Enum.flat_map(fn invoice ->
-      intra? = Invoice.intra_state?(invoice)
-
-      invoice
-      |> rate_totals()
-      |> Enum.map(fn {rate, totals} ->
-        {{state_code(invoice.place_of_supply), rate, intra?}, totals}
-      end)
-    end)
-    |> Enum.group_by(fn {key, _totals} -> key end, fn {_key, totals} -> totals end)
+  defp finish_b2cs(groups) do
+    groups
     |> Enum.map(fn {{pos, rate, intra?}, totals} ->
-      taxable = Enum.reduce(totals, 0, &(&1.taxable + &2))
-      tax = Enum.reduce(totals, 0, &(&1.tax + &2))
-      {cgst, sgst, igst} = split_tax(tax, intra?)
+      {cgst, sgst, igst} = split_tax(totals.tax, intra?)
 
       %{
         "sply_ty" => if(intra?, do: "INTRA", else: "INTER"),
         "pos" => pos,
         "typ" => "OE",
         "rt" => rate / 1,
-        "txval" => taxable,
+        "txval" => totals.taxable,
         "iamt" => igst,
         "camt" => cgst,
         "samt" => sgst,
@@ -276,34 +354,26 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     |> Enum.sort_by(& &1["ctin"])
   end
 
-  defp format_hsn(invoices) do
-    invoices
-    |> Enum.flat_map(fn invoice -> invoice.items || [] end)
-    # The field is `hsn_sac`. Reading `hsn_code` is what raised on every
-    # export that had a line item to summarise.
-    |> Enum.group_by(&{&1.hsn_sac || "998311", &1.tax_rate || 0})
+  defp finish_hsn(groups) do
+    groups
+    |> Enum.sort_by(fn {{hsn, rate}, _totals} -> {hsn, rate} end)
     |> Enum.with_index(1)
-    |> Enum.map(fn {{{hsn, rate}, items}, index} ->
-      taxable = Enum.reduce(items, 0, &(InvoiceItem.amount(&1) + &2))
-      tax = Enum.reduce(items, 0, &(InvoiceItem.tax(&1) + &2))
-      quantity = Enum.reduce(items, 0, &((&1.quantity || 0) + &2))
-
+    |> Enum.map(fn {{{hsn, rate}, totals}, index} ->
       %{
         "num" => index,
         "hsn_sc" => hsn,
-        "desc" => (List.first(items) && List.first(items).description) || "Goods or services",
-        "uqc" => uqc(List.first(items)),
-        "qty" => quantity,
+        "desc" => totals.description || "Goods or services",
+        "uqc" => totals.uqc,
+        "qty" => totals.quantity,
         "rt" => rate / 1,
-        "txval" => taxable,
-        "val" => taxable + tax,
+        "txval" => totals.taxable,
+        "val" => totals.taxable + totals.tax,
         "iamt" => 0,
         "camt" => 0,
         "samt" => 0,
         "csamt" => 0
       }
     end)
-    |> Enum.sort_by(&{&1["hsn_sc"], &1["rt"]})
   end
 
   # ── Shared shaping ────────────────────────────────────────────────────────
