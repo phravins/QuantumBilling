@@ -364,6 +364,49 @@ defmodule QuantumBilling.ReportsTest do
       assert Reports.client_names() == ["All Clients", "Apex Ind", "Zenith Corp"]
     end
 
+    test "names a client and its invoices share are listed once" do
+      Repo.insert!(%Client{name: "Zenith Corp"})
+
+      for n <- 1..3 do
+        Repo.insert!(%Invoice{
+          invoice_number: "INV-DUP-#{n}",
+          invoice_date: ~D[2024-05-16],
+          client_name: "Zenith Corp",
+          place_of_supply: "Maharashtra (27)"
+        })
+      end
+
+      assert Reports.client_names() == ["All Clients", "Zenith Corp"]
+    end
+
+    test "the list is capped rather than shipped whole to every page" do
+      # This used to read every client name *and* every invoice's client name
+      # into memory to dedupe them in Elixir — fifty-two thousand strings and
+      # eleven megabytes per Reports page load, on a real dataset, to produce
+      # two thousand names that were then all rendered as `<option>`s.
+      for n <- 1..(Reports.client_name_limit() + 25) do
+        Repo.insert!(%Client{name: "Client #{String.pad_leading(to_string(n), 4, "0")}"})
+      end
+
+      names = Reports.client_names()
+
+      assert length(names) == Reports.client_name_limit() + 1
+      assert ["All Clients", "Client 0001" | _rest] = names
+    end
+
+    test "blank names are not offered as a filter" do
+      Repo.insert!(%Client{name: ""})
+
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-BLANK",
+        invoice_date: ~D[2024-05-16],
+        client_name: "",
+        place_of_supply: "Maharashtra (27)"
+      })
+
+      assert Reports.client_names() == ["All Clients"]
+    end
+
     test "statuses and report types are reference data, not records" do
       assert "All Status" in Reports.statuses()
       assert "E-Invoice Generated" in Reports.statuses()

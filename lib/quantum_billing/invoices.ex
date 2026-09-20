@@ -566,10 +566,26 @@ defmodule QuantumBilling.Invoices do
 
   Called by `QuantumBilling.Workers.EInvoiceWorker`; use `queue_einvoice/1`
   from anything a person is waiting on.
+
+  The invoice is validated against the e-invoice schema first. It was not
+  before, so this path — the one that submits a document to the government and
+  cannot be taken back — accepted invoices that the XML download refuses to
+  even write to a file. An invoice with no line items got as far as the QR
+  builder and crashed it.
   """
   def generate_einvoice(%Invoice{} = invoice) do
     invoice = Repo.preload(invoice, :items)
 
+    with :ok <- QuantumBilling.EInvoice.validate(invoice, Settings.get_organization()) do
+      submit_einvoice(invoice)
+    else
+      {:error, problems} when is_list(problems) ->
+        _ = Repo.update(Ecto.Changeset.change(invoice, %{status: "E-Invoice Failed"}))
+        {:error, Enum.join(problems, " ")}
+    end
+  end
+
+  defp submit_einvoice(%Invoice{} = invoice) do
     case QuantumBilling.EInvoice.IRPClient.generate_irn(invoice) do
       {:ok,
        %{irn: irn, ack_no: ack_no, ack_date: ack_date, signed_qr_code: qr, signed_invoice: jwt}} ->

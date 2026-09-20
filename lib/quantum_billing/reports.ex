@@ -30,6 +30,10 @@ defmodule QuantumBilling.Reports do
 
   @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
 
+  # A dropdown nobody can scroll through is not a filter. Past this many names
+  # the list is cut rather than shipped in full to every open Reports page.
+  @client_name_limit 500
+
   import Ecto.Query, warn: false
 
   alias QuantumBilling.Clients.Client
@@ -424,7 +428,7 @@ defmodule QuantumBilling.Reports do
   The delta compares the latest month present in `invoices` against the month
   before it, which is what the cards' "from last month" caption claims.
   """
-  def summary(invoices) do
+  def summary(invoices) when is_list(invoices) do
     taxable = sum_by(invoices, & &1.taxable_value)
     tax = sum_by(invoices, &row_tax/1)
 
@@ -470,7 +474,7 @@ defmodule QuantumBilling.Reports do
   Monthly invoice value for the trend chart, oldest month first, as
   `[%{label, value}]` with `label` like `"Jan"`.
   """
-  def monthly_trend(invoices) do
+  def monthly_trend(invoices) when is_list(invoices) do
     invoices
     |> Enum.group_by(&month_key/1)
     |> Enum.sort_by(fn {key, _rows} -> key end)
@@ -486,7 +490,7 @@ defmodule QuantumBilling.Reports do
   Invoice counts per status for the donut, in a fixed order so the ring's
   colours stay stable as the data changes. Statuses with no rows are dropped.
   """
-  def status_breakdown(invoices) do
+  def status_breakdown(invoices) when is_list(invoices) do
     counts = Enum.frequencies_by(invoices, & &1.status)
 
     [
@@ -504,7 +508,7 @@ defmodule QuantumBilling.Reports do
   `nil` in a column means "not applicable to this tax type" and renders as a
   dash — CGST/SGST never apply to an inter-state supply, and vice versa.
   """
-  def tax_summary(invoices) do
+  def tax_summary(invoices) when is_list(invoices) do
     groups = Enum.group_by(invoices, & &1.tax_type)
 
     rows =
@@ -562,7 +566,7 @@ defmodule QuantumBilling.Reports do
   @doc """
   The five clients with the highest total invoice value, descending.
   """
-  def top_clients(invoices, limit \\ 5) do
+  def top_clients(invoices, limit \\ 5) when is_list(invoices) do
     invoices
     |> Enum.group_by(& &1.client)
     |> Enum.map(fn {client, rows} ->
@@ -638,17 +642,36 @@ defmodule QuantumBilling.Reports do
   @doc """
   Names for the client filter.
 
-  Returns "All Clients" followed by distinct client names from registered clients
-  and issued invoices, sorted alphabetically.
+  Returns "All Clients" followed by distinct client names — from the client
+  directory and from the names snapshotted onto invoices, since an invoice
+  keeps the name it was issued under even if the client is later renamed or
+  deleted — alphabetically, at most `client_name_limit/0` of them.
+
+  The database does the union, the dedupe, the sort and the limit. This used to
+  read every client name *and every invoice's client name* into memory and
+  dedupe them in Elixir: on fifty thousand invoices that was fifty-two thousand
+  strings and eleven megabytes of process memory, on every load of the Reports
+  page, to arrive at two thousand distinct names. It grew with the age of the
+  business, and every one of those names was also rendered as an `<option>`.
   """
   def client_names do
+    from_clients = from(c in Client, select: %{name: c.name}, where: not is_nil(c.name))
+
+    from_invoices =
+      from(i in Invoice, select: %{name: i.client_name}, where: not is_nil(i.client_name))
+
     names =
-      (Repo.all(from c in Client, select: c.name, where: not is_nil(c.name)) ++
-         Repo.all(from i in Invoice, select: i.client_name, where: not is_nil(i.client_name)))
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.uniq()
-      |> Enum.sort()
+      from(n in subquery(union(from_clients, ^from_invoices)),
+        where: n.name != "",
+        order_by: n.name,
+        limit: @client_name_limit,
+        select: n.name
+      )
+      |> Repo.all()
 
     ["All Clients" | names]
   end
+
+  @doc "How many names the client filter offers before it stops listing them."
+  def client_name_limit, do: @client_name_limit
 end

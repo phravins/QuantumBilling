@@ -208,6 +208,14 @@ defmodule QuantumBilling.EInvoice do
   # HSN is mandatory in INV-01 and optional on a line item here, so this is the
   # failure most people will actually hit. The message points at the tool the
   # application already has for finding one.
+  # Before the `is_list` clause below, which an empty list also matches: a
+  # preloaded invoice with nothing on it arrives here as `[]`, took that
+  # clause, found no lines missing an HSN and reported no problem at all. The
+  # message below was unreachable for every invoice the application could
+  # actually load, and an invoice with no goods or services on it went to the
+  # portal as a valid supply.
+  defp items(%Invoice{items: []}), do: "This invoice has no line items."
+
   defp items(%Invoice{items: items}) when is_list(items) do
     missing =
       items

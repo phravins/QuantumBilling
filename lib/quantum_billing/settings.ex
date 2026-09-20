@@ -61,7 +61,12 @@ defmodule QuantumBilling.Settings do
   @doc """
   Builds a changeset for one section of the settings.
   """
-  def change_organization(%Organization{} = organization, attrs \\ %{}, section) do
+  # No default for `attrs`. With one, the two-argument form meant
+  # `(organization, section)` rather than the `(organization, attrs)` every
+  # reader assumes, and getting it wrong raised `FunctionClauseError` deep
+  # inside `Organization.changeset/3` instead of at the call site. Requiring
+  # all three makes a wrong call a compile error.
+  def change_organization(%Organization{} = organization, attrs, section) do
     Organization.changeset(organization, attrs, section)
   end
 
