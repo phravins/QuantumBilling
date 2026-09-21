@@ -19,6 +19,7 @@ defmodule QuantumBilling.Invoices do
   import Ecto.Query, warn: false
 
   alias Ecto.Multi
+  alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
@@ -119,9 +120,22 @@ defmodule QuantumBilling.Invoices do
 
   Returns `%{count:, revenue:, tax:, outstanding:, paid_count:}`, where
   `revenue` is the value of everything issued and `outstanding` is the part of
-  it that is neither paid nor cancelled.
+  it that is neither paid nor cancelled, **net of the notes raised against
+  it** — a credit note reduces what the customer owes and a debit note adds to
+  it. Without that, an invoice credited in full still read as fully
+  receivable, and the dashboard's figure was the one number in the application
+  a business would act on.
   """
   def totals do
+    invoices = invoice_totals()
+    adjustments = note_adjustments()
+
+    outstanding = max(invoices.outstanding - adjustments.credits + adjustments.debits, 0)
+
+    %{invoices | outstanding: outstanding}
+  end
+
+  defp invoice_totals do
     Invoice
     |> select([i], %{
       count: count(i.id),
@@ -153,6 +167,35 @@ defmodule QuantumBilling.Invoices do
       totals -> totals
     end
   end
+
+  # Credit and debit notes raised against invoices that are still owed.
+  #
+  # Joined to the invoice rather than summed on their own: a note against an
+  # invoice already paid or cancelled has nothing left to reduce, and counting
+  # it would push the receivable figure below what is genuinely owed.
+  defp note_adjustments do
+    totals =
+      CreditNote
+      |> join(:inner, [n], i in Invoice, on: i.id == n.invoice_id)
+      |> where([n], n.status != "Cancelled")
+      |> where([_n, i], i.status not in ["Paid", "Cancelled"])
+      |> select([n], %{
+        credits: coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0),
+        debits: coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0)
+      })
+      |> Repo.one()
+
+    case totals do
+      nil -> %{credits: 0, debits: 0}
+      %{credits: credits, debits: debits} -> %{credits: rupees(credits), debits: rupees(debits)}
+    end
+  end
+
+  # Note totals are decimals; invoice money is whole rupees everywhere else.
+  defp rupees(%Decimal{} = decimal), do: decimal |> Decimal.round(0) |> Decimal.to_integer()
+  defp rupees(number) when is_integer(number), do: number
+  defp rupees(number) when is_float(number), do: round(number)
+  defp rupees(_other), do: 0
 
   @doc """
   Totals for the invoices dated within `month`.
@@ -523,10 +566,26 @@ defmodule QuantumBilling.Invoices do
 
   Called by `QuantumBilling.Workers.EInvoiceWorker`; use `queue_einvoice/1`
   from anything a person is waiting on.
+
+  The invoice is validated against the e-invoice schema first. It was not
+  before, so this path — the one that submits a document to the government and
+  cannot be taken back — accepted invoices that the XML download refuses to
+  even write to a file. An invoice with no line items got as far as the QR
+  builder and crashed it.
   """
   def generate_einvoice(%Invoice{} = invoice) do
     invoice = Repo.preload(invoice, :items)
 
+    with :ok <- QuantumBilling.EInvoice.validate(invoice, Settings.get_organization()) do
+      submit_einvoice(invoice)
+    else
+      {:error, problems} when is_list(problems) ->
+        _ = Repo.update(Ecto.Changeset.change(invoice, %{status: "E-Invoice Failed"}))
+        {:error, Enum.join(problems, " ")}
+    end
+  end
+
+  defp submit_einvoice(%Invoice{} = invoice) do
     case QuantumBilling.EInvoice.IRPClient.generate_irn(invoice) do
       {:ok,
        %{irn: irn, ack_no: ack_no, ack_date: ack_date, signed_qr_code: qr, signed_invoice: jwt}} ->

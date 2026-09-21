@@ -89,9 +89,19 @@ defmodule QuantumBilling.Compliance do
         subtitle: subtitle,
         category: category,
         period_label: Calendar.strftime(period, "%b %Y"),
+        # The return period in the form the GSTN tools use, so a download link
+        # can name the month it is actually for.
+        period_key: period_key(period),
         due_date: due_on(shift_months(period, 1), due_day)
       }
     end
+  end
+
+  @doc """
+  A period as `MMYYYY`, which is how every GSTN payload identifies one.
+  """
+  def period_key(%Date{} = date) do
+    String.pad_leading(to_string(date.month), 2, "0") <> to_string(date.year)
   end
 
   # Four quarters from April, each due on the 18th of the month after the
@@ -106,6 +116,7 @@ defmodule QuantumBilling.Compliance do
         subtitle: "Composition Scheme",
         category: :payments,
         period_label: "#{Calendar.strftime(from, "%b")} - #{Calendar.strftime(to, "%b %Y")}",
+        period_key: period_key(to),
         due_date: due_on(shift_months(to, 1), 18)
       }
     end
@@ -121,6 +132,7 @@ defmodule QuantumBilling.Compliance do
         subtitle: subtitle,
         category: category,
         period_label: label,
+        period_key: period_key(shift_months(fy_start, 11)),
         due_date: Date.new!(fy_start.year + 1, 12, 31)
       }
     end

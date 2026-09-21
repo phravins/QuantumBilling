@@ -36,8 +36,9 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       socket
       |> assign(:active_nav, :invoices)
       |> assign(:organization, organization)
-      |> assign(:clients, Clients.list_clients())
+      |> assign(:client_search, "")
       |> assign(:selected_client_id, nil)
+      |> assign_client_options()
       # Read-only here: the picker offers designs, it does not create them, so
       # this must not seed one just because somebody opened the form.
       |> assign(:template_options, template_options())
@@ -85,8 +86,16 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
          socket
          |> assign(:page_title, "Edit #{invoice.invoice_number}")
          |> assign(:invoice, invoice)
+         |> assign(:selected_client_id, invoice.client_id)
+         |> assign_client_options()
          |> assign_form(Invoices.change_invoice(invoice))}
     end
+  end
+
+  # Narrows the client picker. It carries no name, so what is typed here never
+  # reaches the invoice params or the changeset.
+  def handle_event("search_clients", %{"value" => search}, socket) do
+    {:noreply, socket |> assign(:client_search, search) |> assign_client_options()}
   end
 
   def handle_event("validate", %{"invoice" => params}, socket) do
@@ -156,7 +165,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   # already knows what it last rendered.
   defp apply_client_choice(params, socket) do
     id = params["client_id"]
-    client = id not in [nil, ""] && Enum.find(socket.assigns.clients, &(to_string(&1.id) == id))
+
+    # Read from the database rather than from whatever the picker happens to be
+    # showing: the options are a bounded search result now, and a client that
+    # has scrolled out of them is still a valid choice.
+    client = id not in [nil, ""] && Clients.get_client(id)
 
     if client && to_string(id) != to_string(socket.assigns.selected_client_id) do
       params =
@@ -174,10 +187,19 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           "client_pincode" => client.billing_pin
         })
 
-      {params, assign(socket, :selected_client_id, id)}
+      {params, socket |> assign(:selected_client_id, id) |> assign_client_options()}
     else
       {params, socket}
     end
+  end
+
+  defp assign_client_options(socket) do
+    options =
+      Clients.picker_options(socket.assigns.client_search, socket.assigns.selected_client_id)
+
+    socket
+    |> assign(:clients, options)
+    |> assign(:client_options_truncated?, length(options) >= Clients.picker_limit())
   end
 
   # The issuing company, so the summary can tell intra-state from inter-state
@@ -344,33 +366,72 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 </label>
 
                 <div class="flex gap-2">
-                  <select
-                    id={f[:client_id].id}
-                    name={f[:client_id].name}
-                    class={[form_select_class(), "min-w-0 flex-1"]}
-                  >
-                    <option value="">Select a client</option>
+                  <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <div class="relative">
+                      <.icon
+                        name="hero-magnifying-glass"
+                        class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-base-content/45"
+                      />
+                      <%!--
+                      Bound with phx-keyup rather than wrapped in its own form:
+                      a nested <form> is invalid HTML and ends the invoice form
+                      early, which drops every field below it. It carries no
+                      name either, so it is never submitted as an invoice
+                      field.
+                      --%>
+                      <input
+                        type="text"
+                        id="client-picker-search"
+                        value={@client_search}
+                        phx-keyup="search_clients"
+                        phx-debounce="300"
+                        placeholder="Search clients by name, GSTIN or email..."
+                        class={filter_input_class()}
+                      />
+                    </div>
 
-                    <option
-                      :for={client <- @clients}
-                      value={client.id}
-                      selected={to_string(f[:client_id].value) == to_string(client.id)}
+                    <select
+                      id={f[:client_id].id}
+                      name={f[:client_id].name}
+                      class={form_select_class()}
                     >
-                      {client.name}
-                    </option>
-                  </select>
+                      <option value="">Select a client</option>
+
+                      <option
+                        :for={client <- @clients}
+                        value={client.id}
+                        selected={to_string(f[:client_id].value) == to_string(client.id)}
+                      >
+                        {client.name}
+                      </option>
+                    </select>
+                  </div>
 
                   <.link
                     navigate={~p"/clients/new"}
-                    class={[secondary_button_class(), "shrink-0"]}
+                    class={[secondary_button_class(), "shrink-0 self-end"]}
                     title="Add a new client"
                   >
                     <.icon name="hero-plus" class="size-4" />
                   </.link>
                 </div>
 
-                <p :if={@clients == []} class="mt-1 text-2xs text-base-content/45">
+                <p
+                  :if={@clients == [] and @client_search == ""}
+                  class="mt-1 text-2xs text-base-content/45"
+                >
                   No clients yet — add one first, or type the details in below.
+                </p>
+
+                <p
+                  :if={@clients == [] and @client_search != ""}
+                  class="mt-1 text-2xs text-base-content/45"
+                >
+                  No clients match &ldquo;{@client_search}&rdquo;.
+                </p>
+
+                <p :if={@client_options_truncated?} class="mt-1 text-2xs text-base-content/45">
+                  Showing the first {Clients.picker_limit()} — search to narrow them down.
                 </p>
               </div>
 

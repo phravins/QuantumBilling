@@ -1,26 +1,54 @@
 defmodule QuantumBillingWeb.RecurringLive do
   @moduledoc """
   LiveView page for managing recurring invoice billing schedules.
+
+  The list is paged by the database and the client picker is a bounded search.
+  Both used to be unbounded: every profile with its client preloaded was
+  reloaded on mount and again after every pause, delete and manual run, and
+  every client in the directory was rendered into the `<select>` in the new
+  profile modal.
   """
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Clients
   alias QuantumBilling.Recurring
 
+  @per_page 10
+
   def mount(_params, _session, socket) do
-    clients = Clients.list_clients()
-    profiles = Recurring.list_profiles()
-
-    changeset = Recurring.change_profile()
-
     {:ok,
      socket
      |> assign(:page_title, "Recurring Billing")
      |> assign(:active_nav, :recurring)
-     |> assign(:clients, clients)
-     |> assign(:profiles, profiles)
-     |> assign(:form, to_form(changeset))
-     |> assign(:show_modal, false)}
+     |> assign(:client_search, "")
+     |> assign(:page, 1)
+     |> assign_clients()
+     |> assign(:form, to_form(Recurring.change_profile()))
+     |> assign(:show_modal, false)
+     |> load_profiles()}
+  end
+
+  defp load_profiles(socket) do
+    %{rows: rows, total: total, page: page, total_pages: total_pages} =
+      Recurring.page(page: socket.assigns.page, per_page: @per_page)
+
+    socket
+    |> assign(:profiles, rows)
+    |> assign(:total, total)
+    |> assign(:page, page)
+    |> assign(:total_pages, total_pages)
+  end
+
+  defp assign_clients(socket) do
+    assign(socket, :clients, Clients.picker_options(socket.assigns.client_search))
+  end
+
+  def handle_event("search_clients", %{"value" => search}, socket) do
+    {:noreply, socket |> assign(:client_search, search) |> assign_clients()}
+  end
+
+  def handle_event("paginate", %{"page" => page}, socket) do
+    {:noreply, socket |> assign(:page, String.to_integer(page)) |> load_profiles()}
   end
 
   def handle_event("toggle_modal", _params, socket) do
@@ -33,8 +61,8 @@ defmodule QuantumBillingWeb.RecurringLive do
         {:noreply,
          socket
          |> put_flash(:info, "Recurring billing profile created successfully!")
-         |> assign(:profiles, Recurring.list_profiles())
          |> assign(:show_modal, false)
+         |> load_profiles()
          |> assign(:form, to_form(Recurring.change_profile()))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -51,7 +79,7 @@ defmodule QuantumBillingWeb.RecurringLive do
     {:noreply,
      socket
      |> put_flash(:info, "Profile status updated to #{new_status}.")
-     |> assign(:profiles, Recurring.list_profiles())}
+     |> load_profiles()}
   end
 
   def handle_event("run_now", _params, socket) do
@@ -61,7 +89,7 @@ defmodule QuantumBillingWeb.RecurringLive do
     {:noreply,
      socket
      |> put_flash(:info, "Processed #{count} due recurring invoice(s)!")
-     |> assign(:profiles, Recurring.list_profiles())}
+     |> load_profiles()}
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
@@ -71,7 +99,7 @@ defmodule QuantumBillingWeb.RecurringLive do
     {:noreply,
      socket
      |> put_flash(:info, "Recurring profile deleted.")
-     |> assign(:profiles, Recurring.list_profiles())}
+     |> load_profiles()}
   end
 
   def render(assigns) do
@@ -174,6 +202,10 @@ defmodule QuantumBillingWeb.RecurringLive do
             </tbody>
           </table>
         </div>
+
+        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} total_pages={@total_pages} />
+        </div>
       </.card>
 
       <%!-- Create Recurring Profile Modal --%>
@@ -206,11 +238,29 @@ defmodule QuantumBillingWeb.RecurringLive do
 
             <div>
               <label class="block text-xs font-semibold mb-1">Select Client</label>
+
+              <%!--
+              phx-keyup rather than its own form: a nested <form> is invalid
+              HTML and would end the profile form early. It carries no name,
+              so it is never submitted as a profile field.
+              --%>
+              <input
+                type="text"
+                id="recurring-client-search"
+                value={@client_search}
+                phx-keyup="search_clients"
+                phx-debounce="300"
+                placeholder="Search clients..."
+                class="input input-bordered w-full text-xs mb-1.5"
+              />
+
               <select name={@form[:client_id].name} class="select select-bordered w-full text-xs">
-                <option :for={c <- @clients} value={c.id}>
-                  {c.name} ({c.gstin || "Unregistered"})
-                </option>
+                <option :for={c <- @clients} value={c.id}>{c.name}</option>
               </select>
+
+              <p :if={@clients == []} class="mt-1 text-2xs text-base-content/45">
+                No clients match that search.
+              </p>
             </div>
 
             <div class="grid grid-cols-2 gap-4">

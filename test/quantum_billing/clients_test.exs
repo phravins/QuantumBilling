@@ -270,4 +270,72 @@ defmodule QuantumBilling.ClientsTest do
              ]
     end
   end
+
+  describe "picker_options/2" do
+    test "offers at most a screenful, whatever the directory holds" do
+      for index <- 1..(Clients.picker_limit() + 20) do
+        {:ok, _} =
+          Clients.create_client(
+            attrs(%{"name" => "Client #{String.pad_leading(to_string(index), 3, "0")}"})
+          )
+      end
+
+      options = Clients.picker_options()
+
+      # The invoice form used to render every client as an `<option>`, so the
+      # form's payload grew with the customer directory without bound.
+      assert length(options) == Clients.picker_limit()
+      assert %{id: _, name: "Client 001"} = hd(options)
+    end
+
+    test "narrows to the search, across name, GSTIN and email" do
+      {:ok, _} = Clients.create_client(attrs(%{"name" => "Northwind Traders"}))
+
+      {:ok, _} =
+        Clients.create_client(
+          attrs(%{"name" => "Contoso Ltd", "email" => "accounts@contoso.test"})
+        )
+
+      assert [%{name: "Northwind Traders"}] = Clients.picker_options("northwind")
+      assert [%{name: "Contoso Ltd"}] = Clients.picker_options("accounts@contoso")
+      assert Clients.picker_options("nobody at all") == []
+    end
+
+    test "keeps the selected client even when the search excludes it" do
+      {:ok, chosen} = Clients.create_client(attrs(%{"name" => "Northwind Traders"}))
+      {:ok, _} = Clients.create_client(attrs(%{"name" => "Contoso Ltd"}))
+
+      options = Clients.picker_options("contoso", chosen.id)
+
+      # An invoice must keep showing its own client, or saving the form would
+      # silently clear it.
+      assert [%{name: "Northwind Traders"}, %{name: "Contoso Ltd"}] = options
+    end
+
+    test "lists the selected client once, not twice" do
+      {:ok, chosen} = Clients.create_client(attrs(%{"name" => "Northwind Traders"}))
+
+      assert [%{name: "Northwind Traders"}] = Clients.picker_options("northwind", chosen.id)
+    end
+
+    test "tolerates an id that is not one" do
+      {:ok, _} = Clients.create_client(attrs(%{"name" => "Northwind Traders"}))
+
+      assert [%{name: "Northwind Traders"}] = Clients.picker_options(nil, "not-an-id")
+      assert [%{name: "Northwind Traders"}] = Clients.picker_options(nil, 999_999)
+    end
+  end
+
+  describe "get_client/1" do
+    test "answers nil rather than raising for anything that is not a client" do
+      {:ok, client} = Clients.create_client(attrs())
+
+      assert %{id: id} = Clients.get_client(to_string(client.id))
+      assert id == client.id
+      assert Clients.get_client(999_999) == nil
+      assert Clients.get_client("12-not-an-id") == nil
+      assert Clients.get_client("") == nil
+      assert Clients.get_client(nil) == nil
+    end
+  end
 end

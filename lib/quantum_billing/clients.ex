@@ -24,6 +24,11 @@ defmodule QuantumBilling.Clients do
   @default_per_page 10
   @max_per_page 200
 
+  # How many clients a picker offers at once. Enough that a small business
+  # never has to search, small enough that a large one does not ship its whole
+  # customer list to the browser.
+  @picker_limit 50
+
   @doc """
   Every client, alphabetically.
 
@@ -72,6 +77,57 @@ defmodule QuantumBilling.Clients do
   @doc "The columns the list page may sort on."
   def sortable_fields, do: Map.keys(@sortable)
 
+  @doc """
+  Clients to offer in a picker: at most `@picker_limit` of them, matching
+  `search`, with `selected_id` always included.
+
+  The invoice form used to render `list_clients/0` into a `<select>`. On an
+  account with fifty thousand customers that is fifty thousand `<option>`
+  elements in the first page load and again in every LiveView diff that touches
+  the form — megabytes over the socket for a list nobody can scroll through
+  anyway.
+
+  The selected client is fetched separately and prepended, because the invoice
+  being edited must keep showing its own client even when the current search
+  does not match it.
+  """
+  def picker_options(search \\ nil, selected_id \\ nil) do
+    matches =
+      Client
+      |> search_where(search)
+      |> order_by([c], asc: c.name, asc: c.id)
+      |> limit(^@picker_limit)
+      |> select([c], %{id: c.id, name: c.name})
+      |> Repo.all()
+
+    case selected_client(selected_id) do
+      nil -> matches
+      selected -> [selected | Enum.reject(matches, &(&1.id == selected.id))]
+    end
+  end
+
+  @doc "How many options a picker offers before it asks to be searched."
+  def picker_limit, do: @picker_limit
+
+  defp selected_client(nil), do: nil
+  defp selected_client(""), do: nil
+
+  defp selected_client(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {id, ""} -> selected_client(id)
+      _not_an_id -> nil
+    end
+  end
+
+  defp selected_client(id) when is_integer(id) do
+    Client
+    |> where([c], c.id == ^id)
+    |> select([c], %{id: c.id, name: c.name})
+    |> Repo.one()
+  end
+
+  defp selected_client(_other), do: nil
+
   defp search_where(query, blank) when blank in [nil, ""], do: query
 
   defp search_where(query, search) do
@@ -111,6 +167,23 @@ defmodule QuantumBilling.Clients do
   Fetches a client by id, raising when it does not exist.
   """
   def get_client!(id), do: Repo.get!(Client, id)
+
+  @doc """
+  Fetches a client by id, or `nil`.
+
+  Takes the id as a string, because that is how it arrives from a form, and
+  returns `nil` rather than raising for one that is not a number at all — a
+  select can be sent anything.
+  """
+  def get_client(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {id, ""} -> get_client(id)
+      _not_an_id -> nil
+    end
+  end
+
+  def get_client(id) when is_integer(id), do: Repo.get(Client, id)
+  def get_client(_other), do: nil
 
   @doc """
   Builds a changeset for a client form.

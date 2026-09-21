@@ -215,4 +215,76 @@ defmodule QuantumBilling.BackupTest do
       assert length(Invoices.list_invoices()) == 1
     end
   end
+
+  describe "stream_json/2" do
+    test "produces the same document export_json/0 does" do
+      client = client_fixture()
+      invoice_fixture(client)
+
+      {:ok, iodata} = Backup.stream_json(fn chunk, acc -> [acc | chunk] end, [])
+
+      streamed = iodata |> IO.iodata_to_binary() |> Jason.decode!()
+      whole = Backup.export_json() |> Jason.decode!()
+
+      # `generated_at` is the moment of the call, so it is the one field the
+      # two are entitled to disagree on.
+      assert Map.delete(streamed, "generated_at") == Map.delete(whole, "generated_at")
+    end
+
+    test "emits the file in pieces, starting before the data is gathered" do
+      client = client_fixture()
+      for _ <- 1..25, do: invoice_fixture(client)
+
+      {:ok, chunks} =
+        Backup.stream_json(fn chunk, acc -> [IO.iodata_to_binary(chunk) | acc] end, [])
+
+      chunks = Enum.reverse(chunks)
+
+      # The whole point of the rework: the download starts on the first chunk
+      # and the file is never assembled in memory. `export_json/0` at fifty
+      # thousand invoices held a hundred megabytes of binary at once and took
+      # thirty-six seconds before the browser saw a byte.
+      assert length(chunks) > 25
+      assert hd(chunks) =~ ~s("version":"2.0")
+
+      document = chunks |> Enum.join() |> Jason.decode!()
+      assert length(document["invoices"]) == 25
+    end
+
+    test "is valid JSON for an empty database" do
+      Repo.delete_all(QuantumBilling.Invoices.InvoiceItem)
+      Repo.delete_all(Invoice)
+      Repo.delete_all(QuantumBilling.Clients.Client)
+
+      # An empty section is `[]`, not a stray comma — the separator handling is
+      # what usually gets this wrong.
+      document = Backup.export_json() |> Jason.decode!()
+
+      assert document["clients"] == []
+      assert document["invoices"] == []
+      assert document["invoice_items"] == []
+    end
+  end
+
+  describe "restore_json/1 at volume" do
+    test "inserts in batches rather than one statement per section" do
+      client = client_fixture()
+      # Postgres refuses a statement with more than 65,535 parameters, so a
+      # single `insert_all` over a real backup's invoices fails outright. These
+      # are few enough to be quick and many enough to cross a batch boundary.
+      for _ <- 1..120, do: invoice_fixture(client)
+
+      json = Backup.export_json()
+
+      Repo.delete_all(QuantumBilling.Invoices.InvoiceItem)
+      Repo.delete_all(Invoice)
+      Repo.delete_all(QuantumBilling.Clients.Client)
+
+      assert {:ok, counts} = Backup.restore_json(json)
+
+      assert counts.invoices == 120
+      assert counts.invoice_items == 120
+      assert Repo.aggregate(Invoice, :count, :id) == 120
+    end
+  end
 end

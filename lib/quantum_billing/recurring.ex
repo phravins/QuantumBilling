@@ -31,12 +31,57 @@ defmodule QuantumBilling.Recurring do
   alias QuantumBilling.Repo
   alias QuantumBilling.Workers.RecurringInvoiceWorker
 
+  @default_per_page 10
+  @max_per_page 200
+
   @doc """
   Lists profiles, soonest first.
+
+  Unbounded, for the billing sweep and for tests. The page uses `page/1`.
   """
   def list_profiles do
     Repo.all(from p in RecurringProfile, order_by: [asc: p.next_run_date], preload: [:client])
   end
+
+  @doc """
+  One page of profiles, soonest first, counted by the database.
+
+  Returns `%{rows:, total:, page:, per_page:, total_pages:}`, the shape the
+  invoice and client lists use. The page used to load every profile, with its
+  client preloaded, on mount and again after every status toggle, delete and
+  manual run — a subscription business with a few thousand arrangements
+  reloaded all of them to change one.
+  """
+  def page(opts \\ []) do
+    per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
+
+    query = status_where(RecurringProfile, Keyword.get(opts, :status))
+
+    total = Repo.aggregate(query, :count, :id)
+    total_pages = max(ceil(total / per_page), 1)
+    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
+
+    rows =
+      query
+      # `next_run_date` can repeat across profiles, and without the id as a
+      # tie-breaker two of them can swap places between pages — showing one
+      # twice and hiding another.
+      |> order_by([p], asc: p.next_run_date, asc: p.id)
+      |> limit(^per_page)
+      |> offset(^((page - 1) * per_page))
+      |> preload(:client)
+      |> Repo.all()
+
+    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+  end
+
+  defp status_where(query, status) when status in [nil, "", "All Status"], do: query
+  defp status_where(query, status), do: where(query, [p], p.status == ^status)
+
+  defp clamp(value, minimum, maximum) when is_integer(value),
+    do: value |> max(minimum) |> min(maximum)
+
+  defp clamp(_value, minimum, _maximum), do: minimum
 
   @doc "Gets a profile by id, raising when it does not exist."
   def get_profile!(id) do

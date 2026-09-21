@@ -27,6 +27,20 @@ defmodule QuantumBilling.Backup do
   aborts the whole thing, so a half-restored database is not a state this can
   produce. Users, sessions and two-factor enrolments are never touched: they
   are how you are signed in while restoring.
+
+  ## Both directions stream
+
+  At fifty thousand invoices the previous export built a hundred-megabyte
+  string in memory and took half a minute before the first byte reached the
+  browser — long enough for the request to time out with nothing downloaded.
+  `stream_json/1` emits the file table by table, row by row, from one
+  transaction: constant memory, a consistent snapshot, and bytes moving
+  immediately.
+
+  Restore inserts in batches for a harder reason: `INSERT` takes at most 65,535
+  parameters, so a single `insert_all` of fifty thousand invoices is not slow —
+  it is rejected outright, and the restore fails at exactly the size where it
+  matters.
   """
 
   import Ecto.Query, warn: false
@@ -87,47 +101,110 @@ defmodule QuantumBilling.Backup do
 
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
+  # Every table in the file, in the order it is written and restored. Parents
+  # before children, so a restore never inserts a row whose foreign key has
+  # not arrived yet.
+  # Keyed by atom rather than by string: the JSON name is derived from it,
+  # while going the other way would mean `String.to_existing_atom/1` on a name
+  # that may never have been an atom in this release.
+  @sections [
+    {:clients, Client, @client_fields},
+    {:templates, InvoiceTemplate, @template_fields},
+    {:invoices, Invoice, @invoice_fields},
+    {:invoice_items, InvoiceItem, @item_fields},
+    {:recurring_profiles, RecurringProfile, @profile_fields},
+    {:credit_notes, CreditNote, @credit_note_fields},
+    {:audit_logs, AuditLog, @audit_fields}
+  ]
+
+  # Postgres accepts at most 65,535 bind parameters per statement. Batches are
+  # sized from the widest row so the count stays comfortably under it.
+  @max_parameters 20_000
+
+  # How many rows `Repo.stream/2` fetches from its cursor at a time.
+  @stream_rows 500
+
   @doc """
   The whole business dataset as a JSON string.
+
+  Convenient, and fine for a small installation — but it holds the entire file
+  in memory, so anything serving a download should use `stream_json/1`.
   """
   def export_json do
-    Jason.encode!(export_map(), pretty: true)
+    {:ok, iodata} = stream_json(fn chunk, acc -> [acc | chunk] end, [])
+
+    IO.iodata_to_binary(iodata)
   end
 
   @doc """
-  The dataset as a map, before encoding. Public so a test can read it without
-  parsing JSON back out.
+  Streams the backup as JSON, folding each chunk into `acc` with `fun`.
+
+  Runs inside one transaction, so the file is a consistent snapshot rather than
+  seven tables read at seven different moments.
   """
-  def export_map do
-    %{
-      version: @version,
-      generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+  def stream_json(fun, acc) when is_function(fun, 2) do
+    Repo.transaction(
+      fn ->
+        acc = fun.(header(), acc)
+
+        acc =
+          Enum.reduce(@sections, acc, fn {key, schema, fields}, acc ->
+            acc = fun.([",\"", Atom.to_string(key), "\":["], acc)
+
+            {acc, _first?} =
+              schema
+              |> order_by(asc: :id)
+              |> Repo.stream(max_rows: @stream_rows)
+              |> Enum.reduce({acc, true}, fn row, {acc, first?} ->
+                separator = if first?, do: [], else: [","]
+                encoded = Jason.encode_to_iodata!(Map.take(row, fields))
+
+                {fun.([separator, encoded], acc), false}
+              end)
+
+            fun.(["]"], acc)
+          end)
+
+        fun.(["}"], acc)
+      end,
+      timeout: :infinity
+    )
+  end
+
+  defp header do
+    organization =
+      case organization_row() do
+        nil -> "null"
+        row -> Jason.encode_to_iodata!(row)
+      end
+
+    [
+      "{\"version\":",
+      Jason.encode_to_iodata!(@version),
+      ",\"generated_at\":",
+      Jason.encode_to_iodata!(DateTime.utc_now() |> DateTime.to_iso8601()),
       # Said in the file itself, because whoever restores it six months from
       # now will not be whoever read the release notes.
-      note:
+      ",\"note\":",
+      Jason.encode_to_iodata!(
         "Credentials (SMTP password, API secrets, webhook secret) are deliberately " <>
           "excluded and must be re-entered in Settings after restoring. Users and " <>
-          "sign-in details are not included and are never touched by a restore.",
-      organization: organization_row(),
-      clients: rows(Client, @client_fields, :name),
-      invoices: rows(Invoice, @invoice_fields, :id),
-      invoice_items: rows(InvoiceItem, @item_fields, :id),
-      templates: rows(InvoiceTemplate, @template_fields, :id),
-      recurring_profiles: rows(RecurringProfile, @profile_fields, :id),
-      credit_notes: rows(CreditNote, @credit_note_fields, :id),
-      audit_logs: rows(AuditLog, @audit_fields, :id)
-    }
+          "sign-in details are not included and are never touched by a restore."
+      ),
+      ",\"organization\":",
+      organization
+    ]
   end
 
   @doc """
   Counts of what a backup contains, for the confirmation shown before a restore.
   """
   def summarize(%{} = data) do
-    for key <- ~w(clients invoices invoice_items templates recurring_profiles credit_notes
-                  audit_logs),
-        into: %{} do
-      {key, data |> Map.get(key, []) |> length()}
-    end
+    Map.new(@sections, fn {key, _schema, _fields} ->
+      name = Atom.to_string(key)
+
+      {name, data |> Map.get(name, []) |> length()}
+    end)
   end
 
   @doc """
@@ -139,41 +216,41 @@ defmodule QuantumBilling.Backup do
   def restore_json(json_string) when is_binary(json_string) do
     with {:ok, data} <- decode(json_string),
          :ok <- check_version(data) do
-      Repo.transaction(fn ->
-        # Children first: invoice items and credit notes reference invoices,
-        # invoices reference clients.
-        Repo.delete_all(AuditLog)
-        Repo.delete_all(CreditNote)
-        Repo.delete_all(InvoiceItem)
-        Repo.delete_all(Invoice)
-        Repo.delete_all(RecurringProfile)
-        Repo.delete_all(InvoiceTemplate)
-        Repo.delete_all(Client)
+      # No timeout: restoring a year of invoices is one long transaction by
+      # nature, and the pool's fifteen-second default aborted it at exactly the
+      # size where a restore is worth having.
+      Repo.transaction(
+        fn ->
+          # Children first: invoice items and credit notes reference invoices,
+          # invoices reference clients.
+          Repo.delete_all(AuditLog)
+          Repo.delete_all(CreditNote)
+          Repo.delete_all(InvoiceItem)
+          Repo.delete_all(Invoice)
+          Repo.delete_all(RecurringProfile)
+          Repo.delete_all(InvoiceTemplate)
+          Repo.delete_all(Client)
 
-        counts = %{
-          clients: insert_all!(Client, data["clients"], @client_fields),
-          templates: insert_all!(InvoiceTemplate, data["templates"], @template_fields),
-          invoices: insert_all!(Invoice, data["invoices"], @invoice_fields),
-          invoice_items: insert_all!(InvoiceItem, data["invoice_items"], @item_fields),
-          recurring_profiles:
-            insert_all!(RecurringProfile, data["recurring_profiles"], @profile_fields),
-          credit_notes: insert_all!(CreditNote, data["credit_notes"], @credit_note_fields),
-          audit_logs: insert_all!(AuditLog, data["audit_logs"], @audit_fields)
-        }
+          counts =
+            Map.new(@sections, fn {key, schema, fields} ->
+              {key, insert_all!(schema, data[Atom.to_string(key)], fields)}
+            end)
 
-        restore_organization!(data["organization"])
+          restore_organization!(data["organization"])
 
-        # The rows carry their original ids, so every sequence has to be moved
-        # past them. Without this the next insert reuses id 1 and fails on the
-        # primary key.
-        Enum.each(
-          ~w(clients invoices invoice_items invoice_templates recurring_profiles credit_notes
-             audit_logs),
-          &resync_sequence/1
-        )
+          # The rows carry their original ids, so every sequence has to be moved
+          # past them. Without this the next insert reuses id 1 and fails on the
+          # primary key.
+          Enum.each(
+            ~w(clients invoices invoice_items invoice_templates recurring_profiles credit_notes
+               audit_logs),
+            &resync_sequence/1
+          )
 
-        counts
-      end)
+          counts
+        end,
+        timeout: :infinity
+      )
       |> case do
         {:ok, counts} -> {:ok, counts}
         {:error, reason} -> {:error, reason}
@@ -209,13 +286,6 @@ defmodule QuantumBilling.Backup do
     end
   end
 
-  defp rows(schema, fields, order_field) do
-    schema
-    |> order_by(^[asc: order_field])
-    |> Repo.all()
-    |> Enum.map(&Map.take(&1, fields))
-  end
-
   # `insert_all/3` rather than changesets: a backup is data this application
   # already validated on the way in, and re-validating it would reject rows
   # whose rules have since changed — which is precisely when a restore matters.
@@ -227,19 +297,27 @@ defmodule QuantumBilling.Backup do
     has_timestamps? = :inserted_at in schema.__schema__(:fields)
     has_updated_at? = :updated_at in schema.__schema__(:fields)
 
-    entries =
-      Enum.map(rows, fn row ->
-        row
-        |> cast_row(schema, fields)
-        |> then(fn entry ->
-          entry
-          |> maybe_put(has_timestamps?, :inserted_at, Map.get(entry, :inserted_at) || now)
-          |> maybe_put(has_updated_at?, :updated_at, now)
-        end)
-      end)
+    # One statement per batch. A single `insert_all` of every row would exceed
+    # Postgres's 65,535-parameter ceiling on any real dataset and be rejected
+    # outright — the restore failed precisely when there was something to
+    # restore.
+    batch_size = max(div(@max_parameters, max(length(fields) + 2, 1)), 1)
 
-    {count, _} = Repo.insert_all(schema, entries)
-    count
+    rows
+    |> Stream.map(fn row ->
+      row
+      |> cast_row(schema, fields)
+      |> then(fn entry ->
+        entry
+        |> maybe_put(has_timestamps?, :inserted_at, Map.get(entry, :inserted_at) || now)
+        |> maybe_put(has_updated_at?, :updated_at, now)
+      end)
+    end)
+    |> Stream.chunk_every(batch_size)
+    |> Enum.reduce(0, fn batch, inserted ->
+      {count, _} = Repo.insert_all(schema, batch)
+      inserted + count
+    end)
   end
 
   defp insert_all!(_schema, other, _fields) do

@@ -3,20 +3,16 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   The E-Way Bills list page: search, status filter, sortable columns and
   pagination over the issued consignment notes.
 
-  Bills come from `QuantumBilling.EWayBills`, which has nothing to return until
-  the multi-tenant Ecto schema lands. `mount/3` loads them once;
-  `handle_event/3` only ever updates raw filter/sort/page state, and `render/1`
-  re-derives the visible rows fresh on every render so there is a single source
-  of truth. The search, sort and pagination code below is already correct at
-  zero rows and needs no change when real records arrive.
+  Every one of those four happens in Postgres, through `EWayBills.page/1`, and
+  only the ten rows on screen are ever loaded. The page used to hold every
+  e-way bill in the system in the LiveView's memory — one copy per open browser
+  tab — and filter, sort and slice them in Elixir on every keystroke.
   """
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.EWayBills
 
   @per_page 10
-
-  @status_options ["All Status", "Active", "Expired", "Cancelled"]
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: EWayBills.subscribe()
@@ -25,24 +21,43 @@ defmodule QuantumBillingWeb.EWayBillsLive do
      socket
      |> assign(:page_title, "E-Way Bills")
      |> assign(:active_nav, :e_way_bills)
-     |> assign(:all_bills, EWayBills.list_e_way_bills())
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :issued_on)
      |> assign(:sort_dir, :desc)
-     |> assign(:page, 1)}
+     |> assign(:page, 1)
+     |> load_page()}
+  end
+
+  defp load_page(socket) do
+    %{rows: rows, total: total, page: page, total_pages: total_pages} =
+      EWayBills.page(
+        search: socket.assigns.search,
+        status: socket.assigns.status_filter,
+        sort_field: socket.assigns.sort_field,
+        sort_dir: socket.assigns.sort_dir,
+        page: socket.assigns.page,
+        per_page: @per_page
+      )
+
+    socket
+    |> assign(:rows, rows)
+    |> assign(:total, total)
+    |> assign(:page, page)
+    |> assign(:total_pages, total_pages)
+    |> assign(:row_offset, (page - 1) * @per_page)
   end
 
   def handle_event("search", %{"q" => q}, socket) do
-    {:noreply, socket |> assign(:search, q) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:search, q) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("filter_status", %{"status" => status}, socket) do
-    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1)}
+    {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    field = String.to_existing_atom(field_str)
+    field = sort_field(field_str) || socket.assigns.sort_field
 
     {sort_field, sort_dir} =
       if socket.assigns.sort_field == field do
@@ -51,38 +66,22 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         {field, :asc}
       end
 
-    {:noreply, assign(socket, sort_field: sort_field, sort_dir: sort_dir, page: 1)}
+    {:noreply,
+     socket
+     |> assign(sort_field: sort_field, sort_dir: sort_dir, page: 1)
+     |> load_page()}
   end
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
-    {:noreply, assign(socket, :page, String.to_integer(page_str))}
+    {:noreply, socket |> assign(:page, String.to_integer(page_str)) |> load_page()}
   end
 
   def handle_info({:e_way_bill_changed, _bill}, socket) do
-    {:noreply, assign(socket, :all_bills, EWayBills.list_e_way_bills())}
+    {:noreply, load_page(socket)}
   end
 
   def render(assigns) do
-    filtered =
-      assigns.all_bills
-      |> filter_search(assigns.search)
-      |> filter_status(assigns.status_filter)
-      |> sort_rows(assigns.sort_field, assigns.sort_dir)
-
-    total = length(filtered)
-    total_pages = max(ceil(total / @per_page), 1)
-    page = assigns.page |> max(1) |> min(total_pages)
-    rows = Enum.slice(filtered, (page - 1) * @per_page, @per_page)
-
-    assigns =
-      assign(assigns,
-        rows: rows,
-        total: total,
-        total_pages: total_pages,
-        page: page,
-        row_offset: (page - 1) * @per_page,
-        status_options: @status_options
-      )
+    assigns = assign(assigns, :status_options, EWayBills.status_options())
 
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
@@ -254,22 +253,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     """
   end
 
-  defp filter_search(rows, ""), do: rows
-
-  defp filter_search(rows, search) do
-    needle = String.downcase(search)
-
-    Enum.filter(rows, fn r ->
-      String.contains?(String.downcase(r.ewb_no), needle) or
-        String.contains?(String.downcase(r.document_no), needle) or
-        String.contains?(String.downcase(r.to_party), needle)
-    end)
+  # Compared against the allowlist rather than turned into an atom first:
+  # `String.to_existing_atom/1` raises on anything unrecognised, which is a
+  # crashed page for a stale or hand-edited sort link.
+  defp sort_field(field_str) do
+    Enum.find(EWayBills.sortable_fields(), &(Atom.to_string(&1) == field_str))
   end
-
-  defp filter_status(rows, "All Status"), do: rows
-  defp filter_status(rows, status), do: Enum.filter(rows, &(&1.status == status))
-
-  defp sort_rows(rows, :ewb_no, dir), do: Enum.sort_by(rows, & &1.ewb_no, dir)
-  defp sort_rows(rows, :value, dir), do: Enum.sort_by(rows, & &1.value, dir)
-  defp sort_rows(rows, :issued_on, dir), do: Enum.sort_by(rows, & &1.issued_on, {dir, Date})
 end

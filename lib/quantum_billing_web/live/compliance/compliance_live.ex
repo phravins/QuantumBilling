@@ -238,13 +238,15 @@ defmodule QuantumBillingWeb.ComplianceLive do
                         <.icon name="hero-eye" class="size-4" />
                       </button>
 
-                      <%!-- Only a filed return has an acknowledgement to download,
-                      so this stays absent rather than rendering a dead button. --%>
+                      <%!-- The GSTR-1 JSON for *this* period, which is what the
+                      offline tool uploads. Only GSTR-1 has an export: the other
+                      returns are summaries derived from it, and a button that
+                      downloads the wrong return is worse than no button. --%>
                       <.link
-                        :if={row.status == "Filed"}
-                        href={~p"/reports/gstr1/export"}
+                        :if={row.type == "GSTR-1"}
+                        href={~p"/reports/gstr1/export?#{[period: row.period_key]}"}
                         class={row_action_class()}
-                        aria-label={"Download #{row.type} acknowledgement"}
+                        aria-label={"Download #{row.type} JSON for #{row.period_label}"}
                       >
                         <.icon name="hero-arrow-down-tray" class="size-4" />
                       </.link>
