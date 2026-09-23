@@ -114,6 +114,11 @@ defmodule QuantumBillingWeb.Router do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new
+      # Reaching these while signed out is the whole point, so they belong in
+      # `:current_user` rather than `:require_authenticated_user`: someone who
+      # has forgotten their password cannot be asked to sign in first.
+      live "/users/forgot-password", UserLive.ForgotPassword, :new
+      live "/users/reset-password/:token", UserLive.ResetPassword, :edit
       # The second step of signing in. Reachable only with a pending attempt in
       # the session, which the LiveView checks on mount.
       live "/users/two-factor", UserLive.TwoFactorChallenge, :new

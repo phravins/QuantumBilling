@@ -187,8 +187,11 @@ input[type="submit"]:active:not(:disabled),
 input[type="button"]:active:not(:disabled),
 a.btn:active:not(:disabled),
 [phx-click]:active:not(:disabled):not(:has(input[type="checkbox"])):not(:has(input[type="radio"])) {
-  transform: scale(0.96) translateY(1px) !important;
-  filter: brightness(0.94);
+  /* Enough to register as a press, not enough to move the layout. The old
+   * scale(0.96) + 1px drop read as the whole control lurching away from the
+   * cursor, which on a dense form is the only thing you notice. */
+  transform: scale(0.99) !important;
+  filter: brightness(0.97);
 }
 
 /* Checkboxes, radios and their labels keep the plain colour transition and
@@ -220,8 +223,8 @@ a.btn:focus-visible {
 /* LiveView click/submit loading micro-animation */
 .phx-click-loading,
 .phx-submit-loading {
-  opacity: 0.7;
-  transform: scale(0.98);
+  opacity: 0.75;
+  transform: scale(0.995);
   pointer-events: none;
   cursor: wait;
 }

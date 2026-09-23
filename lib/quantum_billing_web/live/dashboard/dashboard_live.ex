@@ -74,31 +74,31 @@ defmodule QuantumBillingWeb.DashboardLive do
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           :for={stat <- @stats}
           label={stat.label}
           value={stat.value}
           icon={stat.icon}
-          icon_class={stat.icon_class}
+          tone={stat.tone}
           delta_text={stat.delta_text}
           delta_class={stat.delta_class}
           delta_icon={stat.delta_icon}
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
 
             <div class="flex items-center gap-4 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
-                <span class="size-2 rounded-full bg-base-content" /> CGST + SGST
+                <span class="size-2 rounded-full bg-blue-500" /> CGST + SGST
               </span>
 
               <span class="flex items-center gap-1.5">
-                <span class="size-2 rounded-full bg-base-content/25" /> IGST
+                <span class="size-2 rounded-full bg-violet-400" /> IGST
               </span>
             </div>
           </div>
@@ -118,6 +118,7 @@ defmodule QuantumBillingWeb.DashboardLive do
             :if={@donut_segments != []}
             segments={@donut_segments}
             total={@donut_total}
+            palette={:color}
           />
           <.empty_state
             :if={@donut_segments == []}
@@ -128,7 +129,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
 
@@ -183,7 +184,7 @@ defmodule QuantumBillingWeb.DashboardLive do
 
           <ul :if={@compliance_items != []} class="space-y-4">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
-              <.compliance_date_badge month={item.month} day={item.day} />
+              <.compliance_date_badge month={item.month} day={item.day} tone={item.tone} />
               <div>
                 <p class="text-sm font-medium">{item.title}</p>
 
@@ -286,7 +287,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Invoices Issued",
         value: Integer.to_string(totals.count),
         icon: "hero-document-text",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :info,
         delta_text: "#{month.count} this month",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -295,7 +296,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Current Month Tax Liability",
         value: rupees(month.tax),
         icon: "hero-currency-rupee",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :accent,
         delta_text: "on #{rupees(month.taxable_value)} taxable",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -304,7 +305,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Outstanding Receivables",
         value: rupees(totals.outstanding),
         icon: "hero-banknotes",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :warning,
         delta_text: "#{totals.paid_count} paid in full",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -313,7 +314,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Pending GST Returns",
         value: Integer.to_string(pending_returns),
         icon: "hero-calendar-days",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: if(overdue_returns > 0, do: :danger, else: :success),
         delta_text:
           if(overdue_returns > 0, do: "#{overdue_returns} overdue", else: "None overdue"),
         delta_class: if(overdue_returns > 0, do: "text-error", else: "text-base-content/45"),
@@ -357,7 +358,9 @@ defmodule QuantumBillingWeb.DashboardLive do
         tone: :strong
       },
       %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
-      %{label: "Paid", value: status_counts["Paid"] || 0, tone: :soft},
+      # `:positive`, not `:soft` — under the colour palette `:soft` is the red
+      # that marks a failed e-invoice, and a paid invoice is the opposite.
+      %{label: "Paid", value: status_counts["Paid"] || 0, tone: :positive},
       %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
     ]
     |> Enum.reject(&(&1.value == 0))
@@ -374,7 +377,8 @@ defmodule QuantumBillingWeb.DashboardLive do
         day: Calendar.strftime(obligation.due_date, "%d"),
         title: "#{obligation.type} · #{obligation.period_label}",
         due_text: due_text(obligation),
-        due_class: due_class(obligation)
+        due_class: due_class(obligation),
+        tone: due_tone(obligation)
       }
     end)
   end
@@ -384,6 +388,10 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   defp due_text(%{days_until: 0}), do: "Due today"
   defp due_text(%{days_until: days}), do: "Due in #{days} #{plural(days, "day")}"
+
+  defp due_tone(%{status: "Overdue"}), do: :overdue
+  defp due_tone(%{days_until: days}) when days <= 3, do: :due_soon
+  defp due_tone(_obligation), do: :neutral
 
   defp due_class(%{status: "Overdue"}), do: "text-error"
   defp due_class(%{days_until: days}) when days <= 3, do: "text-warning"

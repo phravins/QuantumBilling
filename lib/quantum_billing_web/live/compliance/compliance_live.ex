@@ -114,11 +114,12 @@ defmodule QuantumBillingWeb.ComplianceLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           label="Total Returns"
           value={Integer.to_string(@summary.total)}
           icon="hero-document-text"
+          tone={:info}
           delta_text={@fy_label}
           delta_class="text-base-content/45"
         />
@@ -126,6 +127,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           label="Filed On Time"
           value={Integer.to_string(@summary.filed)}
           icon="hero-check-circle"
+          tone={:success}
           delta_text={"#{@summary.filed_pct}%"}
           delta_class="text-success"
         />
@@ -133,6 +135,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           label="Pending"
           value={Integer.to_string(@summary.pending)}
           icon="hero-clock"
+          tone={:warning}
           delta_text={"#{@summary.pending_pct}%"}
           delta_class="text-warning"
         />
@@ -140,12 +143,13 @@ defmodule QuantumBillingWeb.ComplianceLive do
           label="Overdue"
           value={Integer.to_string(@summary.overdue)}
           icon="hero-exclamation-circle"
+          tone={:danger}
           delta_text={"#{@summary.overdue_pct}%"}
           delta_class="text-error"
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="lg:col-span-2">
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>

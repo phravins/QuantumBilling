@@ -1,13 +1,45 @@
 # Script for populating the database with demo data.
 # Run with: mix run priv/repo/seeds.exs
 
+alias QuantumBilling.Accounts
+alias QuantumBilling.Accounts.User
 alias QuantumBilling.Repo
 alias QuantumBilling.Clients
 alias QuantumBilling.Invoices
 alias QuantumBilling.Settings
 alias QuantumBilling.Settings.Organization
 
-# 1. Organization Settings
+# 1. Default sign-in account
+#
+# Everything below this is invisible without an account to sign in with, so the
+# seeds create one. Both halves are overridable in the environment: a published
+# default password is only safe on a machine nobody else can reach.
+admin_email = System.get_env("SEED_ADMIN_EMAIL", "phravin@osworks.in")
+admin_password = System.get_env("SEED_ADMIN_PASSWORD", "OSworks@26")
+admin_username = System.get_env("SEED_ADMIN_USERNAME", "phravin")
+
+case Accounts.get_user_by_email(admin_email) do
+  nil ->
+    {:ok, user} =
+      Accounts.register_user_with_password(%{
+        username: admin_username,
+        email: admin_email,
+        password: admin_password,
+        password_confirmation: admin_password
+      })
+
+    # Confirmed here rather than by email. The confirmation link exists to
+    # prove an address belongs to whoever typed it — nobody typed this one,
+    # and an unconfirmed account is refused at login.
+    {:ok, _confirmed} = user |> User.confirm_changeset() |> Repo.update()
+
+    IO.puts("\u2713 Default account created: #{admin_email} / #{admin_password}")
+
+  _already_there ->
+    IO.puts("\u2713 Default account already present: #{admin_email}")
+end
+
+# 2. Organization Settings
 org_attrs = %{
   company_name: "Quantum Billing Tech Solutions Pvt Ltd",
   trade_name: "QuantumBilling",
@@ -31,7 +63,7 @@ Organization.changeset(org, org_attrs, :invoice) |> Repo.update()
 
 IO.puts("✓ Organization settings initialized.")
 
-# 2. Demo Clients
+# 3. Demo Clients
 clients_data = [
   %{
     client_type: "Registered Business",
@@ -119,7 +151,7 @@ created_clients =
 
 IO.puts("✓ Sample clients seeded (#{length(created_clients)} clients).")
 
-# 3. Demo Invoices
+# 4. Demo Invoices
 c1 = Enum.find(created_clients, &(&1.name == "Infosys Technologies Ltd"))
 c2 = Enum.find(created_clients, &(&1.name == "Reliance Retail Ltd"))
 c3 = Enum.find(created_clients, &(&1.name == "Tata Consultancy Services"))
@@ -213,7 +245,7 @@ Enum.each(sample_invoices, fn inv_attrs ->
   end
 end)
 
-# 4. Seed Recurring Profiles
+# 5. Seed Recurring Profiles
 alias QuantumBilling.Recurring
 
 if c1 do
@@ -240,7 +272,7 @@ if c1 do
   end
 end
 
-# 5. Seed Credit Notes
+# 6. Seed Credit Notes
 invoices = Invoices.list_invoices()
 
 if first_invoice = List.first(invoices) do
@@ -255,7 +287,7 @@ if first_invoice = List.first(invoices) do
   IO.puts("✓ Seeded Credit Note.")
 end
 
-# 6. Seed Audit Logs
+# 7. Seed Audit Logs
 QuantumBilling.Audit.log_event("system.bootstrap", "Database", "1",
   details: %{mode: "seeds_populated"}
 )

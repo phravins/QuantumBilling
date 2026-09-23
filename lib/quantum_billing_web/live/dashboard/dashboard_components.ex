@@ -17,7 +17,16 @@ defmodule QuantumBillingWeb.DashboardComponents do
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :icon, :string, required: true
-  attr :icon_class, :string, default: "bg-base-200 text-base-content/60"
+
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :info, :success, :warning, :danger, :accent],
+    doc: "colours the icon badge; `:neutral` is the original grey"
+
+  attr :icon_class, :string,
+    default: nil,
+    doc: "overrides `tone` outright, for a badge that needs its own classes"
+
   attr :delta_text, :string, default: nil
   attr :delta_class, :string, default: "text-success"
   attr :delta_icon, :string, default: nil
@@ -25,7 +34,10 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def stat_card(assigns) do
     ~H"""
     <.card>
-      <div class={["mb-2.5 flex size-7 items-center justify-center rounded-field", @icon_class]}>
+      <div class={[
+        "mb-2.5 flex size-7 items-center justify-center rounded-field",
+        @icon_class || tone_class(@tone)
+      ]}>
         <.icon name={@icon} class="size-3.5" />
       </div>
 
@@ -39,6 +51,15 @@ defmodule QuantumBillingWeb.DashboardComponents do
     </.card>
     """
   end
+
+  # Spelled out rather than interpolated — Tailwind scans source text, so a
+  # class assembled at runtime is never emitted and the badge renders bare.
+  defp tone_class(:info), do: "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+  defp tone_class(:success), do: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+  defp tone_class(:warning), do: "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+  defp tone_class(:danger), do: "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+  defp tone_class(:accent), do: "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+  defp tone_class(:neutral), do: "bg-base-200 text-base-content/60"
 
   @doc """
   Renders a grouped vertical bar chart from a list of
@@ -73,8 +94,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
         <div class="relative flex h-64 items-end justify-between gap-6 px-2">
           <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1.5">
-            <div class="w-3 rounded-sm bg-base-content" style={"height: #{m.cgst_pct}%"} />
-            <div class="w-3 rounded-sm bg-base-content/25" style={"height: #{m.igst_pct}%"} />
+            <div class="w-3 rounded-sm bg-blue-500" style={"height: #{m.cgst_pct}%"} />
+            <div class="w-3 rounded-sm bg-violet-400" style={"height: #{m.igst_pct}%"} />
           </div>
         </div>
 
@@ -92,7 +113,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
   Renders an SVG donut chart with a centered total and an adjacent legend,
   from a list of `%{label:, value:, tone:}` maps.
 
-  `tone` is one of `:strong`, `:medium`, `:soft` or `:faint`.
+  `tone` is one of `:strong`, `:medium`, `:positive`, `:soft` or `:faint`.
 
   `palette` picks how those tones are rendered:
 
@@ -157,19 +178,23 @@ defmodule QuantumBillingWeb.DashboardComponents do
   # a class built as "stroke-#{tone}" is never emitted and the ring renders blank.
   defp stroke_class(:mono, :strong), do: "stroke-base-content"
   defp stroke_class(:mono, :medium), do: "stroke-base-content/60"
+  defp stroke_class(:mono, :positive), do: "stroke-base-content/45"
   defp stroke_class(:mono, :soft), do: "stroke-base-content/35"
   defp stroke_class(:mono, :faint), do: "stroke-base-content/15"
   defp stroke_class(:color, :strong), do: "stroke-blue-500"
   defp stroke_class(:color, :medium), do: "stroke-amber-500"
+  defp stroke_class(:color, :positive), do: "stroke-emerald-500"
   defp stroke_class(:color, :soft), do: "stroke-rose-500"
   defp stroke_class(:color, :faint), do: "stroke-base-content/20"
 
   defp dot_class(:mono, :strong), do: "bg-base-content"
   defp dot_class(:mono, :medium), do: "bg-base-content/60"
+  defp dot_class(:mono, :positive), do: "bg-base-content/45"
   defp dot_class(:mono, :soft), do: "bg-base-content/35"
   defp dot_class(:mono, :faint), do: "bg-base-content/15"
   defp dot_class(:color, :strong), do: "bg-blue-500"
   defp dot_class(:color, :medium), do: "bg-amber-500"
+  defp dot_class(:color, :positive), do: "bg-emerald-500"
   defp dot_class(:color, :soft), do: "bg-rose-500"
   defp dot_class(:color, :faint), do: "bg-base-content/20"
 
@@ -199,14 +224,32 @@ defmodule QuantumBillingWeb.DashboardComponents do
   attr :month, :string, required: true
   attr :day, :string, required: true
 
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :due_soon, :overdue],
+    doc: "tints the badge so a missed deadline is visible before the text is read"
+
   def compliance_date_badge(assigns) do
     ~H"""
-    <div class="flex size-10 shrink-0 flex-col items-center justify-center rounded-field border border-base-300 bg-base-200 text-base-content">
-      <span class="text-2xs font-medium uppercase text-base-content/45">{@month}</span>
+    <div class={[
+      "flex size-10 shrink-0 flex-col items-center justify-center rounded-field border",
+      badge_tone_class(@tone)
+    ]}>
+      <span class="text-2xs font-medium uppercase opacity-60">{@month}</span>
       <span class="text-sm font-semibold leading-tight">{@day}</span>
     </div>
     """
   end
+
+  defp badge_tone_class(:overdue),
+    do:
+      "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
+
+  defp badge_tone_class(:due_soon),
+    do:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+
+  defp badge_tone_class(:neutral), do: "border-base-300 bg-base-200 text-base-content"
 
   defp format_number(n) when is_integer(n) do
     n

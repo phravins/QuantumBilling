@@ -90,7 +90,13 @@ defmodule QuantumBillingWeb.Layouts do
                     )
                   ]}
                 >
-                  <.icon name={item.icon} class="size-4.5 shrink-0" />
+                  <.icon
+                    name={item.icon}
+                    class={[
+                      "size-4.5 shrink-0",
+                      @active_nav == item.key && "text-blue-600 dark:text-blue-400"
+                    ]}
+                  />
                   <span class="truncate">{item.label}</span>
                 </.link>
 

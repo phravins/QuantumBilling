@@ -81,7 +81,7 @@ defmodule QuantumBilling.Mail do
   organisations differ once tenancy lands.
   """
   def smtp_config(%Organization{} = organization) do
-    case presence(organization.smtp_host) do
+    case usable_relay(organization) do
       nil ->
         []
 
@@ -116,6 +116,42 @@ defmodule QuantumBilling.Mail do
   end
 
   def smtp_config(_no_organization), do: []
+
+  # The organisation's relay, or `nil` when it cannot be used.
+  #
+  # A host with a username but no password is not a relay that might work — it
+  # is one that cannot. `auth: :always` without a password makes gen_smtp fail
+  # with `no_credentials` on every single send, and since *all* account mail
+  # goes through here, a half-filled panel silently takes down sign-up
+  # confirmations and password resets along with the invoices.
+  #
+  # The settings form rejects this pairing now (see
+  # `Organization.validate_smtp_credentials_paired/1`), so reaching this clause
+  # means a row that predates that check, or a password that was never
+  # re-entered after the encryption key changed. Falling back to the
+  # application mailer delivers the message; failing delivers nothing. The
+  # warning is what makes the half-configured panel visible.
+  defp usable_relay(%Organization{} = organization) do
+    host = presence(organization.smtp_host)
+    username = presence(organization.smtp_username)
+    password = presence(organization.smtp_password)
+
+    cond do
+      is_nil(host) ->
+        nil
+
+      username && is_nil(password) ->
+        Logger.warning(
+          "SMTP relay #{host} has a username but no password — falling back to the " <>
+            "application mailer. Re-enter the password under Settings > SMTP."
+        )
+
+        nil
+
+      true ->
+        host
+    end
+  end
 
   @doc "Whether the organisation has its own relay configured."
   def own_relay?(%Organization{} = organization), do: presence(organization.smtp_host) != nil

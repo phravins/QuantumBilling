@@ -126,11 +126,12 @@ defmodule QuantumBillingWeb.ReportsLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           label="Total Invoices"
           value={Integer.to_string(@summary.count)}
           icon="hero-document-text"
+          tone={:info}
           delta_text={delta_text(@summary.count_delta)}
           delta_class={delta_class(@summary.count_delta)}
           delta_icon={delta_icon(@summary.count_delta)}
@@ -139,6 +140,7 @@ defmodule QuantumBillingWeb.ReportsLive do
           label="Total Taxable Value"
           value={rupees(@summary.taxable_value)}
           icon="hero-currency-rupee"
+          tone={:accent}
           delta_text={delta_text(@summary.taxable_delta)}
           delta_class={delta_class(@summary.taxable_delta)}
           delta_icon={delta_icon(@summary.taxable_delta)}
@@ -147,6 +149,7 @@ defmodule QuantumBillingWeb.ReportsLive do
           label="Total Tax Amount"
           value={rupees(@summary.tax_amount)}
           icon="hero-receipt-percent"
+          tone={:warning}
           delta_text={delta_text(@summary.tax_delta)}
           delta_class={delta_class(@summary.tax_delta)}
           delta_icon={delta_icon(@summary.tax_delta)}
@@ -155,13 +158,14 @@ defmodule QuantumBillingWeb.ReportsLive do
           label="Total Invoice Value"
           value={rupees(@summary.invoice_value)}
           icon="hero-banknotes"
+          tone={:success}
           delta_text={delta_text(@summary.invoice_delta)}
           delta_class={delta_class(@summary.invoice_delta)}
           delta_icon={delta_icon(@summary.invoice_delta)}
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="lg:col-span-5">
           <div class="mb-4 flex items-center justify-between gap-4">
             <h2 class="text-sm font-semibold tracking-tight">Invoice Value Trend</h2>
@@ -227,7 +231,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="lg:col-span-8">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
 

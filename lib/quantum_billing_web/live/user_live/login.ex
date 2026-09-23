@@ -51,17 +51,24 @@ defmodule QuantumBillingWeb.UserLive.Login do
             class={input_class()}
             error_class="border-red-500"
           />
-          <.input
-            field={f[:remember_me]}
-            type="checkbox"
-            label="Remember me"
-            class="size-4 rounded border-base-300 text-base-content focus:outline-none focus:ring-2 focus:ring-base-content/10"
-          />
+          <div class="flex items-center justify-between gap-2">
+            <.input
+              field={f[:remember_me]}
+              type="checkbox"
+              label="Remember me"
+              class="size-4 rounded border-base-300 text-base-content focus:outline-none focus:ring-2 focus:ring-base-content/10"
+            />
+            <.link
+              navigate={~p"/users/forgot-password"}
+              class="text-sm text-base-content/60 underline underline-offset-4 hover:text-base-content"
+            >
+              Forgot password?
+            </.link>
+          </div>
           <.button class={primary_button_class()}>
             Sign In
           </.button>
         </.form>
-        <.or_divider /> <.github_button />
       </div>
       <.legal_note />
     </Layouts.auth>

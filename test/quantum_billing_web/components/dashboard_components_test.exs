@@ -17,8 +17,9 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
   end
 
   describe "donut_chart/1 palette" do
-    # `palette` exists so the Reports page can show a coloured ring. Its default
-    # must stay :mono, or the dashboard silently changes appearance too.
+    # `palette` is opt-in: a caller that does not ask for colour gets the
+    # monochrome ramp. The dashboard and Reports both pass `:color` now, but
+    # the default is what every other caller inherits, so it is pinned here.
     test "defaults to monochrome" do
       html = donut(segments: @segments, total: 14)
 

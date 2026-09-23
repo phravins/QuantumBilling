@@ -386,7 +386,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def empty_state(assigns) do
     ~H"""
-    <div class={["flex flex-col items-center px-6 py-14 text-center", @class]}>
+    <div class={["flex flex-col items-center px-6 py-8 text-center", @class]}>
       <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name={@icon} class="size-4.5" />
       </span>

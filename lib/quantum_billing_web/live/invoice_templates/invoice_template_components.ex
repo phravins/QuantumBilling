@@ -380,7 +380,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
   def template_list(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <.card :for={template <- @templates} padding="p-3" class="flex flex-col">
         <div class="mb-3 overflow-hidden rounded-field border border-base-300 bg-base-100">
           <Renderer.stylesheet doc={template.document} />

@@ -32,7 +32,7 @@ services:
       MIX_ENV: prod
       PHX_SERVER: "true"
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-bK8yHn0/GZ79lPqS2w1vX6mU4tR9oD3e8a7bC5dE1fG3hI5jK7lM9nO1pQ3rS5tU}
-      DATABASE_URL: eotpsql://${DATABASE_USER:-elixir_vibe}:${DATABASE_PASSWORD:-Vibe@26}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
+      DATABASE_URL: ecto://${DATABASE_USER:-elixir_vibe}:${DATABASE_PASSWORD:-Vibe@26}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
       PORT: "4000"
 
 volumes:
