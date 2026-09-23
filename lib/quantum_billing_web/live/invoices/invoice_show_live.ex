@@ -194,7 +194,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               :if={@invoice.status != "E-Invoice Generated"}
               type="button"
               phx-click="generate_einvoice"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-bolt" class="size-4" /> 1-Click Generate IRN
             </button>
@@ -203,7 +203,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               :if={!@invoice.ewb_number}
               type="button"
               phx-click="toggle_ewb_modal"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-truck" class="size-4" /> Generate E-Way Bill
             </button>
@@ -212,7 +212,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               :if={!@invoice.razorpay_payment_url}
               type="button"
               phx-click="generate_payment_link"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-qr-code" class="size-4" /> Razorpay / UPI Link
             </button>
@@ -220,7 +220,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <button
               type="button"
               phx-click="toggle_cn_modal"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-document-duplicate" class="size-4" /> Issue Credit/Debit Note
             </button>
@@ -228,7 +228,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.link
               href={~p"/pay/#{@invoice.public_token || "tok_123"}"}
               target="_blank"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-globe-alt" class="size-4" /> Public Portal Link
             </.link>
@@ -236,7 +236,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <button
               type="button"
               phx-click="send_email"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-paper-airplane" class="size-4" /> Send PDF via Email
             </button>

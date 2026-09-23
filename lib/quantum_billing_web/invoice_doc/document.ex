@@ -15,11 +15,29 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
 
   alias QuantumBillingWeb.InvoiceDoc.Block
 
-  @type page :: %{size: String.t(), margin: String.t(), base_font: integer(), font: String.t()}
+  @type page :: %{
+          size: String.t(),
+          margin: String.t(),
+          base_font: integer(),
+          font: String.t(),
+          line_height: String.t(),
+          heading_weight: String.t(),
+          label_case: String.t(),
+          text_color: String.t()
+        }
   @type t :: %__MODULE__{version: integer(), page: page(), blocks: [Block.t()]}
 
   defstruct version: 1,
-            page: %{size: "A4", margin: "14mm", base_font: 12, font: "sans"},
+            page: %{
+              size: "A4",
+              margin: "14mm",
+              base_font: 12,
+              font: "sans",
+              line_height: "normal",
+              heading_weight: "semibold",
+              label_case: "upper",
+              text_color: "#18181b"
+            },
             blocks: []
 
   @doc "The block with `id`, or `nil`."

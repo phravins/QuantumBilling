@@ -15,13 +15,8 @@
   <body>
     <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
     <%!-- A raw script rather than a colocated hook: this is a controller-
-    rendered page with no LiveSocket, so there is no hook to colocate onto.
-
-    Off for the specimen. Someone who asked to print an invoice wants the
-    dialog immediately; someone previewing a design wants to look at it, and
-    a print dialog over the top of the thing you came to inspect is not a
-    preview. --%>
-    <script :if={@auto_print}>
+    rendered page with no LiveSocket, so there is no hook to colocate onto. --%>
+    <script>
       // Straight into the print dialog, where "Save as PDF" writes the file.
       window.addEventListener("load", () => window.print())
     </script>

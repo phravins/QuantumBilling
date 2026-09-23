@@ -55,6 +55,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
       <.compliance_date_badge
         month={Calendar.strftime(@obligation.due_date, "%b")}
         day={Calendar.strftime(@obligation.due_date, "%d")}
+        tone={badge_tone(@obligation.days_until)}
       />
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium">
@@ -89,11 +90,31 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   defp countdown_class(days) when days <= 7, do: "text-warning"
   defp countdown_class(_days), do: "text-base-content/45"
 
+  # Same thresholds the countdown text uses, so the date block and the line
+  # under it cannot disagree about how urgent a deadline is.
+  defp badge_tone(days) when days < 0, do: :overdue
+  defp badge_tone(days) when days <= 7, do: :due_soon
+  defp badge_tone(_days), do: :neutral
+
   # Written out in full rather than interpolated: Tailwind scans source text,
-  # so a class built from a variable is never emitted.
-  defp status_tone("Filed"), do: "border-emerald-200 bg-emerald-50 text-emerald-700"
-  defp status_tone("Pending"), do: "border-amber-200 bg-amber-50 text-amber-700"
-  defp status_tone("Overdue"), do: "border-rose-200 bg-rose-50 text-rose-700"
+  # so a class built from a variable is never emitted. Each carries its dark
+  # variant — the light tints alone left these pills as a pale smudge on the
+  # dark theme.
+  defp status_tone("Filed"),
+    do:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 " <>
+        "dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+
+  defp status_tone("Pending"),
+    do:
+      "border-amber-200 bg-amber-50 text-amber-700 " <>
+        "dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+
+  defp status_tone("Overdue"),
+    do:
+      "border-rose-200 bg-rose-50 text-rose-700 " <>
+        "dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
+
   defp status_tone(_other), do: "border-base-300 bg-base-200 text-base-content/60"
 
   defp dot_tone("Filed"), do: "bg-emerald-500"
@@ -110,6 +131,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   attr :year, :integer, required: true
   attr :month, :integer, required: true
   attr :today, Date, required: true
+  attr :selected, Date, default: nil, doc: "the day the task list is narrowed to"
 
   def month_calendar(assigns) do
     ~H"""
@@ -143,9 +165,26 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           {day}
         </span>
 
-        <div :for={cell <- List.flatten(@weeks)} class="flex flex-col items-center gap-0.5 py-0.5">
+        <%!-- A day is a button, not a label. The grid marked the deadlines and
+        then had nothing to say about them: every cell was inert, so the dots
+        were the one thing on the page that could not be followed through to
+        what they stood for. --%>
+        <button
+          :for={cell <- List.flatten(@weeks)}
+          type="button"
+          phx-click="select_day"
+          phx-value-date={cell.date}
+          disabled={cell.obligations == [] and cell.date != @selected}
+          class={[
+            "flex flex-col items-center gap-0.5 rounded-field py-0.5 transition-colors",
+            "disabled:cursor-default enabled:cursor-pointer enabled:hover:bg-base-200/70"
+          ]}
+          aria-pressed={to_string(cell.date == @selected)}
+          aria-label={day_label(cell)}
+        >
           <span class={[
             "flex size-7 items-center justify-center rounded-full text-xs",
+            cell.date == @selected && "ring-2 ring-base-content ring-offset-1 ring-offset-base-100",
             cond do
               cell.date == @today -> "bg-base-content font-semibold text-base-100"
               not cell.in_month? -> "text-base-content/25"
@@ -160,10 +199,9 @@ defmodule QuantumBillingWeb.ComplianceComponents do
             <span
               :for={obligation <- Enum.take(cell.obligations, 3)}
               class={["size-1.5 rounded-full", dot_tone(obligation.status)]}
-              title={"#{obligation.type} — #{obligation.period_label}"}
             />
           </span>
-        </div>
+        </button>
       </div>
 
       <div class="mt-3 flex items-center justify-center gap-4 border-t border-base-300 pt-3">
@@ -235,6 +273,15 @@ defmodule QuantumBillingWeb.ComplianceComponents do
       </dl>
     </div>
     """
+  end
+
+  # Spoken form of a cell, since the dots carry the meaning and a screen reader
+  # sees only the number.
+  defp day_label(%{obligations: []} = cell), do: Format.format_date(cell.date)
+
+  defp day_label(cell) do
+    due = Enum.map_join(cell.obligations, ", ", & &1.type)
+    "#{Format.format_date(cell.date)} — #{due} due"
   end
 
   defp rule("GSTR-1"), do: "11th of the following month"

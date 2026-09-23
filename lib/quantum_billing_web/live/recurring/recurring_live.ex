@@ -114,7 +114,7 @@ defmodule QuantumBillingWeb.RecurringLive do
             <button
               type="button"
               phx-click="run_now"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-play" class="size-4" /> Run Pending Now
             </button>

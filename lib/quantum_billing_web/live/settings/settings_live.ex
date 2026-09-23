@@ -22,17 +22,16 @@ defmodule QuantumBillingWeb.SettingsLive do
   use QuantumBillingWeb, :live_view
 
   import QuantumBillingWeb.SettingsComponents
-  import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
+  import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1, text_tools: 1]
 
   alias QuantumBilling.EWayBills.EWayBillForm
-  alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
+  alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoiceDocument
-  alias QuantumBillingWeb.InvoicePdfGenerator
 
   @saveable ~w(general invoice e_way_bill tax notifications preferences customization smtp integrations security)a
 
@@ -50,7 +49,7 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign_organization(Settings.get_organization())
      |> assign(:deliveries, [])
      |> assign(:templates, [])
-     |> assign(:pdf_renderer?, false)
+     |> assign(:default_page, Layout.default_page())
      |> allow_upload(:logo,
        accept: Uploads.accepted_extensions(),
        max_entries: 1,
@@ -104,18 +103,8 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign(:page_title, section(section).title)
      |> assign_form(section)
      |> assign_templates(section)
-     |> assign_deliveries(section)
-     |> assign_pdf_renderer(section)}
+     |> assign_deliveries(section)}
   end
-
-  # Looked up when the panel is opened rather than on mount, and not on every
-  # render: it scans the filesystem for a browser, and the readiness list is
-  # rendered on each keystroke in the panel above it.
-  defp assign_pdf_renderer(socket, :customization) do
-    assign(socket, :pdf_renderer?, InvoicePdfGenerator.pdf_available?())
-  end
-
-  defp assign_pdf_renderer(socket, _section), do: socket
 
   # The organisation and the specimen invoice move together.
   #
@@ -155,7 +144,19 @@ defmodule QuantumBillingWeb.SettingsLive do
         Map.put(template, :document, Templates.document_of(template))
       end)
 
-    assign(socket, :templates, templates)
+    socket
+    |> assign(:templates, templates)
+    |> assign(:default_page, default_page(templates))
+  end
+
+  # The text tools edit the design new invoices are issued with, which is the
+  # default one. Before the panel has seeded it there is nothing to read, so the
+  # toolbar shows the stock page rather than an empty one.
+  defp default_page(templates) do
+    case Enum.find(templates, & &1.is_default) do
+      nil -> Layout.default_page()
+      template -> template.document.page
+    end
   end
 
   defp section_from(nil), do: :general
@@ -184,6 +185,20 @@ defmodule QuantumBillingWeb.SettingsLive do
   # These are list actions rather than form fields, so they are plain clicks and
   # do not go through the section's changeset. The design itself is edited in
   # `InvoiceTemplateDesignLive`.
+
+  # ── Text tools ────────────────────────────────────────────────────────────
+  #
+  # These write the default design's page setup rather than a settings column:
+  # typography belongs to the document, so a heading weight chosen here is the
+  # same one the design pad shows and the PDF prints.
+
+  def handle_event("update_page", %{"page" => params}, socket) do
+    {:noreply, save_page(socket, &Layout.cast_page(&1, params))}
+  end
+
+  def handle_event("reset_text", _params, socket) do
+    {:noreply, save_page(socket, fn _page -> Layout.default_page() end)}
+  end
 
   def handle_event("new_template", _params, socket) do
     case Templates.duplicate_template(Templates.ensure_default()) do
@@ -257,42 +272,6 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, cancel_upload(socket, :logo, ref)}
   end
 
-  # The same bargain as the SMTP test below — synchronous, because the answer
-  # is the point — but one layer up: this one carries a real print of the
-  # design, so it exercises the layout and the printer as well as the relay.
-  #
-  # Sent to whoever pressed the button, never to a customer. A test that needs
-  # a recipient typed into it is a test that eventually goes to the wrong
-  # address.
-  def handle_event("send_test_invoice", _params, socket) do
-    case test_recipient(socket.assigns) do
-      nil ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Set a contact email address first — there is nobody to send a test to."
-         )}
-
-      recipient ->
-        # `@sample` and not a stored invoice: the specimen carries the real
-        # organisation but a fictional customer, so nothing about a real client
-        # leaves the building to prove a design works.
-        case InvoiceNotifier.deliver_test_invoice(recipient, socket.assigns.sample) do
-          {:ok, _metadata} ->
-            {:noreply,
-             put_flash(socket, :info, "Test invoice sent to #{recipient}, design attached.")}
-
-          {:error, :invalid_recipient} ->
-            {:noreply,
-             put_flash(socket, :error, "#{recipient} is not an address this can send to.")}
-
-          {:error, message} ->
-            {:noreply, put_flash(socket, :error, "The relay refused it: #{message}")}
-        end
-    end
-  end
-
   # Synchronous on purpose — the whole point is to report what the relay said,
   # to the person who just pressed the button. Every other message in the
   # application goes through the queue.
@@ -364,6 +343,20 @@ defmodule QuantumBillingWeb.SettingsLive do
   # Writes the newly uploaded file, if there is one, and puts its path into the
   # params so the changeset saves it alongside everything else in the panel.
   # Nothing else in the form knows the logo is a file rather than a field.
+  # Re-read rather than trusting the assign: the toolbar is one of several
+  # windows onto the same row, and writing back a page derived from a stale
+  # render would undo whatever the design pad changed in between.
+  defp save_page(socket, fun) do
+    template = Templates.ensure_default()
+    doc = Templates.document_of(template)
+    doc = %{doc | page: fun.(doc.page)}
+
+    case Templates.update_template(template, %{"layout_xml" => Layout.to_xml(doc)}) do
+      {:ok, _template} -> assign_templates(socket)
+      {:error, _changeset} -> put_flash(socket, :error, "That change could not be saved.")
+    end
+  end
+
   # Runs a template action by id, refreshing the list either way. An id the list
   # no longer holds — a stale click from a window opened before it was removed —
   # is a no-op that re-reads rather than an error.
@@ -679,7 +672,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <button
           type="button"
           phx-click="send_test_email"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+          class={action_button_class()}
         >
           <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
         </button>
@@ -839,7 +832,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <button
           type="button"
           phx-click="send_test_email"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+          class={action_button_class()}
         >
           <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
         </button>
@@ -956,72 +949,15 @@ defmodule QuantumBillingWeb.SettingsLive do
       </.form>
       <hr class="border-base-300" />
       <div>
-        <h3 class="text-sm font-semibold tracking-tight">Test tools</h3>
+        <h3 class="text-sm font-semibold tracking-tight">Text tools</h3>
 
         <p class="mt-1 text-sm text-base-content/60">
-          Try the design the way a customer receives it — at full size, through
-          the real printer, through the real relay — before an invoice goes out
-          carrying it. Nothing here bills anyone or creates an invoice.
+          Typography for the design new invoices use — typeface, size, spacing,
+          heading weight, label case, text colour and page margin. Changes save
+          as you make them; the designs below redraw to match.
         </p>
 
-        <div class="mt-3 flex flex-wrap items-center gap-2">
-          <.link
-            id="test-preview"
-            href={~p"/settings/customization/sample"}
-            target="_blank"
-            rel="noopener"
-            class={action_button_class()}
-          >
-            <.icon name="hero-eye" class="size-4" /> Open preview
-          </.link>
-
-          <.link
-            id="test-pdf"
-            href={~p"/settings/customization/sample/download"}
-            class={secondary_button_class()}
-          >
-            <.icon name="hero-document-arrow-down" class="size-4" /> Download test PDF
-          </.link>
-
-          <button
-            id="test-invoice-email"
-            type="button"
-            phx-click="send_test_invoice"
-            class={[secondary_button_class(), "phx-click-loading:opacity-60"]}
-          >
-            <.icon name="hero-paper-airplane" class="size-4" /> Email test invoice
-          </button>
-        </div>
-
-        <%!-- What the three buttons above will actually use. A test that fails
-        is only useful if you can see which part of the chain it was, and half
-        of these are settings on other panels — the logo is here, the sender is
-        on SMTP, the printer is not a setting at all. --%>
-        <ul id="customization-checks" class="mt-4 space-y-1.5">
-          <li
-            :for={
-              check <-
-                customization_checks(
-                  @organization,
-                  @templates,
-                  @pdf_renderer?,
-                  test_recipient(@current_scope, @organization)
-                )
-            }
-            class="flex items-start gap-2 text-xs"
-          >
-            <.icon
-              name={if check.ok?, do: "hero-check-circle", else: "hero-exclamation-circle"}
-              class={[
-                "mt-px size-3.5 shrink-0",
-                if(check.ok?, do: "text-emerald-600", else: "text-amber-600")
-              ]}
-            />
-            <span class="text-base-content/60">
-              <span class="font-medium text-base-content/80">{check.label}</span> — {check.detail}
-            </span>
-          </li>
-        </ul>
+        <.text_tools id="text-tools" page={@default_page} class="mt-3" />
       </div>
       <hr class="border-base-300" />
       <div>
@@ -1093,7 +1029,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           <button
             type="submit"
             disabled={@uploads.backup_file.entries == []}
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold shadow transition"
+            class={[action_button_class(), "disabled:opacity-50"]}
           >
             <.icon name="hero-arrow-path" class="size-4" /> Execute Restore
           </button>
@@ -1202,76 +1138,12 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   # Who a test goes to: the person signed in, then the organisation's contact
-  # address. Never a client, and never typed in — see `send_test_invoice`.
+  # address. Never a client, and never typed in.
   defp test_recipient(%{current_scope: scope, organization: organization}),
     do: test_recipient(scope, organization)
 
   defp test_recipient(scope, organization) do
     presence(scope && scope.user && scope.user.email) || presence(organization.email)
-  end
-
-  # What the three test buttons will use, with the parts that are not ready
-  # named rather than left to fail at the far end.
-  #
-  # `ok?` is about a test being meaningful, not about a setting being filled
-  # in: no logo is a perfectly valid design, so it reads as a statement of what
-  # will print rather than as a fault.
-  defp customization_checks(organization, templates, pdf_renderer?, recipient) do
-    default = Enum.find(templates, & &1.is_default) || List.first(templates)
-    {sender_name, sender_email} = Mail.sender(organization)
-
-    [
-      %{
-        label: "Design",
-        ok?: default != nil,
-        detail:
-          if(default,
-            do: "#{default.name} — the design new invoices are issued with",
-            else: "none yet. Create one below and make it the default."
-          )
-      },
-      %{
-        label: "Company details",
-        ok?: presence(organization.company_name) != nil,
-        detail:
-          if(presence(organization.company_name),
-            do: "#{organization.company_name} prints as the seller",
-            else: "not set — the specimen prints a placeholder seller. Fill in General."
-          )
-      },
-      %{
-        label: "Logo",
-        ok?: true,
-        detail:
-          if(organization.doc_logo_path,
-            do: "yours, at full size on the print",
-            else: "not set — the QuantumBilling mark prints instead"
-          )
-      },
-      %{
-        label: "PDF printer",
-        ok?: pdf_renderer?,
-        detail:
-          if(pdf_renderer?,
-            do: "a headless browser is installed, so the PDF is printed here",
-            else:
-              "none installed — the download falls back to the preview page, " <>
-                "and an emailed invoice carries the HTML document instead"
-          )
-      },
-      %{
-        label: "Sends as",
-        ok?: true,
-        detail: "#{sender_name} <#{sender_email}> — change it under SMTP"
-      },
-      %{
-        label: "Test goes to",
-        ok?: recipient != nil,
-        detail:
-          recipient ||
-            "nobody — no address on your account and none under General"
-      }
-    ]
   end
 
   defp presence(nil), do: nil

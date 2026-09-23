@@ -52,12 +52,16 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
       --qb-hairline: #f4f4f5;
       --qb-muted: #52525b;
       --qb-label: #71717a;
+      --qb-text: #{text_color(page)};
+      --qb-label-case: #{label_case(page)};
+      --qb-label-tracking: #{label_tracking(page)};
+      --qb-heading-weight: #{heading_weight(page)};
       max-width: 800px;
       margin: 0 auto;
       font-family: #{font_stack(page.font)};
       font-size: #{page.base_font}px;
-      line-height: 1.45;
-      color: #18181b;
+      line-height: #{line_height(page)};
+      color: var(--qb-text);
       background: #fff;
     }
     .qb-doc *, .qb-doc *::before, .qb-doc *::after { box-sizing: border-box; }
@@ -79,8 +83,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
 
     .qb-doc__label {
       font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      text-transform: var(--qb-label-case);
+      letter-spacing: var(--qb-label-tracking);
       color: var(--qb-label);
     }
     .qb-doc__name { font-size: 13px; font-weight: 600; margin: 4px 0; }
@@ -96,7 +100,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     .qb-doc--right .qb-doc__logo { margin-left: auto; }
 
     .qb-doc__heading {
-      font-weight: 600;
+      font-weight: var(--qb-heading-weight);
       letter-spacing: -0.01em;
       margin: 0 0 4px;
     }
@@ -117,8 +121,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     .qb-doc__items th {
       text-align: left;
       font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      text-transform: var(--qb-label-case);
+      letter-spacing: var(--qb-label-tracking);
       color: var(--qb-label);
       border-bottom: 1px solid var(--qb-rule);
       padding: 6px 8px 6px 0;
@@ -198,7 +202,34 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     ~s|ui-serif, Georgia, Cambria, "Times New Roman", Times, serif|
   end
 
+  defp font_stack("mono") do
+    ~s|ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace|
+  end
+
   defp font_stack(_sans) do
     ~s|ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif|
   end
+
+  # Each of these reads one page setting and falls back to the stock value, so
+  # a document stored before the setting existed prints exactly as it did.
+  # Every branch returns a literal: nothing a user typed reaches the stylesheet
+  # except the colour, and that one is a validated six-digit hex.
+  defp line_height(%{line_height: "tight"}), do: "1.3"
+  defp line_height(%{line_height: "relaxed"}), do: "1.7"
+  defp line_height(_page), do: "1.45"
+
+  defp heading_weight(%{heading_weight: "medium"}), do: "500"
+  defp heading_weight(%{heading_weight: "bold"}), do: "700"
+  defp heading_weight(_page), do: "600"
+
+  defp label_case(%{label_case: "normal"}), do: "none"
+  defp label_case(_page), do: "uppercase"
+
+  # Letterspacing is there to open up capitals. Set normal case and it reads as
+  # a gap between letters instead, so it comes off with the capitals.
+  defp label_tracking(%{label_case: "normal"}), do: "0"
+  defp label_tracking(_page), do: "0.08em"
+
+  defp text_color(%{text_color: "#" <> _ = color}), do: color
+  defp text_color(_page), do: "#18181b"
 end

@@ -140,13 +140,18 @@ defmodule QuantumBillingWeb.DashboardComponents do
     assigns = assign(assigns, plotted: plotted, columns: columns, dots: dots)
 
     ~H"""
-    <div class={["flex gap-3", @class]}>
-      <div class="flex h-64 shrink-0 flex-col justify-between text-xs text-base-content/45">
-        <span :for={label <- @axis_labels}>{label}</span>
+    <div class={["flex min-h-56 gap-3", @class]}>
+      <div class="flex shrink-0 flex-col text-xs text-base-content/45">
+        <div class="flex min-h-0 flex-1 flex-col justify-between">
+          <span :for={label <- @axis_labels}>{label}</span>
+        </div>
+        <%!-- Matches the x-label row below, so the y labels stay level with
+        the gridlines they name rather than with the whole column. --%>
+        <div class="mt-2 h-4" aria-hidden="true"></div>
       </div>
 
-      <div class="min-w-0 flex-1">
-        <div class="group/chart relative h-64">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <div class="group/chart relative min-h-0 flex-1">
           <div class="absolute inset-0 flex flex-col justify-between">
             <div :for={_label <- @axis_labels} class="h-0 border-t border-base-200" />
           </div>
@@ -179,6 +184,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
               stroke-linecap="round"
               stroke-linejoin="round"
               vector-effect="non-scaling-stroke"
+              pathLength="1"
             />
           </svg>
 
@@ -242,35 +248,90 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp x_at(i, count) when count > 0, do: (i + 0.5) / count * 100
   defp x_at(_i, _count), do: 50.0
 
-  # Catmull-Rom through the points, emitted as cubic beziers. A polyline
-  # between six monthly readings reads as a sawtooth; the curve is what makes
-  # it look like a trend rather than a list of numbers.
+  # A monotone cubic (Fritsch-Carlson) through the points, emitted as cubic
+  # beziers. A polyline between six monthly readings reads as a sawtooth; the
+  # curve is what makes it look like a trend rather than a list of numbers.
   #
-  # Control points are clamped to the plot box: an overshoot on a spiky series
-  # would otherwise bulge the fill above the top gridline or below the axis.
+  # Monotone rather than Catmull-Rom because a smooth curve through real
+  # billing data has to stay truthful: Catmull-Rom overshoots around a spike,
+  # so the line dipped below the axis between two positive months and bulged
+  # over the top gridline after a quiet one, drawing revenue that was never
+  # invoiced. This interpolation cannot leave the range of the two readings it
+  # joins, so every point on the curve is a value that could have happened.
   defp curve([]), do: ""
   defp curve([{x, y}]), do: "M #{fmt(x)} #{fmt(y)}"
 
   defp curve([{x0, y0} | _] = points) do
-    last = length(points) - 1
-
     body =
       points
       |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.with_index()
-      |> Enum.map_join(" ", fn {[{x1, y1}, {x2, y2}], i} ->
-        {px, py} = Enum.at(points, max(i - 1, 0))
-        {nx, ny} = Enum.at(points, min(i + 2, last))
+      |> Enum.zip(Enum.chunk_every(tangents(points), 2, 1, :discard))
+      |> Enum.map_join(" ", fn {[{x1, y1}, {x2, y2}], [m1, m2]} ->
+        run = (x2 - x1) / 3
 
-        c1x = x1 + (x2 - px) / 6
-        c1y = clamp(y1 + (y2 - py) / 6)
-        c2x = x2 - (nx - x1) / 6
-        c2y = clamp(y2 - (ny - y1) / 6)
-
-        "C #{fmt(c1x)} #{fmt(c1y)}, #{fmt(c2x)} #{fmt(c2y)}, #{fmt(x2)} #{fmt(y2)}"
+        "C #{fmt(x1 + run)} #{fmt(y1 + m1 * run)}, " <>
+          "#{fmt(x2 - run)} #{fmt(y2 - m2 * run)}, #{fmt(x2)} #{fmt(y2)}"
       end)
 
     "M #{fmt(x0)} #{fmt(y0)} " <> body
+  end
+
+  # The slope the curve leaves each point with. Endpoints follow their one
+  # neighbour; interior points average the two secants around them, and the
+  # Fritsch-Carlson limiter then shortens any tangent long enough to overshoot.
+  defp tangents(points) do
+    secants =
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{x1, y1}, {x2, y2}] -> (y2 - y1) / (x2 - x1) end)
+
+    interior =
+      secants
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [before, aftr] -> interior_slope(before, aftr) end)
+
+    limit([hd(secants)] ++ interior ++ [List.last(secants)], secants)
+  end
+
+  # Flat at a turning point: a peak stays a peak instead of rounding past the
+  # reading that made it.
+  defp interior_slope(before, aftr) when before * aftr <= 0, do: 0.0
+  defp interior_slope(before, aftr), do: (before + aftr) / 2
+
+  # Fritsch-Carlson: where a segment's two tangents fall outside the circle of
+  # radius 3, scale both back onto it. That is the condition for the cubic to
+  # stay monotone across the segment.
+  defp limit(raw, secants) do
+    raw
+    |> Enum.with_index()
+    |> Map.new(fn {slope, i} -> {i, slope} end)
+    |> then(fn slopes ->
+      secants
+      |> Enum.with_index()
+      |> Enum.reduce(slopes, &limit_segment/2)
+    end)
+    |> Enum.sort()
+    |> Enum.map(&elem(&1, 1))
+  end
+
+  defp limit_segment({secant, index}, slopes) when secant == 0.0 do
+    slopes |> Map.put(index, 0.0) |> Map.put(index + 1, 0.0)
+  end
+
+  defp limit_segment({secant, index}, slopes) do
+    start = Map.fetch!(slopes, index) / secant
+    finish = Map.fetch!(slopes, index + 1) / secant
+    radius = start * start + finish * finish
+
+    if radius > 9 do
+      scale = 3 / :math.sqrt(radius)
+
+      slopes
+      |> Map.put(index, scale * start * secant)
+      |> Map.put(index + 1, scale * finish * secant)
+    else
+      slopes
+    end
   end
 
   # The line, dropped to the axis at both ends and closed.
@@ -282,8 +343,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
     "#{curve(points)} L #{fmt(last_x)} 100 L #{fmt(first_x)} 100 Z"
   end
-
-  defp clamp(value), do: value |> max(0.0) |> min(100.0)
 
   defp fmt(number), do: :erlang.float_to_binary(number * 1.0, decimals: 2)
 

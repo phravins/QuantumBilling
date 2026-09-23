@@ -396,53 +396,64 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert Templates.default_template().name == "Classic"
     end
 
-    # The three ways to try a design before an invoice carries it: at full
-    # size, through the real printer, and through the real relay.
-    test "offers the test tools", %{conn: conn} do
+    # The toolbar writes the document, not a settings column — so the check is
+    # that a control's value comes back out of the stored layout.
+    test "the text tools save typography onto the default design", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
 
-      assert has_element?(view, ~s(#test-preview[href="/settings/customization/sample"]))
+      assert has_element?(view, ~s(#text-tools[phx-change="update_page"]))
 
-      assert has_element?(
-               view,
-               ~s(#test-pdf[href="/settings/customization/sample/download"])
-             )
+      view
+      |> element("#text-tools")
+      |> render_change(%{
+        "page" => %{
+          "font" => "serif",
+          "base-font" => "13",
+          "line-height" => "relaxed",
+          "heading-weight" => "bold",
+          "label-case" => "normal",
+          "text-color" => "#1d4ed8",
+          "margin" => "18mm"
+        }
+      })
 
-      assert has_element?(view, ~s(#test-invoice-email[phx-click="send_test_invoice"]))
+      page = Templates.default_template() |> Templates.document_of() |> Map.fetch!(:page)
+
+      assert page.font == "serif"
+      assert page.base_font == 13
+      assert page.line_height == "relaxed"
+      assert page.heading_weight == "bold"
+      assert page.label_case == "normal"
+      assert page.text_color == "#1d4ed8"
+      assert page.margin == "18mm"
     end
 
-    # A failed test is only useful if you can see which part of the chain it
-    # was, and most of these are settings on other panels.
-    test "says what a test will use", %{conn: conn, user: user} do
-      Settings.update_section(
-        Settings.get_organization(),
-        %{"company_name" => "Northwind Supply Co"},
-        :general
-      )
-
-      {:ok, _view, html} = live(conn, ~p"/settings/customization")
-
-      assert html =~ "Northwind Supply Co"
-      # Whoever pressed the button, never a client.
-      assert html =~ user.email
-    end
-
-    # Each design, not just the one in force: a design you have not switched to
-    # is exactly the one you need to look at before switching.
-    test "every design can be previewed and printed on its own", %{conn: conn} do
-      template = Templates.ensure_default()
-
+    # A colour field is interpolated into the document's stylesheet, so this is
+    # the one control where a rejected value matters beyond a wrong-looking
+    # invoice.
+    test "the text tools refuse a colour that is not one", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
 
-      assert has_element?(
-               view,
-               ~s(a[href="/settings/customization/sample?template=#{template.id}"])
-             )
+      view
+      |> element("#text-tools")
+      |> render_change(%{"page" => %{"text-color" => "red; } body { display: none"}})
 
-      assert has_element?(
-               view,
-               ~s(a[href="/settings/customization/sample/download?template=#{template.id}"])
-             )
+      page = Templates.default_template() |> Templates.document_of() |> Map.fetch!(:page)
+      assert page.text_color == "#18181b"
+    end
+
+    test "clearing formatting puts the typography back", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      view
+      |> element("#text-tools")
+      |> render_change(%{"page" => %{"font" => "mono", "heading-weight" => "bold"}})
+
+      render_click(view, "reset_text", %{})
+
+      page = Templates.default_template() |> Templates.document_of() |> Map.fetch!(:page)
+      assert page.font == "sans"
+      assert page.heading_weight == "semibold"
     end
 
     test "duplicating adds a copy that is not the default", %{conn: conn} do

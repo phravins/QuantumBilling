@@ -78,8 +78,6 @@ defmodule QuantumBillingWeb.Router do
     # `:require_authenticated_user` pipeline as the other document routes
     # because it prints the organisation's own name, address and GSTIN — a
     # signed-out visitor has no business fetching those.
-    get "/settings/customization/sample", InvoicePdfController, :sample
-    get "/settings/customization/sample/download", InvoicePdfController, :sample_download
   end
 
   scope "/api", QuantumBillingWeb do

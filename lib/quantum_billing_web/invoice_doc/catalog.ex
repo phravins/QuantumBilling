@@ -335,6 +335,15 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
 
   def cast_value(value, :string) when is_binary(value), do: {:ok, value}
 
+  # Six hex digits and nothing else. This value is interpolated straight into
+  # the document's stylesheet, so the pattern is what keeps a colour field from
+  # being a way to write CSS.
+  def cast_value(value, :color) when is_binary(value) do
+    value = value |> String.trim() |> String.downcase()
+
+    if Regex.match?(~r/^#[0-9a-f]{6}$/, value), do: {:ok, value}, else: :error
+  end
+
   def cast_value(value, :boolean) when is_binary(value) do
     case value do
       "true" -> {:ok, true}

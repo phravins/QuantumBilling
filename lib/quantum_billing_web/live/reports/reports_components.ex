@@ -39,9 +39,10 @@ defmodule QuantumBillingWeb.ReportsComponents do
       )
 
     ~H"""
-    <div class={@class}>
+    <div class={["flex flex-col", @class]}>
       <DashboardComponents.area_chart
         :if={not @empty?}
+        class="min-h-0 flex-1"
         id="reports-value-trend"
         series={@series}
         labels={@labels}
@@ -49,7 +50,10 @@ defmodule QuantumBillingWeb.ReportsComponents do
         axis_labels={@axis_labels}
         format={&DashboardComponents.money_axis_label/1}
       />
-      <p :if={@empty?} class="flex h-64 items-center justify-center text-sm text-base-content/45">
+      <p
+        :if={@empty?}
+        class="flex min-h-56 flex-1 items-center justify-center text-sm text-base-content/45"
+      >
         No invoices in this period.
       </p>
     </div>

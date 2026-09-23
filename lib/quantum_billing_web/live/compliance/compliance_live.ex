@@ -4,7 +4,8 @@ defmodule QuantumBillingWeb.ComplianceLive do
   themselves, what falls due next, and a month calendar.
 
   Everything is derived from `QuantumBilling.Compliance`, which generates the
-  schedule from the statutory rules rather than storing it. Nothing is filed
+  schedule from the statutory rules rather than storing it, narrowed to what
+  this organisation's own GST registration actually owes. Nothing is filed
   yet — that needs the filings table — so obligations resolve to Pending or
   Overdue on dates alone.
 
@@ -18,20 +19,27 @@ defmodule QuantumBillingWeb.ComplianceLive do
   import QuantumBillingWeb.DashboardComponents, only: [stat_card: 1]
 
   alias QuantumBilling.Compliance
+  alias QuantumBilling.Settings
 
   def mount(_params, _session, socket) do
     today = Date.utc_today()
+
+    # The organisation's registration is what decides which returns are owed —
+    # a composition dealer and a regular taxpayer do not file the same forms —
+    # so the calendar is resolved against it rather than shown in full.
+    obligations = Compliance.tracked_obligations(today, Settings.get_organization())
 
     {:ok,
      socket
      |> assign(:page_title, "Compliance")
      |> assign(:active_nav, :compliance)
      |> assign(:today, today)
-     |> assign(:obligations, Compliance.tracked_obligations(today))
+     |> assign(:obligations, obligations)
      |> assign(:category, :all)
      |> assign(:status_filter, "All Status")
      |> assign(:calendar_year, today.year)
      |> assign(:calendar_month, today.month)
+     |> assign(:selected_date, nil)
      |> assign(:selected, nil)}
   end
 
@@ -64,10 +72,32 @@ defmodule QuantumBillingWeb.ComplianceLive do
     {:noreply, assign(socket, :selected, nil)}
   end
 
+  # A day in the calendar narrows the task list to that date, which is what a
+  # calendar is for — the grid used to mark the deadlines and then refuse to
+  # say anything about them. Clicking the same day again, or an empty one,
+  # clears the narrowing rather than stranding the page on one date.
+  def handle_event("select_day", %{"date" => date}, socket) do
+    date = Date.from_iso8601!(date)
+    already_selected? = socket.assigns.selected_date == date
+    carries_obligations? = Compliance.on_date(socket.assigns.obligations, date) != []
+
+    selected = if already_selected? or not carries_obligations?, do: nil, else: date
+
+    {:noreply, socket |> assign(:selected_date, selected) |> assign(:selected, nil)}
+  end
+
+  def handle_event("clear_day", _params, socket) do
+    {:noreply, assign(socket, :selected_date, nil)}
+  end
+
   # "View All" and "View Filing Calendar" both clear any narrowing so the whole
   # year is visible, which is what both controls promise.
   def handle_event("show_all", _params, socket) do
-    {:noreply, socket |> assign(:category, :all) |> assign(:status_filter, "All Status")}
+    {:noreply,
+     socket
+     |> assign(:category, :all)
+     |> assign(:status_filter, "All Status")
+     |> assign(:selected_date, nil)}
   end
 
   defp shift_calendar(socket, months) do
@@ -82,10 +112,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
   def render(assigns) do
     filtered =
-      Compliance.filter(assigns.obligations, %{
-        category: assigns.category,
-        status: assigns.status_filter
-      })
+      assigns.obligations
+      |> Compliance.filter(%{category: assigns.category, status: assigns.status_filter})
+      |> then(fn rows ->
+        if assigns.selected_date, do: Compliance.on_date(rows, assigns.selected_date), else: rows
+      end)
 
     assigns =
       assign(assigns,
@@ -171,6 +202,25 @@ defmodule QuantumBillingWeb.ComplianceLive do
             </div>
           </div>
           <.tabs categories={Compliance.categories()} active={@category} />
+
+          <%!-- Says which day the calendar narrowed the list to, and offers the
+          way back out. A filter applied from another card is invisible
+          otherwise, and an empty table reads as a bug. --%>
+          <div :if={@selected_date} class="mt-4 flex items-center gap-2">
+            <span class="inline-flex items-center gap-2 rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-medium">
+              <.icon name="hero-calendar-days" class="size-3.5 text-base-content/60" />
+              Due {format_date(@selected_date)}
+              <button
+                type="button"
+                phx-click="clear_day"
+                class="text-base-content/45 transition-colors hover:text-base-content"
+                aria-label="Clear the date filter"
+              >
+                <.icon name="hero-x-mark" class="size-3.5" />
+              </button>
+            </span>
+          </div>
+
           <div :if={@selected} class="mt-4">
             <.obligation_detail obligation={@selected} />
           </div>
@@ -182,14 +232,18 @@ defmodule QuantumBillingWeb.ComplianceLive do
           <.empty_state
             :if={@obligations == []}
             icon="hero-shield-check"
-            title="No compliance data yet"
-            description="Your GST filing obligations will be listed here once returns are being tracked."
+            title="No GST registration on file"
+            description="Add your GSTIN under Settings › Organization and the filing calendar for your registration will be tracked here."
           />
           <.empty_state
             :if={@obligations != [] and @rows == []}
             icon="hero-shield-check"
             title="Nothing matches these filters"
-            description="Try another category or status."
+            description={
+              if @selected_date,
+                do: "Nothing is due on that date under the current category and status.",
+                else: "Try another category or status."
+            }
           />
           <div :if={@rows != []} class="overflow-x-auto">
             <table class="w-full">
@@ -290,7 +344,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
               title="Nothing due"
               description={
                 if @obligations == [],
-                  do: "Filing deadlines will appear here once returns are being tracked.",
+                  do: "Filing deadlines appear here once a GSTIN is saved in Settings.",
                   else: "Every obligation for this year is filed."
               }
             />
@@ -304,6 +358,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
               year={@calendar_year}
               month={@calendar_month}
               today={@today}
+              selected={@selected_date}
             />
           </.card>
         </div>

@@ -368,6 +368,203 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
   defp humanise(field), do: field |> String.replace("_", " ") |> String.capitalize()
 
+  # The toolbar's own vocabulary. Each value is one the document's parser
+  # already accepts, so a control cannot offer a setting the layout would drop
+  # on the way back in.
+  @typefaces [{"sans", "Sans"}, {"serif", "Serif"}, {"mono", "Mono"}]
+
+  @spacings [
+    {"tight", "hero-bars-4", "Tight line spacing"},
+    {"normal", "hero-bars-3", "Normal line spacing"},
+    {"relaxed", "hero-bars-2", "Relaxed line spacing"}
+  ]
+
+  @weights [
+    {"medium", "font-medium", "Medium headings"},
+    {"semibold", "font-semibold", "Semibold headings"},
+    {"bold", "font-bold", "Bold headings"}
+  ]
+
+  @cases [{"upper", "AA", "Uppercase labels"}, {"normal", "Aa", "Sentence-case labels"}]
+
+  @doc """
+  The text tools: one toolbar over every typographic setting a document has.
+
+  It writes `page[...]` fields named after the XML attributes in
+  `InvoiceDoc.Layout.page_attrs/0`, so whichever LiveView mounts it can hand
+  the params straight to `Layout.cast_page/2` without knowing what a control
+  was. Everything here is a real document setting — there is no styling in the
+  toolbar that the printed invoice does not carry.
+  """
+  attr :id, :string, default: "text-tools"
+  attr :page, :map, required: true
+  attr :class, :string, default: nil
+
+  def text_tools(assigns) do
+    assigns =
+      assign(assigns,
+        typefaces: @typefaces,
+        spacings: @spacings,
+        weights: @weights,
+        cases: @cases
+      )
+
+    ~H"""
+    <form
+      id={@id}
+      phx-change="update_page"
+      class={[
+        "flex flex-wrap items-center gap-1 rounded-box border border-base-300 bg-base-200/60 p-1.5",
+        @class
+      ]}
+    >
+      <label class="flex items-center">
+        <span class="sr-only">Typeface</span>
+        <select name="page[font]" class={tool_select_class()} title="Typeface">
+          <option :for={{value, label} <- @typefaces} value={value} selected={value == @page.font}>
+            {label}
+          </option>
+        </select>
+      </label>
+
+      <label class="flex items-center">
+        <span class="sr-only">Text size</span>
+        <select name="page[base-font]" class={tool_select_class()} title="Text size">
+          <option :for={size <- 10..14} value={size} selected={size == @page.base_font}>
+            {size} pt
+          </option>
+        </select>
+      </label>
+
+      <span class={tool_divider_class()} aria-hidden="true" />
+
+      <%!-- Radios rather than buttons: a press has to say which value it set,
+      and a radio group already carries that on the wire and to a screen
+      reader. The visible chip is the label, so the input itself can be
+      sr-only without losing the keyboard. --%>
+      <fieldset class="flex items-center gap-0.5">
+        <legend class="sr-only">Line spacing</legend>
+        <.tool_radio
+          :for={{value, icon, label} <- @spacings}
+          name="page[line-height]"
+          value={value}
+          checked={value == @page.line_height}
+          icon={icon}
+          label={label}
+        />
+      </fieldset>
+
+      <span class={tool_divider_class()} aria-hidden="true" />
+
+      <fieldset class="flex items-center gap-0.5">
+        <legend class="sr-only">Heading weight</legend>
+        <.tool_radio
+          :for={{value, weight, label} <- @weights}
+          name="page[heading-weight]"
+          value={value}
+          checked={value == @page.heading_weight}
+          glyph="A"
+          glyph_class={weight}
+          label={label}
+        />
+      </fieldset>
+
+      <span class={tool_divider_class()} aria-hidden="true" />
+
+      <fieldset class="flex items-center gap-0.5">
+        <legend class="sr-only">Label case</legend>
+        <.tool_radio
+          :for={{value, glyph, label} <- @cases}
+          name="page[label-case]"
+          value={value}
+          checked={value == @page.label_case}
+          glyph={glyph}
+          glyph_class="tracking-tight"
+          label={label}
+        />
+      </fieldset>
+
+      <span class={tool_divider_class()} aria-hidden="true" />
+
+      <%!-- Debounced because a colour picker fires on every step of a drag,
+      and each change here is a write to the stored layout. --%>
+      <label
+        class="flex h-7 cursor-pointer items-center gap-1.5 rounded-field px-1.5 transition-colors hover:bg-base-300/60"
+        title="Text colour"
+      >
+        <span class="text-xs font-semibold text-base-content/70">A</span>
+        <input
+          type="color"
+          name="page[text-color]"
+          value={@page.text_color}
+          phx-debounce="400"
+          aria-label="Text colour"
+          class="h-4 w-6 cursor-pointer rounded-sm border border-base-300 bg-transparent p-0"
+        />
+      </label>
+
+      <span class={tool_divider_class()} aria-hidden="true" />
+
+      <label class="flex items-center">
+        <span class="sr-only">Page margin</span>
+        <select name="page[margin]" class={tool_select_class()} title="Page margin">
+          <option
+            :for={value <- ~w(10mm 14mm 18mm 22mm)}
+            value={value}
+            selected={value == @page.margin}
+          >
+            {value} margin
+          </option>
+        </select>
+      </label>
+
+      <button
+        type="button"
+        phx-click="reset_text"
+        title="Clear formatting"
+        class="ml-auto flex h-7 items-center gap-1.5 rounded-field px-2 text-xs text-base-content/60 transition-colors hover:bg-base-300/60 hover:text-base-content"
+      >
+        <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Clear formatting
+      </button>
+    </form>
+    """
+  end
+
+  # Written out rather than built from a variable: Tailwind scans source text,
+  # so an interpolated class is never emitted into the stylesheet.
+  defp tool_select_class do
+    "h-7 cursor-pointer rounded-field border border-base-300 bg-base-100 px-1.5 text-xs " <>
+      "text-base-content transition-colors hover:border-base-content/30"
+  end
+
+  defp tool_divider_class, do: "mx-0.5 h-5 w-px bg-base-300"
+
+  attr :name, :string, required: true
+  attr :value, :string, required: true
+  attr :checked, :boolean, required: true
+  attr :label, :string, required: true
+  attr :icon, :string, default: nil
+  attr :glyph, :string, default: nil
+  attr :glyph_class, :string, default: nil
+
+  defp tool_radio(assigns) do
+    ~H"""
+    <label class="cursor-pointer" title={@label}>
+      <input type="radio" name={@name} value={@value} checked={@checked} class="peer sr-only" />
+      <span class={[
+        "flex size-7 items-center justify-center rounded-field text-xs text-base-content/55",
+        "transition-colors hover:bg-base-300/60",
+        "peer-checked:bg-base-100 peer-checked:text-base-content peer-checked:shadow-sm",
+        "peer-focus-visible:ring-2 peer-focus-visible:ring-base-content/40"
+      ]}>
+        <.icon :if={@icon} name={@icon} class="size-4" />
+        <span :if={@glyph} class={@glyph_class}>{@glyph}</span>
+      </span>
+      <span class="sr-only">{@label}</span>
+    </label>
+    """
+  end
+
   @doc """
   The template list shown on Settings → Customization.
 
@@ -410,27 +607,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             class={[action_button_class(), "h-8 px-2.5 text-xs"]}
           >
             <.icon name="hero-paint-brush" class="size-3.5" /> Design
-          </.link>
-
-          <%!-- The thumbnail above is a third of full size, which is enough
-          to tell two designs apart and not enough to read a column heading or
-          see where the page breaks. This is the same design at the size it
-          prints at — including the ones that are not the default, which is the
-          only way to judge a design before switching to it. --%>
-          <.link
-            href={~p"/settings/customization/sample?template=#{template.id}"}
-            target="_blank"
-            rel="noopener"
-            class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
-          >
-            <.icon name="hero-eye" class="size-3.5" /> Preview
-          </.link>
-
-          <.link
-            href={~p"/settings/customization/sample/download?template=#{template.id}"}
-            class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
-          >
-            <.icon name="hero-document-arrow-down" class="size-3.5" /> PDF
           </.link>
 
           <button

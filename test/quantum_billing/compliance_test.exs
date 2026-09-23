@@ -6,6 +6,7 @@ defmodule QuantumBilling.ComplianceTest do
   # Every function takes the reference date, so nothing here depends on when the
   # suite runs.
   @today ~D[2024-05-28]
+  @gstin "27AABCU9603R1ZM"
 
   defp obligations(today \\ @today), do: Compliance.obligations(today)
 
@@ -105,14 +106,68 @@ defmodule QuantumBilling.ComplianceTest do
     end
   end
 
-  describe "tracked_obligations/1" do
+  describe "tracked_obligations/2" do
     # The statutory calendar above is the same for every business in the
-    # country. Nothing is this tenant's until there are filing records to
-    # resolve it against, so the page shows nothing rather than showing the
-    # calendar as though it were their own compliance position.
-    test "is empty while there are no filing records" do
-      assert Compliance.tracked_obligations(@today) == []
+    # country. Which of its rows a given business owes is decided by that
+    # business's own GST registration.
+    test "is empty without a GSTIN, because an unregistered business owes nothing" do
+      assert Compliance.tracked_obligations(@today, nil) == []
+      assert Compliance.tracked_obligations(@today, %{}) == []
+      assert Compliance.tracked_obligations(@today, %{gstin: nil}) == []
+      assert Compliance.tracked_obligations(@today, %{gstin: "   "}) == []
       assert Compliance.tracked_obligations() == []
+    end
+
+    test "a regular registration owes the monthly returns and not CMP-08" do
+      types = tracked_types(%{gstin: @gstin, composition_scheme: false})
+
+      assert "GSTR-1" in types
+      assert "GSTR-3B" in types
+      refute "CMP-08" in types
+    end
+
+    test "a composition dealer owes CMP-08 and not the monthly returns" do
+      types = tracked_types(%{gstin: @gstin, composition_scheme: true})
+
+      assert "CMP-08" in types
+      refute "GSTR-1" in types
+      refute "GSTR-3B" in types
+    end
+
+    test "both file the annual returns" do
+      for composition? <- [true, false] do
+        types = tracked_types(%{gstin: @gstin, composition_scheme: composition?})
+
+        assert "GSTR-9" in types
+        assert "GSTR-9C" in types
+      end
+    end
+
+    test "counts out the full year: twelve of each monthly return, plus the annuals" do
+      tracked = Compliance.tracked_obligations(@today, %{gstin: @gstin})
+
+      assert length(tracked) == 26
+      assert Enum.count(tracked, &(&1.type == "GSTR-1")) == 12
+      assert Enum.count(tracked, &(&1.type == "GSTR-3B")) == 12
+    end
+
+    test "takes an organisation struct as readily as a map" do
+      organization = %QuantumBilling.Settings.Organization{
+        gstin: @gstin,
+        composition_scheme: true
+      }
+
+      assert "CMP-08" in Enum.map(
+               Compliance.tracked_obligations(@today, organization),
+               & &1.type
+             )
+    end
+
+    defp tracked_types(registration) do
+      @today
+      |> Compliance.tracked_obligations(registration)
+      |> Enum.map(& &1.type)
+      |> Enum.uniq()
     end
   end
 

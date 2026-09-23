@@ -191,4 +191,82 @@ defmodule QuantumBilling.ReportsAggregateTest do
       assert numbers == ["INV-1", "INV-2"]
     end
   end
+
+  describe "monthly_breakdown/2" do
+    @today ~D[2026-09-15]
+
+    defp labels(filters, today \\ @today) do
+      filters |> Reports.monthly_breakdown(today) |> Enum.map(& &1.label)
+    end
+
+    # A month nobody invoiced in is a reading of zero, not a month that did not
+    # happen. Dropping the empty ones made the trend line skip from March
+    # straight to September and draw the gap as a rise.
+    test "a month with no invoices is still a month" do
+      insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2026-03-10]})
+      insert_invoice(%{invoice_number: "INV-2", invoice_date: ~D[2026-06-10]})
+
+      rows = Reports.monthly_breakdown(%{@all | date_range: "This Year"}, @today)
+
+      assert Enum.map(rows, & &1.label) == ~w(Jan Feb Mar Apr May Jun Jul Aug Sep)
+
+      april = Enum.find(rows, &(&1.label == "Apr"))
+      assert april.count == 0
+      assert april.taxable_value == 0
+      assert april.tax_amount == 0
+
+      march = Enum.find(rows, &(&1.label == "Mar"))
+      assert march.count == 1
+      assert march.taxable_value == 10_000
+    end
+
+    # The chart says "this year", so it runs to now rather than to whenever the
+    # last invoice happened to be raised.
+    test "stops at the current month rather than the last invoice" do
+      insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2026-02-10]})
+
+      assert List.last(labels(%{@all | date_range: "This Year"})) == "Sep"
+    end
+
+    # With no range to bound it, the invoices say where the chart starts and
+    # ends — "All Time" is however long you have been billing.
+    test "All Time spans the invoices themselves" do
+      insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2026-05-10]})
+      insert_invoice(%{invoice_number: "INV-2", invoice_date: ~D[2026-07-10]})
+
+      assert labels(@all) == ~w(May Jun Jul)
+    end
+
+    # A post-dated invoice is a date someone typed, not a month that has
+    # happened. Following it would draw a flatline into next year.
+    test "never runs past the current month" do
+      insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2026-08-10]})
+      insert_invoice(%{invoice_number: "INV-2", invoice_date: ~D[2027-04-10]})
+
+      assert labels(@all) == ~w(Aug Sep)
+    end
+
+    # A bounded range makes months to draw whether or not anything was billed
+    # in them, so an empty period has to be caught before the gap-filling: a
+    # flat zero line reads as a measurement, and the panel should say there is
+    # nothing to measure.
+    test "no invoices at all draws nothing rather than a flat year" do
+      assert labels(@all) == []
+      assert labels(%{@all | date_range: "This Year"}) == []
+      assert labels(%{@all | date_range: "This Month"}) == []
+    end
+
+    # Two years of readings fit across a card; past that the line is a comb.
+    test "caps how many months it will draw" do
+      insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2020-01-10]})
+      insert_invoice(%{invoice_number: "INV-2", invoice_date: ~D[2026-09-10]})
+
+      months = labels(@all)
+
+      assert length(months) == 24
+      # The recent end, not the old one: the cap drops history, not now.
+      assert List.last(months) == "Sep"
+      assert List.first(months) == "Oct"
+    end
+  end
 end

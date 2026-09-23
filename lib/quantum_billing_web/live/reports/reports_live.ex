@@ -166,12 +166,12 @@ defmodule QuantumBillingWeb.ReportsLive do
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <.card class="lg:col-span-5">
+        <.card class="flex flex-col lg:col-span-5">
           <div class="mb-4 flex items-center justify-between gap-4">
             <h2 class="text-sm font-semibold tracking-tight">Invoice Value Trend</h2>
             <span class="text-xs text-base-content/45">{@filters.date_range}</span>
           </div>
-          <.line_chart points={@trend} />
+          <.line_chart points={@trend} class="flex-1" />
         </.card>
 
         <.card class="lg:col-span-4">

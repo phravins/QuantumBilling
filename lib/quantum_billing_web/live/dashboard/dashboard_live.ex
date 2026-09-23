@@ -91,7 +91,10 @@ defmodule QuantumBillingWeb.DashboardLive do
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
+        <%!-- A column, so the plot takes the height the card actually has.
+        With a fixed-height chart the card stretched to its neighbour and the
+        difference showed as dead space under the axis. --%>
+        <.card class="flex flex-col lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
 
@@ -113,9 +116,11 @@ defmodule QuantumBillingWeb.DashboardLive do
             max={@chart_max}
             axis_labels={@chart_axis}
             format={&money_axis_label/1}
+            class="min-h-0 flex-1"
           />
           <.empty_state
             :if={@chart_months == []}
+            class="flex-1 justify-center"
             icon="hero-chart-bar"
             title="No invoice data yet"
             description="This chart fills in once you have invoices to report on."
