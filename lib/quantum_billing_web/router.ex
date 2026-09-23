@@ -73,6 +73,13 @@ defmodule QuantumBillingWeb.Router do
     get "/invoices/:id/pdf/download", InvoicePdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
     get "/settings/backup/download", BackupController, :download
+
+    # The specimen invoice, for testing a design. Same scope and same
+    # `:require_authenticated_user` pipeline as the other document routes
+    # because it prints the organisation's own name, address and GSTIN — a
+    # signed-out visitor has no business fetching those.
+    get "/settings/customization/sample", InvoicePdfController, :sample
+    get "/settings/customization/sample/download", InvoicePdfController, :sample_download
   end
 
   scope "/api", QuantumBillingWeb do

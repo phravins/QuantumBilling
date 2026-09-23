@@ -61,21 +61,24 @@ defmodule QuantumBillingWeb.Layouts do
               the one way to transition to an unknown height in CSS alone, so
               this needs neither JavaScript nor a server round trip.
 
-              The chevron is the only thing that opens it. Tying it to the
-              current page instead meant Account Settings unfolded the whole
-              list on arrival, since that page marks the same nav item active,
-              and the Settings link could never be followed without the list
-              springing open with it.
+              Open is driven off `@active_sub`, not `@active_nav`. Every
+              settings panel marks a sub-item, so the list holding it unfolds
+              and stays unfolded while you move between sections. Account
+              Settings marks the Settings nav item but no sub-item, so it no
+              longer springs the whole list open on arrival — which is what
+              tying this to `@active_nav` used to do.
 
-              Whether it is open is the browser's to remember: every navigation
-              re-renders this sidebar from scratch, so without the hook below
-              the list would snap shut the moment you picked a section from
-              it. --%>
+              Server-rendered rather than remembered only in the browser: a
+              navigation rebuilds this sidebar from scratch, and restoring the
+              state afterwards in JavaScript meant the list visibly snapped
+              shut and reopened on every section you picked. --%>
               <input
                 :if={item.key == :settings}
                 type="checkbox"
                 id="settings-sections-toggle"
                 phx-hook=".SettingsDisclosure"
+                checked={@active_sub != nil}
+                data-open={to_string(@active_sub != nil)}
                 class="peer sr-only"
               />
               <div class="flex items-center gap-0.5">
@@ -90,11 +93,19 @@ defmodule QuantumBillingWeb.Layouts do
                     )
                   ]}
                 >
+                  <%!-- Each destination keeps its own hue, so the row is
+                  recognisable by colour before the label is read. Dimmed
+                  while inactive: at full strength nine saturated icons
+                  compete with the page itself. --%>
                   <.icon
                     name={item.icon}
                     class={[
-                      "size-4.5 shrink-0",
-                      @active_nav == item.key && "text-blue-600 dark:text-blue-400"
+                      "size-4.5 shrink-0 transition-opacity",
+                      item.color,
+                      if(@active_nav == item.key,
+                        do: "opacity-100",
+                        else: "opacity-70 group-hover:opacity-100"
+                      )
                     ]}
                   />
                   <span class="truncate">{item.label}</span>
@@ -220,27 +231,34 @@ defmodule QuantumBillingWeb.Layouts do
     </div>
     <.flash_group flash={@flash} />
     <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsDisclosure">
-      // Keeps the settings sections open across navigation. The server renders
-      // the checkbox unchecked every time, so without this, picking a section
-      // from the list would close the list you picked it from.
+      // Carries a manual open across navigation. The server already opens the
+      // list whenever a settings section is on screen (data-open), so this is
+      // only what remembers the chevron elsewhere in the app.
       const KEY = "qb:settings-sections-open"
 
       export default {
         mounted() {
+          // Reset per mount: arriving somewhere new is not an override, so a
+          // section page is free to unfold the list again.
+          this.touched = false
           this.restore()
-          this.el.addEventListener("change", () =>
+          this.el.addEventListener("change", () => {
+            this.touched = true
             localStorage.setItem(KEY, this.el.checked)
-          )
+          })
         },
 
+        // A diff must not undo a collapse the user just asked for, so once
+        // they have touched the chevron this mount, their choice stands.
         updated() {
-          this.restore()
+          if (!this.touched) this.restore()
         },
 
         // Restoring is not the user opening it, so it must not animate --
         // otherwise the list slides open again on every page load.
         restore() {
-          const open = localStorage.getItem(KEY) === "true"
+          const open =
+            this.el.dataset.open === "true" || localStorage.getItem(KEY) === "true"
           if (this.el.checked === open) return
 
           const panel = document.getElementById("settings-sections")
@@ -279,32 +297,74 @@ defmodule QuantumBillingWeb.Layouts do
 
   defp user_designation(_scope), do: nil
 
+  # `color` is a literal class string per item, never assembled from the key:
+  # Tailwind scans source text, so "text-#{hue}-600" is never emitted and the
+  # icon renders in the inherited colour instead.
   defp nav_items do
     [
-      %{key: :dashboard, label: "Dashboard", path: ~p"/dashboard", icon: "hero-squares-2x2"},
-      %{key: :invoices, label: "Invoices", path: ~p"/invoices", icon: "hero-document-text"},
-      %{key: :clients, label: "Clients", path: ~p"/clients", icon: "hero-users"},
-      %{key: :e_way_bills, label: "E-Way Bills", path: ~p"/e-way-bills", icon: "hero-truck"},
+      %{
+        key: :dashboard,
+        label: "Dashboard",
+        path: ~p"/dashboard",
+        icon: "hero-squares-2x2",
+        color: "text-blue-600 dark:text-blue-400"
+      },
+      %{
+        key: :invoices,
+        label: "Invoices",
+        path: ~p"/invoices",
+        icon: "hero-document-text",
+        color: "text-indigo-600 dark:text-indigo-400"
+      },
+      %{
+        key: :clients,
+        label: "Clients",
+        path: ~p"/clients",
+        icon: "hero-users",
+        color: "text-emerald-600 dark:text-emerald-400"
+      },
+      %{
+        key: :e_way_bills,
+        label: "E-Way Bills",
+        path: ~p"/e-way-bills",
+        icon: "hero-truck",
+        color: "text-amber-600 dark:text-amber-400"
+      },
       %{
         key: :hsn_finder,
         label: "HSN Finder",
         path: ~p"/hsn-finder",
-        icon: "hero-magnifying-glass"
+        icon: "hero-magnifying-glass",
+        color: "text-cyan-600 dark:text-cyan-400"
       },
-      %{key: :reports, label: "Reports", path: ~p"/reports", icon: "hero-chart-bar"},
+      %{
+        key: :reports,
+        label: "Reports",
+        path: ~p"/reports",
+        icon: "hero-chart-bar",
+        color: "text-violet-600 dark:text-violet-400"
+      },
       %{
         key: :compliance,
         label: "Compliance",
         path: ~p"/compliance",
-        icon: "hero-shield-check"
+        icon: "hero-shield-check",
+        color: "text-teal-600 dark:text-teal-400"
       },
       %{
         key: :recurring,
         label: "Recurring",
         path: ~p"/recurring",
-        icon: "hero-arrow-path"
+        icon: "hero-arrow-path",
+        color: "text-pink-600 dark:text-pink-400"
       },
-      %{key: :settings, label: "Settings", path: ~p"/settings", icon: "hero-cog-6-tooth"}
+      %{
+        key: :settings,
+        label: "Settings",
+        path: ~p"/settings",
+        icon: "hero-cog-6-tooth",
+        color: "text-rose-600 dark:text-rose-400"
+      }
     ]
   end
 

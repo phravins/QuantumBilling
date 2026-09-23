@@ -17,6 +17,10 @@ defmodule QuantumBilling.InvoiceNotifier do
   `deliver_invoice_pdf/2` still sends inline, for the one case that genuinely
   needs the answer immediately: the "send test email" button in Settings, whose
   entire purpose is to report what the relay said.
+
+  `deliver_test_invoice/2` is that button's counterpart for the document rather
+  than the connection: it attaches a real print of the specimen invoice, so one
+  press exercises the design, the printer and the relay together.
   """
 
   import Swoosh.Email
@@ -72,6 +76,55 @@ defmodule QuantumBilling.InvoiceNotifier do
   end
 
   @doc """
+  Sends the specimen invoice to `recipient` now, with the design attached.
+
+  The counterpart of the SMTP test button, one layer up. That one carries no
+  attachment on purpose, so a failure is about the relay; this one carries a
+  full print of the current design, so a failure is about anything in the chain
+  — and a success is proof that what the customer receives is what was meant.
+
+  It is addressed and worded as a test. Sending the customer-facing body to
+  yourself would mean the one message you actually read before going live is
+  not the one your customers get, and reading "Dear Customer ... please find
+  your invoice for ₹28,320" in your own inbox invites forwarding it on.
+
+  Synchronous, and recorded in the delivery ledger like everything else, so a
+  refusal shows up on the SMTP panel next to the real failures.
+  """
+  def deliver_test_invoice(recipient_email, %Invoice{} = invoice) do
+    organization = Settings.get_organization()
+    {from_name, from_email} = Mail.sender(organization, invoice.company_name)
+    subject = "Test invoice from #{from_name}"
+
+    with {:ok, recipient} <- validate_recipient(recipient_email) do
+      email =
+        new()
+        |> to(recipient)
+        |> from({from_name, from_email})
+        |> subject(subject)
+        |> html_body(test_html_content(invoice, from_name))
+        |> text_body(test_text_content(invoice, from_name))
+        |> attachment(document_attachment(invoice, "test-invoice"))
+
+      delivery =
+        case Mail.record_queued(%{to_email: recipient, kind: "test", subject: subject}) do
+          {:ok, delivery} -> delivery
+          {:error, _changeset} -> nil
+        end
+
+      case Mail.deliver(email, organization) do
+        {:ok, metadata} ->
+          delivery && Mail.mark_sent(delivery)
+          {:ok, metadata}
+
+        {:error, message} ->
+          delivery && Mail.mark_failed(delivery, message, true)
+          {:error, message}
+      end
+    end
+  end
+
+  @doc """
   The finished `Swoosh.Email` for an invoice, or `{:error, message}`.
 
   Public so the mail worker can compose and send in one step without repeating
@@ -100,8 +153,8 @@ defmodule QuantumBilling.InvoiceNotifier do
   # they can open either way; what they do not get is an HTML file called
   # `INV-1234.pdf`, which is what used to be attached and what mail clients
   # refuse to open.
-  defp document_attachment(%Invoice{} = invoice) do
-    name = invoice.invoice_number || "invoice"
+  defp document_attachment(%Invoice{} = invoice, name \\ nil) do
+    name = name || invoice.invoice_number || "invoice"
 
     case InvoicePdfGenerator.generate_pdf(invoice) do
       {:ok, pdf} ->
@@ -212,6 +265,45 @@ defmodule QuantumBilling.InvoiceNotifier do
     #{if invoice.irn, do: "IRN:            #{invoice.irn}\n", else: ""}
     Thank you for your business.
     #{from_name}
+    """
+  end
+
+  # Deliberately plain. The attachment is the thing being tested, and a styled
+  # wrapper around it only makes it harder to tell which of the two you are
+  # looking at.
+  defp test_html_content(%Invoice{} = invoice, from_name) do
+    """
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+      <h2 style="color: #1f2937; margin-top: 0;">Test invoice</h2>
+      <p style="color: #4b5563; font-size: 15px;">
+        This is a test from QuantumBilling. Nobody has been billed and no
+        invoice has been created — the attachment is a specimen, printed with
+        the design your invoices currently use.
+      </p>
+      <p style="color: #4b5563; font-size: 15px;">
+        Open it and check the parts a screen preview cannot show you: the page
+        breaks, the logo at full size, and whether the totals box survives the
+        bottom of the sheet.
+      </p>
+      <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
+        Sent as <strong>#{escape(from_name)}</strong>, from
+        #{escape(invoice.company_name)}.
+      </p>
+    </div>
+    """
+  end
+
+  defp test_text_content(%Invoice{} = invoice, from_name) do
+    """
+    This is a test from QuantumBilling.
+
+    Nobody has been billed and no invoice has been created — the attachment is
+    a specimen, printed with the design your invoices currently use. Open it
+    and check the parts a screen preview cannot show you: the page breaks, the
+    logo at full size, and whether the totals box survives the bottom of the
+    sheet.
+
+    Sent as #{from_name}, from #{invoice.company_name}.
     """
   end
 

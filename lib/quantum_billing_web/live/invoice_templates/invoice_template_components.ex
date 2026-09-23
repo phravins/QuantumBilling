@@ -412,6 +412,27 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             <.icon name="hero-paint-brush" class="size-3.5" /> Design
           </.link>
 
+          <%!-- The thumbnail above is a third of full size, which is enough
+          to tell two designs apart and not enough to read a column heading or
+          see where the page breaks. This is the same design at the size it
+          prints at — including the ones that are not the default, which is the
+          only way to judge a design before switching to it. --%>
+          <.link
+            href={~p"/settings/customization/sample?template=#{template.id}"}
+            target="_blank"
+            rel="noopener"
+            class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
+          >
+            <.icon name="hero-eye" class="size-3.5" /> Preview
+          </.link>
+
+          <.link
+            href={~p"/settings/customization/sample/download?template=#{template.id}"}
+            class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
+          >
+            <.icon name="hero-document-arrow-down" class="size-3.5" /> PDF
+          </.link>
+
           <button
             type="button"
             phx-click="duplicate_template"

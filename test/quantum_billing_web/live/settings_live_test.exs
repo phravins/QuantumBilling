@@ -55,26 +55,40 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert has_element?(view, ~s(header button[type="submit"][form="settings-form"]))
     end
 
-    # The sections stay in the DOM so the chevron can animate them open, but
-    # nothing opens them on arrival — the chevron is the only control. Account
-    # Settings marks the same nav item active, so binding this to the page
-    # unfolded the whole list there too.
-    test "the sections stay folded on arrival, whatever the page", %{conn: conn} do
-      for path <- [~p"/settings", ~p"/settings/tax", ~p"/users/settings", ~p"/invoices"] do
+    # Open wherever a settings panel is on screen. Each section is a full
+    # navigation, which rebuilds the sidebar from scratch — so a list that only
+    # the chevron could open slammed shut the moment you picked something out
+    # of it, and picking a second section meant opening it again first.
+    test "the sections stay unfolded across the settings panels", %{conn: conn} do
+      for path <- [~p"/settings", ~p"/settings/tax", ~p"/settings/customization"] do
+        {:ok, view, _html} = live(conn, path)
+
+        assert has_element?(view, "#settings-sections-toggle[checked]"),
+               "expected the settings sections open on #{path}"
+      end
+    end
+
+    # Account Settings is not one of these panels — it is the user's own
+    # account — but it marks the same sidebar item active. Driving this off the
+    # nav item rather than the open section unfolded the whole list there, and
+    # on every page that does not touch settings at all.
+    test "and stay folded everywhere else", %{conn: conn} do
+      for path <- [~p"/users/settings", ~p"/invoices"] do
         {:ok, view, _html} = live(conn, path)
 
         refute has_element?(view, "#settings-sections-toggle[checked]"),
-               "expected the settings sections to start folded on #{path}"
+               "expected the settings sections folded on #{path}"
 
         assert has_element?(view, ~s(a[href="/settings/tax"]))
       end
     end
 
-    test "the chevron is the only control that opens them", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+    test "the chevron opens them without a round trip", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
 
-      # A plain label driving the checkbox: no phx-click, so following the
-      # Settings link cannot double as opening the list.
+      # A plain label driving a checkbox, animated in CSS: no phx-click, so
+      # unfolding the list costs nothing and following the Settings link cannot
+      # double as opening it.
       assert has_element?(view, ~s(label[for="settings-sections-toggle"]))
       refute has_element?(view, ~s(a[href="/settings"][phx-click]))
     end
@@ -380,6 +394,55 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert html =~ "Classic"
       assert html =~ "Default"
       assert Templates.default_template().name == "Classic"
+    end
+
+    # The three ways to try a design before an invoice carries it: at full
+    # size, through the real printer, and through the real relay.
+    test "offers the test tools", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      assert has_element?(view, ~s(#test-preview[href="/settings/customization/sample"]))
+
+      assert has_element?(
+               view,
+               ~s(#test-pdf[href="/settings/customization/sample/download"])
+             )
+
+      assert has_element?(view, ~s(#test-invoice-email[phx-click="send_test_invoice"]))
+    end
+
+    # A failed test is only useful if you can see which part of the chain it
+    # was, and most of these are settings on other panels.
+    test "says what a test will use", %{conn: conn, user: user} do
+      Settings.update_section(
+        Settings.get_organization(),
+        %{"company_name" => "Northwind Supply Co"},
+        :general
+      )
+
+      {:ok, _view, html} = live(conn, ~p"/settings/customization")
+
+      assert html =~ "Northwind Supply Co"
+      # Whoever pressed the button, never a client.
+      assert html =~ user.email
+    end
+
+    # Each design, not just the one in force: a design you have not switched to
+    # is exactly the one you need to look at before switching.
+    test "every design can be previewed and printed on its own", %{conn: conn} do
+      template = Templates.ensure_default()
+
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      assert has_element?(
+               view,
+               ~s(a[href="/settings/customization/sample?template=#{template.id}"])
+             )
+
+      assert has_element?(
+               view,
+               ~s(a[href="/settings/customization/sample/download?template=#{template.id}"])
+             )
     end
 
     test "duplicating adds a copy that is not the default", %{conn: conn} do

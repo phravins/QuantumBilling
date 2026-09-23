@@ -59,7 +59,10 @@ defmodule QuantumBillingWeb.DashboardLive do
     |> assign(:active_nav, :dashboard)
     |> assign(:stats, stats(totals, month, obligations))
     |> assign(:chart_months, chart_months)
+    |> assign(:chart_series, chart_series(chart_months))
+    |> assign(:chart_labels, Enum.map(chart_months, & &1.label))
     |> assign(:chart_max, chart_max(chart_months))
+    |> assign(:chart_axis, chart_axis(chart_max(chart_months)))
     |> assign(:donut_segments, donut_segments(status_counts))
     |> assign(:donut_total, totals.count)
     |> assign(:invoices, Invoices.recent_invoices(5))
@@ -102,7 +105,15 @@ defmodule QuantumBillingWeb.DashboardLive do
               </span>
             </div>
           </div>
-          <.bar_chart :if={@chart_months != []} months={@chart_months} max={@chart_max} />
+          <.area_chart
+            :if={@chart_months != []}
+            id="dashboard-tax-trend"
+            series={@chart_series}
+            labels={@chart_labels}
+            max={@chart_max}
+            axis_labels={@chart_axis}
+            format={&money_axis_label/1}
+          />
           <.empty_state
             :if={@chart_months == []}
             icon="hero-chart-bar"
@@ -129,8 +140,12 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
+      <%!-- `grow`, not `flex-1`: flex-1 zeroes the basis, which lets a tall
+      table be squashed. This only takes height that is going spare, which is
+      the whole point — the panels reach the bottom of the window instead of
+      leaving a band of empty page under them. --%>
+      <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-3">
+        <.card class="flex flex-col lg:col-span-2">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
 
           <.empty_state
@@ -168,7 +183,7 @@ defmodule QuantumBillingWeb.DashboardLive do
             </.table>
           </div>
 
-          <div class="mt-4 flex items-center justify-between text-sm text-base-content/60">
+          <div class="mt-auto flex items-center justify-between pt-4 text-sm text-base-content/60">
             <span :if={@invoices != []}>Showing 1 to {length(@invoices)} entries</span>
             <.link
               navigate={~p"/invoices"}
@@ -179,7 +194,7 @@ defmodule QuantumBillingWeb.DashboardLive do
           </div>
         </.card>
 
-        <.card>
+        <.card class="flex flex-col">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
           <ul :if={@compliance_items != []} class="space-y-4">
@@ -201,7 +216,7 @@ defmodule QuantumBillingWeb.DashboardLive do
           />
           <.link
             navigate={~p"/compliance"}
-            class="mt-4 block text-sm font-medium text-base-content hover:underline"
+            class="mt-auto block pt-4 text-sm font-medium text-base-content hover:underline"
           >
             View all due dates &rarr;
           </.link>
@@ -330,8 +345,24 @@ defmodule QuantumBillingWeb.DashboardLive do
     if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
   end
 
-  # The chart scales against the tallest bar, rounded up so the gridlines land
-  # on round numbers. A fixed ceiling made every real invoice overflow the box.
+  # Two series over one x-axis. Split rather than summed because the whole
+  # point of the panel is which half of the tax the month was: an intra-state
+  # month and an inter-state month of the same size are different facts.
+  defp chart_series(months) do
+    [
+      %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
+      %{label: "IGST", tone: :violet, values: Enum.map(months, & &1.igst)}
+    ]
+  end
+
+  # Five labels, top gridline down, matching the five rules the chart draws.
+  defp chart_axis(max) do
+    Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i) end)
+  end
+
+  # The chart scales against the tallest reading, rounded up so the gridlines
+  # land on round numbers. A fixed ceiling made every real invoice overflow the
+  # box.
   defp chart_max(months) do
     tallest =
       months

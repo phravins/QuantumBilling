@@ -62,52 +62,279 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp tone_class(:neutral), do: "bg-base-200 text-base-content/60"
 
   @doc """
-  Renders a grouped vertical bar chart from a list of
-  `%{label:, cgst_sgst:, igst:}` maps, scaled against `max`.
-  """
-  attr :months, :list, required: true
-  attr :max, :integer, default: 2000
+  Renders a smooth multi-series area chart.
 
-  def bar_chart(assigns) do
-    months =
-      Enum.map(assigns.months, fn m ->
-        Map.merge(m, %{
-          cgst_pct: m.cgst_sgst / assigns.max * 100,
-          igst_pct: m.igst / assigns.max * 100
+  `series` is a list of `%{label:, tone:, values:}`, all sharing the `labels`
+  x-axis. `tone` is `:blue`, `:violet` or `:emerald`.
+
+  ## How it is drawn
+
+  The plot lives in a 0-100 user-space viewBox stretched with
+  `preserveAspectRatio="none"`, so it fills whatever box it is given. Strokes
+  carry `vector-effect="non-scaling-stroke"` so the stretch does not thicken
+  them, and the point markers are HTML rather than SVG circles — a circle in a
+  non-uniformly scaled viewBox renders as an ellipse.
+
+  Points sit at column centres rather than edge to edge. That keeps the first
+  and last marker off the frame, lets the x labels centre under them, and lines
+  the hover columns up with the points without a second set of coordinates.
+  """
+  attr :id, :string, required: true, doc: "namespaces the gradient defs"
+  attr :series, :list, required: true
+  attr :labels, :list, required: true
+  attr :max, :any, required: true
+  attr :axis_labels, :list, required: true, doc: "five y-axis labels, top down"
+
+  attr :format, :any,
+    default: nil,
+    doc: "formats a value for the hover tooltip; defaults to plain digits"
+
+  attr :class, :any, default: nil
+
+  def area_chart(assigns) do
+    count = length(assigns.labels)
+    max = if is_number(assigns.max) and assigns.max > 0, do: assigns.max, else: 1
+    format = assigns.format || (&plain_number/1)
+
+    plotted =
+      Enum.map(assigns.series, fn s ->
+        points =
+          s.values
+          |> Enum.with_index()
+          |> Enum.map(fn {value, i} ->
+            %{
+              x: x_at(i, count),
+              y: 100 - value / max * 100,
+              value: value,
+              display: format.(value)
+            }
+          end)
+
+        coords = Enum.map(points, &{&1.x, &1.y})
+
+        Map.merge(s, %{
+          points: points,
+          line: curve(coords),
+          area: area(coords)
         })
       end)
 
-    gridlines = Enum.map(4..0//-1, &(&1 * div(assigns.max, 4)))
+    columns =
+      assigns.labels
+      |> Enum.with_index()
+      |> Enum.map(fn {label, i} ->
+        %{
+          label: label,
+          readings:
+            Enum.map(plotted, fn s ->
+              %{label: s.label, tone: s.tone, display: Enum.at(s.points, i).display}
+            end)
+        }
+      end)
 
-    assigns = assign(assigns, months: months, gridlines: gridlines)
+    dots =
+      Enum.flat_map(plotted, fn s ->
+        Enum.map(s.points, &Map.put(&1, :tone, s.tone))
+      end)
+
+    assigns = assign(assigns, plotted: plotted, columns: columns, dots: dots)
 
     ~H"""
-    <div class="flex gap-3">
-      <div class="flex h-64 flex-col justify-between text-xs text-base-content/45">
-        <span :for={g <- @gridlines}>{g}</span>
+    <div class={["flex gap-3", @class]}>
+      <div class="flex h-64 shrink-0 flex-col justify-between text-xs text-base-content/45">
+        <span :for={label <- @axis_labels}>{label}</span>
       </div>
 
-      <div class="relative flex-1">
-        <div class="absolute inset-0 flex flex-col justify-between">
-          <div :for={_g <- @gridlines} class="h-0 border-t border-base-200" />
-        </div>
+      <div class="min-w-0 flex-1">
+        <div class="group/chart relative h-64">
+          <div class="absolute inset-0 flex flex-col justify-between">
+            <div :for={_label <- @axis_labels} class="h-0 border-t border-base-200" />
+          </div>
 
-        <div class="relative flex h-64 items-end justify-between gap-6 px-2">
-          <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1.5">
-            <div class="w-3 rounded-sm bg-blue-500" style={"height: #{m.cgst_pct}%"} />
-            <div class="w-3 rounded-sm bg-violet-400" style={"height: #{m.igst_pct}%"} />
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            class="absolute inset-0 size-full overflow-visible"
+            aria-hidden="true"
+          >
+            <defs>
+              <linearGradient :for={s <- @plotted} id={"#{@id}-#{s.tone}"} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" class={gradient_top_class(s.tone)} />
+                <stop offset="100%" class={gradient_bottom_class(s.tone)} />
+              </linearGradient>
+            </defs>
+
+            <path
+              :for={s <- @plotted}
+              class="qb-chart-area"
+              d={s.area}
+              fill={"url(##{@id}-#{s.tone})"}
+            />
+            <path
+              :for={s <- @plotted}
+              class={["qb-chart-line", line_class(s.tone)]}
+              d={s.line}
+              fill="none"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+
+          <span
+            :for={dot <- @dots}
+            class={[
+              "qb-chart-dot absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
+              "border-2 bg-base-100",
+              dot_border_class(dot.tone)
+            ]}
+            style={"left: #{fmt(dot.x)}%; top: #{fmt(dot.y)}%"}
+          />
+
+          <%!-- One hover target per month, spanning the full height, so the
+          reading is reachable anywhere in the column rather than only on the
+          2.5px marker itself. --%>
+          <div class="absolute inset-0 flex">
+            <div :for={column <- @columns} class="group/col relative flex-1">
+              <div class={[
+                "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-base-content/20",
+                "opacity-0 transition-opacity group-hover/col:opacity-100"
+              ]} />
+
+              <div class={[
+                "pointer-events-none absolute left-1/2 top-1 z-10 w-max -translate-x-1/2",
+                "rounded-field border border-base-300 bg-base-100 px-2.5 py-1.5 shadow-lg",
+                "opacity-0 transition-opacity group-hover/col:opacity-100"
+              ]}>
+                <p class="text-2xs font-medium uppercase tracking-wide text-base-content/45">
+                  {column.label}
+                </p>
+
+                <p
+                  :for={reading <- column.readings}
+                  class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs"
+                >
+                  <span class={["size-1.5 shrink-0 rounded-full", dot_fill_class(reading.tone)]} />
+                  <span class="text-base-content/60">{reading.label}</span>
+                  <span class="ml-auto font-medium">{reading.display}</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="mt-2 flex justify-between gap-6 px-2">
-          <span :for={m <- @months} class="flex-1 text-center text-xs text-base-content/60">
-            {m.label}
+        <div class="mt-2 flex">
+          <span
+            :for={column <- @columns}
+            class="flex-1 text-center text-xs text-base-content/60"
+          >
+            {column.label}
           </span>
         </div>
       </div>
     </div>
     """
   end
+
+  # Column centres, so a single reading sits in the middle rather than
+  # dividing by zero on `count - 1`.
+  defp x_at(i, count) when count > 0, do: (i + 0.5) / count * 100
+  defp x_at(_i, _count), do: 50.0
+
+  # Catmull-Rom through the points, emitted as cubic beziers. A polyline
+  # between six monthly readings reads as a sawtooth; the curve is what makes
+  # it look like a trend rather than a list of numbers.
+  #
+  # Control points are clamped to the plot box: an overshoot on a spiky series
+  # would otherwise bulge the fill above the top gridline or below the axis.
+  defp curve([]), do: ""
+  defp curve([{x, y}]), do: "M #{fmt(x)} #{fmt(y)}"
+
+  defp curve([{x0, y0} | _] = points) do
+    last = length(points) - 1
+
+    body =
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.with_index()
+      |> Enum.map_join(" ", fn {[{x1, y1}, {x2, y2}], i} ->
+        {px, py} = Enum.at(points, max(i - 1, 0))
+        {nx, ny} = Enum.at(points, min(i + 2, last))
+
+        c1x = x1 + (x2 - px) / 6
+        c1y = clamp(y1 + (y2 - py) / 6)
+        c2x = x2 - (nx - x1) / 6
+        c2y = clamp(y2 - (ny - y1) / 6)
+
+        "C #{fmt(c1x)} #{fmt(c1y)}, #{fmt(c2x)} #{fmt(c2y)}, #{fmt(x2)} #{fmt(y2)}"
+      end)
+
+    "M #{fmt(x0)} #{fmt(y0)} " <> body
+  end
+
+  # The line, dropped to the axis at both ends and closed.
+  defp area([]), do: ""
+
+  defp area(points) do
+    {first_x, _} = hd(points)
+    {last_x, _} = List.last(points)
+
+    "#{curve(points)} L #{fmt(last_x)} 100 L #{fmt(first_x)} 100 Z"
+  end
+
+  defp clamp(value), do: value |> max(0.0) |> min(100.0)
+
+  defp fmt(number), do: :erlang.float_to_binary(number * 1.0, decimals: 2)
+
+  defp plain_number(value) when is_float(value), do: plain_number(round(value))
+  defp plain_number(value), do: format_number(value)
+
+  @doc """
+  Formats a rupee amount for a chart axis or tooltip, in Indian units.
+
+  Public because the Reports chart labels its axis the same way, and two
+  copies of this would drift into labelling the same number differently on
+  two pages.
+  """
+  def money_axis_label(value) when value >= 10_000_000,
+    do: "₹" <> short(value / 10_000_000) <> "Cr"
+
+  def money_axis_label(value) when value >= 100_000, do: "₹" <> short(value / 100_000) <> "L"
+  def money_axis_label(value) when value >= 1_000, do: "₹" <> short(value / 1_000) <> "K"
+  def money_axis_label(value), do: "₹#{round(value)}"
+
+  defp short(number) do
+    number
+    |> :erlang.float_to_binary(decimals: 1)
+    |> String.replace_suffix(".0", "")
+  end
+
+  # `stop-color` through a class so the gradient follows the daisyUI theme
+  # rather than pinning a hex that only suits the light one.
+  defp gradient_top_class(:blue), do: "[stop-color:var(--color-blue-500)] [stop-opacity:0.28]"
+  defp gradient_top_class(:violet), do: "[stop-color:var(--color-violet-400)] [stop-opacity:0.28]"
+
+  defp gradient_top_class(:emerald),
+    do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0.28]"
+
+  defp gradient_bottom_class(:blue), do: "[stop-color:var(--color-blue-500)] [stop-opacity:0]"
+  defp gradient_bottom_class(:violet), do: "[stop-color:var(--color-violet-400)] [stop-opacity:0]"
+
+  defp gradient_bottom_class(:emerald),
+    do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0]"
+
+  defp line_class(:blue), do: "stroke-blue-500"
+  defp line_class(:violet), do: "stroke-violet-400"
+  defp line_class(:emerald), do: "stroke-emerald-500"
+
+  defp dot_fill_class(:blue), do: "bg-blue-500"
+  defp dot_fill_class(:violet), do: "bg-violet-400"
+  defp dot_fill_class(:emerald), do: "bg-emerald-500"
+
+  defp dot_border_class(:blue), do: "border-blue-500"
+  defp dot_border_class(:violet), do: "border-violet-400"
+  defp dot_border_class(:emerald), do: "border-emerald-500"
 
   @doc """
   Renders an SVG donut chart with a centered total and an adjacent legend,

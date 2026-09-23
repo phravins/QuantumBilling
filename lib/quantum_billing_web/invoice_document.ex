@@ -16,14 +16,36 @@ defmodule QuantumBillingWeb.InvoiceDocument do
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Settings.Organization
 
   @doc """
   A representative invoice for the settings preview.
 
   Not persisted and never saved — it exists so the preview exercises the real
   template with realistic figures instead of an empty shell.
+
+  Given an organisation, the seller half is filled in from it, so a preview or
+  a test print shows the company the invoice would actually be issued by
+  rather than "Your Company". The buyer half stays fictional — the point is to
+  exercise the layout, not to involve a real customer in a test.
   """
-  def sample do
+  def sample(organization \\ nil)
+
+  def sample(%Organization{} = organization) do
+    seller = seller_fields(organization)
+
+    # Place of supply follows the seller's own state so the supply stays
+    # intra-state and the hard-coded CGST + SGST split below stays true of it.
+    # Left on the seller's state, an invoice from Karnataka to Maharashtra
+    # would print a CGST line that a real one would have raised as IGST.
+    place = seller[:company_state] || "Maharashtra (27)"
+
+    sample(nil)
+    |> struct(seller)
+    |> struct(%{place_of_supply: place, client_state: place})
+  end
+
+  def sample(nil) do
     %Invoice{
       invoice_number: "INV-0042",
       invoice_type: "Tax Invoice",
@@ -75,5 +97,33 @@ defmodule QuantumBillingWeb.InvoiceDocument do
         }
       ]
     }
+  end
+
+  # Only the fields that are actually filled in: a blank company name in
+  # settings should leave the placeholder standing rather than print an
+  # invoice with no seller on it.
+  defp seller_fields(%Organization{} = organization) do
+    address =
+      [organization.address, "#{organization.city} #{organization.pincode}"]
+      |> Enum.map(&presence/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("\n")
+
+    [
+      company_name: presence(organization.company_name),
+      company_address: presence(address),
+      company_gstin: presence(organization.gstin),
+      company_state: presence(organization.state)
+    ]
+    |> Enum.reject(fn {_field, value} -> is_nil(value) end)
+  end
+
+  defp presence(nil), do: nil
+
+  defp presence(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
   end
 end

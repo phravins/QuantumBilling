@@ -178,6 +178,43 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       end
     end
 
+    # The specimen carries the real seller. A preview that prints "Your
+    # Company" cannot answer the question it is opened to answer — whether the
+    # header fits the name that will actually be on it.
+    test "the design preview answers with the organisation on it", %{conn: conn} do
+      body = conn |> get(~p"/settings/customization/sample") |> response(200)
+
+      assert body =~ "Quantum Billing Tech"
+      assert body =~ "27AABCQ9999Q1Z5"
+
+      # Someone previewing a design wants to look at it, not to be handed a
+      # print dialog over the top of it.
+      refute body =~ "window.print()"
+    end
+
+    test "the design preview prints, or says why it cannot", %{conn: conn} do
+      conn = get(conn, ~p"/settings/customization/sample/download")
+
+      case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
+        nil -> assert redirected_to(conn) == ~p"/settings/customization/sample"
+        _binary -> assert <<"%PDF-", _rest::binary>> = response(conn, 200)
+      end
+    end
+
+    # A query string is somewhere a stranger can type. The ids are integers and
+    # `Repo.get` raises `Ecto.Query.CastError` on anything else, so an unparsed
+    # one used to be a 500 rather than the default design.
+    test "a design id that is not one falls back instead of crashing", %{conn: conn} do
+      for id <- ["nonsense", "1; drop table", "", "9999999"] do
+        body =
+          conn
+          |> get(~p"/settings/customization/sample", template: id)
+          |> response(200)
+
+        assert body =~ "Quantum Billing Tech", "?template=#{id} did not render the fallback"
+      end
+    end
+
     test "the e-invoice XML route answers", %{conn: conn, invoice: invoice} do
       response = conn |> get(~p"/invoices/#{invoice.id}/e-invoice.xml") |> response(200)
 
