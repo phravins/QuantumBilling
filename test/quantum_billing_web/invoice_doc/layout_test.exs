@@ -11,6 +11,44 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   alias QuantumBillingWeb.InvoiceDoc.Document
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
+  describe "the page setup" do
+    # `%Document{}` carries its own copy of these defaults, because a struct's
+    # defaults are fixed at compile time and Layout is the module that builds
+    # the struct. A setting declared in one and not the other is a KeyError the
+    # first time a control reads it off a document nobody has saved yet.
+    test "the struct's defaults are the ones the parser falls back to" do
+      assert %Document{}.page == Layout.default_page()
+    end
+
+    # A layout stored before a setting existed has to print exactly as it did.
+    test "a layout missing the newer settings parses at the old appearance" do
+      xml = """
+      <invoice-template version="1">
+        <page size="A4" margin="14mm" base-font="12" font="sans" line-height="normal" \
+      heading-weight="semibold" label-case="upper" text-color="#18181b"/>
+      </invoice-template>
+      """
+
+      page = Layout.parse!(xml).page
+
+      assert page.letter_spacing == "normal"
+      assert page.paragraph_spacing == "normal"
+      assert page.heading_font == "match"
+      assert page.heading_scale == "normal"
+      assert page.heading_color == "text"
+      assert page.table_density == "normal"
+      assert page.numerals == "proportional"
+      assert page.label_color == "#71717a"
+      assert page.muted_color == "#52525b"
+    end
+
+    test "casting keeps a value the vocabulary does not hold" do
+      page = Layout.cast_page(Layout.default_page(), %{"heading-scale" => "enormous"})
+
+      assert page.heading_scale == "normal"
+    end
+  end
+
   describe "round trip" do
     # Byte identity holds only because `to_xml/1` emits attributes in the order
     # `Catalog.attrs/1` declares rather than map order, and writes every option

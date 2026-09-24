@@ -106,12 +106,61 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
              "a level series wobbled: #{inspect(ys)}"
     end
 
-    # The stroke is dashed to animate itself in, and `non-scaling-stroke` makes
-    # the browser measure that dash in screen pixels. Without pathLength the
-    # dash is a fixed length against a chart of any width, which is what left
-    # the tail of a wide trend line permanently in the gap.
-    test "normalises its length so the draw-in covers the whole line" do
-      assert [1, 2, 3] |> chart() =~ ~s(pathLength="1")
+    # The draw-in used to be a dash: `stroke-dasharray: 1` over
+    # `pathLength="1"`. Chrome ignores pathLength once `non-scaling-stroke` is
+    # set and measures the dash in screen pixels instead, so the far end of a
+    # wide chart stayed inside the gap and the trend line stopped short of its
+    # last reading — on the finished chart, not only mid-animation. A clip that
+    # sweeps across has no length to normalise, so it cannot do that.
+    test "draws itself in with a clip, never a dash" do
+      html = chart([1, 2, 3])
+
+      assert html =~ ~s(<clipPath id="trend-sweep")
+      assert html =~ ~s(class="qb-chart-sweep")
+      assert html =~ ~s|clip-path="url(#trend-sweep)"|
+      refute html =~ "pathLength"
+      refute html =~ "stroke-dasharray"
+    end
+
+    # Every x the path visits. The readings sit on the frame at both ends
+    # rather than inset from it, so the curve fills the plot instead of
+    # leaving a dead margin down each side.
+    defp path_xs(html) do
+      [_all, d] = Regex.run(~r/class="qb-chart-line[^"]*"\s+d="([^"]+)"/, html)
+
+      ~r/-?\d+(?:\.\d+)?/
+      |> Regex.scan(d)
+      |> Enum.map(fn [n] ->
+        String.to_float(if String.contains?(n, "."), do: n, else: n <> ".0")
+      end)
+      |> Enum.take_every(2)
+    end
+
+    test "runs edge to edge across the plot" do
+      xs = [10, 40, 20, 60] |> chart() |> path_xs()
+
+      assert Enum.min(xs) == 0.0
+      assert Enum.max(xs) == 100.0
+    end
+
+    # The labels used to be a row of equal cells, which puts a cell centre
+    # under each point only when the points are inset. They are positioned
+    # off the same fractions as the curve now, and the two ends pin their
+    # own outer edge so neither hangs off the card.
+    test "labels sit under the points they name" do
+      html = chart([10, 40, 20])
+
+      assert html =~ ~s(style="left: 0.00%")
+      assert html =~ ~s(style="left: 50.00%")
+      assert html =~ ~s(style="left: 100.00%")
+      assert html =~ "translate-x-0"
+      assert html =~ "-translate-x-full"
+    end
+
+    # One reading is a chart with no span to spread across. Dividing by the
+    # gap count would be a division by zero.
+    test "a single reading plots without dividing by zero" do
+      assert [7] |> chart() |> path_xs() == [50.0]
     end
   end
 end

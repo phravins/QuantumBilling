@@ -71,13 +71,13 @@ defmodule QuantumBillingWeb.Router do
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/pdf/download", InvoicePdfController, :download
+    # The official e-way bill, Form GST EWB-01. Same scope and the same
+    # `:require_authenticated_user` pipeline as the other document routes, and
+    # outside `live_session :app` because that block takes only `live` routes.
+    get "/e-way-bills/:id/print", EWayBillPdfController, :show
+    get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
     get "/settings/backup/download", BackupController, :download
-
-    # The specimen invoice, for testing a design. Same scope and same
-    # `:require_authenticated_user` pipeline as the other document routes
-    # because it prints the organisation's own name, address and GSTIN — a
-    # signed-out visitor has no business fetching those.
   end
 
   scope "/api", QuantumBillingWeb do

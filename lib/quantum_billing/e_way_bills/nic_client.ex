@@ -4,6 +4,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
   Includes a sandbox response generator when sandbox mode is active or credentials are mock.
   """
 
+  alias QuantumBilling.EWayBills.Validity
   alias QuantumBilling.Invoices.Invoice
 
   @doc """
@@ -89,10 +90,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
     ewb_no = to_string(body["ewbNo"])
     ewb_date = Date.utc_today()
 
-    valid_until =
-      NaiveDateTime.utc_now()
-      |> NaiveDateTime.add(trunc(distance * 86400 / 100), :second)
-      |> NaiveDateTime.truncate(:second)
+    valid_until = validity(distance)
 
     %{
       ewb_number: ewb_no,
@@ -117,10 +115,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
     ewb_no = "1910" <> Enum.map_join(1..8, fn _ -> to_string(Enum.random(0..9)) end)
     ewb_date = Date.utc_today()
 
-    valid_until =
-      NaiveDateTime.utc_now()
-      |> NaiveDateTime.add((div(distance, 100) + 1) * 86400, :second)
-      |> NaiveDateTime.truncate(:second)
+    valid_until = validity(distance)
 
     {:ok,
      %{
@@ -133,5 +128,13 @@ defmodule QuantumBilling.EWayBills.NICClient do
        transporter_id: transporter_id,
        transporter_name: transporter_name
      }}
+  end
+
+  # Rule 138(10), in one place, so the portal path and the sandbox path cannot
+  # disagree about when a consignment's bill lapses.
+  defp validity(distance) do
+    NaiveDateTime.utc_now()
+    |> Validity.valid_until(distance)
+    |> NaiveDateTime.truncate(:second)
   end
 end

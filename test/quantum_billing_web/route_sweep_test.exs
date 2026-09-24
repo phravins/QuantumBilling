@@ -178,6 +178,29 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       end
     end
 
+    # Both e-way bill row actions used to link at a filtered invoice list:
+    # the form GST EWB-01 a driver must carry was nowhere in the application.
+    test "the e-way bill document answers", %{conn: conn, interstate: interstate} do
+      body = conn |> get(~p"/e-way-bills/#{interstate.id}/print") |> response(200)
+
+      assert body =~ "Form GST EWB-01"
+      assert body =~ interstate.invoice_number
+    end
+
+    test "the e-way bill PDF either prints or says why it cannot", context do
+      %{conn: conn, interstate: interstate} = context
+
+      conn = get(conn, ~p"/e-way-bills/#{interstate.id}/print/download")
+
+      case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
+        nil ->
+          assert redirected_to(conn) == ~p"/e-way-bills/#{interstate.id}/print"
+
+        _binary ->
+          assert <<"%PDF-", _rest::binary>> = response(conn, 200)
+      end
+    end
+
     test "the e-invoice XML route answers", %{conn: conn, invoice: invoice} do
       response = conn |> get(~p"/invoices/#{invoice.id}/e-invoice.xml") |> response(200)
 

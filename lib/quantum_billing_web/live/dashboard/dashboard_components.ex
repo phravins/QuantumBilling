@@ -75,9 +75,16 @@ defmodule QuantumBillingWeb.DashboardComponents do
   them, and the point markers are HTML rather than SVG circles — a circle in a
   non-uniformly scaled viewBox renders as an ellipse.
 
-  Points sit at column centres rather than edge to edge. That keeps the first
-  and last marker off the frame, lets the x labels centre under them, and lines
-  the hover columns up with the points without a second set of coordinates.
+  Points run edge to edge: the first sits on the left frame and the last on the
+  right, so the fill reaches both sides of the card. Inset points left a bare
+  strip down either side of the plot and gave the area a hard vertical edge
+  that read as a chart that had failed to finish drawing.
+
+  The draw-in is a clip that sweeps across, not a dashed stroke. A dash pattern
+  cannot be used on these paths: `vector-effect: non-scaling-stroke` makes the
+  browser measure dashes in screen pixels, and it then ignores `pathLength`,
+  so whatever length the dash was given, the far end of a wide chart stayed
+  inside the gap and the line stopped before its last reading.
   """
   attr :id, :string, required: true, doc: "namespaces the gradient defs"
   attr :series, :list, required: true
@@ -125,6 +132,11 @@ defmodule QuantumBillingWeb.DashboardComponents do
       |> Enum.map(fn {label, i} ->
         %{
           label: label,
+          # Both where the label sits under the plot and, as it happens, where
+          # the point falls inside its own equal-width hover band — for n
+          # points edge to edge across n bands the two fractions are the same.
+          x: x_at(i, count),
+          anchor: anchor(i, count),
           readings:
             Enum.map(plotted, fn s ->
               %{label: s.label, tone: s.tone, display: Enum.at(s.points, i).display}
@@ -167,6 +179,13 @@ defmodule QuantumBillingWeb.DashboardComponents do
                 <stop offset="0%" class={gradient_top_class(s.tone)} />
                 <stop offset="100%" class={gradient_bottom_class(s.tone)} />
               </linearGradient>
+
+              <%!-- The draw-in. The rect is wider and taller than the plot so
+              that scaling it cannot shave the stroke off the top or bottom
+              edge; only its left-to-right growth is visible. --%>
+              <clipPath id={"#{@id}-sweep"} clipPathUnits="userSpaceOnUse">
+                <rect class="qb-chart-sweep" x="-4" y="-20" width="108" height="140" />
+              </clipPath>
             </defs>
 
             <path
@@ -175,25 +194,26 @@ defmodule QuantumBillingWeb.DashboardComponents do
               d={s.area}
               fill={"url(##{@id}-#{s.tone})"}
             />
-            <path
-              :for={s <- @plotted}
-              class={["qb-chart-line", line_class(s.tone)]}
-              d={s.line}
-              fill="none"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              vector-effect="non-scaling-stroke"
-              pathLength="1"
-            />
+            <g clip-path={"url(##{@id}-sweep)"}>
+              <path
+                :for={s <- @plotted}
+                class={["qb-chart-line", line_class(s.tone)]}
+                d={s.line}
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                vector-effect="non-scaling-stroke"
+              />
+            </g>
           </svg>
 
           <span
             :for={dot <- @dots}
             class={[
               "qb-chart-dot absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
-              "border-2 bg-base-100",
-              dot_border_class(dot.tone)
+              "border-2 border-base-100 shadow-sm",
+              dot_fill_class(dot.tone)
             ]}
             style={"left: #{fmt(dot.x)}%; top: #{fmt(dot.y)}%"}
           />
@@ -203,16 +223,23 @@ defmodule QuantumBillingWeb.DashboardComponents do
           2.5px marker itself. --%>
           <div class="absolute inset-0 flex">
             <div :for={column <- @columns} class="group/col relative flex-1">
-              <div class={[
-                "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-base-content/20",
-                "opacity-0 transition-opacity group-hover/col:opacity-100"
-              ]} />
+              <div
+                class={[
+                  "absolute inset-y-0 w-px -translate-x-1/2 bg-base-content/20",
+                  "opacity-0 transition-opacity group-hover/col:opacity-100"
+                ]}
+                style={"left: #{fmt(column.x)}%"}
+              />
 
-              <div class={[
-                "pointer-events-none absolute left-1/2 top-1 z-10 w-max -translate-x-1/2",
-                "rounded-field border border-base-300 bg-base-100 px-2.5 py-1.5 shadow-lg",
-                "opacity-0 transition-opacity group-hover/col:opacity-100"
-              ]}>
+              <div
+                class={[
+                  "pointer-events-none absolute top-1 z-10 w-max",
+                  "rounded-field border border-base-300 bg-base-100 px-2.5 py-1.5 shadow-lg",
+                  "opacity-0 transition-opacity group-hover/col:opacity-100",
+                  anchor_class(column.anchor)
+                ]}
+                style={"left: #{fmt(column.x)}%"}
+              >
                 <p class="text-2xs font-medium uppercase tracking-wide text-base-content/45">
                   {column.label}
                 </p>
@@ -230,10 +257,15 @@ defmodule QuantumBillingWeb.DashboardComponents do
           </div>
         </div>
 
-        <div class="mt-2 flex">
+        <%!-- Absolute rather than a row of equal cells: the points sit on the
+        frame at both ends, so a cell centre is no longer under a reading.
+        The first and last labels hang off their own edge instead of straddling
+        it, which would put them half outside the card. --%>
+        <div class="relative mt-2 h-4">
           <span
             :for={column <- @columns}
-            class="flex-1 text-center text-xs text-base-content/60"
+            class={["absolute text-xs text-base-content/60", anchor_class(column.anchor)]}
+            style={"left: #{fmt(column.x)}%"}
           >
             {column.label}
           </span>
@@ -243,9 +275,9 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  # Column centres, so a single reading sits in the middle rather than
-  # dividing by zero on `count - 1`.
-  defp x_at(i, count) when count > 0, do: (i + 0.5) / count * 100
+  # Edge to edge across the plot. A single reading sits in the middle rather
+  # than dividing by zero.
+  defp x_at(i, count) when count > 1, do: i / (count - 1) * 100
   defp x_at(_i, _count), do: 50.0
 
   # A monotone cubic (Fritsch-Carlson) through the points, emitted as cubic
@@ -383,6 +415,16 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp gradient_bottom_class(:emerald),
     do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0]"
 
+  # Which edge of a label or tooltip is pinned to its point. The ends pin
+  # their own outer edge so nothing overhangs the plot.
+  defp anchor(0, count) when count > 1, do: :start
+  defp anchor(i, count) when i == count - 1 and count > 1, do: :end
+  defp anchor(_i, _count), do: :middle
+
+  defp anchor_class(:start), do: "translate-x-0"
+  defp anchor_class(:end), do: "-translate-x-full"
+  defp anchor_class(:middle), do: "-translate-x-1/2"
+
   defp line_class(:blue), do: "stroke-blue-500"
   defp line_class(:violet), do: "stroke-violet-400"
   defp line_class(:emerald), do: "stroke-emerald-500"
@@ -390,10 +432,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp dot_fill_class(:blue), do: "bg-blue-500"
   defp dot_fill_class(:violet), do: "bg-violet-400"
   defp dot_fill_class(:emerald), do: "bg-emerald-500"
-
-  defp dot_border_class(:blue), do: "border-blue-500"
-  defp dot_border_class(:violet), do: "border-violet-400"
-  defp dot_border_class(:emerald), do: "border-emerald-500"
 
   @doc """
   Renders an SVG donut chart with a centered total and an adjacent legend,

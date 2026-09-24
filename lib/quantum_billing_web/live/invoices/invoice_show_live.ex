@@ -310,6 +310,25 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 EWB No: {@invoice.ewb_number}
               </p>
             </div>
+
+            <%!-- The generated bill's own document. Without these the number
+            was the only trace of it anywhere in the application. --%>
+            <div class="flex flex-wrap items-center gap-2">
+              <.link
+                href={~p"/e-way-bills/#{@invoice.id}/print"}
+                target="_blank"
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-document-text" class="size-4" /> View E-Way Bill
+              </.link>
+
+              <.link
+                href={~p"/e-way-bills/#{@invoice.id}/print/download"}
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-arrow-down-tray" class="size-4" /> Download
+              </.link>
+            </div>
           </div>
         </div>
 

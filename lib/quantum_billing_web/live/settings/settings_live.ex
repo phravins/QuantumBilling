@@ -22,7 +22,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   use QuantumBillingWeb, :live_view
 
   import QuantumBillingWeb.SettingsComponents
-  import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1, text_tools: 1]
+  import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Mail
@@ -49,7 +49,7 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign_organization(Settings.get_organization())
      |> assign(:deliveries, [])
      |> assign(:templates, [])
-     |> assign(:default_page, Layout.default_page())
+     |> assign(:open_tools, nil)
      |> allow_upload(:logo,
        accept: Uploads.accepted_extensions(),
        max_entries: 1,
@@ -144,19 +144,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         Map.put(template, :document, Templates.document_of(template))
       end)
 
-    socket
-    |> assign(:templates, templates)
-    |> assign(:default_page, default_page(templates))
-  end
-
-  # The text tools edit the design new invoices are issued with, which is the
-  # default one. Before the panel has seeded it there is nothing to read, so the
-  # toolbar shows the stock page rather than an empty one.
-  defp default_page(templates) do
-    case Enum.find(templates, & &1.is_default) do
-      nil -> Layout.default_page()
-      template -> template.document.page
-    end
+    assign(socket, :templates, templates)
   end
 
   defp section_from(nil), do: :general
@@ -188,16 +176,23 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # ── Text tools ────────────────────────────────────────────────────────────
   #
-  # These write the default design's page setup rather than a settings column:
-  # typography belongs to the document, so a heading weight chosen here is the
-  # same one the design pad shows and the PDF prints.
+  # These write a design's page setup rather than a settings column: typography
+  # belongs to the document, so a heading weight chosen here is the same one the
+  # design pad shows and the PDF prints. Every change says which design it came
+  # from, because each card carries its own toolbar.
 
-  def handle_event("update_page", %{"page" => params}, socket) do
-    {:noreply, save_page(socket, &Layout.cast_page(&1, params))}
+  def handle_event("toggle_text_tools", %{"id" => id}, socket) do
+    open = if to_string(socket.assigns.open_tools) == id, do: nil, else: template_id(id)
+
+    {:noreply, assign(socket, :open_tools, open)}
   end
 
-  def handle_event("reset_text", _params, socket) do
-    {:noreply, save_page(socket, fn _page -> Layout.default_page() end)}
+  def handle_event("update_page", %{"template_id" => id, "page" => params}, socket) do
+    {:noreply, save_page(socket, id, &Layout.cast_page(&1, params))}
+  end
+
+  def handle_event("reset_text", %{"id" => id}, socket) do
+    {:noreply, save_page(socket, id, fn _page -> Layout.default_page() end)}
   end
 
   def handle_event("new_template", _params, socket) do
@@ -346,14 +341,28 @@ defmodule QuantumBillingWeb.SettingsLive do
   # Re-read rather than trusting the assign: the toolbar is one of several
   # windows onto the same row, and writing back a page derived from a stale
   # render would undo whatever the design pad changed in between.
-  defp save_page(socket, fun) do
-    template = Templates.ensure_default()
-    doc = Templates.document_of(template)
-    doc = %{doc | page: fun.(doc.page)}
+  defp save_page(socket, id, fun) do
+    case Templates.get_template(id) do
+      nil ->
+        assign_templates(socket)
 
-    case Templates.update_template(template, %{"layout_xml" => Layout.to_xml(doc)}) do
-      {:ok, _template} -> assign_templates(socket)
-      {:error, _changeset} -> put_flash(socket, :error, "That change could not be saved.")
+      template ->
+        doc = Templates.document_of(template)
+        doc = %{doc | page: fun.(doc.page)}
+
+        case Templates.update_template(template, %{"layout_xml" => Layout.to_xml(doc)}) do
+          {:ok, _template} -> assign_templates(socket)
+          {:error, _changeset} -> put_flash(socket, :error, "That change could not be saved.")
+        end
+    end
+  end
+
+  # The toolbar posts the id as a string; the assign is compared against the
+  # template's own id, so it is kept as whatever the list holds.
+  defp template_id(id) do
+    case Integer.parse(id) do
+      {parsed, ""} -> parsed
+      _other -> id
     end
   end
 
@@ -949,25 +958,14 @@ defmodule QuantumBillingWeb.SettingsLive do
       </.form>
       <hr class="border-base-300" />
       <div>
-        <h3 class="text-sm font-semibold tracking-tight">Text tools</h3>
-
-        <p class="mt-1 text-sm text-base-content/60">
-          Typography for the design new invoices use — typeface, size, spacing,
-          heading weight, label case, text colour and page margin. Changes save
-          as you make them; the designs below redraw to match.
-        </p>
-
-        <.text_tools id="text-tools" page={@default_page} class="mt-3" />
-      </div>
-      <hr class="border-base-300" />
-      <div>
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="text-sm font-semibold tracking-tight">Invoice designs</h3>
 
             <p class="mt-1 text-sm text-base-content/60">
-              Build your own layout block by block. New invoices use the default;
-              an invoice keeps the design it was issued with.
+              Build your own layout block by block, and set each one's typography
+              with its own text tools. New invoices use the default; an invoice
+              keeps the design it was issued with.
             </p>
           </div>
 
@@ -976,7 +974,12 @@ defmodule QuantumBillingWeb.SettingsLive do
           </button>
         </div>
 
-        <.template_list templates={@templates} invoice={@sample} logo={@organization.doc_logo_path} />
+        <.template_list
+          templates={@templates}
+          invoice={@sample}
+          logo={@organization.doc_logo_path}
+          open_tools={@open_tools}
+        />
       </div>
     </div>
     """

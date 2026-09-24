@@ -218,26 +218,38 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 <td><.status_badge status={row.status} /></td>
 
                 <td>
+                  <%!-- All three open the official EWB-01 the controller
+                  renders. These used to point at `/invoices?q=<doc no>`, a
+                  filtered invoice list, and the third was a button that did
+                  nothing at all — so the one document a driver has to carry
+                  could not be opened, printed or saved from the page that
+                  lists it. --%>
                   <div class="flex justify-end gap-1">
                     <.link
-                      navigate={~p"/invoices?q=#{row.document_no}"}
+                      href={~p"/e-way-bills/#{row.id}/print"}
+                      target="_blank"
                       class={row_action_class()}
-                      aria-label="View e-way bill document"
+                      aria-label={"View e-way bill #{row.ewb_no}"}
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
 
                     <.link
-                      navigate={~p"/invoices?q=#{row.document_no}"}
+                      href={~p"/e-way-bills/#{row.id}/print?print=1"}
+                      target="_blank"
                       class={row_action_class()}
-                      aria-label="Print e-way bill document"
+                      aria-label={"Print e-way bill #{row.ewb_no}"}
                     >
                       <.icon name="hero-printer" class="size-4" />
                     </.link>
 
-                    <button type="button" class={row_action_class()} aria-label="More actions">
-                      <.icon name="hero-ellipsis-vertical" class="size-4" />
-                    </button>
+                    <.link
+                      href={~p"/e-way-bills/#{row.id}/print/download"}
+                      class={row_action_class()}
+                      aria-label={"Download e-way bill #{row.ewb_no} as PDF"}
+                    >
+                      <.icon name="hero-arrow-down-tray" class="size-4" />
+                    </.link>
                   </div>
                 </td>
               </tr>

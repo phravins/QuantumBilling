@@ -116,6 +116,22 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
+  Invoices that could still be given an e-way bill, newest first.
+
+  What the "Generate New E-Way Bill" page loads a consignment from: a bill is
+  raised against a document that exists, so the form picks the document rather
+  than inventing one. Cancelled invoices and invoices that already carry a bill
+  are left out — the portal issues one bill per document.
+  """
+  def awaiting_e_way_bill(limit \\ 50) do
+    Invoice
+    |> where([i], is_nil(i.ewb_number) and i.status != "Cancelled")
+    |> order_by([i], desc: i.invoice_date, desc: i.id)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
   Counts and money totals across every invoice, computed by the database.
 
   Returns `%{count:, revenue:, tax:, outstanding:, paid_count:}`, where
