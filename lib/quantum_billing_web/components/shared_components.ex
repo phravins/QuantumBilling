@@ -283,6 +283,14 @@ defmodule QuantumBillingWeb.SharedComponents do
   Anything not consumed here is forwarded to `CoreComponents.input/1`, so
   `type`, `options`, `prompt`, `placeholder`, `readonly` and friends all work.
 
+  ## One error, drawn once
+
+  `input/1` already prints a field's errors, in exactly this markup. This
+  component used to print them again underneath, so every field built with
+  `<.field>` — which is most of them — showed "can't be blank" twice. The
+  errors are still computed here, because the hint hides while a field is in
+  error and the control takes an error border, but only `input/1` draws them.
+
   ## Examples
 
       <.field field={f[:gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
@@ -316,10 +324,6 @@ defmodule QuantumBillingWeb.SharedComponents do
         {@rest}
       />
       <p :if={@hint && @errors == []} class="mt-1 text-2xs text-base-content/45">{@hint}</p>
-
-      <p :for={msg <- @errors} class="mt-1 flex items-center gap-1 text-2xs text-error">
-        <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" /> {msg}
-      </p>
     </div>
     """
   end
@@ -329,7 +333,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp control_class(_type), do: form_input_class()
 
   # `input/1` only renders errors for fields the user has touched; mirror that
-  # rule here so the two never disagree.
+  # rule here so the border and the hint agree with the message it prints.
   defp field_errors(%Phoenix.HTML.FormField{} = field) do
     if Phoenix.Component.used_input?(field) do
       Enum.map(field.errors, &translate_field_error/1)

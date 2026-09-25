@@ -181,7 +181,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
+        <.card class="flex flex-col lg:col-span-2">
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
 
@@ -245,10 +245,21 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 else: "Try another category or status."
             }
           />
-          <div :if={@rows != []} class="overflow-x-auto">
+          <%!-- A financial year of returns is two dozen rows, which used to
+          run the card down past the calendar beside it and leave half a page
+          of nothing next to it. The list scrolls inside its own box now, and
+          the heading row stays put while it does. --%>
+          <div
+            :if={@rows != []}
+            class="min-h-[18rem] max-h-[34rem] flex-1 overflow-y-auto overflow-x-auto"
+          >
             <table class="w-full">
-              <thead>
-                <tr class={table_head_class()}>
+              <thead class="sticky top-0 z-10 bg-base-100">
+                <tr class={[
+                  table_head_class(),
+                  "[&>th]:sticky [&>th]:top-0 [&>th]:bg-base-100",
+                  "[&>th]:border-b [&>th]:border-base-300"
+                ]}>
                   <th class="pr-4 text-left">Compliance Type</th>
 
                   <th class="pr-4 text-left">Period</th>
