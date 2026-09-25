@@ -101,15 +101,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :signed_qr_code, :string
     field :signed_invoice, :string
 
-    # E-Way Bill Details
-    field :ewb_number, :string
-    field :ewb_date, :date
-    field :ewb_valid_until, :naive_datetime
-    field :distance_km, :integer
-    field :transporter_id, :string
-    field :transporter_name, :string
-    field :vehicle_number, :string
-    field :mode_of_transport, :string, default: "Road"
+    # E-Way Bills. These used to be eight columns here, which let an invoice
+    # carry exactly one bill for ever — no cancellation under Rule 138(9) and
+    # nowhere to put a Part-B vehicle change. They are rows now.
+    has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
     # Multi-Currency & LUT Export Details
     field :currency, :string, default: "INR"
@@ -143,7 +138,6 @@ defmodule QuantumBilling.Invoices.Invoice do
                company_name company_address company_gstin company_state
                remarks terms status template_id layout_xml
                irn ack_number ack_date signed_qr_code signed_invoice
-               ewb_number ewb_date ewb_valid_until distance_km transporter_id transporter_name vehicle_number mode_of_transport
                currency exchange_rate export_type lut_number
                razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
 

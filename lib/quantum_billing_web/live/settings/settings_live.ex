@@ -606,10 +606,21 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
 
       <div class="mt-4">
+        <%!--
+        Says what it does today rather than what its name promises. The switch
+        is saved and read, but nothing generates a bill on its own: that needs
+        a background worker calling the NIC portal unattended, which is a
+        larger change than a toggle. Better to name the gap than to offer a
+        switch that quietly does nothing.
+        --%>
         <.toggle
           field={f[:ewb_auto_generate]}
-          label="Generate an e-way bill automatically"
-          hint="When an invoice exceeds the threshold value."
+          label="Flag invoices that need an e-way bill"
+          hint={
+            "Invoices above the threshold are listed on the Generate E-Way Bill page. " <>
+              "Bills are not raised automatically — each one is still confirmed by hand, " <>
+              "because the transport details are not on the invoice."
+          }
         />
       </div>
     </.form>

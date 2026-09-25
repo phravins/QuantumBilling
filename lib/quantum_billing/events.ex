@@ -73,7 +73,14 @@ defmodule QuantumBilling.Events do
   @doc "Invoices created, edited or cancelled."
   def invoices_topic, do: "invoices"
 
-  @doc "E-way bills generated or cancelled."
+  @doc """
+  E-way bills generated, cancelled, or moved to another vehicle.
+
+  The message carries an `%EWayBill{}`, which it could not before: until the
+  bill had a table of its own, the publisher had nothing but the invoice to
+  send, so this topic broadcast one while its documented message said
+  otherwise.
+  """
   def e_way_bills_topic, do: "e_way_bills"
 
   @doc "Organisation settings."

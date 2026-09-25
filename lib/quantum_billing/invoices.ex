@@ -120,15 +120,57 @@ defmodule QuantumBilling.Invoices do
 
   What the "Generate New E-Way Bill" page loads a consignment from: a bill is
   raised against a document that exists, so the form picks the document rather
-  than inventing one. Cancelled invoices and invoices that already carry a bill
-  are left out — the portal issues one bill per document.
+  than inventing one. Cancelled invoices and invoices that already carry a live
+  bill are left out — the portal issues one live bill per document.
+
+  A *cancelled* bill does not exclude its invoice, because Rule 138(9) exists
+  precisely so a fresh bill can be raised against the same document.
+
+  No threshold is applied here: a bill below the threshold is optional, not
+  forbidden, and a picker that hid those invoices would make a legal document
+  impossible to raise. `count_requiring_e_way_bill/0` is the threshold's job.
   """
   def awaiting_e_way_bill(limit \\ 50) do
     Invoice
-    |> where([i], is_nil(i.ewb_number) and i.status != "Cancelled")
+    |> where([i], i.status != "Cancelled")
+    |> where(
+      [i],
+      not exists(
+        from b in QuantumBilling.EWayBills.EWayBill,
+          where: b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled",
+          select: 1
+      )
+    )
+    |> from(as: :invoice)
     |> order_by([i], desc: i.invoice_date, desc: i.id)
     |> limit(^limit)
     |> Repo.all()
+  end
+
+  @doc """
+  How many invoices are over the configured consignment threshold and still
+  have no live e-way bill.
+
+  `organization_settings.ewb_threshold_value` is what Rule 138(1) means by "of
+  consignment value exceeding fifty thousand rupees" — the setting was saved
+  by the settings form and read by nothing, so a business that raised it to
+  ₹1,00,000 saw no difference anywhere.
+  """
+  def count_requiring_e_way_bill do
+    threshold = Settings.get_organization().ewb_threshold_value || 50_000
+
+    Invoice
+    |> from(as: :invoice)
+    |> where([i], i.status != "Cancelled" and i.grand_total > ^threshold)
+    |> where(
+      [i],
+      not exists(
+        from b in QuantumBilling.EWayBills.EWayBill,
+          where: b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled",
+          select: 1
+      )
+    )
+    |> Repo.aggregate(:count, :id)
   end
 
   @doc """

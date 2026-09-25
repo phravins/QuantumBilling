@@ -73,7 +73,11 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         "grand_total" => Decimal.new("1000")
       })
 
-    {:ok, _bill} = EWayBills.generate_e_way_bill(interstate, %{"distance_km" => "200"})
+    {:ok, bill} =
+      EWayBills.generate_e_way_bill(interstate, %{
+        "distance_km" => "200",
+        "vehicle_number" => "MH12AB1234"
+      })
 
     {:ok, _profile} =
       Recurring.create_profile(%{
@@ -90,6 +94,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       client: client,
       invoice: Repo.get!(Invoice, invoice.id),
       interstate: interstate,
+      bill: bill,
       template: template
     }
   end
@@ -180,25 +185,41 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
     # Both e-way bill row actions used to link at a filtered invoice list:
     # the form GST EWB-01 a driver must carry was nowhere in the application.
-    test "the e-way bill document answers", %{conn: conn, interstate: interstate} do
-      body = conn |> get(~p"/e-way-bills/#{interstate.id}/print") |> response(200)
+    # Addressed by the bill, not the invoice: an invoice can carry a cancelled
+    # bill and its live replacement, and the two need separate URLs.
+    test "the e-way bill document answers", context do
+      %{conn: conn, interstate: interstate, bill: bill} = context
+
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
       assert body =~ "Form GST EWB-01"
       assert body =~ interstate.invoice_number
+      assert body =~ bill.ewb_number
     end
 
     test "the e-way bill PDF either prints or says why it cannot", context do
-      %{conn: conn, interstate: interstate} = context
+      %{conn: conn, bill: bill} = context
 
-      conn = get(conn, ~p"/e-way-bills/#{interstate.id}/print/download")
+      conn = get(conn, ~p"/e-way-bills/#{bill.id}/print/download")
 
       case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
         nil ->
-          assert redirected_to(conn) == ~p"/e-way-bills/#{interstate.id}/print"
+          assert redirected_to(conn) == ~p"/e-way-bills/#{bill.id}/print"
 
         _binary ->
           assert <<"%PDF-", _rest::binary>> = response(conn, 200)
       end
+    end
+
+    test "the e-way bill export answers with the list as CSV", context do
+      %{conn: conn, bill: bill, interstate: interstate} = context
+
+      body = conn |> get(~p"/e-way-bills/export") |> response(200)
+
+      # Not the GST tax summary the button used to hand back.
+      assert body =~ "EWB Number,Document Number"
+      assert body =~ bill.ewb_number
+      assert body =~ interstate.invoice_number
     end
 
     test "the e-invoice XML route answers", %{conn: conn, invoice: invoice} do
@@ -250,7 +271,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     test "the backup download answers", %{conn: conn} do
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
-      assert %{"version" => "2.0", "invoices" => [_ | _]} = Jason.decode!(body)
+      assert %{"version" => "2.1", "invoices" => [_ | _]} = Jason.decode!(body)
     end
   end
 

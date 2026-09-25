@@ -91,7 +91,12 @@ defmodule QuantumBilling.MixProject do
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind quantum_billing", "esbuild quantum_billing"],
+      # `compile` first, exactly as `assets.build` does. `app.css` and `app.js`
+      # both import `phoenix-colocated/quantum_billing`, which the LiveView
+      # compiler only writes during `mix compile` — bundling before that step
+      # fails on a missing directory.
       "assets.deploy": [
+        "compile",
         "tailwind quantum_billing --minify",
         "esbuild quantum_billing --minify",
         "phx.digest"

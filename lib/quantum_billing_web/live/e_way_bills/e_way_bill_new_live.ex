@@ -94,12 +94,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
          |> put_flash(:error, "No invoice numbered #{document_no} exists.")
          |> assign_form(document_error(changeset, "no invoice with this number"))}
 
-      {:error, {:already_issued, invoice}} ->
+      {:error, {:already_issued, invoice, bill}} ->
         {:noreply,
          socket
          |> put_flash(
            :error,
-           "#{invoice.invoice_number} already carries e-way bill #{invoice.ewb_number}."
+           "#{invoice.invoice_number} already carries e-way bill #{bill.ewb_number}."
          )
          |> assign_form(document_error(changeset, "already has an e-way bill"))}
     end
@@ -109,14 +109,14 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   # the invoice page uses rather than minting one locally.
   defp generate(socket, invoice, form, changeset) do
     case EWayBills.generate_e_way_bill(invoice, transport_params(form)) do
-      {:ok, issued} ->
+      {:ok, bill} ->
         {:noreply,
          socket
          |> put_flash(
            :info,
-           "E-Way Bill #{issued.ewb_number} generated for #{issued.invoice_number}."
+           "E-Way Bill #{bill.ewb_number} generated for #{bill.invoice.invoice_number}."
          )
-         |> redirect(to: ~p"/e-way-bills/#{issued.id}/print")}
+         |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")}
 
       {:error, reason} ->
         {:noreply,
@@ -126,12 +126,19 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
+  # A cancelled bill does not block a new one: Rule 138(9) exists so a fresh
+  # bill can be raised against the same document, which is why this asks for
+  # the *live* bill rather than for any bill.
   defp fetch_document(%EWayBillForm{document_no: document_no}) do
     case Invoices.get_invoice_by_number(String.trim(document_no || "")) do
-      nil -> {:error, {:no_document, document_no}}
-      %{ewb_number: nil} = invoice -> {:ok, invoice}
-      %{ewb_number: ""} = invoice -> {:ok, invoice}
-      issued -> {:error, {:already_issued, issued}}
+      nil ->
+        {:error, {:no_document, document_no}}
+
+      invoice ->
+        case EWayBills.live_bill_for_invoice(invoice.id) do
+          nil -> {:ok, invoice}
+          bill -> {:error, {:already_issued, invoice, bill}}
+        end
     end
   end
 
@@ -192,12 +199,15 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       sgst_value: invoice.sgst_amount,
       igst_value: invoice.igst_amount,
       other_amount: invoice.cess_amount,
-      transport_mode: invoice.mode_of_transport || "Road",
-      transporter_name: invoice.transporter_name,
-      transporter_id:
-        invoice.transporter_id || organization_field(organization, :ewb_transporter_id),
-      vehicle_no: invoice.vehicle_number,
-      distance_km: invoice.distance_km,
+      # Transport details belong to the bill, not the document, so there is
+      # nothing on the invoice to prefill them from. The organisation's saved
+      # defaults are the next best thing and are what the settings screen
+      # offers them for.
+      transport_mode: organization_field(organization, :ewb_transport_mode) || "Road",
+      transporter_name: nil,
+      transporter_id: organization_field(organization, :ewb_transporter_id),
+      vehicle_no: nil,
+      distance_km: nil,
       from_place: organization_field(organization, :city) || state_name(invoice.company_state),
       to_place: invoice.client_city || state_name(invoice.client_state)
     }

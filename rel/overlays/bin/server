@@ -1,0 +1,5 @@
+#!/bin/sh
+# Starts the app with the HTTP endpoint running.
+set -eu
+cd -P -- "$(dirname -- "$0")"
+PHX_SERVER=true exec ./quantum_billing start

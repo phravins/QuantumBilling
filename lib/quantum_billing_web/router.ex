@@ -74,10 +74,25 @@ defmodule QuantumBillingWeb.Router do
     # The official e-way bill, Form GST EWB-01. Same scope and the same
     # `:require_authenticated_user` pipeline as the other document routes, and
     # outside `live_session :app` because that block takes only `live` routes.
+    # The list page's Export button. Same scope and pipeline as the reports
+    # export above, and above the `:id` routes only for readability — the paths
+    # differ in segment count, so they cannot collide.
+    get "/e-way-bills/export", EWayBillExportController, :export
     get "/e-way-bills/:id/print", EWayBillPdfController, :show
     get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
     get "/settings/backup/download", BackupController, :download
+  end
+
+  # Deliberately on `:api` and not `:browser`: a container probe must not need
+  # a session, a CSRF token or the security-policy plug, and above all must not
+  # have to load the current scope out of the database it is checking. It also
+  # has to sit above the catch-all at the bottom of this file, which would
+  # otherwise answer /health with the branded 404 page.
+  scope "/", QuantumBillingWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :index
   end
 
   scope "/api", QuantumBillingWeb do

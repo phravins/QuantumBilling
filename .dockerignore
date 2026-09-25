@@ -7,3 +7,12 @@ assets/node_modules
 *.tar.gz
 *.log
 docker-compose*.yml
+
+# Build output and local uploads: `COPY priv priv` would otherwise bake a dev
+# machine's compiled assets and any logo uploaded locally into the image.
+priv/static/assets
+priv/static/cache_manifest.json
+priv/static/uploads
+test
+*.md
+rel/artifacts

@@ -6,6 +6,10 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
   Generating a bill used to write a number onto the invoice and nothing else —
   the list page's View and Print buttons both went to a filtered invoice list,
   so Form GST EWB-01 existed nowhere in the application.
+
+  The document is now addressed by the **bill's** id rather than the invoice's,
+  because an invoice may carry a cancelled bill and the one raised to replace
+  it, and a URL meaning "the invoice's bill" could not name which.
   """
   use QuantumBillingWeb.ConnCase, async: true
 
@@ -60,28 +64,28 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
         }
       })
 
-    {:ok, issued} =
+    {:ok, bill} =
       EWayBills.generate_e_way_bill(invoice, %{
         "distance_km" => "310",
         "vehicle_number" => "MH12AB1234",
         "transporter_name" => "Express Logistics India"
       })
 
-    issued
+    bill
   end
 
   describe "the printable document" do
     test "serves Form GST EWB-01 for a generated bill", %{conn: conn} do
-      invoice = invoice_with_bill()
+      bill = invoice_with_bill()
 
-      body = conn |> get(~p"/e-way-bills/#{invoice.id}/print") |> response(200)
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
       assert body =~ "Form GST EWB-01"
       assert body =~ "Part - A"
       assert body =~ "Part - B"
       # The number prints in the groups of four the portal uses.
-      assert body =~ Document.grouped(invoice.ewb_number)
-      assert body =~ invoice.invoice_number
+      assert body =~ Document.grouped(bill.ewb_number)
+      assert body =~ bill.invoice.invoice_number
       assert body =~ "MH12AB1234"
       assert body =~ "Express Logistics India"
       assert body =~ "310 km"
@@ -91,19 +95,19 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
     end
 
     test "carries a QR of the bill, its issuer and its date", %{conn: conn} do
-      invoice = invoice_with_bill()
+      bill = invoice_with_bill()
 
-      assert Document.qr_payload(invoice) ==
+      assert Document.qr_payload(bill) ==
                Enum.join(
                  [
-                   invoice.ewb_number,
-                   invoice.company_gstin,
-                   Calendar.strftime(invoice.ewb_date, "%d/%m/%Y")
+                   bill.ewb_number,
+                   bill.invoice.company_gstin,
+                   Calendar.strftime(bill.ewb_date, "%d/%m/%Y")
                  ],
                  "/"
                )
 
-      body = conn |> get(~p"/e-way-bills/#{invoice.id}/print") |> response(200)
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
       assert body =~ "<svg"
       assert body =~ "Scan to verify"
@@ -112,61 +116,88 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
     # The toolbar's Print button always calls window.print(); only `?print=1`
     # should fire it without being asked.
     test "prints on load only when asked", %{conn: conn} do
-      invoice = invoice_with_bill()
+      bill = invoice_with_bill()
 
-      refute conn |> get(~p"/e-way-bills/#{invoice.id}/print") |> response(200) =~
+      refute conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200) =~
                "window.addEventListener"
 
-      assert conn |> get(~p"/e-way-bills/#{invoice.id}/print?print=1") |> response(200) =~
+      assert conn |> get(~p"/e-way-bills/#{bill.id}/print?print=1") |> response(200) =~
                "window.addEventListener"
     end
 
     # An unregistered recipient is "URP" on an e-way bill, not a blank.
     test "marks an unregistered recipient URP", %{conn: conn} do
-      invoice = invoice_with_bill()
-      {:ok, invoice} = Invoices.update_invoice(invoice, %{"client_gstin" => nil})
+      bill = invoice_with_bill()
+      {:ok, _invoice} = Invoices.update_invoice(bill.invoice, %{"client_gstin" => nil})
 
-      assert conn |> get(~p"/e-way-bills/#{invoice.id}/print") |> response(200) =~ "URP"
+      assert conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200) =~ "URP"
     end
 
-    test "splits the tax rate the way the consignment is taxed", %{organization: _organization} do
+    test "splits the tax rate the way the consignment is taxed", %{organization: organization} do
       intra = invoice_with_bill("Maharashtra (27)", "18")
       inter = invoice_with_bill("Karnataka (29)", "18")
 
-      assert Document.html(intra, Settings.get_organization()) =~ "9.00 + 9.00 + 0.00 + 0.00"
-      assert Document.html(inter, Settings.get_organization()) =~ "0.00 + 0.00 + 18.00 + 0.00"
+      assert Document.html(intra, organization) =~ "9.00 + 9.00 + 0.00 + 0.00"
+      assert Document.html(inter, organization) =~ "0.00 + 0.00 + 18.00 + 0.00"
     end
 
-    test "an invoice with no bill has no document to print", %{conn: conn} do
-      {:ok, invoice} =
-        Invoices.create_invoice(%{
-          "invoice_date" => Date.to_iso8601(~D[2026-04-18]),
-          "place_of_supply" => "Maharashtra (27)",
-          "client_name" => "Northwind Traders",
-          "items" => %{
-            "0" => %{"description" => "Consulting", "quantity" => "1", "rate" => "1000"}
-          }
+    # Part-B is a table of legs on the real form, so a vehicle change has to
+    # add a row rather than quietly rewrite the one that is printed.
+    test "prints every leg of the journey in Part-B", %{conn: conn} do
+      bill = invoice_with_bill()
+
+      {:ok, _updated} =
+        EWayBills.update_part_b(bill, %{
+          "vehicle_number" => "KA05CD9876",
+          "mode_of_transport" => "Road",
+          "place" => "Belgaum",
+          "reason" => "Breakdown"
         })
 
-      conn = get(conn, ~p"/e-way-bills/#{invoice.id}/print")
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
-      assert redirected_to(conn) == ~p"/invoices/#{invoice.id}"
+      # Both vehicles, the original one first.
+      assert body =~ "MH12AB1234"
+      assert body =~ "KA05CD9876"
+      assert body =~ "Belgaum"
+
+      [first, second] =
+        Regex.scan(~r/MH12AB1234|KA05CD9876/, body)
+        |> Enum.map(&hd/1)
+        |> Enum.uniq()
+
+      assert first == "MH12AB1234"
+      assert second == "KA05CD9876"
     end
 
-    test "an id that is nobody's invoice goes back to the list", %{conn: conn} do
+    # A cancelled bill still prints — it is the evidence that the consignment
+    # did not travel under it.
+    test "says so on the face of a cancelled bill", %{conn: conn} do
+      bill = invoice_with_bill()
+
+      {:ok, _cancelled} =
+        EWayBills.cancel_e_way_bill(bill, %{"cancellation_reason" => "Order Cancelled"})
+
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
+
+      assert body =~ "cancelled"
+      refute body =~ "valid until"
+    end
+
+    test "an id that is nobody's bill goes back to the list", %{conn: conn} do
       assert conn |> get(~p"/e-way-bills/999999/print") |> redirected_to() == ~p"/e-way-bills"
     end
   end
 
   describe "the PDF download" do
     test "either prints or says why it cannot", %{conn: conn} do
-      invoice = invoice_with_bill()
+      bill = invoice_with_bill()
 
-      conn = get(conn, ~p"/e-way-bills/#{invoice.id}/print/download")
+      conn = get(conn, ~p"/e-way-bills/#{bill.id}/print/download")
 
       case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
         nil ->
-          assert redirected_to(conn) == ~p"/e-way-bills/#{invoice.id}/print"
+          assert redirected_to(conn) == ~p"/e-way-bills/#{bill.id}/print"
 
         _binary ->
           assert <<"%PDF-", _rest::binary>> = response(conn, 200)
@@ -176,13 +207,13 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
 
   describe "the e-way bill list" do
     test "every row action opens the document", %{conn: conn} do
-      invoice = invoice_with_bill()
+      bill = invoice_with_bill()
 
       {:ok, _view, html} = live(conn, ~p"/e-way-bills")
 
-      assert html =~ ~s(href="/e-way-bills/#{invoice.id}/print")
-      assert html =~ ~s(href="/e-way-bills/#{invoice.id}/print?print=1")
-      assert html =~ ~s(href="/e-way-bills/#{invoice.id}/print/download")
+      assert html =~ ~s(href="/e-way-bills/#{bill.id}/print")
+      assert html =~ ~s(href="/e-way-bills/#{bill.id}/print?print=1")
+      assert html =~ ~s(href="/e-way-bills/#{bill.id}/print/download")
     end
   end
 end

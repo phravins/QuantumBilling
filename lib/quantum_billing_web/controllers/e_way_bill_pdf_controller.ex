@@ -14,20 +14,24 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
   Both render outside the app layout: the sidebar has no business on a document
   that travels with a consignment.
 
-  An invoice without an e-way bill number has no EWB-01 to print, so it is
-  turned away rather than rendered as a form full of dashes.
+  ## The id is the bill's
+
+  It used to be the invoice's, back when a bill was columns on the invoice.
+  Now that a cancelled bill and the fresh one raised to replace it are two
+  rows against the same document, each needs its own address — a URL that
+  meant "the invoice's bill" could not name which.
   """
   use QuantumBillingWeb, :controller
 
-  alias QuantumBilling.Invoices
+  alias QuantumBilling.EWayBills
   alias QuantumBilling.Settings
   alias QuantumBillingWeb.EWayBillDoc.Document
   alias QuantumBillingWeb.InvoiceDoc.PDF
 
   def show(conn, %{"id" => id} = params) do
-    with_e_way_bill(conn, id, fn invoice ->
+    with_e_way_bill(conn, id, fn bill ->
       html =
-        Document.html(invoice, Settings.get_organization(),
+        Document.html(bill, Settings.get_organization(),
           auto_print: params["print"] in ["1", "true"]
         )
 
@@ -38,13 +42,13 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
   end
 
   def download(conn, %{"id" => id}) do
-    with_e_way_bill(conn, id, fn invoice ->
-      html = Document.html(invoice, Settings.get_organization(), toolbar: false)
+    with_e_way_bill(conn, id, fn bill ->
+      html = Document.html(bill, Settings.get_organization(), toolbar: false)
 
       case PDF.render(html) do
         {:ok, pdf} ->
           send_download(conn, {:binary, pdf},
-            filename: "ewb-#{invoice.ewb_number}.pdf",
+            filename: "ewb-#{bill.ewb_number}.pdf",
             content_type: "application/pdf"
           )
 
@@ -55,33 +59,27 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
             "Server-side PDF export is not available here — use your browser's " <>
               "Print › Save as PDF on this page."
           )
-          |> redirect(to: ~p"/e-way-bills/#{invoice.id}/print")
+          |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")
 
         {:error, reason} ->
           conn
           |> put_flash(:error, "That PDF could not be produced (#{inspect(reason)}).")
-          |> redirect(to: ~p"/e-way-bills/#{invoice.id}/print")
+          |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")
       end
     end)
   end
 
+  # The bill carries its invoice and its Part-B history, because the document
+  # prints all three.
   defp with_e_way_bill(conn, id, render) do
-    case Invoices.get_invoice(id) do
+    case EWayBills.get_e_way_bill(id) do
       nil ->
         conn
         |> put_flash(:error, "That e-way bill does not exist.")
         |> redirect(to: ~p"/e-way-bills")
 
-      %{ewb_number: number} = invoice when is_binary(number) and number != "" ->
-        render.(invoice)
-
-      invoice ->
-        conn
-        |> put_flash(
-          :error,
-          "Invoice #{invoice.invoice_number} has no e-way bill yet — generate one first."
-        )
-        |> redirect(to: ~p"/invoices/#{invoice.id}")
+      bill ->
+        render.(bill)
     end
   end
 end

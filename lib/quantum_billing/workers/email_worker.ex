@@ -19,6 +19,8 @@ defmodule QuantumBilling.Workers.EmailWorker do
 
   require Logger
 
+  alias QuantumBilling.EWayBillNotifier
+  alias QuantumBilling.EWayBills
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Mail
@@ -77,6 +79,16 @@ defmodule QuantumBilling.Workers.EmailWorker do
     {:error, message}
   end
 
+  # Matched before the invoice clause: an e-way bill notice carries an
+  # `invoice_id` too, because the ledger row files it under the document it
+  # belongs to — but what gets rendered is the bill.
+  defp build(delivery, %{"e_way_bill_id" => bill_id}) when not is_nil(bill_id) do
+    case EWayBills.get_e_way_bill(bill_id) do
+      nil -> {:error, :permanent, "e-way bill #{bill_id} no longer exists"}
+      bill -> EWayBillNotifier.build_email(delivery.to_email, bill)
+    end
+  end
+
   defp build(delivery, %{"invoice_id" => invoice_id}) when not is_nil(invoice_id) do
     case Invoices.get_invoice(invoice_id) do
       nil ->
@@ -92,6 +104,6 @@ defmodule QuantumBilling.Workers.EmailWorker do
   end
 
   defp build(delivery, _args) do
-    {:error, :permanent, "delivery #{delivery.id} has no invoice to render"}
+    {:error, :permanent, "delivery #{delivery.id} has no document to render"}
   end
 end

@@ -35,11 +35,10 @@ COPY priv priv
 COPY assets assets
 COPY lib lib
 
-# Compile assets
+# Compiles the app and then bundles assets: the `assets.deploy` alias runs
+# `compile` first because the CSS and JS both import the colocated-hook output
+# that only the LiveView compiler produces.
 RUN mix assets.deploy
-
-# Compile app
-RUN mix compile
 
 # Changes to config/runtime.exs don't require recompiling the code
 COPY config/runtime.exs config/
@@ -55,15 +54,22 @@ FROM ${RUNNER_IMAGE}
 # but is not the PDF customers expect on a tax invoice. The fonts are needed
 # too: a headless browser with no fonts renders every glyph as a box, including
 # the rupee sign.
+# `curl` is here for the container healthcheck in docker-compose.yml, which
+# hits /health. Without it the compose healthcheck has nothing to run with.
 RUN apt-get update -y && \
-  apt-get install -y libstdc++6 openssl libssl-dev libncurses5-dev locales ca-certificates \
+  apt-get install -y libstdc++6 openssl libssl-dev libncurses5-dev locales ca-certificates curl \
   chromium fonts-liberation fonts-dejavu-core \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 ENV PDF_CHROME_PATH="/usr/bin/chromium"
 
-# Set the locale
-RUN seed-locale en_US.UTF-8 || true
+# Set the locale. This used to call `seed-locale`, which is not a command on
+# any Debian image — `|| true` meant the image built anyway with the C locale,
+# and anything non-ASCII (the rupee sign, a client's name) came out wrong.
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
 
 WORKDIR /app
 RUN chown nobody /app

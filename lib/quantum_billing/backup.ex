@@ -48,6 +48,8 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.Audit.AuditLog
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.EWayBills.EWayBill
+  alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
   alias QuantumBilling.Recurring.RecurringProfile
@@ -55,7 +57,13 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  @version "2.0"
+  @version "2.1"
+
+  # 2.0 files are still restored. They carried the e-way bill on the invoice
+  # itself, in eight columns that no longer exist; `upgrade/1` turns those into
+  # `e_way_bills` rows on the way in. Refusing them would have destroyed every
+  # backup users already hold, which is the one thing a backup must not do.
+  @readable_versions ["2.0", @version]
 
   # Read from the settings row, minus the credentials. `Encrypted.Secret`
   # columns decrypt on load, so including them would put live secrets in the
@@ -83,13 +91,18 @@ defmodule QuantumBilling.Backup do
                      company_name company_address company_gstin company_state remarks terms
                      total_items total_quantity taxable_value cgst_amount sgst_amount igst_amount
                      cess_amount round_off grand_total status irn ack_number ack_date
-                     signed_qr_code signed_invoice ewb_number ewb_date ewb_valid_until distance_km
-                     transporter_id transporter_name vehicle_number mode_of_transport currency
+                     signed_qr_code signed_invoice currency
                      exchange_rate export_type lut_number razorpay_payment_link_id
                      razorpay_payment_url razorpay_payment_id public_token template_id
                      layout_xml)a
 
   @item_fields ~w(id invoice_id description hsn_sac quantity unit rate tax_rate amount position)a
+
+  @e_way_bill_fields ~w(id invoice_id ewb_number ewb_date valid_until status distance_km
+                        mode_of_transport vehicle_number transporter_id transporter_name
+                        cancelled_at cancellation_reason)a
+
+  @part_b_fields ~w(id e_way_bill_id vehicle_number mode_of_transport place reason updated_on)a
 
   @template_fields ~w(id name layout_xml accent is_default archived_at)a
 
@@ -112,6 +125,8 @@ defmodule QuantumBilling.Backup do
     {:templates, InvoiceTemplate, @template_fields},
     {:invoices, Invoice, @invoice_fields},
     {:invoice_items, InvoiceItem, @item_fields},
+    {:e_way_bills, EWayBill, @e_way_bill_fields},
+    {:e_way_bill_part_b_updates, PartBUpdate, @part_b_fields},
     {:recurring_profiles, RecurringProfile, @profile_fields},
     {:credit_notes, CreditNote, @credit_note_fields},
     {:audit_logs, AuditLog, @audit_fields}
@@ -200,6 +215,8 @@ defmodule QuantumBilling.Backup do
   Counts of what a backup contains, for the confirmation shown before a restore.
   """
   def summarize(%{} = data) do
+    data = upgrade(data)
+
     Map.new(@sections, fn {key, _schema, _fields} ->
       name = Atom.to_string(key)
 
@@ -216,6 +233,8 @@ defmodule QuantumBilling.Backup do
   def restore_json(json_string) when is_binary(json_string) do
     with {:ok, data} <- decode(json_string),
          :ok <- check_version(data) do
+      data = upgrade(data)
+
       # No timeout: restoring a year of invoices is one long transaction by
       # nature, and the pool's fifteen-second default aborted it at exactly the
       # size where a restore is worth having.
@@ -226,6 +245,9 @@ defmodule QuantumBilling.Backup do
           Repo.delete_all(AuditLog)
           Repo.delete_all(CreditNote)
           Repo.delete_all(InvoiceItem)
+          # Part-B rows hang off e-way bills, which hang off invoices.
+          Repo.delete_all(PartBUpdate)
+          Repo.delete_all(EWayBill)
           Repo.delete_all(Invoice)
           Repo.delete_all(RecurringProfile)
           Repo.delete_all(InvoiceTemplate)
@@ -242,8 +264,8 @@ defmodule QuantumBilling.Backup do
           # past them. Without this the next insert reuses id 1 and fails on the
           # primary key.
           Enum.each(
-            ~w(clients invoices invoice_items invoice_templates recurring_profiles credit_notes
-               audit_logs),
+            ~w(clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
+               invoice_templates recurring_profiles credit_notes audit_logs),
             &resync_sequence/1
           )
 
@@ -270,7 +292,8 @@ defmodule QuantumBilling.Backup do
 
   # 1.0 files were produced by an exporter that raised before writing anything,
   # so none exist; anything claiming to be one is not a backup of this system.
-  defp check_version(%{"version" => @version}), do: :ok
+  # 2.0 and 2.1 both restore — see `upgrade/1`.
+  defp check_version(%{"version" => version}) when version in @readable_versions, do: :ok
 
   defp check_version(%{"version" => other}),
     do:
@@ -278,6 +301,65 @@ defmodule QuantumBilling.Backup do
        "Backup version #{other} cannot be restored by this release (expected #{@version})."}
 
   defp check_version(_data), do: {:error, "That file is not a QuantumBilling backup."}
+
+  # Brings a 2.0 file up to the current shape.
+  #
+  # In 2.0 an e-way bill was eight columns on the invoice, so a file holds at
+  # most one bill per invoice and no Part-B history at all. Each invoice that
+  # carries an EWB number becomes one `e_way_bills` row; the extra keys left on
+  # the invoice are ignored, because `cast_row/3` reads only the fields named
+  # in `@invoice_fields`.
+  defp upgrade(%{"version" => "2.0"} = data) do
+    bills =
+      data
+      |> Map.get("invoices", [])
+      |> Enum.filter(&issued?/1)
+      |> Enum.with_index(1)
+      |> Enum.map(&e_way_bill_from_invoice/1)
+
+    data
+    |> Map.put("e_way_bills", bills)
+    |> Map.put("e_way_bill_part_b_updates", [])
+    |> Map.put("version", @version)
+  end
+
+  defp upgrade(data), do: data
+
+  defp issued?(%{"ewb_number" => number}) when is_binary(number), do: String.trim(number) != ""
+  defp issued?(_invoice), do: false
+
+  defp e_way_bill_from_invoice({invoice, id}) do
+    ewb_date = invoice["ewb_date"] || invoice["invoice_date"]
+
+    %{
+      "id" => id,
+      "invoice_id" => invoice["id"],
+      "ewb_number" => invoice["ewb_number"],
+      "ewb_date" => ewb_date,
+      # Rule 138(10) gives one day per 200 km, and a 2.0 file that never
+      # recorded an expiry can only be assumed to have had the minimum.
+      "valid_until" => invoice["ewb_valid_until"] || day_after(ewb_date),
+      # A cancelled invoice cannot have a live bill against it, and the column
+      # the status would have come from never existed.
+      "status" => if(invoice["status"] == "Cancelled", do: "Cancelled", else: "Active"),
+      "distance_km" => invoice["distance_km"] || 0,
+      "mode_of_transport" => invoice["mode_of_transport"] || "Road",
+      "vehicle_number" => invoice["vehicle_number"],
+      "transporter_id" => invoice["transporter_id"],
+      "transporter_name" => invoice["transporter_name"]
+    }
+  end
+
+  defp day_after(nil), do: nil
+
+  defp day_after(date) when is_binary(date) do
+    case Date.from_iso8601(date) do
+      {:ok, date} -> date |> Date.add(1) |> NaiveDateTime.new!(~T[00:00:00]) |> to_string()
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp day_after(_other), do: nil
 
   defp organization_row do
     case Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1) do

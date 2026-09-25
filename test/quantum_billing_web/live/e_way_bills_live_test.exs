@@ -1,14 +1,23 @@
 defmodule QuantumBillingWeb.EWayBillsLiveTest do
+  @moduledoc """
+  The e-way bill list: what it shows, what it lets you do to a bill, and the
+  two things it could not do at all while a bill was eight columns on an
+  invoice — cancel one, and record a change of vehicle.
+
+  Bills here are raised through `EWayBills.generate_e_way_bill/2` rather than
+  inserted, so the number, the validity and the audit trail are the real ones.
+  """
   use QuantumBillingWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
+  alias QuantumBilling.EWayBills
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
   setup :register_and_log_in_user
 
-  defp bill(attrs) do
+  defp invoice(attrs) do
     defaults = %{
       invoice_number: "INV-#{System.unique_integer([:positive])}",
       invoice_date: ~D[2026-03-01],
@@ -17,15 +26,31 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
       client_state: "Karnataka",
       client_name: "Acme India Pvt Ltd",
       taxable_value: 100_000,
-      grand_total: 118_000,
-      ewb_number: "191000#{System.unique_integer([:positive])}",
-      ewb_date: ~D[2026-03-01],
-      ewb_valid_until: ~N[2036-03-05 00:00:00],
-      distance_km: 180,
-      vehicle_number: "MH04CD5678"
+      grand_total: 118_000
     }
 
     Repo.insert!(struct(%Invoice{}, Map.merge(defaults, attrs)))
+  end
+
+  defp bill(attrs) do
+    {transport, invoice_attrs} = Map.split(attrs, [:distance_km, :vehicle_number])
+
+    {:ok, bill} =
+      EWayBills.generate_e_way_bill(invoice(invoice_attrs), %{
+        "distance_km" => to_string(Map.get(transport, :distance_km, 180)),
+        "vehicle_number" => Map.get(transport, :vehicle_number, "MH04CD5678")
+      })
+
+    bill
+  end
+
+  # Expiry is derived from the clock, so the only way to have an expired bill
+  # is to have one whose validity has passed. The portal sets that at
+  # generation, so it is moved here rather than asked for.
+  defp expire(bill) do
+    bill
+    |> Ecto.Changeset.change(valid_until: ~N[2020-01-01 00:00:00])
+    |> Repo.update!()
   end
 
   test "renders the page shell", %{conn: conn} do
@@ -61,21 +86,21 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
     # against field names no schema has — `ewb_no`, `to_party`, `value` — so
     # rendering a single genuine e-way bill raised a KeyError and the page was
     # reachable only while it had nothing to show.
-    bill = bill(%{client_name: "Northwind Traders", ewb_number: "191000111222"})
+    bill = bill(%{client_name: "Northwind Traders"})
 
     {:ok, _view, html} = live(conn, ~p"/e-way-bills")
 
-    assert html =~ "191000111222"
+    assert html =~ bill.ewb_number
     assert html =~ "Northwind Traders"
-    assert html =~ bill.invoice_number
+    assert html =~ bill.invoice.invoice_number
     assert html =~ "Maharashtra"
     assert html =~ "Karnataka"
     refute html =~ "No e-way bills"
   end
 
   test "searches on the EWB number, the document number and the consignee", %{conn: conn} do
-    bill(%{client_name: "Northwind Traders", ewb_number: "191000111222"})
-    bill(%{client_name: "Contoso Logistics", ewb_number: "191000333444"})
+    northwind = bill(%{client_name: "Northwind Traders"})
+    contoso = bill(%{client_name: "Contoso Logistics"})
 
     {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
@@ -83,15 +108,25 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
     assert html =~ "Northwind Traders"
     refute html =~ "Contoso Logistics"
 
-    html = view |> form("#ewb-search", %{"q" => "333444"}) |> render_change()
+    html = view |> form("#ewb-search", %{"q" => contoso.ewb_number}) |> render_change()
     assert html =~ "Contoso Logistics"
     refute html =~ "Northwind Traders"
+
+    html =
+      view |> form("#ewb-search", %{"q" => northwind.invoice.invoice_number}) |> render_change()
+
+    assert html =~ "Northwind Traders"
+    refute html =~ "Contoso Logistics"
   end
 
   test "filters by a status derived from validity and cancellation", %{conn: conn} do
     bill(%{client_name: "Still Valid Ltd"})
-    bill(%{client_name: "Long Gone Ltd", ewb_valid_until: ~N[2020-01-01 00:00:00]})
-    bill(%{client_name: "Called Off Ltd", status: "Cancelled"})
+    expire(bill(%{client_name: "Long Gone Ltd"}))
+
+    {:ok, _cancelled} =
+      EWayBills.cancel_e_way_bill(bill(%{client_name: "Called Off Ltd"}), %{
+        "cancellation_reason" => "Order Cancelled"
+      })
 
     {:ok, view, html} = live(conn, ~p"/e-way-bills")
     assert html =~ "Still Valid Ltd"
@@ -139,6 +174,145 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
     # `String.to_existing_atom/1` and take the page down with it.
     assert render_click(view, "sort", %{"field" => "not_a_column"}) =~ "Northwind Traders"
     assert render_click(view, "sort", %{"field" => "value"}) =~ "Northwind Traders"
+  end
+
+  test "carries the current filters into the export", %{conn: conn} do
+    bill(%{client_name: "Northwind Traders"})
+
+    {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+    # The Export button used to point at the reports endpoint, which ignored
+    # the report type it was given and downloaded a GST tax summary instead.
+    html = view |> form("#ewb-search", %{"q" => "Northwind"}) |> render_change()
+
+    assert html =~ ~s(href="/e-way-bills/export?q=Northwind&amp;status=All+Status")
+  end
+
+  describe "cancelling a bill" do
+    test "records the cancellation and moves the row out of Active", %{conn: conn} do
+      bill = bill(%{client_name: "Northwind Traders"})
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      render_click(view, "open_action", %{"action" => "cancel", "id" => to_string(bill.id)})
+      assert has_element?(view, "#ewb-cancel-form")
+
+      html =
+        view
+        |> form("#ewb-cancel-form", %{"cancellation_reason" => "Order Cancelled"})
+        |> render_submit()
+
+      assert html =~ "cancelled"
+      refute has_element?(view, "#ewb-cancel-form")
+
+      cancelled = EWayBills.get_e_way_bill(bill.id)
+      assert cancelled.status == "Cancelled"
+      assert cancelled.cancellation_reason == "Order Cancelled"
+      assert cancelled.cancelled_at
+
+      refute render_click(view, "filter_status", %{"status" => "Active"}) =~ "Northwind Traders"
+    end
+
+    # Rule 138(9) allows twenty-four hours and no more. After that the number
+    # stays spent at the portal, so recording a cancellation here would make
+    # this table disagree with the government's.
+    test "refuses a bill whose twenty-four hours have passed", %{conn: conn} do
+      bill = bill(%{client_name: "Northwind Traders"})
+
+      stale =
+        bill
+        |> Ecto.Changeset.change(
+          inserted_at: DateTime.add(DateTime.utc_now(), -25, :hour) |> DateTime.truncate(:second)
+        )
+        |> Repo.update!()
+
+      {:ok, view, html} = live(conn, ~p"/e-way-bills")
+
+      # The button is not offered at all once the window has closed.
+      refute html =~ ~s(phx-value-action="cancel")
+
+      # And the event behind it refuses even if it is reached anyway.
+      render_click(view, "open_action", %{"action" => "cancel", "id" => to_string(stale.id)})
+
+      html =
+        view
+        |> form("#ewb-cancel-form", %{"cancellation_reason" => "Order Cancelled"})
+        |> render_submit()
+
+      assert html =~ "24 hours"
+      assert EWayBills.get_e_way_bill(stale.id).status == "Active"
+    end
+
+    test "refuses a bill that is already cancelled", %{conn: conn} do
+      bill = bill(%{client_name: "Northwind Traders"})
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      render_click(view, "open_action", %{"action" => "cancel", "id" => to_string(bill.id)})
+
+      {:ok, _cancelled} =
+        EWayBills.cancel_e_way_bill(bill, %{"cancellation_reason" => "Duplicate"})
+
+      html =
+        view
+        |> form("#ewb-cancel-form", %{"cancellation_reason" => "Order Cancelled"})
+        |> render_submit()
+
+      assert html =~ "already cancelled"
+    end
+  end
+
+  describe "updating Part-B" do
+    test "moves the consignment onto another vehicle", %{conn: conn} do
+      bill = bill(%{client_name: "Northwind Traders", vehicle_number: "MH04CD5678"})
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      render_click(view, "open_action", %{"action" => "part_b", "id" => to_string(bill.id)})
+      assert has_element?(view, "#ewb-part-b-form")
+
+      html =
+        view
+        |> form("#ewb-part-b-form", %{
+          "vehicle_number" => "KA05CD9876",
+          "mode_of_transport" => "Road",
+          "place" => "Belgaum",
+          "reason" => "Breakdown"
+        })
+        |> render_submit()
+
+      assert html =~ "KA05CD9876"
+      refute has_element?(view, "#ewb-part-b-form")
+
+      updated = EWayBills.get_e_way_bill(bill.id)
+      assert updated.vehicle_number == "KA05CD9876"
+
+      # Both legs are kept: Part-B on the real form is a table, and the first
+      # entry is the vehicle the bill was raised with.
+      assert [first, second] = updated.part_b_updates
+      assert first.vehicle_number == "MH04CD5678"
+      assert second.vehicle_number == "KA05CD9876"
+      assert second.place == "Belgaum"
+    end
+
+    test "refuses an expired bill", %{conn: conn} do
+      bill = expire(bill(%{client_name: "Northwind Traders"}))
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      render_click(view, "open_action", %{"action" => "part_b", "id" => to_string(bill.id)})
+
+      html =
+        view
+        |> form("#ewb-part-b-form", %{
+          "vehicle_number" => "KA05CD9876",
+          "mode_of_transport" => "Road"
+        })
+        |> render_submit()
+
+      assert html =~ "expired"
+      assert EWayBills.get_e_way_bill(bill.id).vehicle_number == "MH04CD5678"
+    end
   end
 
   test "serves no sample records", %{conn: conn} do

@@ -20,6 +20,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   """
   use QuantumBillingWeb, :html
 
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.Validity
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
@@ -28,17 +29,25 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   @doc """
   The e-way bill as a standalone HTML string.
 
+  Takes the bill, with its `:invoice` and `:part_b_updates` preloaded: the
+  number, validity and vehicle are facts about the bill, while the consignor,
+  consignee and goods are facts about the document it was raised against.
+
   ## Options
 
     * `:toolbar` — show the on-screen Print / Download bar (default `true`).
       It carries `class="ewb-screen-only"` and never prints.
     * `:auto_print` — open the browser's print dialog on load (default `false`)
   """
-  def html(%Invoice{} = invoice, organization, opts \\ []) do
+  def html(%EWayBill{} = bill, organization, opts \\ []) do
+    invoice = bill.invoice
+
     assigns = %{
+      bill: bill,
       invoice: invoice,
       org: organization,
       items: items(invoice),
+      part_b: part_b_entries(bill),
       toolbar: Keyword.get(opts, :toolbar, true),
       auto_print: Keyword.get(opts, :auto_print, false)
     }
@@ -54,7 +63,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>E-Way Bill {@invoice.ewb_number}</title>
+        <title>E-Way Bill {@bill.ewb_number}</title>
         <style>
           /* Curly interpolation is off inside <style>, so this is plain CSS. */
           @page { size: A4; margin: 10mm; }
@@ -275,13 +284,13 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
       <body>
         <div :if={@toolbar} class="ewb-screen-only">
           <div>
-            <h1>E-Way Bill {grouped(@invoice.ewb_number)}</h1>
-            <p>Form GST EWB-01 &middot; {status_line(@invoice)}</p>
+            <h1>E-Way Bill {grouped(@bill.ewb_number)}</h1>
+            <p>Form GST EWB-01 &middot; {status_line(@bill)}</p>
           </div>
 
           <div class="ewb-actions">
             <a class="ewb-btn" href={~p"/e-way-bills"}>Back to e-way bills</a>
-            <a class="ewb-btn" href={~p"/e-way-bills/#{@invoice.id}/print/download"}>Download PDF</a>
+            <a class="ewb-btn" href={~p"/e-way-bills/#{@bill.id}/print/download"}>Download PDF</a>
             <%!-- A raw handler rather than a colocated hook: this document is
             rendered by a controller, outside the LiveSocket, so there is no
             hook to colocate onto. --%>
@@ -302,7 +311,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             </div>
 
             <figure class="ewb-qr">
-              {raw(qr_svg(@invoice))}
+              {raw(qr_svg(@bill))}
               <figcaption>Scan to verify</figcaption>
             </figure>
           </header>
@@ -310,22 +319,22 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           <dl class="ewb-band">
             <div>
               <dt>E-Way Bill No.</dt>
-              <dd class="is-wide">{grouped(@invoice.ewb_number)}</dd>
+              <dd class="is-wide">{grouped(@bill.ewb_number)}</dd>
             </div>
 
             <div>
               <dt>Generated On</dt>
-              <dd>{on_date(@invoice.ewb_date)}</dd>
+              <dd>{on_date(@bill.ewb_date)}</dd>
             </div>
 
             <div>
               <dt>Valid From</dt>
-              <dd>{on_date(@invoice.ewb_date)}</dd>
+              <dd>{on_date(@bill.ewb_date)}</dd>
             </div>
 
             <div>
               <dt>Valid Until</dt>
-              <dd>{on_datetime(@invoice.ewb_valid_until)}</dd>
+              <dd>{on_datetime(@bill.valid_until)}</dd>
             </div>
 
             <div>
@@ -335,17 +344,17 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
             <div>
               <dt>Mode</dt>
-              <dd>{blank(@invoice.mode_of_transport)}</dd>
+              <dd>{blank(@bill.mode_of_transport)}</dd>
             </div>
 
             <div>
               <dt>Approx. Distance</dt>
-              <dd>{distance(@invoice)}</dd>
+              <dd>{distance(@bill)}</dd>
             </div>
 
             <div>
               <dt>Validity Period</dt>
-              <dd>{validity_days(@invoice)}</dd>
+              <dd>{validity_days(@bill)}</dd>
             </div>
           </dl>
 
@@ -413,8 +422,8 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 <tr>
                   <td class="ewb-key"><b>A.10</b> Transporter</td>
                   <td>
-                    <strong>{blank(@invoice.transporter_name)}</strong>
-                    <small>{blank(@invoice.transporter_id)}</small>
+                    <strong>{blank(@bill.transporter_name)}</strong>
+                    <small>{blank(@bill.transporter_id)}</small>
                   </td>
                 </tr>
               </tbody>
@@ -436,11 +445,15 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
               </thead>
 
               <tbody>
-                <tr>
-                  <td>{blank(@invoice.mode_of_transport)}</td>
-                  <td><strong>{blank(@invoice.vehicle_number)}</strong></td>
-                  <td>{from_place(@invoice, @org)}</td>
-                  <td>{on_date(@invoice.ewb_date)}</td>
+                <%!-- Every leg the consignment has travelled, oldest first.
+                The first row is the vehicle Part-B was filed with; each later
+                row is a vehicle change recorded before it happened, which is
+                what Rule 138 requires and what the portal prints. --%>
+                <tr :for={entry <- @part_b}>
+                  <td>{blank(entry.mode_of_transport)}</td>
+                  <td><strong>{blank(entry.vehicle_number)}</strong></td>
+                  <td>{blank(entry.place) |> fallback(from_place(@invoice, @org))}</td>
+                  <td>{on_datetime_utc(entry.updated_on)}</td>
                   <td>{blank(@invoice.company_gstin)}</td>
                 </tr>
               </tbody>
@@ -554,21 +567,61 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   to look the consignment up. Exposed so the document test can read it back
   without parsing an SVG.
   """
-  def qr_payload(%Invoice{} = invoice) do
+  def qr_payload(%EWayBill{} = bill) do
     date =
-      case invoice.ewb_date do
+      case bill.ewb_date do
         %Date{} = date -> Calendar.strftime(date, "%d/%m/%Y")
         _missing -> ""
       end
 
-    Enum.join([invoice.ewb_number || "", invoice.company_gstin || "", date], "/")
+    gstin =
+      case bill.invoice do
+        %Invoice{company_gstin: gstin} when is_binary(gstin) -> gstin
+        _not_loaded -> ""
+      end
+
+    Enum.join([bill.ewb_number || "", gstin, date], "/")
   end
 
-  defp qr_svg(%Invoice{ewb_number: number} = invoice) when is_binary(number) and number != "" do
-    QRCode.generate_svg(qr_payload(invoice), width: 104)
+  defp qr_svg(%EWayBill{ewb_number: number} = bill) when is_binary(number) and number != "" do
+    QRCode.generate_svg(qr_payload(bill), width: 104)
   end
 
   defp qr_svg(_no_bill_yet), do: ""
+
+  # Every leg the consignment has travelled, oldest first.
+  #
+  # Once a vehicle has ever changed, the history holds the whole journey —
+  # including the vehicle the bill was raised with, which the context writes
+  # down before overwriting it. A bill that has never changed vehicle has no
+  # history at all, and its one leg is the bill itself.
+  defp part_b_entries(%EWayBill{} = bill) do
+    case bill.part_b_updates do
+      [_ | _] = legs ->
+        Enum.sort(legs, &leg_before?/2)
+
+      _none ->
+        [
+          %{
+            vehicle_number: bill.vehicle_number,
+            mode_of_transport: bill.mode_of_transport,
+            place: nil,
+            updated_on: bill.inserted_at
+          }
+        ]
+    end
+  end
+
+  # Sorted through `DateTime.compare/2` rather than by term: two `%DateTime{}`
+  # structs compared as maps sort by day before month, which reorders a journey
+  # that crosses a month boundary. The id breaks a tie within the same second.
+  defp leg_before?(a, b) do
+    case DateTime.compare(a.updated_on, b.updated_on) do
+      :lt -> true
+      :gt -> false
+      :eq -> a.id <= b.id
+    end
+  end
 
   # An e-way bill printed off an invoice whose items were never loaded would
   # otherwise raise on the goods table — the one table an officer reads.
@@ -588,12 +641,27 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
   def grouped(_missing), do: "—"
 
-  defp status_line(%Invoice{} = invoice) do
-    "Document " <>
-      blank(invoice.invoice_number) <>
-      " · valid until " <>
-      on_datetime(invoice.ewb_valid_until)
+  defp status_line(%EWayBill{} = bill) do
+    document =
+      case bill.invoice do
+        %Invoice{invoice_number: number} -> blank(number)
+        _not_loaded -> "—"
+      end
+
+    state =
+      if bill.status == "Cancelled" do
+        "cancelled" <> cancelled_on(bill)
+      else
+        "valid until " <> on_datetime(bill.valid_until)
+      end
+
+    "Document " <> document <> " · " <> state
   end
+
+  defp cancelled_on(%EWayBill{cancelled_at: %DateTime{} = at}),
+    do: " on " <> Calendar.strftime(at, "%d/%m/%Y")
+
+  defp cancelled_on(_never), do: ""
 
   defp on_date(%Date{} = date), do: Calendar.strftime(date, "%d/%m/%Y")
   defp on_date(_missing), do: "—"
@@ -601,10 +669,18 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   defp on_datetime(%NaiveDateTime{} = at), do: Calendar.strftime(at, "%d/%m/%Y %I:%M %p")
   defp on_datetime(_missing), do: "—"
 
-  defp distance(%Invoice{distance_km: km}) when is_integer(km) and km > 0, do: "#{km} km"
+  defp on_datetime_utc(%DateTime{} = at), do: Calendar.strftime(at, "%d/%m/%Y %I:%M %p")
+  defp on_datetime_utc(%NaiveDateTime{} = at), do: Calendar.strftime(at, "%d/%m/%Y %I:%M %p")
+  defp on_datetime_utc(_missing), do: "—"
+
+  # An em dash from `blank/1` is not a place, so fall back to the consignor's.
+  defp fallback("—", alternative), do: alternative
+  defp fallback(value, _alternative), do: value
+
+  defp distance(%EWayBill{distance_km: km}) when is_integer(km) and km > 0, do: "#{km} km"
   defp distance(_unknown), do: "—"
 
-  defp validity_days(%Invoice{distance_km: km}) do
+  defp validity_days(%EWayBill{distance_km: km}) do
     case Validity.days(km) do
       1 -> "1 day"
       days -> "#{days} days"

@@ -63,7 +63,7 @@ defmodule QuantumBilling.BackupTest do
       json = Backup.export_json()
       data = Jason.decode!(json)
 
-      assert data["version"] == "2.0"
+      assert data["version"] == "2.1"
       assert [%{"name" => "Acme Corp"}] = data["clients"]
       assert [%{"invoice_number" => number}] = data["invoices"]
       assert is_binary(number)
@@ -198,6 +198,64 @@ defmodule QuantumBilling.BackupTest do
       assert length(Clients.list_clients()) == 1
     end
 
+    test "restores a 2.0 file, moving its invoice e-way bill columns into rows" do
+      client = client_fixture()
+      invoice = invoice_fixture(client)
+
+      # What a 2.0 export looked like: the bill lived on the invoice, in eight
+      # columns that no longer exist on the schema. Users still hold these
+      # files, so refusing them would destroy working backups.
+      legacy =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("version", "2.0")
+        |> Map.delete("e_way_bills")
+        |> Map.delete("e_way_bill_part_b_updates")
+        |> update_in(["invoices"], fn [row] ->
+          [
+            Map.merge(row, %{
+              "ewb_number" => "391000123456",
+              "ewb_date" => "2026-03-01",
+              "ewb_valid_until" => "2026-03-03T00:00:00",
+              "distance_km" => 320,
+              "mode_of_transport" => "Road",
+              "vehicle_number" => "MH12AB1234",
+              "transporter_id" => "27AAACG1234A1ZP",
+              "transporter_name" => "Blue Dart"
+            })
+          ]
+        end)
+        |> Jason.encode!()
+
+      assert {:ok, counts} = Backup.restore_json(legacy)
+      assert counts.e_way_bills == 1
+
+      assert [bill] = Repo.all(QuantumBilling.EWayBills.EWayBill)
+      assert bill.ewb_number == "391000123456"
+      assert bill.distance_km == 320
+      assert bill.vehicle_number == "MH12AB1234"
+      assert bill.transporter_name == "Blue Dart"
+      assert bill.status == "Active"
+      assert bill.invoice_id == invoice.id
+      assert bill.valid_until == ~N[2026-03-03 00:00:00]
+    end
+
+    test "a 2.0 file with no e-way bill on its invoices restores no bills" do
+      client = client_fixture()
+      invoice_fixture(client)
+
+      legacy =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("version", "2.0")
+        |> Map.delete("e_way_bills")
+        |> Jason.encode!()
+
+      assert {:ok, counts} = Backup.restore_json(legacy)
+      assert counts.e_way_bills == 0
+      assert counts.invoices == 1
+    end
+
     test "a corrupt row aborts the restore instead of half-applying it" do
       client = client_fixture()
       invoice_fixture(client)
@@ -245,7 +303,7 @@ defmodule QuantumBilling.BackupTest do
       # thousand invoices held a hundred megabytes of binary at once and took
       # thirty-six seconds before the browser saw a byte.
       assert length(chunks) > 25
-      assert hd(chunks) =~ ~s("version":"2.0")
+      assert hd(chunks) =~ ~s("version":"2.1")
 
       document = chunks |> Enum.join() |> Jason.decode!()
       assert length(document["invoices"]) == 25
