@@ -150,12 +150,21 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
              )
     end
 
-    test "the eye links to that client's invoices", %{conn: conn, business_client: client} do
+    # The eye used to point at `/invoices?q=<name>`, which is what the menu's
+    # "View invoices" item beside it already does. On a directory row the eye
+    # means "open this record", so it opens the client.
+    test "the eye opens the client", %{conn: conn, business_client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      assert has_element?(view, ~s{#view-client-#{client.id}[href="/clients/#{client.id}"]})
+    end
+
+    test "the menu still offers that client's invoices", %{conn: conn, business_client: client} do
       {:ok, view, _html} = live(conn, ~p"/clients")
 
       assert has_element?(
                view,
-               ~s{#client-#{client.id} a[aria-label="View invoices from #{client.name}"]}
+               ~s{#client-#{client.id} a[href="/invoices?q=#{URI.encode_www_form(client.name)}"]}
              )
     end
 

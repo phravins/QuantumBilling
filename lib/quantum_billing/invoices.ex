@@ -19,6 +19,7 @@ defmodule QuantumBilling.Invoices do
   import Ecto.Query, warn: false
 
   alias Ecto.Multi
+  alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
@@ -77,6 +78,7 @@ defmodule QuantumBilling.Invoices do
 
     * `:search` — matches the invoice number, client name or GSTIN
     * `:status` — exact status, or `"All Status"`
+    * `:client` — a `%Clients.Client{}`, narrowing to that client's invoices
     * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
     * `:page` / `:per_page`
   """
@@ -87,6 +89,7 @@ defmodule QuantumBilling.Invoices do
       Invoice
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
+      |> client_where(Keyword.get(opts, :client))
 
     total = Repo.aggregate(query, :count, :id)
     total_pages = max(ceil(total / per_page), 1)
@@ -369,6 +372,28 @@ defmodule QuantumBilling.Invoices do
 
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query
   defp status_where(query, status), do: where(query, [i], i.status == ^status)
+
+  defp client_where(query, nil), do: query
+
+  # Matched on the foreign key *or* on the name of an invoice that has no
+  # foreign key, and deliberately not on the name alone.
+  #
+  # `client_id` is optional: the invoice form's client picker sets it, but
+  # `client_name` is a plain text field that can be filled without ever
+  # touching the picker, and invoices restored from a backup or created through
+  # the API frequently carry a name and nothing else. Keying on the id alone
+  # would show a client with a dozen typed invoices an empty history, which is
+  # worse than showing too much.
+  #
+  # The `is_nil(i.client_id)` guard is what keeps the name match honest.
+  # `clients.name` has no unique index — only `gstin` does — so two clients may
+  # share a name, and without the guard each would claim invoices explicitly
+  # linked to the other. With it, an invoice that names its client is never
+  # reattributed; only the unlinked ones are matched by name, and for those
+  # there is no information to do better with.
+  defp client_where(query, %Client{id: id, name: name}) do
+    where(query, [i], i.client_id == ^id or (is_nil(i.client_id) and i.client_name == ^name))
+  end
 
   defp order(query, field, direction) do
     column = Map.get(@sortable, field, :invoice_date)

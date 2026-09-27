@@ -125,7 +125,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
   describe "every LiveView page, with records behind it" do
     test "renders", context do
-      %{conn: conn, invoice: invoice, template: template} = context
+      %{conn: conn, client: client, invoice: invoice, template: template} = context
 
       paths = [
         ~p"/",
@@ -136,6 +136,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/invoices/#{invoice.id}/edit",
         ~p"/clients",
         ~p"/clients/new",
+        ~p"/clients/#{client.id}",
+        ~p"/clients/#{client.id}/edit",
         ~p"/e-way-bills",
         ~p"/e-way-bills/new",
         ~p"/hsn-finder",

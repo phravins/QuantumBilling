@@ -270,10 +270,16 @@ defmodule QuantumBillingWeb.ClientsLive do
 
                 <td>
                   <div class="flex justify-end gap-1">
+                    <%!-- The client, not that client's invoices. The eye on a
+                    directory row means "open this record" — it does on the
+                    Invoices list — and pointing it at a filtered invoice
+                    search both broke that and duplicated the "View invoices"
+                    item in the menu beside it. --%>
                     <.link
-                      navigate={~p"/invoices?q=#{row.name}"}
+                      id={"view-client-#{row.id}"}
+                      navigate={~p"/clients/#{row.id}"}
                       class={row_action_class()}
-                      aria-label={"View invoices from #{row.name}"}
+                      aria-label={"View #{row.name}"}
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>

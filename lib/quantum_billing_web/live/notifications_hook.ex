@@ -35,6 +35,21 @@ defmodule QuantumBillingWeb.NotificationsHook do
   every open window in the business at once — re-reading there would turn one
   invoice into two queries per connected page, for a row the message already
   carried. `:notifications_read` comes from somebody clicking the bell, once.
+
+  ## What this costs in tests
+
+  Rendering the broadcast payload rather than re-reading means the bell is not
+  inside the Ecto sandbox: PubSub is global, so in an `async: true` test a
+  notification written by a *different* test running at the same moment is
+  delivered here and drawn into this socket's panel. It cannot leak between
+  users in production — there is one organisation and every notification is
+  addressed to all of it — but it does mean a LiveView assertion of the form
+  `refute render(view) =~ "Some Client"` is no longer sound, because another
+  test's invoice for a client of that name will put the string on the page.
+
+  Assert against the element you mean — the row, the table, the card — rather
+  than against the rendered document. `EWayBillsLiveTest` and `InvoicesLiveTest`
+  both carry notes at the lines where this bit.
   """
 
   import Phoenix.Component

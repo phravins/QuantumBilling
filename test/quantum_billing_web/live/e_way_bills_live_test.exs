@@ -194,6 +194,11 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
+      # Asserted before it is cancelled as well as after, so the refute below
+      # is known to be testing the filter rather than a selector that never
+      # matched anything.
+      assert has_element?(view, "#ewb-#{bill.ewb_number}")
+
       render_click(view, "open_action", %{"action" => "cancel", "id" => to_string(bill.id)})
       assert has_element?(view, "#ewb-cancel-form")
 
@@ -210,7 +215,13 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
       assert cancelled.cancellation_reason == "Order Cancelled"
       assert cancelled.cancelled_at
 
-      refute render_click(view, "filter_status", %{"status" => "Active"}) =~ "Northwind Traders"
+      # The row, not the document. The notification bell in the layout lists
+      # what other writes broadcast, and those notifications name their client
+      # too — so a bare match on the name would be satisfied by the bell while
+      # the Active list still held the cancelled bill, which is exactly what
+      # this line exists to rule out.
+      render_click(view, "filter_status", %{"status" => "Active"})
+      refute has_element?(view, "#ewb-#{bill.ewb_number}")
     end
 
     # Rule 138(9) allows twenty-four hours and no more. After that the number

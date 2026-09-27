@@ -57,7 +57,9 @@ defmodule QuantumBillingWeb.Router do
       live "/invoices/:id", InvoiceShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
+      # Before "/clients/:id", or "new" and "<id>/edit" would both match it.
       live "/clients/:id/edit", ClientNewLive, :edit
+      live "/clients/:id", ClientShowLive, :show
       live "/e-way-bills", EWayBillsLive, :index
       live "/e-way-bills/new", EWayBillNewLive, :index
       live "/hsn-finder", HsnFinderLive, :index
