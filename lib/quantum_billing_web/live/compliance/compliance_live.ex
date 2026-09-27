@@ -133,7 +133,13 @@ defmodule QuantumBillingWeb.ComplianceLive do
       )
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Compliance
         <:subtitle>Track your GST compliance and filing status</:subtitle>
@@ -248,82 +254,93 @@ defmodule QuantumBillingWeb.ComplianceLive do
           <%!-- A financial year of returns is two dozen rows, which used to
           run the card down past the calendar beside it and leave half a page
           of nothing next to it. The list scrolls inside its own box now, and
-          the heading row stays put while it does. --%>
-          <div
-            :if={@rows != []}
-            class="min-h-[18rem] max-h-[34rem] flex-1 overflow-y-auto overflow-x-auto"
-          >
-            <table class="w-full">
-              <thead class="sticky top-0 z-10 bg-base-100">
-                <tr class={[
-                  table_head_class(),
-                  "[&>th]:sticky [&>th]:top-0 [&>th]:bg-base-100",
-                  "[&>th]:border-b [&>th]:border-base-300"
-                ]}>
-                  <th class="pr-4 text-left">Compliance Type</th>
+          the heading row stays put while it does.
 
-                  <th class="pr-4 text-left">Period</th>
+          The box takes whatever height the card has left rather than stopping
+          at a fixed one. A `max-h` here meant the table gave up at two thirds
+          of the card and left a band of empty white beneath it whenever the
+          calendar column next to it was taller — which, at a full financial
+          year, it always is.
 
-                  <th class="pr-4 text-left">Due Date</th>
+          Absolutely positioned inside a `flex-1` shell so the rows cannot push
+          that height back out: the shell claims the leftover space, the rows
+          scroll within it, and twenty-six of them size the card no differently
+          from three. `min-h` is the floor for the single-column layout, where
+          there is no calendar beside it to stretch against. --%>
+          <div :if={@rows != []} class="relative min-h-[26rem] flex-1">
+            <div class="absolute inset-0 overflow-y-auto overflow-x-auto">
+              <table class="w-full">
+                <thead class="sticky top-0 z-10 bg-base-100">
+                  <tr class={[
+                    table_head_class(),
+                    "[&>th]:sticky [&>th]:top-0 [&>th]:bg-base-100",
+                    "[&>th]:border-b [&>th]:border-base-300"
+                  ]}>
+                    <th class="pr-4 text-left">Compliance Type</th>
 
-                  <th class="pr-4 text-left">Status</th>
+                    <th class="pr-4 text-left">Period</th>
 
-                  <th class="pr-4 text-left">Filed Date</th>
+                    <th class="pr-4 text-left">Due Date</th>
 
-                  <th class="text-left">Actions</th>
-                </tr>
-              </thead>
+                    <th class="pr-4 text-left">Status</th>
 
-              <tbody>
-                <tr
-                  :for={row <- @rows}
-                  id={"obligation-#{row.type}-#{row.due_date}"}
-                  class={table_row_class()}
-                >
-                  <td class="py-2.5 pr-4">
-                    <p class="font-medium">{row.type}</p>
+                    <th class="pr-4 text-left">Filed Date</th>
 
-                    <p class="text-xs text-base-content/60">{row.subtitle}</p>
-                  </td>
+                    <th class="text-left">Actions</th>
+                  </tr>
+                </thead>
 
-                  <td class="py-2.5 pr-4 text-base-content/60">{row.period_label}</td>
+                <tbody>
+                  <tr
+                    :for={row <- @rows}
+                    id={"obligation-#{row.type}-#{row.due_date}"}
+                    class={table_row_class()}
+                  >
+                    <td class="py-2.5 pr-4">
+                      <p class="font-medium">{row.type}</p>
 
-                  <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.due_date)}</td>
+                      <p class="text-xs text-base-content/60">{row.subtitle}</p>
+                    </td>
 
-                  <td class="py-2.5 pr-4"><.status_badge status={row.status} /></td>
+                    <td class="py-2.5 pr-4 text-base-content/60">{row.period_label}</td>
 
-                  <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.filed_on)}</td>
+                    <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.due_date)}</td>
 
-                  <td class="py-2.5">
-                    <div class="flex gap-1">
-                      <button
-                        type="button"
-                        phx-click="show_detail"
-                        phx-value-due={row.due_date}
-                        phx-value-type={row.type}
-                        class={row_action_class()}
-                        aria-label={"View #{row.type} details"}
-                      >
-                        <.icon name="hero-eye" class="size-4" />
-                      </button>
+                    <td class="py-2.5 pr-4"><.status_badge status={row.status} /></td>
 
-                      <%!-- The GSTR-1 JSON for *this* period, which is what the
-                      offline tool uploads. Only GSTR-1 has an export: the other
-                      returns are summaries derived from it, and a button that
-                      downloads the wrong return is worse than no button. --%>
-                      <.link
-                        :if={row.type == "GSTR-1"}
-                        href={~p"/reports/gstr1/export?#{[period: row.period_key]}"}
-                        class={row_action_class()}
-                        aria-label={"Download #{row.type} JSON for #{row.period_label}"}
-                      >
-                        <.icon name="hero-arrow-down-tray" class="size-4" />
-                      </.link>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.filed_on)}</td>
+
+                    <td class="py-2.5">
+                      <div class="flex gap-1">
+                        <button
+                          type="button"
+                          phx-click="show_detail"
+                          phx-value-due={row.due_date}
+                          phx-value-type={row.type}
+                          class={row_action_class()}
+                          aria-label={"View #{row.type} details"}
+                        >
+                          <.icon name="hero-eye" class="size-4" />
+                        </button>
+
+                        <%!-- The GSTR-1 JSON for *this* period, which is what the
+                        offline tool uploads. Only GSTR-1 has an export: the other
+                        returns are summaries derived from it, and a button that
+                        downloads the wrong return is worse than no button. --%>
+                        <.link
+                          :if={row.type == "GSTR-1"}
+                          href={~p"/reports/gstr1/export?#{[period: row.period_key]}"}
+                          class={row_action_class()}
+                          aria-label={"Download #{row.type} JSON for #{row.period_label}"}
+                        >
+                          <.icon name="hero-arrow-down-tray" class="size-4" />
+                        </.link>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <p :if={@rows != []} class="mt-4 text-sm text-base-content/60">

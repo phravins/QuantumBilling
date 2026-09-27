@@ -175,7 +175,13 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     assigns = assign(assigns, :status_options, EWayBills.status_options())
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         E-Way Bills
         <:subtitle>Track consignments and generate new e-way bills</:subtitle>

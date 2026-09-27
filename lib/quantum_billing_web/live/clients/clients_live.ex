@@ -72,6 +72,34 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
+  # The one write this page does. Checked against the schema's own list rather
+  # than trusted, because the status arrives from a click; and read fresh by id
+  # rather than taken from the rendered row, which may be a page old.
+  def handle_event("set_status", %{"id" => id, "status" => status}, socket) do
+    with true <- status in Clients.statuses(),
+         %{} = client <- Clients.get_client(id),
+         {:ok, updated} <- Clients.update_client(client, %{"status" => status}) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "#{updated.name} is now #{String.downcase(status)}.")
+       |> load_page()}
+    else
+      nil ->
+        {:noreply, socket |> put_flash(:error, "That client no longer exists.") |> load_page()}
+
+      false ->
+        {:noreply, socket}
+
+      {:error, _changeset} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "That client could not be updated. Open it and fix the highlighted fields."
+         )}
+    end
+  end
+
   # A client added or edited in another window. The page is re-read rather than
   # the row spliced in: the active search, filter and sort all have to agree
   # with where — or whether — it belongs on this screen.
@@ -102,7 +130,13 @@ defmodule QuantumBillingWeb.ClientsLive do
     assigns = assign(assigns, status_options: @status_options)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Clients
         <:subtitle>Manage your clients and their details</:subtitle>
@@ -239,14 +273,72 @@ defmodule QuantumBillingWeb.ClientsLive do
                     <.link
                       navigate={~p"/invoices?q=#{row.name}"}
                       class={row_action_class()}
-                      aria-label="View client invoices"
+                      aria-label={"View invoices from #{row.name}"}
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
 
-                    <button type="button" class={row_action_class()} aria-label="More actions">
-                      <.icon name="hero-ellipsis-vertical" class="size-4" />
-                    </button>
+                    <%!-- `dropdown-top` from halfway down the page, so the menu
+                    opens upward on the last rows instead of off the bottom of
+                    a card that does not scroll. --%>
+                    <div class={[
+                      "dropdown dropdown-end",
+                      index >= div(length(@rows), 2) && "dropdown-top"
+                    ]}>
+                      <div
+                        tabindex="0"
+                        role="button"
+                        class={row_action_class()}
+                        aria-label={"More actions for #{row.name}"}
+                      >
+                        <.icon name="hero-ellipsis-vertical" class="size-4" />
+                      </div>
+
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content menu z-20 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                      >
+                        <li>
+                          <.link navigate={~p"/clients/#{row.id}/edit"}>
+                            <.icon name="hero-pencil-square" class="size-4" /> Edit client
+                          </.link>
+                        </li>
+
+                        <li>
+                          <.link navigate={~p"/invoices?q=#{row.name}"}>
+                            <.icon name="hero-document-text" class="size-4" /> View invoices
+                          </.link>
+                        </li>
+
+                        <li>
+                          <.link navigate={~p"/invoices/new"}>
+                            <.icon name="hero-plus" class="size-4" /> New invoice
+                          </.link>
+                        </li>
+
+                        <li class="menu-title px-3 pt-2 text-xs">Status</li>
+
+                        <li :for={status <- Clients.statuses()}>
+                          <button
+                            type="button"
+                            phx-click="set_status"
+                            phx-value-id={row.id}
+                            phx-value-status={status}
+                            disabled={row.status == status}
+                            class={row.status == status && "text-base-content/45"}
+                          >
+                            <.icon
+                              name={
+                                if row.status == status,
+                                  do: "hero-check-circle",
+                                  else: "hero-arrow-right-circle"
+                              }
+                              class="size-4"
+                            /> {status}
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
                 </td>
               </tr>

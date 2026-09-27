@@ -60,7 +60,13 @@ defmodule QuantumBillingWeb.HsnFinderLive do
     assigns = assign(assigns, tabs: @tabs, results: results, selected: selected)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         <span class="inline-flex items-center gap-2">
           HSN / SAC Code &amp; GST Rate Finder

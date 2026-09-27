@@ -92,6 +92,8 @@ defmodule QuantumBillingWeb.AuditLogsLive do
       current_scope={@current_scope}
       active_nav={@active_nav}
       active_sub={@section}
+      notifications={@notifications}
+      unread_count={@unread_count}
     >
       <.header>
         Audit Trail &amp; Security Logs

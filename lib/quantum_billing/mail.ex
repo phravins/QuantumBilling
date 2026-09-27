@@ -43,6 +43,7 @@ defmodule QuantumBilling.Mail do
   alias QuantumBilling.Events
   alias QuantumBilling.Mail.Delivery
   alias QuantumBilling.Mailer
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
@@ -267,14 +268,36 @@ defmodule QuantumBilling.Mail do
   Oban still intends to retry it.
   """
   def mark_failed(%Delivery{} = delivery, reason, final?) do
-    delivery
-    |> Delivery.status_changeset(%{
-      status: if(final?, do: "failed", else: "queued"),
-      attempts: delivery.attempts + 1,
-      last_error: String.slice(to_string(reason), 0, 1_000)
-    })
-    |> Repo.update()
-    |> broadcast_delivery()
+    result =
+      delivery
+      |> Delivery.status_changeset(%{
+        status: if(final?, do: "failed", else: "queued"),
+        attempts: delivery.attempts + 1,
+        last_error: String.slice(to_string(reason), 0, 1_000)
+      })
+      |> Repo.update()
+      |> broadcast_delivery()
+
+    # Only on the final failure, for the same reason the ledger only says
+    # "failed" then: a retry that is still coming is not news, and a notice per
+    # attempt would bury the one that matters under four that do not.
+    #
+    # An invoice the customer never received is invisible otherwise — the
+    # delivery list is three clicks into Settings, and nobody opens it until
+    # somebody rings up asking where their bill is. The path points at the SMTP
+    # panel because a failure here is nearly always the relay.
+    if final? do
+      Notifications.notify(%{
+        kind: "mail",
+        severity: "error",
+        title: "Email to #{delivery.to_email} failed",
+        body: error_message(reason),
+        path: "/settings/smtp",
+        dedupe_key: "mail_failed:#{delivery.id}"
+      })
+    end
+
+    result
   end
 
   @doc "One delivery by id, or `nil`."

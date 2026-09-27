@@ -230,7 +230,13 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         <span class="inline-flex items-center gap-2">
           Generate New E-Way Bill

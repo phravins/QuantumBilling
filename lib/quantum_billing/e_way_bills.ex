@@ -26,7 +26,9 @@ defmodule QuantumBilling.EWayBills do
   alias QuantumBilling.EWayBillNotifier
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
+  alias QuantumBilling.Settings
 
   # Sort key to column. An allowlist, so the sort a browser asks for can never
   # reach the query as an arbitrary column name. `value` lives on the invoice,
@@ -81,6 +83,19 @@ defmodule QuantumBilling.EWayBills do
           # generation into an error.
           _ = EWayBillNotifier.notify_generated(bill)
 
+          # The same switch also gates the in-app line, so turning the
+          # notification off turns off both the mail and the bell rather than
+          # half of each.
+          if Settings.get_organization().notify_ewb_generated != false do
+            Notifications.notify(%{
+              kind: "e_way_bill",
+              title: "E-Way Bill #{bill.ewb_number} generated",
+              body: "#{invoice.invoice_number} · #{bill.vehicle_number || "no vehicle recorded"}",
+              path: "/invoices/#{invoice.id}",
+              dedupe_key: "ewb_generated:#{bill.id}"
+            })
+          end
+
           broadcast_change(bill)
           {:ok, bill}
 
@@ -118,6 +133,18 @@ defmodule QuantumBilling.EWayBills do
               reason: cancelled.cancellation_reason
             }
           )
+
+          # Ungated, and a warning rather than a notice: a spent EWB number
+          # against a consignment already on the road is something the business
+          # has to know about, whatever it has asked not to be told.
+          Notifications.notify(%{
+            kind: "e_way_bill",
+            severity: "warning",
+            title: "E-Way Bill #{cancelled.ewb_number} cancelled",
+            body: cancelled.cancellation_reason,
+            path: "/invoices/#{cancelled.invoice_id}",
+            dedupe_key: "ewb_cancelled:#{cancelled.id}"
+          })
 
           broadcast_change(cancelled)
           {:ok, cancelled}

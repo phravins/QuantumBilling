@@ -134,5 +134,54 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       assert html =~ "Acme Traders"
       assert html =~ "Walk-in Buyer"
     end
+
+    # Both row actions used to be decoration: the kebab was a `<button>` with no
+    # `phx-click`, and the eye linked to a query string `InvoicesLive` never
+    # read. These are the tests that would have caught either.
+    test "the row menu links to the client's own edit page", %{
+      conn: conn,
+      business_client: client
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      assert has_element?(
+               view,
+               ~s{#client-#{client.id} a[href="/clients/#{client.id}/edit"]}
+             )
+    end
+
+    test "the eye links to that client's invoices", %{conn: conn, business_client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      assert has_element?(
+               view,
+               ~s{#client-#{client.id} a[aria-label="View invoices from #{client.name}"]}
+             )
+    end
+
+    test "setting a status writes it and says so", %{conn: conn, business_client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      html = render_click(view, "set_status", %{"id" => client.id, "status" => "Blocked"})
+
+      assert html =~ "is now blocked"
+      assert QuantumBilling.Clients.get_client(client.id).status == "Blocked"
+    end
+
+    test "a status outside the allowlist is ignored", %{conn: conn, business_client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      render_click(view, "set_status", %{"id" => client.id, "status" => "Exempt From Tax"})
+
+      assert QuantumBilling.Clients.get_client(client.id).status == "Active"
+    end
+
+    test "a client deleted elsewhere is reported, not raised", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      html = render_click(view, "set_status", %{"id" => 0, "status" => "Blocked"})
+
+      assert html =~ "no longer exists"
+    end
   end
 end

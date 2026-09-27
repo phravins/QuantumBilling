@@ -8,8 +8,10 @@ defmodule QuantumBilling.Payments do
   alias QuantumBilling.Payments.RazorpayClient
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Audit
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
   alias QuantumBilling.Webhooks
+  alias QuantumBillingWeb.Format
 
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
@@ -117,6 +119,20 @@ defmodule QuantumBilling.Payments do
         end
 
         Invoices.broadcast_change(updated)
+
+        # Money arriving is the one notification nobody would want switched off,
+        # so this one is not gated. Keyed on the provider's payment id, which is
+        # what makes a redelivered webhook add nothing: the invoice guard above
+        # already stops the second reconcile, and this stops the second line in
+        # the feed if it ever gets past it.
+        Notifications.notify(%{
+          kind: "payment",
+          severity: "success",
+          title: "Payment received for #{updated.invoice_number}",
+          body: "#{updated.client_name} · #{Format.rupees(updated.grand_total)}",
+          path: "/invoices/#{updated.id}",
+          dedupe_key: "payment:#{payment_id || "invoice-#{updated.id}"}"
+        })
 
         Webhooks.dispatch("invoice.paid", %{
           invoice_number: updated.invoice_number,

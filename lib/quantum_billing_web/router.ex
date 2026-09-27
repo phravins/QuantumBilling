@@ -38,8 +38,16 @@ defmodule QuantumBillingWeb.Router do
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    # `NotificationsHook` after `:require_authenticated`, and never before:
+    # it reads the feed out of the database, and an unauthenticated visitor must
+    # be halted at the first hook rather than have a query run for them. It is
+    # on the `live_session` rather than on the individual pages because the bell
+    # is drawn by `Layouts.app`, which every page in this block uses.
     live_session :app,
-      on_mount: [{QuantumBillingWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.NotificationsHook, :default}
+      ] do
       live "/", DashboardLive, :index
       live "/dashboard", DashboardLive, :index
       live "/invoices", InvoicesLive, :index
@@ -49,6 +57,7 @@ defmodule QuantumBillingWeb.Router do
       live "/invoices/:id", InvoiceShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
+      live "/clients/:id/edit", ClientNewLive, :edit
       live "/e-way-bills", EWayBillsLive, :index
       live "/e-way-bills/new", EWayBillNewLive, :index
       live "/hsn-finder", HsnFinderLive, :index
@@ -117,8 +126,15 @@ defmodule QuantumBillingWeb.Router do
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    # The same pair as `live_session :app` above, for the same reason: the
+    # account settings screen draws `Layouts.app`, so it draws the bell, and a
+    # page that renders the bell without the feed assigned would fall back to an
+    # empty one on a screen where the rest of the application has it filled.
     live_session :require_authenticated_user,
-      on_mount: [{QuantumBillingWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.NotificationsHook, :default}
+      ] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end

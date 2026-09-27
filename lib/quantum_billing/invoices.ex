@@ -22,12 +22,14 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
   alias QuantumBilling.Webhooks
   alias QuantumBilling.Workers.EInvoiceWorker
+  alias QuantumBillingWeb.Format
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
@@ -538,6 +540,20 @@ defmodule QuantumBilling.Invoices do
           grand_total: invoice.grand_total,
           invoice_date: to_string(invoice.invoice_date)
         })
+
+        # And the bell in the top bar, gated on `notify_invoice_created` — a
+        # switch the settings form has always saved and nothing has ever read.
+        # Unmatched, and its result ignored: the invoice is already in the
+        # table, and failing to write a line about it must not undo it.
+        if organization.notify_invoice_created != false do
+          Notifications.notify(%{
+            kind: "invoice",
+            title: "Invoice #{invoice.invoice_number} created",
+            body: "#{invoice.client_name} · #{Format.rupees(invoice.grand_total)}",
+            path: "/invoices/#{invoice.id}",
+            dedupe_key: "invoice_created:#{invoice.id}"
+          })
+        end
 
         {:ok, Repo.preload(invoice, :items)}
 

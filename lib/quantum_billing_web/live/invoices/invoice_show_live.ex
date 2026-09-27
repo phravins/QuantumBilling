@@ -185,7 +185,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
         <.link navigate={~p"/invoices"} class="hover:text-base-content">Invoices</.link>
         <.icon name="hero-chevron-right" class="size-3" />
@@ -374,7 +380,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <.card padding="p-8">
+      <%!-- Identified so a test can assert against the document itself rather
+      than the page around it: the invoice number and the client name also
+      appear in the notification bell up in the header, and a bare match on the
+      rendered page cannot tell the two apart. --%>
+      <.card id="invoice-document" padding="p-8">
         <Renderer.stylesheet doc={@doc} />
         <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
       </.card>

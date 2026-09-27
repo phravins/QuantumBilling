@@ -420,6 +420,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       current_scope={@current_scope}
       active_nav={@active_nav}
       active_sub={@section}
+      notifications={@notifications}
+      unread_count={@unread_count}
     >
       <%!-- The open section names the page. A standing "Settings / Manage your
       account and application settings" said nothing the sidebar had not

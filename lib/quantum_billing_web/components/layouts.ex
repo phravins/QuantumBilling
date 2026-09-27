@@ -37,6 +37,13 @@ defmodule QuantumBillingWeb.Layouts do
     default: nil,
     doc: "the key of the active settings section, when one is open"
 
+  # Defaulted rather than required, and assigned by `NotificationsHook` on every
+  # authenticated socket. The defaults are what a page rendered outside that
+  # hook falls back to — an empty bell rather than a crash.
+  attr :notifications, :list, default: [], doc: "the newest notifications, newest first"
+
+  attr :unread_count, :integer, default: 0, doc: "how many of them have not been read"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -204,13 +211,110 @@ defmodule QuantumBillingWeb.Layouts do
         <%!-- justify-end, not justify-between: the sidebar toggle used to sit on
         the left and is gone, so anything left aligned would drift over to it. --%>
         <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
-          <button
-            class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
-            aria-label="Notifications"
-          >
-            <.icon name="hero-bell" class="size-4.5" />
-            <span class="absolute right-1 top-1 size-1.5 rounded-full bg-error"></span>
-          </button>
+          <%!-- The bell used to be a button with a permanently lit red dot and
+          nothing behind it: no feed, no count, and no handler for the click.
+          `NotificationsHook` subscribes every authenticated socket to the
+          notifications topic and assigns the feed, so the badge now counts real
+          unread rows and the panel lists them as they arrive.
+
+          Wider than the sidebar's menus because these are sentences rather than
+          labels, and the list is capped and scrolls: a busy morning should not
+          run the panel off the bottom of the screen. --%>
+          <div class="dropdown dropdown-end">
+            <div
+              tabindex="0"
+              role="button"
+              id="notifications-bell"
+              class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+              aria-label={notifications_label(@unread_count)}
+            >
+              <.icon name="hero-bell" class="size-4.5" />
+              <%!-- Hidden at zero rather than always lit, and a number rather
+              than a dot: a marker that never goes out says nothing. --%>
+              <span
+                :if={@unread_count > 0}
+                class="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[0.625rem] font-semibold leading-4 text-white"
+              >
+                {if @unread_count > 9, do: "9+", else: @unread_count}
+              </span>
+            </div>
+
+            <div
+              tabindex="0"
+              id="notifications-panel"
+              class="dropdown-content z-20 mt-2 w-80 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-lg sm:w-96"
+            >
+              <div class="flex items-center justify-between border-b border-base-300 px-4 py-2.5">
+                <span class="text-sm font-semibold tracking-tight">Notifications</span>
+                <button
+                  :if={@unread_count > 0}
+                  type="button"
+                  id="notifications-mark-all"
+                  phx-click="mark_all_notifications_read"
+                  class="text-xs text-base-content/60 transition-colors hover:text-base-content"
+                >
+                  Mark all read
+                </button>
+              </div>
+
+              <div :if={@notifications == []} class="px-4 py-8 text-center">
+                <.icon name="hero-bell-slash" class="mx-auto size-5 text-base-content/30" />
+                <p class="mt-2 text-sm text-base-content/60">Nothing new</p>
+                <p class="mt-0.5 text-xs text-base-content/45">
+                  Invoices, payments and filing reminders land here.
+                </p>
+              </div>
+
+              <ul
+                :if={@notifications != []}
+                class="max-h-96 divide-y divide-base-300 overflow-y-auto"
+              >
+                <li :for={notification <- @notifications} id={"notification-#{notification.id}"}>
+                  <%!-- A button, not a link: the server marks it read and then
+                  navigates, so the two cannot race — a link carrying its own
+                  `phx-click` sometimes leaves the item you just opened
+                  unread. --%>
+                  <button
+                    type="button"
+                    phx-click="open_notification"
+                    phx-value-id={notification.id}
+                    class={[
+                      "flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-base-200",
+                      is_nil(notification.read_at) && "bg-base-200/40"
+                    ]}
+                  >
+                    <span class={[
+                      "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                      notification_tone(notification.severity)
+                    ]}>
+                      <.icon name={notification_icon(notification.kind)} class="size-3.5" />
+                    </span>
+
+                    <span class="min-w-0 flex-1">
+                      <span class="flex items-baseline justify-between gap-2">
+                        <span class={[
+                          "truncate text-sm",
+                          if(is_nil(notification.read_at),
+                            do: "font-semibold",
+                            else: "font-medium text-base-content/70"
+                          )
+                        ]}>
+                          {notification.title}
+                        </span>
+                        <span class="shrink-0 text-xs text-base-content/45">
+                          {relative_time(notification.inserted_at)}
+                        </span>
+                      </span>
+
+                      <span :if={notification.body} class="mt-0.5 block text-xs text-base-content/60">
+                        {notification.body}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
         </header>
 
         <%!-- A flex column so a page can hand a panel `flex-1` and have it take
@@ -291,6 +395,31 @@ defmodule QuantumBillingWeb.Layouts do
   end
 
   defp user_initials(_scope), do: "--"
+
+  # Read out by a screen reader in place of "Notifications", which on its own
+  # gives no hint that there is anything to open.
+  defp notifications_label(0), do: "Notifications, none unread"
+  defp notifications_label(1), do: "Notifications, 1 unread"
+  defp notifications_label(count), do: "Notifications, #{count} unread"
+
+  # The kind says what the notification is about, so it picks the glyph; the
+  # severity says how it went, so it picks the colour. Keeping them apart is
+  # what lets a failed e-way bill and a generated one share an icon and still
+  # read differently.
+  defp notification_icon("invoice"), do: "hero-document-text"
+  defp notification_icon("payment"), do: "hero-banknotes"
+  defp notification_icon("e_way_bill"), do: "hero-truck"
+  defp notification_icon("compliance"), do: "hero-clipboard-document-check"
+  defp notification_icon("mail"), do: "hero-envelope"
+  defp notification_icon("client"), do: "hero-user-plus"
+  defp notification_icon(_other), do: "hero-information-circle"
+
+  # Same palette as `status_badge/1`, so a "Paid" badge and a payment
+  # notification are the same green.
+  defp notification_tone("success"), do: "bg-emerald-50 text-emerald-700"
+  defp notification_tone("warning"), do: "bg-amber-50 text-amber-700"
+  defp notification_tone("error"), do: "bg-rose-50 text-rose-700"
+  defp notification_tone(_info), do: "bg-base-200 text-base-content/60"
 
   defp user_designation(%{user: %{designation: title}}) when is_binary(title) and title != "",
     do: title

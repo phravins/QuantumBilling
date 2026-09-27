@@ -276,7 +276,13 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     assigns = assign(assigns, :tabs, @tabs)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
         <.link navigate={~p"/settings"} class="hover:text-base-content">Settings</.link>
         <.icon name="hero-chevron-right" class="size-3" />

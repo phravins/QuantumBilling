@@ -67,9 +67,11 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     test "renders the invoice's real figures", %{conn: conn} do
       invoice = create_invoice()
 
-      {:ok, _view, html} = live(conn, ~p"/invoices/#{invoice.id}")
+      {:ok, view, html} = live(conn, ~p"/invoices/#{invoice.id}")
 
-      assert html =~ invoice.invoice_number
+      # Against the document, not the page: creating the invoice also wrote a
+      # notification, and the bell in the header names the invoice number too.
+      assert has_element?(view, "#invoice-document", invoice.invoice_number)
       assert html =~ "Tax Invoice"
       assert html =~ "₹ 60,000.00"
       assert html =~ "₹ 5,400.00"
@@ -80,11 +82,11 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     test "shows both parties from the snapshot", %{conn: conn} do
       invoice = create_invoice()
 
-      {:ok, _view, html} = live(conn, ~p"/invoices/#{invoice.id}")
+      {:ok, view, html} = live(conn, ~p"/invoices/#{invoice.id}")
 
       assert html =~ "ABC Solutions Private Limited"
       assert html =~ "27AABCA1234A1Z5"
-      assert html =~ "V2V Technologies"
+      assert has_element?(view, "#invoice-document", "V2V Technologies")
       assert html =~ "27AAACP8542D1ZS"
     end
 

@@ -331,6 +331,8 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
       current_scope={@current_scope}
       active_nav={@active_nav}
       active_sub={@active_sub}
+      notifications={@notifications}
+      unread_count={@unread_count}
     >
       <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
         <.link navigate={~p"/settings/customization"} class="hover:text-base-content">

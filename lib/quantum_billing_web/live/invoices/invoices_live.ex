@@ -36,8 +36,41 @@ defmodule QuantumBillingWeb.InvoicesLive do
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
      |> assign(:sort_dir, :desc)
+     |> assign(:page, 1)}
+  end
+
+  # Applies a search or status carried in the URL.
+  #
+  # Other pages link here already — the Clients list sends you to this client's
+  # invoices — and until now the query string was read by nobody: the link
+  # arrived at an unfiltered list and quietly showed everything. The page is
+  # loaded from here rather than from `mount/3` so the filters are in place
+  # before the first render, and so a link followed while the page is already
+  # open re-filters it.
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:search, param(params, "q", socket.assigns.search))
+     |> assign(:status_filter, status_param(params, socket.assigns.status_filter))
      |> assign(:page, 1)
      |> load_page()}
+  end
+
+  defp param(params, key, fallback) do
+    case Map.get(params, key) do
+      value when is_binary(value) -> value
+      _missing -> fallback
+    end
+  end
+
+  # Matched against the page's own list rather than trusted: this is a query
+  # string on its way to a WHERE clause, and an unknown status would silently
+  # empty the table.
+  defp status_param(params, fallback) do
+    case Map.get(params, "status") do
+      status when status in @status_options -> status
+      _unknown -> fallback
+    end
   end
 
   def handle_event("search", %{"q" => q}, socket) do
@@ -128,7 +161,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
     assigns = assign(assigns, status_options: @status_options)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
