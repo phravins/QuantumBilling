@@ -20,10 +20,19 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   trail the rule exists to create. A partial unique index on `invoice_id` where
   the status is not `"Cancelled"` is what keeps exactly one live bill per
   invoice while still permitting the re-issue.
+
+  ## The Bin
+
+  Deleting a bill here sets `deleted_at`. That is a statement about this
+  application's records and nothing else: it is not a cancellation, the portal
+  is not told, and the number stays as live or as spent there as it was. A
+  binned bill stops counting as its invoice's live bill — the unique index
+  leaves it out — so the invoice can have another raised.
   """
   use Ecto.Schema
 
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2]
 
   alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
@@ -47,6 +56,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     field :transporter_name, :string
     field :cancelled_at, :utc_datetime
     field :cancellation_reason, :string
+    field :deleted_at, :utc_datetime
 
     belongs_to :invoice, Invoice
     has_many :part_b_updates, PartBUpdate, foreign_key: :e_way_bill_id
@@ -96,5 +106,34 @@ defmodule QuantumBilling.EWayBills.EWayBill do
       message: "a reason is required to cancel an e-way bill"
     )
     |> validate_length(:cancellation_reason, min: 3, max: 255)
+  end
+
+  @doc "Narrows `query` to bills that are not in the Bin."
+  def kept(query \\ __MODULE__) do
+    from b in query, where: is_nil(b.deleted_at)
+  end
+
+  @doc "Narrows `query` to bills that are in the Bin."
+  def binned(query \\ __MODULE__) do
+    from b in query, where: not is_nil(b.deleted_at)
+  end
+
+  @doc "Moves a bill to the Bin."
+  def bin_changeset(e_way_bill), do: change(e_way_bill, deleted_at: DateTime.utc_now(:second))
+
+  @doc """
+  Takes a bill back out of the Bin.
+
+  Its invoice may have had another bill raised while this one was away, and an
+  invoice carries one live bill. The constraint is declared so that coming back
+  into a taken slot is an error on the changeset rather than a raise.
+  """
+  def restore_changeset(e_way_bill) do
+    e_way_bill
+    |> change(deleted_at: nil)
+    |> unique_constraint(:invoice_id,
+      name: :e_way_bills_one_live_bill_per_invoice_index,
+      message: "already has a live e-way bill"
+    )
   end
 end

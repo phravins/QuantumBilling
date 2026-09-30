@@ -103,12 +103,51 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
+  # Moves one of this client's invoices to the Bin — the same thing the bin
+  # button on the Invoices list does. Read fresh by id, and only ever an
+  # invoice that is on this page: the id arrives from a click.
+  def handle_event("delete_invoice", %{"id" => id}, socket) do
+    with %{} = invoice <- Invoices.get_invoice(id),
+         true <- Enum.any?(socket.assigns.invoices, &(&1.id == invoice.id)),
+         {:ok, invoice} <-
+           Invoices.delete_invoice(invoice, user_id: socket.assigns.current_scope.user.id) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Invoice #{invoice.invoice_number} moved to the Bin.")
+       |> load_invoices()}
+    else
+      nil ->
+        {:noreply,
+         socket |> put_flash(:error, "That invoice no longer exists.") |> load_invoices()}
+
+      # `false`: a real invoice, but not one of the rows this page is showing.
+      # The id comes from the browser, and this page is one client's history.
+      _refused ->
+        {:noreply, put_flash(socket, :error, "That invoice could not be deleted.")}
+    end
+  end
+
   # Only this client's edits. The topic carries every client in the business,
   # and overwriting the record on somebody else's save would show the wrong
   # customer under this URL.
-  def handle_info({event, client}, socket) when event in [:client_created, :client_updated] do
+  def handle_info({event, client}, socket)
+      when event in [:client_created, :client_updated, :client_restored] do
     if client.id == socket.assigns.client.id do
       {:noreply, assign(socket, :client, client)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # This client was deleted in another window. The page has nothing left to
+  # show that a reload would not answer with "no longer exists", so it says so
+  # now rather than leaving a record on screen that every button would fail on.
+  def handle_info({event, client}, socket) when event in [:client_binned, :client_purged] do
+    if client.id == socket.assigns.client.id do
+      {:noreply,
+       socket
+       |> put_flash(:info, "#{client.name} was moved to the Bin.")
+       |> push_navigate(to: ~p"/clients")}
     else
       {:noreply, socket}
     end
@@ -372,7 +411,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <td><.status_badge status={invoice.status} /></td>
 
                 <td>
-                  <div class="flex justify-end">
+                  <div class="flex justify-end gap-1">
                     <.link
                       navigate={~p"/invoices/#{invoice.id}"}
                       class={row_action_class()}
@@ -380,6 +419,19 @@ defmodule QuantumBillingWeb.ClientShowLive do
                     >
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
+
+                    <button
+                      type="button"
+                      id={"client-invoice-delete-#{invoice.id}"}
+                      phx-click="delete_invoice"
+                      phx-value-id={invoice.id}
+                      data-confirm={"Move #{invoice.number} to the Bin? It can be restored from there."}
+                      class={row_delete_class()}
+                      aria-label={"Move invoice #{invoice.number} to the Bin"}
+                      title="Move to Bin"
+                    >
+                      <.icon name="hero-trash" class="size-4" />
+                    </button>
                   </div>
                 </td>
               </tr>

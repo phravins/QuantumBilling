@@ -130,6 +130,29 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     end
   end
 
+  # Moves the bill to the Bin. Not a cancellation — see
+  # `EWayBills.delete_e_way_bill/2` — which is why it is offered for a bill in
+  # any state, and why the confirmation for an Active one says so.
+  def handle_event("delete", %{"id" => id}, socket) do
+    case EWayBills.get_e_way_bill(id) do
+      nil ->
+        {:noreply,
+         socket |> put_flash(:error, "That e-way bill no longer exists.") |> load_page()}
+
+      bill ->
+        case EWayBills.delete_e_way_bill(bill, user_id: socket.assigns.current_scope.user.id) do
+          {:ok, bill} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "E-way bill #{bill.ewb_number} moved to the Bin.")
+             |> load_page()}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "That e-way bill could not be deleted.")}
+        end
+    end
+  end
+
   def handle_info({:e_way_bill_changed, _bill}, socket) do
     {:noreply, load_page(socket)}
   end
@@ -148,6 +171,17 @@ defmodule QuantumBillingWeb.EWayBillsLive do
       nil -> {:error, :gone}
       fresh -> action.(fresh)
     end
+  end
+
+  # Binning an Active bill is the one place this could be mistaken for the
+  # button beside it, so the confirmation spells the difference out.
+  defp delete_confirmation(%{status: "Active", ewb_no: number}) do
+    "Move e-way bill #{number} to the Bin? This only takes it off this list — it is NOT " <>
+      "cancelled on the e-way bill portal and stays valid there. It can be restored from the Bin."
+  end
+
+  defp delete_confirmation(%{ewb_no: number}) do
+    "Move e-way bill #{number} to the Bin? It can be restored from there."
   end
 
   defp cancel_error(:gone), do: "That e-way bill no longer exists."
@@ -384,6 +418,19 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                       aria-label={"Cancel e-way bill #{row.ewb_no}"}
                     >
                       <.icon name="hero-x-circle" class="size-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      id={"ewb-delete-#{row.id}"}
+                      phx-click="delete"
+                      phx-value-id={row.id}
+                      data-confirm={delete_confirmation(row)}
+                      class={row_delete_class()}
+                      aria-label={"Move e-way bill #{row.ewb_no} to the Bin"}
+                      title="Move to Bin"
+                    >
+                      <.icon name="hero-trash" class="size-4" />
                     </button>
                   </div>
                 </td>

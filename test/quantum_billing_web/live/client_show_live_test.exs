@@ -275,7 +275,85 @@ defmodule QuantumBillingWeb.ClientShowLiveTest do
     end
   end
 
+  describe "deleting an invoice from the history" do
+    test "moves it to the Bin and takes the row away", %{conn: conn, client: client} do
+      invoice = invoice_for(client)
+      kept = invoice_for(client)
+
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
+
+      assert has_element?(
+               view,
+               ~s|#client-invoice-#{invoice.id} button#client-invoice-delete-#{invoice.id}[data-confirm*="Bin"]|
+             )
+
+      view |> element("#client-invoice-delete-#{invoice.id}") |> render_click()
+
+      refute has_element?(view, "#client-invoice-#{invoice.id}")
+      assert has_element?(view, "#client-invoice-#{kept.id}")
+      assert has_element?(view, "#flash-info", "moved to the Bin")
+      assert has_element?(view, "#client-invoice-count", "1")
+
+      assert Invoices.get_invoice(invoice.id) == nil
+      assert Invoices.get_deleted_invoice(invoice.id)
+    end
+
+    # The id arrives from the browser. This page is one client's history, so it
+    # is not a way to delete an invoice that is not in it.
+    test "refuses an invoice that belongs to another client", %{
+      conn: conn,
+      client: client,
+      other: other
+    } do
+      theirs = invoice_for(other)
+
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
+
+      render_click(view, "delete_invoice", %{"id" => to_string(theirs.id)})
+
+      assert has_element?(view, "#flash-error", "could not be deleted")
+      assert Invoices.get_invoice(theirs.id)
+    end
+
+    test "an invoice that is already gone is reported, not raised", %{conn: conn, client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
+
+      render_click(view, "delete_invoice", %{"id" => "0"})
+
+      assert has_element?(view, "#flash-error", "no longer exists")
+    end
+  end
+
   describe "live updates" do
+    # The page is about one client. Once that client is in the Bin there is
+    # nothing here to act on, so the page hands the user back to the list.
+    test "leaves for the list when its client is moved to the Bin", %{conn: conn, client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
+
+      {:ok, _binned} = Clients.delete_client(client)
+
+      assert_redirect(view, ~p"/clients")
+    end
+
+    test "stays put when another client is moved to the Bin", %{
+      conn: conn,
+      client: client,
+      other: other
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
+
+      {:ok, _binned} = Clients.delete_client(other)
+
+      assert has_element?(view, "#client-name", "Acme Traders")
+    end
+
+    test "a binned client's page is no longer reachable", %{conn: conn, client: client} do
+      {:ok, _binned} = Clients.delete_client(client)
+
+      assert {:error, {kind, %{to: "/clients"}}} = live(conn, ~p"/clients/#{client.id}")
+      assert kind in [:redirect, :live_redirect]
+    end
+
     test "an edit in another window is reflected here", %{conn: conn, client: client} do
       {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
 

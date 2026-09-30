@@ -152,7 +152,9 @@ defmodule QuantumBilling.Invoices do
       [i],
       not exists(
         from b in QuantumBilling.EWayBills.EWayBill,
-          where: b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled",
+          where:
+            b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled" and
+              is_nil(b.deleted_at),
           select: 1
       )
     )
@@ -181,7 +183,9 @@ defmodule QuantumBilling.Invoices do
       [i],
       not exists(
         from b in QuantumBilling.EWayBills.EWayBill,
-          where: b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled",
+          where:
+            b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled" and
+              is_nil(b.deleted_at),
           select: 1
       )
     )

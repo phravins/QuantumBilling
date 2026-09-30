@@ -30,6 +30,9 @@ defmodule QuantumBillingWeb.SharedComponents do
   @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
                       "transition-colors hover:bg-base-200 hover:text-base-content"
 
+  @row_delete_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
+                      "transition-colors hover:bg-error/10 hover:text-error"
+
   @form_control_base "w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
                        "text-base-content placeholder:text-base-content/40 focus:outline-none " <>
                        "focus:border-base-content/30 focus:ring-2 focus:ring-base-content/10 " <>
@@ -70,6 +73,15 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
+
+  @doc """
+  The bin button at the end of a table row's actions.
+
+  The same footprint as `row_action_class/0`, turning red under the pointer —
+  it sits beside buttons that only look at a record, and is the one that takes
+  it away.
+  """
+  def row_delete_class, do: @row_delete_class
 
   @doc "A text/date/number input on an app form; same 36px footprint as the toolbar controls."
   def form_input_class, do: @form_input_class

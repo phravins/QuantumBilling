@@ -3,6 +3,7 @@ defmodule QuantumBilling.BackupTest do
 
   alias QuantumBilling.Backup
   alias QuantumBilling.Clients
+  alias QuantumBilling.EWayBills
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Recurring
@@ -183,6 +184,48 @@ defmodule QuantumBilling.BackupTest do
       assert [%{id: profile_id}] = Recurring.list_deleted_profiles()
       assert profile_id == profile.id
       assert Recurring.due_profiles() == []
+    end
+
+    # The same for the two kinds that reached the Bin later. A restore that
+    # dropped `deleted_at` here would put a deleted customer back in every
+    # picker, and have a deleted e-way bill claim its invoice again.
+    test "a client and an e-way bill that were in the Bin are still in it afterwards" do
+      kept = client_fixture()
+
+      {:ok, binned_client} =
+        %{client_type: "Unregistered", name: "Old Customer", gstin: nil}
+        |> client_fixture()
+        |> Clients.delete_client()
+
+      {:ok, bill} =
+        EWayBills.generate_e_way_bill(invoice_fixture(kept), %{
+          "distance_km" => "180",
+          "vehicle_number" => "MH04CD5678"
+        })
+
+      {:ok, binned_bill} = EWayBills.delete_e_way_bill(bill)
+
+      json = Backup.export_json()
+
+      # Emptied between the export and the restore, so that what comes back
+      # can only have come from the file.
+      {:ok, _restored} = Clients.restore_client(binned_client)
+      {:ok, _restored} = EWayBills.restore_e_way_bill(binned_bill)
+      assert Clients.list_deleted_clients() == []
+      assert EWayBills.list_deleted_e_way_bills() == []
+
+      assert {:ok, _counts} = Backup.restore_json(json)
+
+      assert Enum.map(Clients.list_clients(), & &1.id) == [kept.id]
+      assert [%{id: client_id, deleted_at: client_deleted_at}] = Clients.list_deleted_clients()
+      assert client_id == binned_client.id
+      assert client_deleted_at == binned_client.deleted_at
+
+      assert EWayBills.list_e_way_bills() == []
+      assert [%{id: bill_id, deleted_at: bill_deleted_at}] = EWayBills.list_deleted_e_way_bills()
+      assert bill_id == bill.id
+      assert bill_deleted_at == binned_bill.deleted_at
+      assert EWayBills.live_bill_for_invoice(bill.invoice_id) == nil
     end
 
     test "restores settings without clobbering credentials that are not in the file" do

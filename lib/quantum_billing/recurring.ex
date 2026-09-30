@@ -213,11 +213,18 @@ defmodule QuantumBilling.Recurring do
 
   @doc """
   The profiles that are due to bill on `date`.
+
+  A profile whose client is in the Bin is not due. The client has been deleted
+  as far as anyone looking at the screen can tell, and an invoice going out to
+  it regardless would be the surprise. The profile's schedule is not moved, so
+  restoring the client lets it bill again from where it stopped.
   """
   def due_profiles(date \\ Date.utc_today()) do
     Repo.all(
       from p in RecurringProfile.kept(),
+        left_join: c in assoc(p, :client),
         where: p.status == "Active" and p.next_run_date <= ^date,
+        where: is_nil(c.deleted_at),
         order_by: [asc: p.next_run_date, asc: p.id],
         preload: [:client]
     )
@@ -297,6 +304,10 @@ defmodule QuantumBilling.Recurring do
 
       is_nil(profile.client) ->
         {:skip, :client_missing}
+
+      # Binned between the sweep queueing this job and the job running.
+      not is_nil(profile.client.deleted_at) ->
+        {:skip, :client_deleted}
 
       true ->
         bill(profile, today)

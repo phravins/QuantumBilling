@@ -15,6 +15,12 @@ defmodule QuantumBilling.EWayBills do
   `"Active"` and `"Cancelled"` are stored. `"Expired"` is derived from
   `valid_until` by `status/1`, because expiry is a fact about the clock rather
   than about the bill: storing it would need a job to keep it true.
+
+  ## Deleting is not cancelling
+
+  `delete_e_way_bill/2` moves a bill to the Bin. It tidies this application's
+  list and says nothing to the portal: a bill that was Active there is still
+  Active there. `cancel_e_way_bill/2` is the one that has legal effect.
   """
 
   import Ecto.Query, warn: false
@@ -201,28 +207,123 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  One bill by id, with its invoice and Part-B history, or `nil`.
+  One bill by id, with its invoice and Part-B history, or `nil`. A bill in the
+  Bin is `nil` here, and so is an id that is not a number: the id reaches this
+  from a URL or a browser event, and a malformed one is a bill that does not
+  exist rather than a reason to raise.
   """
-  def get_e_way_bill(id) do
-    EWayBill
-    |> Repo.get(id)
-    |> preload_bill()
-  end
+  def get_e_way_bill(id), do: fetch_by_id(EWayBill.kept(), id)
 
   @doc """
-  One bill by id, raising when it does not exist.
+  One bill by id, raising when it does not exist or is in the Bin.
   """
   def get_e_way_bill!(id) do
-    EWayBill
+    EWayBill.kept()
     |> Repo.get!(id)
     |> preload_bill()
   end
 
   @doc """
-  The live (not cancelled) bill for an invoice, or `nil`.
+  One bill that is in the Bin, or `nil` — including for an id that is not a
+  number.
+  """
+  def get_deleted_e_way_bill(id), do: fetch_by_id(EWayBill.binned(), id)
+
+  defp fetch_by_id(query, id) do
+    case Integer.parse(to_string(id)) do
+      {int_id, ""} -> query |> Repo.get(int_id) |> preload_bill()
+      _not_an_id -> nil
+    end
+  end
+
+  @doc """
+  Every bill in the Bin, most recently deleted first, with its invoice.
+
+  A bill whose invoice is also in the Bin is listed all the same: it was
+  deleted in its own right, and restoring the invoice alone would not bring it
+  back.
+  """
+  def list_deleted_e_way_bills do
+    Repo.all(
+      from b in EWayBill.binned(),
+        order_by: [desc: b.deleted_at, desc: b.id],
+        preload: [:invoice]
+    )
+  end
+
+  @doc """
+  Moves a bill to the Bin.
+
+  Any bill may be binned, whatever its status. For one that is still Active
+  this does **not** cancel it: the portal is not called, and the consignment is
+  as covered — and the number as live — as before. The invoice is free to have
+  another bill raised against it afterwards.
+
+  `opts` may carry `:user_id`, recorded against the audit entry.
+  """
+  def delete_e_way_bill(bill, opts \\ [])
+
+  def delete_e_way_bill(%EWayBill{deleted_at: %DateTime{}} = bill, _opts), do: {:ok, bill}
+
+  def delete_e_way_bill(%EWayBill{} = bill, opts) do
+    bill
+    |> EWayBill.bin_changeset()
+    |> Repo.update()
+    |> announce(:bin_e_way_bill, opts)
+  end
+
+  @doc """
+  Takes a bill back out of the Bin.
+
+  Returns `{:error, :invoice_has_live_bill}` when the bill is not cancelled and
+  its invoice has had another raised in the meantime: an invoice carries one
+  live bill, and the newer one is the one in use.
+  """
+  def restore_e_way_bill(%EWayBill{} = bill, opts \\ []) do
+    bill
+    |> EWayBill.restore_changeset()
+    |> Repo.update()
+    |> case do
+      {:error, %Ecto.Changeset{}} -> {:error, :invoice_has_live_bill}
+      result -> result
+    end
+    |> announce(:restore_e_way_bill, opts)
+  end
+
+  @doc """
+  Deletes a bill for good, along with its Part-B history.
+
+  Returns `{:error, :not_in_bin}` for a bill that has not been binned first.
+  """
+  def purge_e_way_bill(bill, opts \\ [])
+
+  def purge_e_way_bill(%EWayBill{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
+
+  def purge_e_way_bill(%EWayBill{} = bill, opts) do
+    bill
+    |> Repo.delete()
+    |> announce(:purge_e_way_bill, opts)
+  end
+
+  # Audited and broadcast only when the write happened; the caller gets back
+  # exactly what the repo returned.
+  defp announce({:ok, %EWayBill{} = bill} = result, action, opts) do
+    Audit.log_event(action, "EWayBill", bill.id,
+      user_id: Keyword.get(opts, :user_id),
+      details: %{ewb_number: bill.ewb_number, invoice_id: bill.invoice_id, status: bill.status}
+    )
+
+    broadcast_change(bill)
+    result
+  end
+
+  defp announce(result, _action, _opts), do: result
+
+  @doc """
+  The live (not cancelled, not binned) bill for an invoice, or `nil`.
   """
   def live_bill_for_invoice(invoice_id) do
-    EWayBill
+    EWayBill.kept()
     |> where([b], b.invoice_id == ^invoice_id and b.status != "Cancelled")
     |> Repo.one()
     |> preload_bill()
@@ -328,7 +429,7 @@ defmodule QuantumBilling.EWayBills do
 
   defp ensure_issuable(%Invoice{id: id}) do
     exists =
-      EWayBill
+      EWayBill.kept()
       |> where([b], b.invoice_id == ^id and b.status != "Cancelled")
       |> Repo.exists?()
 
@@ -397,9 +498,10 @@ defmodule QuantumBilling.EWayBills do
   #
   # Bills whose invoice is in the Bin are left out. The list is of consignments
   # being tracked, and a bill for a withdrawn document is not one; it comes
-  # back with the invoice if that is restored.
+  # back with the invoice if that is restored. Bills that are in the Bin
+  # themselves are left out for the plainer reason.
   defp base_query do
-    from b in EWayBill,
+    from b in EWayBill.kept(),
       as: :bill,
       join: i in assoc(b, :invoice),
       as: :invoice,

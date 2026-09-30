@@ -12,10 +12,17 @@ defmodule QuantumBilling.Clients.Client do
       `27…` GSTIN against a Karnataka address is a data error
 
   Money is whole rupees (integers) throughout.
+
+  ## The Bin
+
+  Deleting a client sets `deleted_at` and leaves the row where it is, so the
+  invoices raised for it still point at it and a restore is exact. `kept/1` is
+  the filter every read goes through.
   """
   use Ecto.Schema
 
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2]
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
@@ -77,6 +84,8 @@ defmodule QuantumBilling.Clients.Client do
     field :status, :string, default: "Active"
     field :outstanding, :integer, default: 0
 
+    field :deleted_at, :utc_datetime
+
     timestamps(type: :utc_datetime)
   end
 
@@ -116,6 +125,36 @@ defmodule QuantumBilling.Clients.Client do
       less_than_or_equal_to: 365
     )
     |> validate_length(:notes, max: 2000)
+    |> unique_constraint(:gstin,
+      name: :clients_gstin_unique,
+      message: "is already registered to another client"
+    )
+  end
+
+  @doc "Narrows `query` to clients that are not in the Bin."
+  def kept(query \\ __MODULE__) do
+    from c in query, where: is_nil(c.deleted_at)
+  end
+
+  @doc "Narrows `query` to clients that are in the Bin."
+  def binned(query \\ __MODULE__) do
+    from c in query, where: not is_nil(c.deleted_at)
+  end
+
+  @doc "Moves a client to the Bin."
+  def bin_changeset(client), do: change(client, deleted_at: DateTime.utc_now(:second))
+
+  @doc """
+  Takes a client back out of the Bin.
+
+  A binned client gives up its GSTIN — the unique index only covers clients
+  that are live — so another client may have been registered under it since.
+  The constraint is declared here so that coming back into a taken GSTIN is an
+  error on the changeset rather than a raise.
+  """
+  def restore_changeset(client) do
+    client
+    |> change(deleted_at: nil)
     |> unique_constraint(:gstin,
       name: :clients_gstin_unique,
       message: "is already registered to another client"

@@ -192,5 +192,82 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
       assert html =~ "no longer exists"
     end
+
+    # The bin sits in the row itself, beside the eye and the menu, rather than
+    # inside the menu — and its confirmation says where the client is going.
+    test "every row carries a bin button", %{
+      conn: conn,
+      business_client: client,
+      walk_in: walk_in
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      for row <- [client, walk_in] do
+        assert has_element?(
+                 view,
+                 ~s|#client-#{row.id} button#client-delete-#{row.id}[data-confirm*="Bin"]|
+               )
+
+        refute has_element?(view, "#client-#{row.id} ul #client-delete-#{row.id}")
+      end
+    end
+
+    test "the bin button moves the client to the Bin", %{
+      conn: conn,
+      user: user,
+      business_client: client,
+      walk_in: walk_in
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      view |> element("#client-delete-#{client.id}") |> render_click()
+
+      refute has_element?(view, "#client-#{client.id}")
+      assert has_element?(view, "#client-#{walk_in.id}")
+      assert has_element?(view, "#flash-info", "moved to the Bin")
+
+      # Off the list, not out of the database.
+      assert QuantumBilling.Clients.get_client(client.id) == nil
+      assert QuantumBilling.Clients.get_deleted_client(client.id).name == "Acme Traders"
+
+      assert Enum.any?(QuantumBilling.Audit.list_audit_logs(), fn log ->
+               log.action == "bin_client" and log.user_id == user.id and
+                 log.resource_id == to_string(client.id)
+             end)
+
+      {:ok, bin, _html} = live(conn, ~p"/bin")
+      assert has_element?(bin, "#bin-client-#{client.id}", "Acme Traders")
+    end
+
+    test "a client binned in another window leaves this list", %{
+      conn: conn,
+      business_client: client
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+      assert has_element?(view, "#client-#{client.id}")
+
+      {:ok, _binned} = QuantumBilling.Clients.delete_client(client)
+
+      # `render/1` is a call into the view, so it is answered after the
+      # broadcast ahead of it in the mailbox has been handled.
+      render(view)
+
+      refute has_element?(view, "#client-#{client.id}")
+    end
+
+    test "deleting a client that is already gone is reported, not raised", %{
+      conn: conn,
+      business_client: client
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      {:ok, _binned} = QuantumBilling.Clients.delete_client(client)
+
+      render_click(view, "delete", %{"id" => to_string(client.id)})
+      assert has_element?(view, "#flash-error", "no longer exists")
+
+      render_click(view, "delete", %{"id" => "not-an-id"})
+      assert has_element?(view, "#flash-error", "no longer exists")
+    end
   end
 end

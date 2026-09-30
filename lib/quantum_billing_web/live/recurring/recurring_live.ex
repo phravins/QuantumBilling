@@ -194,7 +194,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                   </span>
                 </td>
                 <td>
-                  <div class="flex justify-end gap-2">
+                  <div class="flex items-center justify-end gap-2">
                     <button
                       type="button"
                       phx-click="toggle_status"
@@ -209,9 +209,10 @@ defmodule QuantumBillingWeb.RecurringLive do
                       id={"recurring-delete-#{p.id}"}
                       phx-click="delete"
                       phx-value-id={p.id}
-                      aria-label="Move to Bin"
+                      aria-label="Move recurring profile to the Bin"
+                      title="Move to Bin"
                       data-confirm="Move this recurring profile to the Bin? It stops billing, and can be restored from there."
-                      class="btn btn-xs btn-ghost text-error"
+                      class={row_delete_class()}
                     >
                       <.icon name="hero-trash" class="size-4" />
                     </button>

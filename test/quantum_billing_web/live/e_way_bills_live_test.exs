@@ -326,6 +326,85 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
     end
   end
 
+  describe "moving a bill to the Bin" do
+    test "is offered on a bill in every state", %{conn: conn} do
+      active = bill(%{client_name: "Active Co"})
+      expired = expire(bill(%{client_name: "Expired Co"}))
+
+      {:ok, cancelled} =
+        EWayBills.cancel_e_way_bill(bill(%{client_name: "Cancelled Co"}), %{
+          "cancellation_reason" => "Duplicate"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      for row <- [active, expired, cancelled] do
+        assert has_element?(
+                 view,
+                 ~s|#ewb-#{row.ewb_number} button#ewb-delete-#{row.id}[data-confirm*="Bin"]|
+               )
+
+        refute has_element?(view, "#ewb-#{row.ewb_number} ul #ewb-delete-#{row.id}")
+      end
+    end
+
+    # Taking a live bill off this list does nothing on the portal, and someone
+    # who expects it to would go on to move goods under a bill they think is
+    # dead — or skip cancelling one that should be.
+    test "says of a live bill that it is not being cancelled", %{conn: conn} do
+      active = bill(%{client_name: "Active Co"})
+
+      {:ok, cancelled} =
+        EWayBills.cancel_e_way_bill(bill(%{client_name: "Cancelled Co"}), %{
+          "cancellation_reason" => "Duplicate"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      assert has_element?(view, ~s|#ewb-delete-#{active.id}[data-confirm*="NOT cancelled"]|)
+      refute has_element?(view, ~s|#ewb-delete-#{cancelled.id}[data-confirm*="NOT cancelled"]|)
+    end
+
+    test "takes the row off the list and into the Bin", %{conn: conn, user: user} do
+      bill = bill(%{client_name: "Northwind Traders"})
+      other = bill(%{client_name: "Contoso"})
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      view |> element("#ewb-delete-#{bill.id}") |> render_click()
+
+      refute has_element?(view, "#ewb-#{bill.ewb_number}")
+      assert has_element?(view, "#ewb-#{other.ewb_number}")
+      assert has_element?(view, "#flash-info", "moved to the Bin")
+
+      # Off the list, not out of the database — and still the bill it was.
+      assert EWayBills.get_e_way_bill(bill.id) == nil
+      assert EWayBills.get_deleted_e_way_bill(bill.id).status == "Active"
+
+      assert Enum.any?(QuantumBilling.Audit.list_audit_logs(), fn log ->
+               log.action == "bin_e_way_bill" and log.user_id == user.id and
+                 log.resource_id == to_string(bill.id)
+             end)
+
+      {:ok, bin, _html} = live(conn, ~p"/bin")
+      assert has_element?(bin, "#bin-e_way_bill-#{bill.id}", bill.ewb_number)
+    end
+
+    test "a bill that is already gone is reported, not raised", %{conn: conn} do
+      bill = bill(%{client_name: "Northwind Traders"})
+
+      {:ok, view, _html} = live(conn, ~p"/e-way-bills")
+
+      {:ok, _binned} = EWayBills.delete_e_way_bill(bill)
+
+      render_click(view, "delete", %{"id" => to_string(bill.id)})
+      assert has_element?(view, "#flash-error", "no longer exists")
+
+      render_click(view, "delete", %{"id" => "not-an-id"})
+      assert has_element?(view, "#flash-error", "no longer exists")
+    end
+  end
+
   test "serves no sample records", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/e-way-bills")
 

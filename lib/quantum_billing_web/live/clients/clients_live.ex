@@ -72,8 +72,7 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
-  # The one write this page does. Checked against the schema's own list rather
-  # than trusted, because the status arrives from a click; and read fresh by id
+  # Checked against the schema's own list rather than trusted, because the status arrives from a click; and read fresh by id
   # rather than taken from the rendered row, which may be a page old.
   def handle_event("set_status", %{"id" => id, "status" => status}, socket) do
     with true <- status in Clients.statuses(),
@@ -100,10 +99,38 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
-  # A client added or edited in another window. The page is re-read rather than
-  # the row spliced in: the active search, filter and sort all have to agree
-  # with where — or whether — it belongs on this screen.
-  def handle_info({event, _client}, socket) when event in [:client_created, :client_updated] do
+  # Moves the client to the Bin rather than removing it: see
+  # `Clients.delete_client/2`. Read fresh by id for the same reason as above.
+  def handle_event("delete", %{"id" => id}, socket) do
+    case Clients.get_client(id) do
+      nil ->
+        {:noreply, socket |> put_flash(:error, "That client no longer exists.") |> load_page()}
+
+      client ->
+        case Clients.delete_client(client, user_id: socket.assigns.current_scope.user.id) do
+          {:ok, client} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "#{client.name} moved to the Bin.")
+             |> load_page()}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "That client could not be deleted.")}
+        end
+    end
+  end
+
+  # A client added, edited, binned or restored in another window. The page is
+  # re-read rather than the row spliced in: the active search, filter and sort
+  # all have to agree with where — or whether — it belongs on this screen.
+  def handle_info({event, _client}, socket)
+      when event in [
+             :client_created,
+             :client_updated,
+             :client_binned,
+             :client_restored,
+             :client_purged
+           ] do
     {:noreply, load_page(socket)}
   end
 
@@ -345,6 +372,19 @@ defmodule QuantumBillingWeb.ClientsLive do
                         </li>
                       </ul>
                     </div>
+
+                    <button
+                      type="button"
+                      id={"client-delete-#{row.id}"}
+                      phx-click="delete"
+                      phx-value-id={row.id}
+                      data-confirm={"Move #{row.name} to the Bin? Its invoices are kept, and any recurring billing for it stops. It can be restored from the Bin."}
+                      class={row_delete_class()}
+                      aria-label={"Move #{row.name} to the Bin"}
+                      title="Move to Bin"
+                    >
+                      <.icon name="hero-trash" class="size-4" />
+                    </button>
                   </div>
                 </td>
               </tr>

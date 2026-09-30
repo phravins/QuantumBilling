@@ -2,28 +2,39 @@ defmodule QuantumBillingWeb.BinLive do
   @moduledoc """
   The Bin: everything that has been deleted and can still be brought back.
 
-  Three kinds of record land here — invoices, recurring profiles and invoice
-  designs — because those are the three the application lets you delete. Each
-  row offers the same two actions: **Restore**, which puts the record back
+  Five kinds of record land here — invoices, clients, e-way bills, recurring
+  profiles and invoice designs — because those are the five the application
+  lets you delete. Each row offers the same two actions: **Restore**, which puts the record back
   exactly as it was, and **Delete permanently**, which is the delete that
   cannot be undone and is the only place in the application that does it.
 
-  ## One list, three sources
+  ## One list, five sources
 
-  The rows come from three contexts and are flattened into one shape,
+  The rows come from five contexts and are flattened into one shape,
   `entry/1`, so the table does not have to know which kind it is drawing. The
   list is a stream and is reset on every change rather than patched: restoring
-  one row changes the counts on all four filter chips, and a list that is
-  re-read whole cannot drift from them.
+  one row changes the counts on the filter chips, and a list that is re-read
+  whole cannot drift from them.
 
   ## What cannot be purged
 
   A design that invoices were issued under cannot be deleted permanently — the
-  row is the record of which design those invoices carry — so its row says so
-  instead of offering a button that would fail.
+  row is the record of which design those invoices carry — and neither can a
+  client that credit notes were raised against. Their rows say so instead of
+  offering a button that would fail.
+
+  ## What cannot always be restored
+
+  A client comes back into its GSTIN and an e-way bill into its invoice's one
+  live slot, and either may have been taken while the record was in the Bin.
+  The restore is then refused with the reason.
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.Clients
+  alias QuantumBilling.Clients.Client
+  alias QuantumBilling.EWayBills
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Recurring
@@ -36,6 +47,8 @@ defmodule QuantumBillingWeb.BinLive do
   @filters [
     {"all", "All"},
     {"invoice", "Invoices"},
+    {"client", "Clients"},
+    {"e_way_bill", "E-Way Bills"},
     {"recurring", "Recurring"},
     {"template", "Designs"}
   ]
@@ -46,6 +59,8 @@ defmodule QuantumBillingWeb.BinLive do
       # without a reload. Recurring profiles have no topic; they change only
       # from their own page, and are re-read whenever this one does anything.
       Invoices.subscribe()
+      Clients.subscribe()
+      EWayBills.subscribe()
       Templates.subscribe()
     end
 
@@ -83,11 +98,25 @@ defmodule QuantumBillingWeb.BinLive do
     {:noreply, load_entries(socket)}
   end
 
+  def handle_info({:e_way_bill_changed, _bill}, socket) do
+    {:noreply, load_entries(socket)}
+  end
+
+  def handle_info({event, %Client{}}, socket)
+      when event in [:client_binned, :client_restored, :client_purged, :client_updated] do
+    {:noreply, load_entries(socket)}
+  end
+
+  # The clients topic also carries new clients, which cannot be in the Bin.
+  def handle_info({:client_created, %Client{}}, socket), do: {:noreply, socket}
+
   # ── Actions ───────────────────────────────────────────────────────────────
 
   # Looked up among the binned records only, so an id for something that is
   # not in the Bin — or never existed — is simply not found.
   defp fetch("invoice", id), do: Invoices.get_deleted_invoice(id)
+  defp fetch("client", id), do: Clients.get_deleted_client(id)
+  defp fetch("e_way_bill", id), do: EWayBills.get_deleted_e_way_bill(id)
   defp fetch("recurring", id), do: Recurring.get_deleted_profile(id)
   defp fetch("template", id), do: Templates.get_archived_template(id)
   defp fetch(_unknown_type, _id), do: nil
@@ -108,6 +137,36 @@ defmodule QuantumBillingWeb.BinLive do
     case Invoices.restore_invoice(invoice, opts) do
       {:ok, invoice} -> {:ok, "Invoice #{invoice.invoice_number} restored."}
       {:error, _reason} -> {:error, "That invoice could not be restored."}
+    end
+  end
+
+  defp restore(%Client{} = client, opts) do
+    case Clients.restore_client(client, opts) do
+      {:ok, client} ->
+        {:ok, "#{client.name} restored."}
+
+      {:error, :gstin_taken} ->
+        {:error,
+         "#{client.name} cannot be restored: another client is now registered under " <>
+           "GSTIN #{client.gstin}."}
+
+      {:error, _reason} ->
+        {:error, "That client could not be restored."}
+    end
+  end
+
+  defp restore(%EWayBill{} = bill, opts) do
+    case EWayBills.restore_e_way_bill(bill, opts) do
+      {:ok, bill} ->
+        {:ok, "E-way bill #{bill.ewb_number} restored."}
+
+      {:error, :invoice_has_live_bill} ->
+        {:error,
+         "E-way bill #{bill.ewb_number} cannot be restored: its invoice has had another " <>
+           "e-way bill raised since."}
+
+      {:error, _reason} ->
+        {:error, "That e-way bill could not be restored."}
     end
   end
 
@@ -140,6 +199,27 @@ defmodule QuantumBillingWeb.BinLive do
     end
   end
 
+  defp purge(%Client{} = client, opts) do
+    case Clients.purge_client(client, opts) do
+      {:ok, client} ->
+        {:ok, "#{client.name} permanently deleted."}
+
+      {:error, :in_use} ->
+        {:error,
+         "#{client.name} has credit notes raised against it, so it cannot be permanently deleted."}
+
+      {:error, _reason} ->
+        {:error, "That client could not be deleted."}
+    end
+  end
+
+  defp purge(%EWayBill{} = bill, opts) do
+    case EWayBills.purge_e_way_bill(bill, opts) do
+      {:ok, bill} -> {:ok, "E-way bill #{bill.ewb_number} permanently deleted."}
+      {:error, _reason} -> {:error, "That e-way bill could not be deleted."}
+    end
+  end
+
   defp purge(%RecurringProfile{} = profile, opts) do
     case Recurring.purge_profile(profile, opts) do
       {:ok, profile} -> {:ok, "Recurring profile “#{profile.title}” permanently deleted."}
@@ -167,6 +247,8 @@ defmodule QuantumBillingWeb.BinLive do
   defp load_entries(socket) do
     entries =
       Enum.map(Invoices.list_deleted_invoices(), &entry/1) ++
+        Enum.map(Clients.list_deleted_clients(), &entry/1) ++
+        Enum.map(EWayBills.list_deleted_e_way_bills(), &entry/1) ++
         Enum.map(Recurring.list_deleted_profiles(), &entry/1) ++
         Enum.map(Templates.list_archived_templates(), &entry/1)
 
@@ -178,7 +260,7 @@ defmodule QuantumBillingWeb.BinLive do
     shown =
       entries
       |> Enum.filter(&(socket.assigns.filter in ["all", &1.type]))
-      # Newest first across all three kinds, which the three queries cannot do
+      # Newest first across every kind, which the separate queries cannot do
       # between themselves.
       |> Enum.sort_by(& &1.deleted_at, {:desc, DateTime})
 
@@ -206,6 +288,49 @@ defmodule QuantumBillingWeb.BinLive do
       purge_confirm:
         "Permanently delete #{invoice.invoice_number}? Its line items, e-way bills and " <>
           "credit notes go with it. This cannot be undone, and the number is not reused."
+    }
+  end
+
+  defp entry(%Client{} = client) do
+    in_use? = Clients.in_use?(client)
+
+    %{
+      id: "client-#{client.id}",
+      type: "client",
+      record_id: client.id,
+      kind: "Client",
+      icon: "hero-user-group",
+      title: client.name,
+      subtitle: client.gstin || client.client_type,
+      details:
+        [client.email, client.phone]
+        |> Enum.reject(&(&1 in [nil, ""]))
+        |> Enum.join(" · "),
+      deleted_at: client.deleted_at,
+      locked: if(in_use?, do: "Credit notes were raised against this client, so it is kept."),
+      purge_confirm:
+        "Permanently delete #{client.name}? This cannot be undone. Its invoices are kept, " <>
+          "but are no longer linked to a client record."
+    }
+  end
+
+  defp entry(%EWayBill{} = bill) do
+    %{
+      id: "e_way_bill-#{bill.id}",
+      type: "e_way_bill",
+      record_id: bill.id,
+      kind: "E-Way Bill",
+      icon: "hero-truck",
+      title: bill.ewb_number,
+      subtitle: bill.invoice && "#{bill.invoice.invoice_number} · #{bill.invoice.client_name}",
+      details:
+        "#{format_date(bill.ewb_date)} · #{EWayBills.status(bill)}" <>
+          if(bill.vehicle_number, do: " · #{bill.vehicle_number}", else: ""),
+      deleted_at: bill.deleted_at,
+      locked: nil,
+      purge_confirm:
+        "Permanently delete e-way bill #{bill.ewb_number}? Its vehicle history goes with it. " <>
+          "This cannot be undone, and it does not cancel the bill on the e-way bill portal."
     }
   end
 
@@ -261,7 +386,7 @@ defmodule QuantumBillingWeb.BinLive do
       <.header>
         Bin
         <:subtitle>
-          Deleted invoices, recurring profiles and invoice designs. Restore them, or delete them for good.
+          Deleted invoices, clients, e-way bills, recurring profiles and invoice designs. Restore them, or delete them for good.
         </:subtitle>
       </.header>
 
@@ -306,7 +431,7 @@ defmodule QuantumBillingWeb.BinLive do
             description={
               if(@filter == "all",
                 do:
-                  "Invoices, recurring profiles and designs you delete are kept here until you delete them permanently.",
+                  "Invoices, clients, e-way bills, recurring profiles and designs you delete are kept here until you delete them permanently.",
                 else: "Choose All to see everything that has been deleted."
               )
             }

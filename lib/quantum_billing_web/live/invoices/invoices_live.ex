@@ -337,20 +337,21 @@ defmodule QuantumBillingWeb.InvoicesLive do
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>
                         </li>
-
-                        <li>
-                          <a
-                            phx-click="delete"
-                            phx-value-id={row.id}
-                            id={"invoice-delete-#{row.id}"}
-                            data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
-                            class="text-error"
-                          >
-                            <.icon name="hero-trash" class="size-4" /> Move to Bin
-                          </a>
-                        </li>
                       </ul>
                     </div>
+
+                    <button
+                      type="button"
+                      id={"invoice-delete-#{row.id}"}
+                      phx-click="delete"
+                      phx-value-id={row.id}
+                      data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
+                      class={row_delete_class()}
+                      aria-label="Move invoice to the Bin"
+                      title="Move to Bin"
+                    >
+                      <.icon name="hero-trash" class="size-4" />
+                    </button>
                   </div>
                 </td>
               </tr>

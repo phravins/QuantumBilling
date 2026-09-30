@@ -739,7 +739,7 @@ defmodule QuantumBilling.Reports do
   business, and every one of those names was also rendered as an `<option>`.
   """
   def client_names do
-    from_clients = from(c in Client, select: %{name: c.name}, where: not is_nil(c.name))
+    from_clients = from(c in Client.kept(), select: %{name: c.name}, where: not is_nil(c.name))
 
     from_invoices =
       from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))

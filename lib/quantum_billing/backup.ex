@@ -83,7 +83,7 @@ defmodule QuantumBilling.Backup do
                     phone_country_code phone email billing_line1 billing_line2 billing_city
                     billing_state billing_pin shipping_same_as_billing shipping_line1
                     shipping_line2 shipping_city shipping_state shipping_pin credit_limit
-                    payment_terms_days opening_balance notes status outstanding)a
+                    payment_terms_days opening_balance notes status outstanding deleted_at)a
 
   @invoice_fields ~w(id invoice_number invoice_type invoice_date due_date payment_terms
                      place_of_supply client_id client_name client_gstin client_pan
@@ -100,16 +100,16 @@ defmodule QuantumBilling.Backup do
 
   @e_way_bill_fields ~w(id invoice_id ewb_number ewb_date valid_until status distance_km
                         mode_of_transport vehicle_number transporter_id transporter_name
-                        cancelled_at cancellation_reason)a
+                        cancelled_at cancellation_reason deleted_at)a
 
   @part_b_fields ~w(id e_way_bill_id vehicle_number mode_of_transport place reason updated_on)a
 
   @template_fields ~w(id name layout_xml accent is_default archived_at)a
 
-  # `deleted_at` on invoices and profiles is what puts a record in the Bin. It
-  # travels with the backup so a restore does not quietly bring back everything
-  # that had been deleted; a file written before the column existed simply has
-  # no value for it, which reads as "not in the Bin".
+  # `deleted_at` on clients, invoices, e-way bills and profiles is what puts a
+  # record in the Bin. It travels with the backup so a restore does not quietly
+  # bring back everything that had been deleted; a file written before the
+  # column existed simply has no value for it, which reads as "not in the Bin".
   @profile_fields ~w(id title frequency next_run_date status auto_send_email client_id
                      items_json deleted_at)a
 

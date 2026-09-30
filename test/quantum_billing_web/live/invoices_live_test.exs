@@ -203,6 +203,10 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       # The confirmation says where it is going, not that it is gone for good.
       assert has_element?(view, ~s|#invoice-delete-#{invoice.id}[data-confirm*="Bin"]|)
 
+      # A button in the row's actions, not an entry in the row's menu.
+      assert has_element?(view, "#invoice-#{invoice.id} button#invoice-delete-#{invoice.id}")
+      refute has_element?(view, "#invoice-#{invoice.id} ul #invoice-delete-#{invoice.id}")
+
       view |> element("#invoice-delete-#{invoice.id}") |> render_click()
 
       refute has_element?(view, "#invoice-#{invoice.id}")

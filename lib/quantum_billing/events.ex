@@ -26,6 +26,9 @@ defmodule QuantumBilling.Events do
 
       {:client_created, client}
       {:client_updated, client}
+      {:client_binned, client}
+      {:client_restored, client}
+      {:client_purged, client}
       {:invoice_changed, invoice}
       {:e_way_bill_changed, e_way_bill}
       {:settings_updated, organization}
