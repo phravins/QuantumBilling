@@ -94,7 +94,7 @@ defmodule QuantumBilling.Backup do
                      signed_qr_code signed_invoice currency
                      exchange_rate export_type lut_number razorpay_payment_link_id
                      razorpay_payment_url razorpay_payment_id public_token template_id
-                     layout_xml)a
+                     layout_xml deleted_at)a
 
   @item_fields ~w(id invoice_id description hsn_sac quantity unit rate tax_rate amount position)a
 
@@ -106,8 +106,12 @@ defmodule QuantumBilling.Backup do
 
   @template_fields ~w(id name layout_xml accent is_default archived_at)a
 
+  # `deleted_at` on invoices and profiles is what puts a record in the Bin. It
+  # travels with the backup so a restore does not quietly bring back everything
+  # that had been deleted; a file written before the column existed simply has
+  # no value for it, which reads as "not in the Bin".
   @profile_fields ~w(id title frequency next_run_date status auto_send_email client_id
-                     items_json)a
+                     items_json deleted_at)a
 
   @credit_note_fields ~w(id note_number note_type invoice_id client_id reason subtotal tax_total
                          grand_total status)a

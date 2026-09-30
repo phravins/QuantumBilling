@@ -1,9 +1,12 @@
 defmodule QuantumBilling.RecurringBillingTest do
   use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Audit
   alias QuantumBilling.Clients
+  alias QuantumBilling.Invoices
   alias QuantumBilling.Mail
   alias QuantumBilling.Recurring
+  alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Workers.RecurringInvoiceWorker
 
   defp client_fixture(attrs \\ %{}) do
@@ -167,6 +170,99 @@ defmodule QuantumBilling.RecurringBillingTest do
     test "a job for a profile that no longer exists is discarded, not retried" do
       assert :discard =
                RecurringInvoiceWorker.perform(%Oban.Job{args: %{"profile_id" => 0}})
+    end
+  end
+
+  describe "a profile in the Bin" do
+    test "leaves the list without being lost" do
+      client = client_fixture()
+      kept = profile_fixture(client, %{title: "Kept"})
+      gone = profile_fixture(client, %{title: "Binned"})
+
+      assert {:ok, binned} = Recurring.delete_profile(gone)
+      assert %DateTime{} = binned.deleted_at
+
+      assert Enum.map(Recurring.list_profiles(), & &1.id) == [kept.id]
+      assert %{total: 1, rows: [row]} = Recurring.page()
+      assert row.id == kept.id
+
+      assert Recurring.get_profile(gone.id) == nil
+      assert_raise Ecto.NoResultsError, fn -> Recurring.get_profile!(gone.id) end
+
+      assert [%{id: id, client: %{name: "Acme Corp"}}] = Recurring.list_deleted_profiles()
+      assert id == gone.id
+      assert Recurring.get_deleted_profile(gone.id).title == "Binned"
+      assert Recurring.get_deleted_profile(kept.id) == nil
+      assert Recurring.get_deleted_profile("not-an-id") == nil
+    end
+
+    # The read that matters most: a profile somebody deleted must not go on
+    # raising invoices against the client.
+    test "stops billing" do
+      client = client_fixture()
+      profile = profile_fixture(client)
+      {:ok, binned} = Recurring.delete_profile(profile)
+
+      assert Recurring.due_profiles() == []
+      assert Recurring.enqueue_due_profiles() == 0
+      assert Recurring.process_due_profiles() == []
+
+      # A job queued just before the profile was binned finds nothing to bill,
+      # and a caller that still holds the struct is turned away as well.
+      assert :discard =
+               RecurringInvoiceWorker.perform(%Oban.Job{args: %{"profile_id" => profile.id}})
+
+      assert {:skip, :deleted} = Recurring.process_profile(binned)
+      assert Invoices.list_invoices() == []
+    end
+
+    test "is billed again once it is restored" do
+      client = client_fixture()
+      {:ok, binned} = client |> profile_fixture() |> Recurring.delete_profile()
+
+      assert {:ok, restored} = Recurring.restore_profile(binned)
+      assert restored.deleted_at == nil
+
+      assert Recurring.list_deleted_profiles() == []
+      assert Enum.map(Recurring.due_profiles(), & &1.id) == [restored.id]
+      assert Recurring.enqueue_due_profiles() == 1
+    end
+
+    test "can be deleted for good, and only from the Bin" do
+      client = client_fixture()
+      profile = profile_fixture(client)
+
+      assert {:error, :not_in_bin} = Recurring.purge_profile(profile)
+      assert Repo.get(RecurringProfile, profile.id)
+
+      {:ok, binned} = Recurring.delete_profile(profile)
+
+      assert {:ok, _purged} = Recurring.purge_profile(binned)
+      refute Repo.get(RecurringProfile, profile.id)
+      assert Recurring.list_deleted_profiles() == []
+    end
+
+    test "each step is written to the audit trail" do
+      client = client_fixture()
+      profile = profile_fixture(client)
+
+      {:ok, binned} = Recurring.delete_profile(profile)
+      {:ok, restored} = Recurring.restore_profile(binned)
+      {:ok, binned} = Recurring.delete_profile(restored)
+      {:ok, _purged} = Recurring.purge_profile(binned)
+
+      actions =
+        Audit.list_audit_logs()
+        |> Enum.filter(&(&1.resource_type == "RecurringProfile"))
+        |> Enum.map(& &1.action)
+        |> Enum.sort()
+
+      assert actions == [
+               "bin_recurring_profile",
+               "bin_recurring_profile",
+               "purge_recurring_profile",
+               "restore_recurring_profile"
+             ]
     end
   end
 end

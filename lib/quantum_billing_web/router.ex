@@ -66,6 +66,10 @@ defmodule QuantumBillingWeb.Router do
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
       live "/recurring", RecurringLive, :index
+      # In this live_session because the Bin lists business records and can
+      # destroy them for good: it needs the login check, and `Layouts.app`
+      # needs the scope and the notification feed the hooks above assign.
+      live "/bin", BinLive, :index
       live "/settings/audit-logs", AuditLogsLive, :index
       live "/settings", SettingsLive, :index
       # The open section lives in the URL so a panel can be linked to directly

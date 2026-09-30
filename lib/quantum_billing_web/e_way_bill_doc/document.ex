@@ -8,8 +8,15 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   The list page's View and Print buttons both went to `/invoices?q=<doc no>`,
   a filtered invoice list: the one document a driver is required to carry did
   not exist anywhere in the application. This renders it, in the layout the
-  NIC portal prints — the summary band, PART-A, PART-B, the goods table and
-  the QR code — so what comes out of the printer is what a checkpost expects.
+  NIC portal prints — the summary band, the consignment rows (the form's
+  Part-A), the vehicle history (its Part-B), the goods table and the QR code —
+  so what comes out of the printer is what a checkpost expects.
+
+  The two parts are not labelled "Part - A" and "Part - B" on the page. The
+  first carries no heading and numbers its rows 1 to 10; the second is headed
+  "Vehicle Details", which is what the table actually holds. The code keeps
+  the statutory names (`part_b_entries/1`, `PartBUpdate`), because that is
+  what the rules and the NIC API call them.
 
   ## Self-contained on purpose
 
@@ -224,7 +231,14 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             color: var(--ewb-muted);
           }
 
-          .ewb-rows td.ewb-key b { color: var(--ewb-ink); font-weight: 600; }
+          /* A fixed column for the serial number, so the labels line up under
+             one another whether it is "1." or "10.". */
+          .ewb-rows td.ewb-key b {
+            display: inline-block;
+            min-width: 1.9em;
+            color: var(--ewb-ink);
+            font-weight: 600;
+          }
           .ewb-rows strong { font-weight: 600; }
           .ewb-rows small { display: block; color: var(--ewb-muted); font-size: 10px; }
 
@@ -358,13 +372,14 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             </div>
           </dl>
 
+          <%!-- No heading, and plain serial numbers rather than A.1 to A.10:
+          the rows are read top to bottom as one list, and the statutory
+          lettering meant nothing to the driver the page is handed to. --%>
           <section class="ewb-part">
-            <h2>Part - A</h2>
-
             <table class="ewb-rows">
               <tbody>
                 <tr>
-                  <td class="ewb-key"><b>A.1</b> GSTIN of Supplier</td>
+                  <td class="ewb-key"><b>1.</b> GSTIN of Supplier</td>
                   <td>
                     <strong>{blank(@invoice.company_gstin)}</strong>
                     <small>{blank(@invoice.company_name)}</small>
@@ -372,12 +387,12 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.2</b> Place of Dispatch</td>
+                  <td class="ewb-key"><b>2.</b> Place of Dispatch</td>
                   <td>{dispatch_place(@invoice, @org)}</td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.3</b> GSTIN of Recipient</td>
+                  <td class="ewb-key"><b>3.</b> GSTIN of Recipient</td>
                   <td>
                     <strong>{recipient_gstin(@invoice)}</strong>
                     <small>{blank(@invoice.client_name)}</small>
@@ -385,12 +400,12 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.4</b> Place of Delivery</td>
+                  <td class="ewb-key"><b>4.</b> Place of Delivery</td>
                   <td>{delivery_place(@invoice)}</td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.5</b> Document Number</td>
+                  <td class="ewb-key"><b>5.</b> Document Number</td>
                   <td>
                     <strong>{blank(@invoice.invoice_number)}</strong>
                     <small>{blank(@invoice.invoice_type)}</small>
@@ -398,29 +413,29 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.6</b> Document Date</td>
+                  <td class="ewb-key"><b>6.</b> Document Date</td>
                   <td>{on_date(@invoice.invoice_date)}</td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.7</b> Value of Goods</td>
+                  <td class="ewb-key"><b>7.</b> Value of Goods</td>
                   <td>
                     <strong>{rupees(@invoice.grand_total || 0, decimals: 2, space: true)}</strong>
                   </td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.8</b> HSN Code</td>
+                  <td class="ewb-key"><b>8.</b> HSN Code</td>
                   <td>{hsn_codes(@items)}</td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.9</b> Reason for Transportation</td>
+                  <td class="ewb-key"><b>9.</b> Reason for Transportation</td>
                   <td>{transport_reason(@invoice)}</td>
                 </tr>
 
                 <tr>
-                  <td class="ewb-key"><b>A.10</b> Transporter</td>
+                  <td class="ewb-key"><b>10.</b> Transporter</td>
                   <td>
                     <strong>{blank(@bill.transporter_name)}</strong>
                     <small>{blank(@bill.transporter_id)}</small>
@@ -431,7 +446,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           </section>
 
           <section class="ewb-part">
-            <h2>Part - B</h2>
+            <h2>Vehicle Details</h2>
 
             <table class="ewb-grid">
               <thead>
@@ -446,7 +461,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
               <tbody>
                 <%!-- Every leg the consignment has travelled, oldest first.
-                The first row is the vehicle Part-B was filed with; each later
+                The first row is the vehicle the bill was filed with; each later
                 row is a vehicle change recorded before it happened, which is
                 what Rule 138 requires and what the portal prints. --%>
                 <tr :for={entry <- @part_b}>
@@ -541,7 +556,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             <p class="ewb-note">
               <b>Validity:</b> one day for every 200 km of the approximate distance, or part
               thereof, expiring at midnight of the last day — Rule 138(10) of the CGST Rules.
-              Part-B has to be updated before the vehicle changes. This document must travel
+              Vehicle details have to be updated before the vehicle changes. This document must travel
               with the consignment and be produced on demand.
             </p>
 

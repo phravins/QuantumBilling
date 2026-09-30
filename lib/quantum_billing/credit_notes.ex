@@ -7,8 +7,12 @@ defmodule QuantumBilling.CreditNotes do
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
 
+  # Notes against an invoice in the Bin are left out, and come back with it. A
+  # left join so a note with no invoice at all is still listed.
   def list_credit_notes do
     CreditNote
+    |> join(:left, [n], i in assoc(n, :invoice))
+    |> where([_n, i], is_nil(i.deleted_at))
     |> order_by(desc: :inserted_at)
     |> Repo.all()
     |> Repo.preload([:invoice, :client])

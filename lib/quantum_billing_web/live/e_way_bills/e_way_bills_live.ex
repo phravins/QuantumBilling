@@ -120,7 +120,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
          socket
          |> put_flash(
            :info,
-           "Part-B updated: #{updated.ewb_number} is now on #{updated.vehicle_number}."
+           "Vehicle updated: #{updated.ewb_number} is now on #{updated.vehicle_number}."
          )
          |> assign(action: nil, action_bill: nil)
          |> load_page()}
@@ -166,7 +166,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   defp part_b_error(:already_cancelled), do: "A cancelled e-way bill cannot be updated."
 
   defp part_b_error(:expired),
-    do: "This e-way bill has expired. Part-B can only be updated while it is valid."
+    do: "This e-way bill has expired. The vehicle can only be updated while it is valid."
 
   defp part_b_error(%Ecto.Changeset{}), do: "Enter the new vehicle number."
   defp part_b_error(reason), do: "The portal refused the update: #{inspect(reason)}"
@@ -369,7 +369,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                       phx-value-action="part_b"
                       phx-value-id={row.id}
                       class={row_action_class()}
-                      aria-label={"Update Part-B for e-way bill #{row.ewb_no}"}
+                      aria-label={"Update vehicle for e-way bill #{row.ewb_no}"}
                     >
                       <.icon name="hero-truck" class="size-4" />
                     </button>
@@ -431,10 +431,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </form>
       </.action_modal>
 
-      <.action_modal :if={@action == :part_b} bill={@action_bill} title="Update Part-B">
+      <.action_modal :if={@action == :part_b} bill={@action_bill} title="Update Vehicle">
         <form id="ewb-part-b-form" phx-submit="update_part_b" class="space-y-3">
           <p class="text-xs text-base-content/70">
-            Part-B is a record of every vehicle that carried the consignment, not a field that is
+            Vehicle details are a record of every vehicle that carried the consignment, not a field that is
             overwritten. The new leg is added to the bill's history and the EWB-01 prints all of
             them.
           </p>
@@ -504,7 +504,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             <button type="button" phx-click="close_action" class={secondary_button_class()}>
               Close
             </button>
-            <button type="submit" class={action_button_class()}>Update Part-B</button>
+            <button type="submit" class={action_button_class()}>Update Vehicle</button>
           </div>
         </form>
       </.action_modal>

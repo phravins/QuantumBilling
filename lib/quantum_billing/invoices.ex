@@ -14,11 +14,21 @@ defmodule QuantumBilling.Invoices do
   A Draft consumes a number too. There is no separate "finalise" step in this
   flow to defer consumption to, and a gap-free series matters more than
   reserving numbers for finished invoices.
+
+  ## Deleting
+
+  `delete_invoice/2` moves an invoice to the Bin; `restore_invoice/2` brings it
+  back and `purge_invoice/2` removes it for good. Every read in this module
+  goes through `Invoice.kept/1`, so a binned invoice is absent from the lists,
+  the totals and the lookups alike — the only ways to reach one are
+  `list_deleted_invoices/0`, `get_deleted_invoice/1` and the payment webhook's
+  `get_invoice_by_number/2`, which asks for it by name.
   """
 
   import Ecto.Query, warn: false
 
   alias Ecto.Multi
+  alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
@@ -58,7 +68,7 @@ defmodule QuantumBilling.Invoices do
   test. Anything user-facing should use `page/1`, which reads one screen.
   """
   def list_invoices do
-    Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
+    Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
 
@@ -86,7 +96,7 @@ defmodule QuantumBilling.Invoices do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
     query =
-      Invoice
+      Invoice.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
       |> client_where(Keyword.get(opts, :client))
@@ -113,7 +123,7 @@ defmodule QuantumBilling.Invoices do
   rather than as the first few of everything.
   """
   def recent_invoices(limit \\ 5) do
-    Invoice
+    Invoice.kept()
     |> order_by([i], desc: i.invoice_date, desc: i.id)
     |> limit(^limit)
     |> Repo.all()
@@ -136,7 +146,7 @@ defmodule QuantumBilling.Invoices do
   impossible to raise. `count_requiring_e_way_bill/0` is the threshold's job.
   """
   def awaiting_e_way_bill(limit \\ 50) do
-    Invoice
+    Invoice.kept()
     |> where([i], i.status != "Cancelled")
     |> where(
       [i],
@@ -164,7 +174,7 @@ defmodule QuantumBilling.Invoices do
   def count_requiring_e_way_bill do
     threshold = Settings.get_organization().ewb_threshold_value || 50_000
 
-    Invoice
+    Invoice.kept()
     |> from(as: :invoice)
     |> where([i], i.status != "Cancelled" and i.grand_total > ^threshold)
     |> where(
@@ -199,7 +209,7 @@ defmodule QuantumBilling.Invoices do
   end
 
   defp invoice_totals do
-    Invoice
+    Invoice.kept()
     |> select([i], %{
       count: count(i.id),
       revenue: coalesce(sum(i.grand_total), 0),
@@ -242,6 +252,9 @@ defmodule QuantumBilling.Invoices do
       |> join(:inner, [n], i in Invoice, on: i.id == n.invoice_id)
       |> where([n], n.status != "Cancelled")
       |> where([_n, i], i.status not in ["Paid", "Cancelled"])
+      # A note against a binned invoice adjusts a receivable that is no longer
+      # being counted, so it goes with it.
+      |> where([_n, i], is_nil(i.deleted_at))
       |> select([n], %{
         credits: coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0),
         debits: coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0)
@@ -271,7 +284,7 @@ defmodule QuantumBilling.Invoices do
     from = Date.beginning_of_month(date)
     to = Date.end_of_month(date)
 
-    Invoice
+    Invoice.kept()
     |> where([i], i.invoice_date >= ^from and i.invoice_date <= ^to)
     |> where([i], i.status != "Cancelled")
     |> select([i], %{
@@ -314,7 +327,7 @@ defmodule QuantumBilling.Invoices do
     last = Date.end_of_month(today)
 
     billed =
-      Invoice
+      Invoice.kept()
       |> where([i], i.invoice_date >= ^first and i.invoice_date <= ^last)
       |> where([i], i.status != "Cancelled")
       |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
@@ -350,7 +363,7 @@ defmodule QuantumBilling.Invoices do
 
   @doc "How many invoices are in each status."
   def status_counts do
-    Invoice
+    Invoice.kept()
     |> group_by([i], i.status)
     |> select([i], {i.status, count(i.id)})
     |> Repo.all()
@@ -432,68 +445,79 @@ defmodule QuantumBilling.Invoices do
 
   @doc """
   Fetches an invoice with its line items, raising when it does not exist.
+
+  An invoice in the Bin does not exist as far as this is concerned.
   """
   def get_invoice!(id) do
-    Invoice
+    Invoice.kept()
     |> Repo.get!(id)
-    |> Repo.preload(items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position))
+    |> with_items()
   end
 
   @doc """
   Fetches an invoice by its unique invoice_number.
-  """
-  def get_invoice_by_number(invoice_number) when is_binary(invoice_number) do
-    Invoice
-    |> Repo.get_by(invoice_number: invoice_number)
-    |> case do
-      nil ->
-        nil
 
-      invoice ->
-        Repo.preload(invoice,
-          items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
-        )
-    end
+  ## Options
+
+    * `:include_binned` — also find an invoice that is in the Bin. For the
+      payment webhook: money that arrives for a binned invoice has still
+      arrived, and "no such invoice" would lose the record of it.
+  """
+  def get_invoice_by_number(invoice_number, opts \\ []) when is_binary(invoice_number) do
+    query = if Keyword.get(opts, :include_binned, false), do: Invoice, else: Invoice.kept()
+
+    query
+    |> Repo.get_by(invoice_number: invoice_number)
+    |> with_items()
   end
 
   @doc """
   Fetches an invoice by its unique public_token for the public portal.
+
+  A binned invoice is not served: the link in a customer's inbox must stop
+  showing a document the business has withdrawn.
   """
   def get_invoice_by_token(token) when is_binary(token) do
-    Invoice
+    Invoice.kept()
     |> Repo.get_by(public_token: token)
-    |> case do
-      nil ->
-        nil
-
-      invoice ->
-        Repo.preload(invoice,
-          items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
-        )
-    end
+    |> with_items()
   end
 
   @doc """
   Fetches an invoice with its line items, or `nil`.
   """
-  def get_invoice(id) do
+  def get_invoice(id), do: fetch_by_id(Invoice.kept(), id)
+
+  @doc """
+  Fetches an invoice that is in the Bin, with its line items, or `nil`.
+  """
+  def get_deleted_invoice(id), do: fetch_by_id(Invoice.binned(), id)
+
+  @doc """
+  Every invoice in the Bin, most recently binned first.
+  """
+  def list_deleted_invoices do
+    Repo.all(from i in Invoice.binned(), order_by: [desc: i.deleted_at, desc: i.id])
+  end
+
+  @doc "How many invoices are in the Bin."
+  def count_deleted_invoices, do: Repo.aggregate(Invoice.binned(), :count, :id)
+
+  # The id arrives from a URL or a click, so anything that is not a whole
+  # number is "no such invoice" rather than a cast error.
+  defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do
-      {int_id, ""} ->
-        Invoice
-        |> Repo.get(int_id)
-        |> case do
-          nil ->
-            nil
-
-          invoice ->
-            Repo.preload(invoice,
-              items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
-            )
-        end
-
-      _not_an_id ->
-        nil
+      {int_id, ""} -> query |> Repo.get(int_id) |> with_items()
+      _not_an_id -> nil
     end
+  end
+
+  defp with_items(nil), do: nil
+
+  defp with_items(%Invoice{} = invoice) do
+    Repo.preload(invoice,
+      items: from(i in QuantumBilling.Invoices.InvoiceItem, order_by: i.position)
+    )
   end
 
   @doc """
@@ -706,22 +730,70 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Deletes an invoice and its line items.
+  Moves an invoice to the Bin.
 
-  The number is not returned to the series: `invoice_next_number` only ever goes
-  forward, so a deleted invoice leaves a gap rather than letting the next save
-  reuse a number that has already been out in the world.
+  Nothing is removed: the invoice, its line items, its e-way bills and its
+  credit notes all stay in the database, and the invoice simply stops being
+  read by anything but the Bin page. `restore_invoice/2` undoes this exactly;
+  `purge_invoice/2` is the delete that cannot be undone.
+
+  The number is not returned to the series either way: `invoice_next_number`
+  only ever goes forward, so a deleted invoice leaves a gap rather than letting
+  the next save reuse a number that has already been out in the world.
+
+  `opts` may carry `:user_id`, recorded against the audit entry.
   """
-  def delete_invoice(%Invoice{} = invoice) do
-    case Repo.delete(invoice) do
-      {:ok, invoice} ->
-        broadcast_change(invoice, :invoice_changed)
-        {:ok, invoice}
-
-      {:error, changeset} ->
-        {:error, changeset}
-    end
+  def delete_invoice(%Invoice{} = invoice, opts \\ []) do
+    invoice
+    |> Invoice.bin_changeset()
+    |> Repo.update()
+    |> announce(:bin_invoice, opts)
   end
+
+  @doc """
+  Takes an invoice back out of the Bin.
+  """
+  def restore_invoice(%Invoice{} = invoice, opts \\ []) do
+    invoice
+    |> Invoice.restore_changeset()
+    |> Repo.update()
+    |> announce(:restore_invoice, opts)
+  end
+
+  @doc """
+  Deletes an invoice for good, along with its line items.
+
+  Its e-way bills and credit notes go with it — the database cascades them —
+  which is why this is only offered from the Bin, behind a confirmation, and
+  only for an invoice that is already there.
+  """
+  def purge_invoice(invoice, opts \\ [])
+
+  def purge_invoice(%Invoice{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
+
+  def purge_invoice(%Invoice{} = invoice, opts) do
+    invoice
+    |> Repo.delete()
+    |> announce(:purge_invoice, opts)
+  end
+
+  # Audited and broadcast only when the write happened; the caller gets back
+  # exactly what the repo returned.
+  defp announce({:ok, invoice} = result, action, opts) do
+    Audit.log_event(action, "Invoice", invoice.id,
+      user_id: Keyword.get(opts, :user_id),
+      details: %{
+        invoice_number: invoice.invoice_number,
+        client_name: invoice.client_name,
+        grand_total: invoice.grand_total
+      }
+    )
+
+    broadcast_change(invoice, :invoice_changed)
+    result
+  end
+
+  defp announce({:error, _changeset} = result, _action, _opts), do: result
 
   defp with_number(attrs, organization) do
     put_attr(attrs, "invoice_number", Settings.next_invoice_number(organization))

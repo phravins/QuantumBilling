@@ -186,6 +186,33 @@ defmodule QuantumBilling.Clients do
   def get_client(_other), do: nil
 
   @doc """
+  Fetches the client called exactly `name`, or `nil`.
+
+  The comparison ignores case and surrounding spaces, because this is what
+  answers "the user typed a client's name by hand instead of picking it" — but
+  it is never a partial match: "Apex" must not become "Apex Retail Solutions"
+  while the name is still being typed.
+
+  Names are not unique. When several clients share one, the oldest wins, so the
+  answer is at least the same every time.
+  """
+  def get_client_by_name(name) when is_binary(name) do
+    case String.trim(name) do
+      "" ->
+        nil
+
+      trimmed ->
+        Client
+        |> where([c], fragment("lower(btrim(?))", c.name) == ^String.downcase(trimmed))
+        |> order_by([c], asc: c.id)
+        |> limit(1)
+        |> Repo.one()
+    end
+  end
+
+  def get_client_by_name(_other), do: nil
+
+  @doc """
   Builds a changeset for a client form.
   """
   def change_client(%Client{} = client \\ %Client{}, attrs \\ %{}) do

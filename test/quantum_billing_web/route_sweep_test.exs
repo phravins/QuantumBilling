@@ -144,6 +144,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/reports",
         ~p"/compliance",
         ~p"/recurring",
+        ~p"/bin",
         ~p"/settings",
         ~p"/settings/audit-logs",
         ~p"/invoice-templates/#{template.id}"

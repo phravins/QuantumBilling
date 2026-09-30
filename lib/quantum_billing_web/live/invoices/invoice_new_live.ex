@@ -14,11 +14,18 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   editable afterwards: a particular invoice may legitimately need a one-off
   address, and the copy is what gets stored, so overriding it here is the
   intended way to do that.
+
+  Typing a client's exact name into "Client Name" counts as picking it, so the
+  GSTIN and PAN arrive either way. A PAN is also read out of a GSTIN whenever
+  the PAN box is empty, because characters 3–12 of a GSTIN are the PAN — there
+  is nothing for the user to look up. When the chosen client simply has no
+  GSTIN on file the GSTIN box says so, rather than staying silently blank.
   """
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Clients
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.GST
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
@@ -38,6 +45,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       |> assign(:organization, organization)
       |> assign(:client_search, "")
       |> assign(:selected_client_id, nil)
+      |> assign(:gstin_hint, nil)
       |> assign_client_options()
       # Read-only here: the picker offers designs, it does not create them, so
       # this must not seed one just because somebody opened the form.
@@ -82,15 +90,43 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
+        client = invoice.client_id && Clients.get_client(invoice.client_id)
+
         {:ok,
          socket
          |> assign(:page_title, "Edit #{invoice.invoice_number}")
          |> assign(:invoice, invoice)
          |> assign(:selected_client_id, invoice.client_id)
+         |> assign(:gstin_hint, gstin_hint(client))
          |> assign_client_options()
-         |> assign_form(Invoices.change_invoice(invoice))}
+         |> assign_form(Invoices.change_invoice(invoice, missing_tax_ids(invoice, client)))}
     end
   end
+
+  # An invoice saved before its client had a GSTIN or PAN on file — or one
+  # whose PAN was simply never copied — opens with those boxes empty. What the
+  # client record (or the GSTIN itself) can supply is offered in the form; it
+  # is only written if the user saves.
+  defp missing_tax_ids(%Invoice{} = invoice, client) do
+    gstin = present(invoice.client_gstin) || present(client && client.gstin)
+
+    pan =
+      present(invoice.client_pan) || present(client && client.pan) || GST.pan_from_gstin(gstin)
+
+    %{}
+    |> put_missing("client_gstin", invoice.client_gstin, gstin)
+    |> put_missing("client_pan", invoice.client_pan, pan)
+  end
+
+  defp put_missing(params, key, stored, found) do
+    if present(stored) == nil and found != nil, do: Map.put(params, key, found), else: params
+  end
+
+  defp present(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: value
+  end
+
+  defp present(_value), do: nil
 
   # Narrows the client picker. It carries no name, so what is typed here never
   # reaches the invoice params or the changeset.
@@ -98,11 +134,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     {:noreply, socket |> assign(:client_search, search) |> assign_client_options()}
   end
 
-  def handle_event("validate", %{"invoice" => params}, socket) do
-    {params, socket} = apply_client_choice(params, socket)
+  def handle_event("validate", %{"invoice" => params} = event, socket) do
+    {params, socket} =
+      params
+      |> match_typed_client(event["_target"])
+      |> apply_client_choice(socket)
 
     params =
       params
+      |> pan_from_gstin()
       |> apply_payment_term()
       |> with_company(socket.assigns.organization)
 
@@ -120,7 +160,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   # never quietly persist an invalid invoice.
   def handle_event("save", %{"invoice" => params}, socket) do
     {params, _socket} = apply_client_choice(params, socket)
-    params = apply_payment_term(params)
+    params = params |> pan_from_gstin() |> apply_payment_term()
 
     case save_invoice(socket.assigns.invoice, params) do
       {:ok, invoice} ->
@@ -171,27 +211,79 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     # has scrolled out of them is still a valid choice.
     client = id not in [nil, ""] && Clients.get_client(id)
 
-    if client && to_string(id) != to_string(socket.assigns.selected_client_id) do
-      params =
-        Map.merge(params, %{
-          "client_name" => client.name,
-          "client_gstin" => client.gstin,
-          "client_pan" => client.pan,
-          "client_email" => client.email,
-          "client_state" => client.billing_state,
-          "client_billing_address" => billing_address(client),
-          # Copied as their own fields as well as into the printed blob: the
-          # e-invoice export needs the city and the PIN separately, and reading
-          # them back out of the blob would mean parsing an address.
-          "client_city" => client.billing_city,
-          "client_pincode" => client.billing_pin
-        })
+    cond do
+      client && to_string(id) != to_string(socket.assigns.selected_client_id) ->
+        {copy_client(params, client),
+         socket
+         |> assign(:selected_client_id, id)
+         |> assign(:gstin_hint, gstin_hint(client))
+         |> assign_client_options()}
 
-      {params, socket |> assign(:selected_client_id, id) |> assign_client_options()}
-    else
-      {params, socket}
+      # Back to "Select a client": forget the choice, so picking the same
+      # client again copies its details afresh and the hint does not linger.
+      id == "" and socket.assigns.selected_client_id != nil ->
+        {params, socket |> assign(:selected_client_id, nil) |> assign(:gstin_hint, nil)}
+
+      true ->
+        {params, socket}
     end
   end
+
+  defp copy_client(params, client) do
+    Map.merge(params, %{
+      "client_name" => client.name,
+      "client_gstin" => client.gstin,
+      # Not every client has a PAN typed in, but every GSTIN contains one.
+      "client_pan" => present(client.pan) || GST.pan_from_gstin(client.gstin),
+      "client_email" => client.email,
+      "client_state" => client.billing_state,
+      "client_billing_address" => billing_address(client),
+      # Copied as their own fields as well as into the printed blob: the
+      # e-invoice export needs the city and the PIN separately, and reading
+      # them back out of the blob would mean parsing an address.
+      "client_city" => client.billing_city,
+      "client_pincode" => client.billing_pin
+    })
+  end
+
+  # The "Client Name" box is a plain text input, and people type into it
+  # instead of using the picker above. When what they typed is exactly a
+  # client's name, that is the same decision as picking the client, so it is
+  # turned into one here and `apply_client_choice/2` does the copying.
+  #
+  # Only when the name box is the input that changed: otherwise a hand-edited
+  # name that happens to match would re-select a client on every keystroke
+  # elsewhere in the form.
+  defp match_typed_client(params, ["invoice", "client_name"]) do
+    case Clients.get_client_by_name(params["client_name"]) do
+      nil -> params
+      client -> Map.put(params, "client_id", to_string(client.id))
+    end
+  end
+
+  defp match_typed_client(params, _other_target), do: params
+
+  # Characters 3–12 of a GSTIN are the holder's PAN, so an empty PAN box next
+  # to a complete GSTIN is filled in rather than left for the user to retype.
+  # A PAN that has been typed is never overwritten — a mismatch is for the
+  # changeset to report, not for this to paper over.
+  defp pan_from_gstin(params) do
+    gstin = params |> Map.get("client_gstin") |> to_string() |> String.trim() |> String.upcase()
+
+    case {present(params["client_pan"]), GST.pan_from_gstin(gstin)} do
+      {nil, pan} when is_binary(pan) -> Map.put(params, "client_pan", pan)
+      _typed_or_no_gstin -> params
+    end
+  end
+
+  # Why the GSTIN box is empty, for a client that has none to copy.
+  defp gstin_hint(%Clients.Client{} = client) do
+    if present(client.gstin) == nil do
+      "No GSTIN on file for this client (#{client.client_type})."
+    end
+  end
+
+  defp gstin_hint(_no_client), do: nil
 
   defp assign_client_options(socket) do
     options =
@@ -448,7 +540,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 prompt="Select state"
                 options={EWayBillForm.states()}
               /> <.field field={f[:client_name]} label="Client Name" required />
-              <.field field={f[:client_gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
+              <.field
+                field={f[:client_gstin]}
+                label="GSTIN"
+                placeholder="27AABCA1234A1Z5"
+                hint={if(f[:client_gstin].value in [nil, ""], do: @gstin_hint)}
+              />
               <.field
                 field={f[:client_billing_address]}
                 label="Billing Address"
@@ -491,7 +588,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
                     <th class="w-24 pr-2 text-left">Tax (%)</th>
 
-                    <th class="w-28 pr-2 text-right">Amount (₹)</th>
+                    <th class="w-32 pr-2 text-right">Amount (₹)</th>
 
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
@@ -499,103 +596,133 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                   </tr>
                 </thead>
 
-                <tbody>
-                  <tr
-                    :for={{item, index} <- Enum.with_index(f[:items].value || [])}
-                    class={table_row_class()}
-                  >
-                    <% item_form = item_form(item, index) %>
-                    <td class="py-2 pr-2 align-top text-sm text-base-content/45">{index + 1}</td>
+                <%!--
+                  `inputs_for` rather than a loop over the raw association: it
+                  leaves out the rows Ecto has marked for replacement and it
+                  knows each stored row's id. Without the id every change made
+                  while editing was read as "these are all new rows", and the
+                  stored ones came back as duplicates that could not be removed.
 
-                    <td class="py-2 pr-2 align-top">
-                      <input type="hidden" name="invoice[items_sort][]" value={index} />
-                      <input
-                        type="hidden"
-                        name={item_form[:position].name}
-                        value={index}
-                      />
-                      <input
-                        type="text"
-                        name={item_form[:description].name}
-                        value={Phoenix.HTML.Form.input_value(item_form, :description)}
-                        placeholder="Item or service"
-                        required
-                        class={form_input_class()}
-                      />
-                    </td>
+                  `skip_hidden` because the hidden inputs would otherwise land
+                  directly inside <tbody>, where an <input> is not allowed; they
+                  are written into the first cell instead.
+                --%>
+                <tbody id="invoice-items">
+                  <.inputs_for :let={item_f} field={f[:items]} skip_hidden>
+                    <tr id={"invoice-item-#{item_f.index}"} class={table_row_class()}>
+                      <td class="py-2 pr-2 align-top text-sm text-base-content/45">
+                        {item_f.index + 1}
+                      </td>
 
-                    <td class="py-2 pr-2 align-top">
-                      <input
-                        type="text"
-                        name={item_form[:hsn_sac].name}
-                        value={Phoenix.HTML.Form.input_value(item_form, :hsn_sac)}
-                        placeholder="998313"
-                        class={form_input_class()}
-                      />
-                    </td>
-
-                    <td class="py-2 pr-2 align-top">
-                      <input
-                        type="number"
-                        min="1"
-                        name={item_form[:quantity].name}
-                        value={Phoenix.HTML.Form.input_value(item_form, :quantity)}
-                        class={form_input_class()}
-                      />
-                    </td>
-
-                    <td class="py-2 pr-2 align-top">
-                      <select name={item_form[:unit].name} class={form_select_class()}>
-                        <option
-                          :for={unit <- InvoiceItem.units()}
-                          value={unit}
-                          selected={Phoenix.HTML.Form.input_value(item_form, :unit) == unit}
-                        >
-                          {unit}
-                        </option>
-                      </select>
-                    </td>
-
-                    <td class="py-2 pr-2 align-top">
-                      <input
-                        type="number"
-                        min="0"
-                        name={item_form[:rate].name}
-                        value={Phoenix.HTML.Form.input_value(item_form, :rate)}
-                        class={form_input_class()}
-                      />
-                    </td>
-
-                    <td class="py-2 pr-2 align-top">
-                      <select name={item_form[:tax_rate].name} class={form_select_class()}>
-                        <option
-                          :for={rate <- Organization.gst_rates()}
-                          value={rate}
-                          selected={
-                            to_string(Phoenix.HTML.Form.input_value(item_form, :tax_rate)) ==
-                              to_string(rate)
-                          }
-                        >
-                          {rate}%
-                        </option>
-                      </select>
-                    </td>
-
-                    <td class="py-2 pr-2 text-right align-middle text-sm font-medium">
-                      {rupees(line_amount(item), decimals: 2)}
-                    </td>
-
-                    <td class="py-2 text-right align-middle">
-                      <label class={[row_action_class(), "ml-auto cursor-pointer"]}>
+                      <td class="py-2 pr-2 align-top">
                         <input
-                          type="checkbox"
-                          name="invoice[items_drop][]"
-                          value={index}
-                          class="hidden"
-                        /> <.icon name="hero-trash" class="size-4" />
-                      </label>
-                    </td>
-                  </tr>
+                          :for={{name, value} <- item_f.hidden}
+                          type="hidden"
+                          name={"#{item_f.name}[#{name}]"}
+                          value={value}
+                        />
+                        <input type="hidden" name="invoice[items_sort][]" value={item_f.index} />
+                        <input
+                          type="hidden"
+                          name={item_f[:position].name}
+                          value={item_f.index}
+                        />
+                        <input
+                          type="text"
+                          id={item_f[:description].id}
+                          name={item_f[:description].name}
+                          value={item_f[:description].value}
+                          placeholder="Item or service"
+                          required
+                          class={form_input_class()}
+                        />
+                      </td>
+
+                      <td class="py-2 pr-2 align-top">
+                        <input
+                          type="text"
+                          id={item_f[:hsn_sac].id}
+                          name={item_f[:hsn_sac].name}
+                          value={item_f[:hsn_sac].value}
+                          placeholder="998313"
+                          class={form_input_class()}
+                        />
+                      </td>
+
+                      <td class="py-2 pr-2 align-top">
+                        <input
+                          type="number"
+                          min="1"
+                          id={item_f[:quantity].id}
+                          name={item_f[:quantity].name}
+                          value={item_f[:quantity].value}
+                          class={form_input_class()}
+                        />
+                      </td>
+
+                      <td class="py-2 pr-2 align-top">
+                        <select
+                          id={item_f[:unit].id}
+                          name={item_f[:unit].name}
+                          class={form_select_class()}
+                        >
+                          <option
+                            :for={unit <- InvoiceItem.units()}
+                            value={unit}
+                            selected={item_f[:unit].value == unit}
+                          >
+                            {unit}
+                          </option>
+                        </select>
+                      </td>
+
+                      <td class="py-2 pr-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          id={item_f[:rate].id}
+                          name={item_f[:rate].name}
+                          value={item_f[:rate].value}
+                          class={form_input_class()}
+                        />
+                      </td>
+
+                      <td class="py-2 pr-2 align-top">
+                        <select
+                          id={item_f[:tax_rate].id}
+                          name={item_f[:tax_rate].name}
+                          class={form_select_class()}
+                        >
+                          <option
+                            :for={rate <- Organization.gst_rates()}
+                            value={rate}
+                            selected={to_string(item_f[:tax_rate].value) == to_string(rate)}
+                          >
+                            {rate}%
+                          </option>
+                        </select>
+                      </td>
+
+                      <td class="py-2 pr-2 text-right align-middle">
+                        <.line_amount item={item_f.source} index={item_f.index} />
+                      </td>
+
+                      <td class="py-2 text-right align-middle">
+                        <label
+                          id={"invoice-item-remove-#{item_f.index}"}
+                          class={[row_action_class(), "ml-auto cursor-pointer"]}
+                        >
+                          <span class="sr-only">Remove item {item_f.index + 1}</span>
+                          <input
+                            type="checkbox"
+                            name="invoice[items_drop][]"
+                            value={item_f.index}
+                            class="hidden"
+                          /> <.icon name="hero-trash" class="size-4" />
+                        </label>
+                      </td>
+                    </tr>
+                  </.inputs_for>
                 </tbody>
               </table>
             </div>
@@ -607,8 +734,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{msg}
             </p>
 
-            <label class={[secondary_button_class(), "mt-4 cursor-pointer"]}>
-              <input type="checkbox" name="invoice[items_sort][]" class="hidden" />
+            <label id="invoice-item-add" class={[secondary_button_class(), "mt-4 cursor-pointer"]}>
+              <input type="checkbox" name="invoice[items_sort][]" value="new" class="hidden" />
               <.icon name="hero-plus" class="size-4" /> Add New Item
             </label>
           </.card>
@@ -689,7 +816,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             />
             <div class="mt-4 flex items-start justify-between gap-4 rounded-field bg-base-200 px-3 py-2.5">
               <span class="text-sm font-semibold">Grand Total</span>
-              <span class="text-sm font-semibold tracking-tight">
+              <span id="invoice-summary-grand-total" class="text-sm font-semibold tracking-tight">
                 {rupees(@summary.grand_total, decimals: 2, space: true)}
               </span>
             </div>
@@ -760,27 +887,41 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
-  # A new invoice's items arrive as changesets, straight from `cast_assoc`. An
-  # existing one's arrive as loaded structs, because opening the edit form runs
-  # no params through the changeset — and `to_form/2` has no idea what to do
-  # with a bare struct. Normalising here rather than at the call site keeps the
-  # row markup identical for both.
-  defp item_form(%Ecto.Changeset{} = changeset, index) do
-    to_form(changeset, as: "invoice[items][#{index}]")
+  attr :item, Ecto.Changeset, required: true
+  attr :index, :integer, required: true
+
+  # What one row comes to, tax included, with the tax named beneath it.
+  #
+  # It used to show quantity × rate alone, so choosing a different GST rate
+  # changed nothing in the row and the only sign the tax had been worked out
+  # was in the summary panel. The rows now add up to the Grand Total.
+  defp line_amount(assigns) do
+    assigns = assign(assigns, :figures, line_figures(assigns.item))
+
+    ~H"""
+    <p id={"invoice-item-amount-#{@index}"} class="text-sm font-medium tabular-nums">
+      {rupees(@figures.total, decimals: 2)}
+    </p>
+
+    <p
+      id={"invoice-item-tax-#{@index}"}
+      class="mt-0.5 whitespace-nowrap text-2xs tabular-nums text-base-content/50"
+    >
+      incl. {rupees(@figures.tax, decimals: 2)} tax
+    </p>
+    """
   end
 
-  defp item_form(%InvoiceItem{} = item, index) do
-    item |> Ecto.Changeset.change() |> item_form(index)
-  end
+  # One row's figures as typed, before anything is saved. Worked out by the
+  # same two functions the invoice totals are summed from, so a row and the
+  # summary panel cannot disagree about the tax.
+  defp line_figures(%Ecto.Changeset{} = changeset) do
+    item = Ecto.Changeset.apply_changes(changeset)
+    amount = InvoiceItem.amount(item)
+    tax = InvoiceItem.tax(item)
 
-  # The line total as typed, before anything is saved.
-  defp line_amount(%Ecto.Changeset{} = changeset) do
-    quantity = Ecto.Changeset.get_field(changeset, :quantity) || 0
-    rate = Ecto.Changeset.get_field(changeset, :rate) || 0
-    quantity * rate
+    %{amount: amount, tax: tax, total: amount + tax}
   end
-
-  defp line_amount(%InvoiceItem{} = item), do: InvoiceItem.amount(item)
 
   # `cast_assoc` reports "add at least one item" against :items, which no
   # individual input owns, so it is surfaced under the table instead.

@@ -193,5 +193,39 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       assert has_element?(view, "#invoice-#{invoice.id}")
       assert html =~ "All Status"
     end
+
+    test "deleting an invoice moves it to the Bin", %{conn: conn} do
+      invoice = create_invoice()
+      other = create_invoice(%{"client_name" => "Northwind Traders"})
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      # The confirmation says where it is going, not that it is gone for good.
+      assert has_element?(view, ~s|#invoice-delete-#{invoice.id}[data-confirm*="Bin"]|)
+
+      view |> element("#invoice-delete-#{invoice.id}") |> render_click()
+
+      refute has_element?(view, "#invoice-#{invoice.id}")
+      assert has_element?(view, "#invoice-#{other.id}")
+      assert has_element?(view, "#flash-info", "moved to the Bin")
+
+      # Off the list, not out of the database.
+      assert Invoices.get_invoice(invoice.id) == nil
+      assert Invoices.get_deleted_invoice(invoice.id).invoice_number == invoice.invoice_number
+
+      {:ok, bin, _html} = live(conn, ~p"/bin")
+      assert has_element?(bin, "#bin-invoice-#{invoice.id}", invoice.invoice_number)
+    end
+
+    test "a binned invoice can no longer be opened", %{conn: conn} do
+      invoice = create_invoice()
+      {:ok, _binned} = Invoices.delete_invoice(invoice)
+
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+      refute has_element?(view, "#invoice-#{invoice.id}")
+
+      assert {:error, {kind, %{to: "/invoices"}}} = live(conn, ~p"/invoices/#{invoice.id}")
+      assert kind in [:redirect, :live_redirect]
+    end
   end
 end

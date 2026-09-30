@@ -118,11 +118,12 @@ defmodule QuantumBillingWeb.InvoicesLive do
         {:noreply, put_flash(socket, :error, "That invoice no longer exists.")}
 
       invoice ->
-        case Invoices.delete_invoice(invoice) do
+        # Moves it to the Bin rather than removing it: see `Invoices.delete_invoice/2`.
+        case Invoices.delete_invoice(invoice, user_id: socket.assigns.current_scope.user.id) do
           {:ok, invoice} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Invoice #{invoice.invoice_number} deleted.")
+             |> put_flash(:info, "Invoice #{invoice.invoice_number} moved to the Bin.")
              |> load_page()}
 
           {:error, _changeset} ->
@@ -341,10 +342,11 @@ defmodule QuantumBillingWeb.InvoicesLive do
                           <a
                             phx-click="delete"
                             phx-value-id={row.id}
-                            data-confirm={"Delete #{row.number}? This cannot be undone, and the number is not reused."}
+                            id={"invoice-delete-#{row.id}"}
+                            data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
                             class="text-error"
                           >
-                            <.icon name="hero-trash" class="size-4" /> Delete
+                            <.icon name="hero-trash" class="size-4" /> Move to Bin
                           </a>
                         </li>
                       </ul>

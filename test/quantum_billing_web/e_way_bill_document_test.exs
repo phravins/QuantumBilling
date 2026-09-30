@@ -81,8 +81,7 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
       body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
       assert body =~ "Form GST EWB-01"
-      assert body =~ "Part - A"
-      assert body =~ "Part - B"
+      assert body =~ "Vehicle Details"
       # The number prints in the groups of four the portal uses.
       assert body =~ Document.grouped(bill.ewb_number)
       assert body =~ bill.invoice.invoice_number
@@ -92,6 +91,28 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
       # The goods table is the part an officer reads.
       assert body =~ "8471"
       assert body =~ "Wireless keyboard"
+    end
+
+    # The statutory lettering is gone from the page: the first block has no
+    # heading and counts its rows 1 to 10, and the second is named for what it
+    # holds rather than "Part - B".
+    test "numbers the consignment rows and drops the Part A / Part B labels", %{conn: conn} do
+      bill = invoice_with_bill()
+
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
+
+      refute body =~ "Part - A"
+      refute body =~ "Part - B"
+      refute body =~ "Part-B"
+      refute body =~ "A.1"
+
+      for {number, label} <- [
+            {1, "GSTIN of Supplier"},
+            {5, "Document Number"},
+            {10, "Transporter"}
+          ] do
+        assert body =~ "<b>#{number}.</b> #{label}"
+      end
     end
 
     test "carries a QR of the bill, its issuer and its date", %{conn: conn} do

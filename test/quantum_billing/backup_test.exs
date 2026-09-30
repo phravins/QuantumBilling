@@ -5,6 +5,7 @@ defmodule QuantumBilling.BackupTest do
   alias QuantumBilling.Clients
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Recurring
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
 
@@ -140,6 +141,48 @@ defmodule QuantumBilling.BackupTest do
       assert item.description == "Consulting"
       assert restored.grand_total == invoice.grand_total
       assert restored.client_id
+    end
+
+    # What is in the Bin is still data the business holds. A restore that
+    # dropped `deleted_at` would put every deleted invoice back on the books.
+    test "what was in the Bin is still in the Bin afterwards" do
+      client = client_fixture()
+      kept = invoice_fixture(client)
+      {:ok, binned} = client |> invoice_fixture() |> Invoices.delete_invoice()
+
+      {:ok, profile} =
+        Recurring.create_profile(%{
+          title: "Monthly Retainer",
+          frequency: "Monthly",
+          next_run_date: Date.utc_today(),
+          client_id: client.id,
+          auto_send_email: false
+        })
+
+      {:ok, binned_profile} = Recurring.delete_profile(profile)
+
+      json = Backup.export_json()
+
+      # Emptied between the export and the restore, so that what comes back
+      # can only have come from the file.
+      {:ok, _restored} = Invoices.restore_invoice(binned)
+      {:ok, _restored} = Recurring.restore_profile(binned_profile)
+      assert Invoices.list_deleted_invoices() == []
+
+      assert {:ok, counts} = Backup.restore_json(json)
+      assert counts.invoices == 2
+
+      assert [%{id: kept_id}] = Invoices.list_invoices()
+      assert kept_id == kept.id
+
+      assert [%Invoice{id: binned_id, deleted_at: deleted_at}] = Invoices.list_deleted_invoices()
+      assert binned_id == binned.id
+      assert deleted_at == binned.deleted_at
+
+      assert Recurring.list_profiles() == []
+      assert [%{id: profile_id}] = Recurring.list_deleted_profiles()
+      assert profile_id == profile.id
+      assert Recurring.due_profiles() == []
     end
 
     test "restores settings without clobbering credentials that are not in the file" do

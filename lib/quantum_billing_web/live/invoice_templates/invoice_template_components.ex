@@ -906,7 +906,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             type="button"
             phx-click="delete_template"
             phx-value-id={template.id}
-            data-confirm={"Delete “#{template.name}”? Invoices already issued with it keep the design they were issued with."}
+            data-confirm={"Move “#{template.name}” to the Bin? Invoices already issued with it keep the design they were issued with, and it can be restored from there."}
             class={[secondary_button_class(), "h-8 px-2.5 text-xs hover:text-red-600"]}
           >
             Delete

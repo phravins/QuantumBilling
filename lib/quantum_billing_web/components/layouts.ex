@@ -335,34 +335,36 @@ defmodule QuantumBillingWeb.Layouts do
     </div>
     <.flash_group flash={@flash} />
     <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsDisclosure">
-      // Carries a manual open across navigation. The server already opens the
-      // list whenever a settings section is on screen (data-open), so this is
-      // only what remembers the chevron elsewhere in the app.
-      const KEY = "qb:settings-sections-open"
+      // The server decides whether the list starts open: it is, exactly when a
+      // settings section is on screen (data-open). This hook used to remember a
+      // manual open in localStorage as well, which meant one click on the
+      // chevron unfolded the list on every page from then on -- under Invoices,
+      // under Clients, for ever. Nothing is remembered across pages now.
+      const STALE_KEY = "qb:settings-sections-open"
 
       export default {
         mounted() {
-          // Reset per mount: arriving somewhere new is not an override, so a
-          // section page is free to unfold the list again.
-          this.touched = false
-          this.restore()
-          this.el.addEventListener("change", () => {
-            this.touched = true
-            localStorage.setItem(KEY, this.el.checked)
-          })
+          // Browsers that visited before the change still hold the old flag.
+          try { localStorage.removeItem(STALE_KEY) } catch (_error) {}
+
+          // `null` until the chevron is used on this page. Reset per mount:
+          // arriving somewhere new is not an override.
+          this.choice = null
+          this.apply(this.el.dataset.open === "true")
+          this.el.addEventListener("change", () => (this.choice = this.el.checked))
         },
 
-        // A diff must not undo a collapse the user just asked for, so once
-        // they have touched the chevron this mount, their choice stands.
+        // LiveView puts a checkbox back to what the server rendered on every
+        // diff -- a notification arriving is enough. A choice made on this page
+        // has to survive that, so it is put back; otherwise the server's
+        // answer stands.
         updated() {
-          if (!this.touched) this.restore()
+          this.apply(this.choice === null ? this.el.dataset.open === "true" : this.choice)
         },
 
-        // Restoring is not the user opening it, so it must not animate --
-        // otherwise the list slides open again on every page load.
-        restore() {
-          const open =
-            this.el.dataset.open === "true" || localStorage.getItem(KEY) === "true"
+        // Not the user opening it, so it must not animate -- otherwise the
+        // list would slide on every page load and every diff.
+        apply(open) {
           if (this.el.checked === open) return
 
           const panel = document.getElementById("settings-sections")
@@ -486,6 +488,13 @@ defmodule QuantumBillingWeb.Layouts do
         path: ~p"/recurring",
         icon: "hero-arrow-path",
         color: "text-pink-600 dark:text-pink-400"
+      },
+      %{
+        key: :bin,
+        label: "Bin",
+        path: ~p"/bin",
+        icon: "hero-trash",
+        color: "text-slate-600 dark:text-slate-400"
       },
       %{
         key: :settings,

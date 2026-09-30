@@ -92,14 +92,25 @@ defmodule QuantumBillingWeb.RecurringLive do
      |> load_profiles()}
   end
 
+  # Moves it to the Bin, where it stops billing: see `Recurring.delete_profile/2`.
   def handle_event("delete", %{"id" => id}, socket) do
-    profile = Recurring.get_profile!(id)
-    {:ok, _} = Recurring.delete_profile(profile)
+    case Recurring.get_profile(id) do
+      nil ->
+        # Already gone — most likely binned in another window.
+        {:noreply,
+         socket
+         |> put_flash(:error, "That recurring profile no longer exists.")
+         |> load_profiles()}
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Recurring profile deleted.")
-     |> load_profiles()}
+      profile ->
+        {:ok, _profile} =
+          Recurring.delete_profile(profile, user_id: socket.assigns.current_scope.user.id)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Recurring profile moved to the Bin.")
+         |> load_profiles()}
+    end
   end
 
   def render(assigns) do
@@ -195,9 +206,11 @@ defmodule QuantumBillingWeb.RecurringLive do
 
                     <button
                       type="button"
+                      id={"recurring-delete-#{p.id}"}
                       phx-click="delete"
                       phx-value-id={p.id}
-                      data-confirm="Delete this recurring profile?"
+                      aria-label="Move to Bin"
+                      data-confirm="Move this recurring profile to the Bin? It stops billing, and can be restored from there."
                       class="btn btn-xs btn-ghost text-error"
                     >
                       <.icon name="hero-trash" class="size-4" />

@@ -53,7 +53,7 @@ defmodule QuantumBilling.Reports do
   in chunks.
   """
   def invoices do
-    Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
+    Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
 
@@ -101,7 +101,9 @@ defmodule QuantumBilling.Reports do
   about what "This Quarter, Tax Liability, client X" means.
   """
   def query(filters) when is_map(filters) do
-    Invoice
+    # Binned invoices are out of every report: `kept/1` here covers the page,
+    # the totals and the export, because they all start from this query.
+    Invoice.kept()
     |> filter_dates(range_bounds(filters[:date_range]))
     |> filter_equal(:status, filters[:status], "All Status")
     |> filter_equal(:client_name, filters[:client], "All Clients")
@@ -740,7 +742,7 @@ defmodule QuantumBilling.Reports do
     from_clients = from(c in Client, select: %{name: c.name}, where: not is_nil(c.name))
 
     from_invoices =
-      from(i in Invoice, select: %{name: i.client_name}, where: not is_nil(i.client_name))
+      from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))
 
     names =
       from(n in subquery(union(from_clients, ^from_invoices)),

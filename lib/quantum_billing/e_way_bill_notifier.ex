@@ -133,8 +133,8 @@ defmodule QuantumBilling.EWayBillNotifier do
         </table>
       </div>
       <p style="color: #6b7280; font-size: 13px;">
-        It can be cancelled within 24 hours of generation, and Part-B must be updated before the
-        consignment changes vehicles.
+        It can be cancelled within 24 hours of generation, and the vehicle details must be updated
+        before the consignment changes vehicles.
       </p>
       <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
         <strong>#{escape(from_name)}</strong>
@@ -154,8 +154,8 @@ defmodule QuantumBilling.EWayBillNotifier do
     Vehicle:     #{bill.vehicle_number || "Not recorded"}
     Distance:    #{bill.distance_km} km
 
-    It can be cancelled within 24 hours of generation, and Part-B must be
-    updated before the consignment changes vehicles.
+    It can be cancelled within 24 hours of generation, and the vehicle details
+    must be updated before the consignment changes vehicles.
 
     #{from_name}
     """

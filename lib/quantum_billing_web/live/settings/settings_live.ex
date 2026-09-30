@@ -214,7 +214,14 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   def handle_event("delete_template", %{"id" => id}, socket) do
-    with_template(socket, id, &Templates.delete_template/1, "That design could not be removed.")
+    user_id = socket.assigns.current_scope.user.id
+
+    with_template(
+      socket,
+      id,
+      &Templates.delete_template(&1, user_id: user_id),
+      "That design could not be removed."
+    )
   end
 
   def handle_event("validate", %{"organization" => params}, socket) do

@@ -121,17 +121,38 @@ defmodule QuantumBillingWeb.RecurringLiveTest do
     assert html =~ "Active"
   end
 
-  test "deleting a profile removes it from the list", %{conn: conn} do
+  test "deleting a profile moves it to the Bin", %{conn: conn} do
     client = client()
     profile = profile(client, %{"title" => "Doomed retainer"})
 
-    {:ok, view, html} = live(conn, ~p"/recurring")
-    assert html =~ "Doomed retainer"
+    {:ok, view, _html} = live(conn, ~p"/recurring")
+    assert has_element?(view, "#profile-#{profile.id}", "Doomed retainer")
 
-    html = render_click(view, "delete", %{"id" => to_string(profile.id)})
+    # The confirmation says where it is going, not that it is gone for good.
+    assert has_element?(view, ~s|#recurring-delete-#{profile.id}[data-confirm*="Bin"]|)
 
-    refute html =~ "Doomed retainer"
+    view |> element("#recurring-delete-#{profile.id}") |> render_click()
+
+    refute has_element?(view, "#profile-#{profile.id}")
+    assert has_element?(view, "#flash-info", "moved to the Bin")
+
     assert Recurring.get_profile(profile.id) == nil
+    assert Recurring.get_deleted_profile(profile.id).title == "Doomed retainer"
+
+    {:ok, bin, _html} = live(conn, ~p"/bin")
+    assert has_element?(bin, "#bin-recurring-#{profile.id}", "Doomed retainer")
+  end
+
+  test "deleting a profile that is already gone says so", %{conn: conn} do
+    client = client()
+    profile = profile(client)
+
+    {:ok, view, _html} = live(conn, ~p"/recurring")
+
+    {:ok, _binned} = Recurring.delete_profile(profile)
+    render_click(view, "delete", %{"id" => to_string(profile.id)})
+
+    assert has_element?(view, "#flash-error", "no longer exists")
   end
 
   test "creating a profile through the modal", %{conn: conn} do

@@ -338,4 +338,34 @@ defmodule QuantumBilling.ClientsTest do
       assert Clients.get_client(nil) == nil
     end
   end
+
+  describe "get_client_by_name/1" do
+    test "matches the whole name, ignoring case and surrounding spaces" do
+      {:ok, client} = Clients.create_client(attrs(%{"name" => "Acme Traders"}))
+
+      assert Clients.get_client_by_name("Acme Traders").id == client.id
+      assert Clients.get_client_by_name("  acme TRADERS ").id == client.id
+    end
+
+    test "never matches part of a name" do
+      {:ok, _client} = Clients.create_client(attrs(%{"name" => "Acme Traders"}))
+
+      assert Clients.get_client_by_name("Acme") == nil
+      assert Clients.get_client_by_name("Acme Traders Ltd") == nil
+      assert Clients.get_client_by_name("Acme%") == nil
+    end
+
+    test "answers nil for nothing at all" do
+      assert Clients.get_client_by_name("") == nil
+      assert Clients.get_client_by_name("   ") == nil
+      assert Clients.get_client_by_name(nil) == nil
+    end
+
+    test "the oldest client wins when a name is shared" do
+      {:ok, first} = Clients.create_client(attrs(%{"name" => "Acme Traders"}))
+      {:ok, _second} = Clients.create_client(attrs(%{"name" => "Acme Traders"}))
+
+      assert Clients.get_client_by_name("Acme Traders").id == first.id
+    end
+  end
 end

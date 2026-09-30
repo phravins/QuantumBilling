@@ -394,11 +394,16 @@ defmodule QuantumBilling.EWayBills do
   # Named bindings, because the row the list page renders is half bill and half
   # invoice — the number and the vehicle come from one, the consignee and the
   # value from the other.
+  #
+  # Bills whose invoice is in the Bin are left out. The list is of consignments
+  # being tracked, and a bill for a withdrawn document is not one; it comes
+  # back with the invoice if that is restored.
   defp base_query do
     from b in EWayBill,
       as: :bill,
       join: i in assoc(b, :invoice),
       as: :invoice,
+      where: is_nil(i.deleted_at),
       preload: [invoice: i]
   end
 

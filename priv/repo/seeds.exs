@@ -152,11 +152,19 @@ clients_data = [
   }
 ]
 
+# Looked up by name before creating. Creating first and falling back on error
+# only worked for clients with a GSTIN, where the unique index refuses the
+# second copy; an unregistered client has nothing unique about it, so every
+# run of this file added another one.
 created_clients =
   Enum.map(clients_data, fn attrs ->
-    case Clients.create_client(attrs) do
-      {:ok, client} -> client
-      {:error, _cs} -> Repo.get_by!(QuantumBilling.Clients.Client, name: attrs.name)
+    case Clients.get_client_by_name(attrs.name) do
+      nil ->
+        {:ok, client} = Clients.create_client(attrs)
+        client
+
+      client ->
+        client
     end
   end)
 
@@ -213,6 +221,11 @@ sample_invoices =
       client_id: client.id,
       client_name: client.name,
       client_gstin: client.gstin,
+      # The invoice keeps its own copy of these, as it does of the name and the
+      # GSTIN: it is what the form shows when the invoice is opened again.
+      client_pan: client.pan || QuantumBilling.GST.pan_from_gstin(client.gstin),
+      client_email: client.email,
+      client_state: client.billing_state,
       client_billing_address: client_address.(client),
       place_of_supply: client.billing_state,
       invoice_date: issued,
