@@ -66,56 +66,68 @@ defmodule QuantumBilling.UploadsTest do
       assert message =~ "smaller than"
     end
 
-    test "accepts a valid safe SVG" do
+    test "refuses SVG outright, however harmless it looks" do
       svg_path = Path.join(System.tmp_dir!(), "valid-#{System.unique_integer([:positive])}.svg")
       File.write!(svg_path, ~s[<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>])
       on_exit(fn -> File.rm(svg_path) end)
 
-      assert {:ok, path} = Uploads.store(svg_path, "image/svg+xml")
-      cleanup(path)
-      assert String.ends_with?(path, ".svg")
+      # SVG was accepted, filtered by regexes for `<script`, `on…=` handlers
+      # and `javascript:` URLs. A blocklist over SVG does not hold — see the
+      # bypasses listed in `QuantumBilling.Uploads` — and an upload here is
+      # served from this application's own origin, so a script that gets
+      # through runs with the application's privileges.
+      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
+      assert message =~ "PNG, JPEG, GIF or WebP"
+      refute message =~ "SVG"
     end
 
-    test "refuses an SVG containing script elements" do
-      svg_path =
-        Path.join(System.tmp_dir!(), "xss-script-#{System.unique_integer([:positive])}.svg")
+    test "refuses the bypasses the old regex filter would have missed" do
+      bypasses = [
+        ~s[<svg><animate attributeName="href" values="javascript:alert(1)"/></svg>],
+        ~s[<svg><set attributeName="onload" to="alert(1)"/></svg>],
+        ~s[<svg><use href="data:image/svg+xml;base64,PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+"/></svg>],
+        ~s[<svg><a xlink:href="&#106;avascript:alert(1)"><text>x</text></a></svg>]
+      ]
 
-      File.write!(svg_path, ~s[<svg><script>alert(1)</script></svg>])
-      on_exit(fn -> File.rm(svg_path) end)
+      for {contents, index} <- Enum.with_index(bypasses) do
+        path = Path.join(System.tmp_dir!(), "bypass-#{index}-#{System.unique_integer([:positive])}.svg")
+        File.write!(path, contents)
+        on_exit(fn -> File.rm(path) end)
 
-      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
-      assert message =~ "unsafe script elements"
+        assert {:error, _message} = Uploads.store(path, "image/svg+xml")
+      end
     end
 
-    test "refuses an SVG containing inline event handlers" do
-      svg_path =
-        Path.join(System.tmp_dir!(), "xss-event-#{System.unique_integer([:positive])}.svg")
+    test "refuses a file whose bytes are not the type it claims to be" do
+      # The content type comes from the browser and decides both the stored
+      # extension and the served `Content-Type`. Without this, a file could be
+      # stored as `.png`, served as `image/png`, and be something else
+      # entirely.
+      path = Path.join(System.tmp_dir!(), "liar-#{System.unique_integer([:positive])}.png")
+      File.write!(path, ~s[<svg><script>alert(1)</script></svg>])
+      on_exit(fn -> File.rm(path) end)
 
-      File.write!(svg_path, ~s[<svg onload="alert(1)"><circle cx="10" cy="10" r="5"/></svg>])
-      on_exit(fn -> File.rm(svg_path) end)
-
-      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
-      assert message =~ "unsafe event handlers"
+      assert {:error, message} = Uploads.store(path, "image/png")
+      assert message =~ "does not look like"
     end
 
-    test "refuses an SVG containing foreignObject elements" do
-      svg_path = Path.join(System.tmp_dir!(), "xss-fo-#{System.unique_integer([:positive])}.svg")
-      File.write!(svg_path, ~s[<svg><foreignObject><div>test</div></foreignObject></svg>])
-      on_exit(fn -> File.rm(svg_path) end)
+    test "accepts each bitmap format by its own magic bytes" do
+      samples = [
+        {"image/png", <<0x89, "PNG\r\n", 0x1A, "\n", 0, 0, 0, 0>>, ".png"},
+        {"image/jpeg", <<0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0>>, ".jpg"},
+        {"image/gif", <<"GIF89a", 0, 0>>, ".gif"},
+        {"image/webp", <<"RIFF", 0, 0, 0, 0, "WEBP", 0, 0>>, ".webp"}
+      ]
 
-      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
-      assert message =~ "unsafe embedded elements"
-    end
+      for {type, bytes, extension} <- samples do
+        path = Path.join(System.tmp_dir!(), "ok-#{System.unique_integer([:positive])}")
+        File.write!(path, bytes)
+        on_exit(fn -> File.rm(path) end)
 
-    test "refuses an SVG containing javascript links" do
-      svg_path =
-        Path.join(System.tmp_dir!(), "xss-link-#{System.unique_integer([:positive])}.svg")
-
-      File.write!(svg_path, ~s[<svg><a href="javascript:alert(1)"><text>Click</text></a></svg>])
-      on_exit(fn -> File.rm(svg_path) end)
-
-      assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
-      assert message =~ "unsafe javascript links"
+        assert {:ok, stored} = Uploads.store(path, type), "#{type} was refused"
+        cleanup(stored)
+        assert String.ends_with?(stored, extension)
+      end
     end
   end
 

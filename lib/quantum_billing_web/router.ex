@@ -10,6 +10,7 @@ defmodule QuantumBillingWeb.Router do
     plug :put_root_layout, html: {QuantumBillingWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug QuantumBillingWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_scope_for_user
     plug QuantumBillingWeb.Plugs.EnforceSecurityPolicies
   end

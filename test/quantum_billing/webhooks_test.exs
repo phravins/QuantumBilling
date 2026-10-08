@@ -69,14 +69,71 @@ defmodule QuantumBilling.WebhooksTest do
       {:ok, _organization} =
         Settings.update_section(
           Settings.get_organization(),
-          # A port nothing listens on, on the loopback: the queued delivery
-          # fails immediately and locally rather than reaching for the network.
-          %{"webhook_url" => "http://127.0.0.1:1/hooks", "webhook_secret" => "whsec_test"},
+          # A reserved TLD, so nothing is reached: it does not resolve, the
+          # delivery fails locally, and no request leaves this machine.
+          %{"webhook_url" => "https://hooks.example.test/hooks", "webhook_secret" => "whsec_test"},
           :integrations
         )
 
       assert {:ok, %Oban.Job{} = job} = Webhooks.dispatch("invoice.created", %{id: 1})
       assert job.args["event"] == "invoice.created"
+    end
+  end
+
+  describe "the webhook endpoint a user is allowed to set" do
+    test "refuses the addresses that make this server a weapon" do
+      # This is the one address in the application that a user supplies and the
+      # server then opens a connection to. Accepting any syntactically valid
+      # host meant accepting the cloud metadata service and everything else
+      # inside the deployment's own network.
+      refused = [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://127.0.0.1:5432/",
+        "http://localhost/hooks",
+        "http://10.0.0.5/hooks",
+        "http://192.168.1.1/hooks",
+        "http://172.16.4.2/hooks",
+        "http://[::1]/hooks",
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "http://orders.internal/hooks",
+        "ftp://example.com/hooks",
+        "file:///etc/passwd",
+        "not a url at all"
+      ]
+
+      for url <- refused do
+        assert {:error, changeset} =
+                 Settings.update_section(
+                   Settings.get_organization(),
+                   %{"webhook_url" => url},
+                   :integrations
+                 ),
+               "#{url} was accepted as a webhook endpoint"
+
+        assert changeset.errors[:webhook_url]
+      end
+    end
+
+    test "accepts an ordinary public endpoint" do
+      assert {:ok, organization} =
+               Settings.update_section(
+                 Settings.get_organization(),
+                 %{"webhook_url" => "https://hooks.example.test/incoming"},
+                 :integrations
+               )
+
+      assert organization.webhook_url == "https://hooks.example.test/incoming"
+    end
+
+    test "clearing it is still allowed" do
+      assert {:ok, organization} =
+               Settings.update_section(
+                 Settings.get_organization(),
+                 %{"webhook_url" => ""},
+                 :integrations
+               )
+
+      assert organization.webhook_url in [nil, ""]
     end
   end
 end

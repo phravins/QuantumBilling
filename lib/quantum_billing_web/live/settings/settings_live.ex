@@ -370,7 +370,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     "That file is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
   end
 
-  defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF, WebP or SVG image."
+  defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF or WebP image."
   defp upload_message(:too_many_files), do: "One logo at a time."
   defp upload_message(other), do: "That file could not be uploaded (#{inspect(other)})."
 
@@ -894,7 +894,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         </div>
 
         <p class="mt-1 text-2xs text-base-content/45">
-          PNG, JPEG, GIF, WebP or SVG, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
+          PNG, JPEG, GIF or WebP, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
         </p>
 
         <div :for={entry <- @uploads.logo.entries} class="mt-2 flex items-center gap-2 text-xs">
