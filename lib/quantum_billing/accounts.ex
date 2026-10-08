@@ -7,7 +7,7 @@ defmodule QuantumBilling.Accounts do
   alias QuantumBilling.Events
   alias QuantumBilling.Repo
 
-  alias QuantumBilling.Accounts.{User, UserToken, UserNotifier}
+  alias QuantumBilling.Accounts.{Invitation, User, UserToken, UserNotifier}
 
   ## Database getters
 
@@ -105,10 +105,237 @@ defmodule QuantumBilling.Accounts do
 
   """
   def register_user_with_password(attrs) do
-    %User{}
-    |> User.registration_changeset(attrs)
-    |> Repo.insert()
+    register_user_with_password(attrs, nil)
   end
+
+  @doc """
+  Registers a user with a username, an email and a password, if the
+  installation will accept one.
+
+  Registration is not open. This application bills for one business and shares
+  one dataset between its accounts — there is no per-user scoping on invoices
+  or clients, by design — so an account is full access to the books. Letting
+  anyone create one meant a stranger could confirm their own email address and
+  then read every invoice and client, export the whole database, and change the
+  stored SMTP and payment credentials.
+
+  Two ways in, and only two:
+
+    * **the first account.** An empty `users` table accepts one registration,
+      which becomes the owner. This is how a fresh install is set up, with no
+      seeding step.
+
+    * **an invitation.** Afterwards an owner invites an address, and only that
+      address can register, once, before the invitation expires.
+
+  The invitation is claimed in the same transaction that inserts the user, so
+  two simultaneous submissions of one token cannot both succeed.
+  """
+  def register_user_with_password(attrs, invitation_token) do
+    if bootstrap?() do
+      %User{}
+      |> User.registration_changeset(attrs)
+      |> Ecto.Changeset.put_change(:role, "owner")
+      |> Repo.insert()
+    else
+      register_invited_user(attrs, invitation_token)
+    end
+  end
+
+  defp register_invited_user(attrs, invitation_token) do
+    case fetch_pending_invitation(invitation_token) do
+      {:ok, invitation} ->
+        insert_invited_user(attrs, invitation)
+
+      {:error, reason} ->
+        {:error, invitation_error(attrs, reason)}
+    end
+  end
+
+  defp insert_invited_user(attrs, invitation) do
+    Ecto.Multi.new()
+    # Claimed first, and conditionally: `accepted_at IS NULL` in the WHERE
+    # means the second of two racing submissions updates no rows and the whole
+    # transaction rolls back, rather than both inserting a user.
+    |> Ecto.Multi.run(:claim, fn repo, _changes ->
+      query =
+        from(i in Invitation, where: i.id == ^invitation.id, where: is_nil(i.accepted_at))
+
+      case repo.update_all(query,
+             set: [accepted_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+           ) do
+        {1, _} -> {:ok, invitation}
+        {0, _} -> {:error, :already_accepted}
+      end
+    end)
+    |> Ecto.Multi.insert(:user, fn _changes ->
+      %User{}
+      |> User.registration_changeset(attrs)
+      |> Ecto.Changeset.put_change(:role, invitation.role)
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, :user, changeset, _changes} -> {:error, changeset}
+      {:error, :claim, reason, _changes} -> {:error, invitation_error(attrs, reason)}
+    end
+  end
+
+  # The email the invitation was sent to is the email the account gets. Without
+  # this, one invitation would register any address at all.
+  defp fetch_pending_invitation(nil), do: {:error, :closed}
+  defp fetch_pending_invitation(""), do: {:error, :closed}
+
+  defp fetch_pending_invitation(token) when is_binary(token) do
+    with {:ok, query} <- Invitation.by_token_query(token),
+         %Invitation{} = invitation <- Repo.one(query) do
+      {:ok, invitation}
+    else
+      _invalid -> {:error, :invalid_invitation}
+    end
+  end
+
+  defp fetch_pending_invitation(_token), do: {:error, :closed}
+
+  defp invitation_error(attrs, reason) do
+    message =
+      case reason do
+        :closed ->
+          "Registration on this installation is by invitation. Ask an owner to invite you."
+
+        :already_accepted ->
+          "That invitation has already been used."
+
+        _invalid ->
+          "That invitation link is invalid or has expired."
+      end
+
+    %User{}
+    |> User.registration_changeset(attrs, hash_password: false, validate_unique: false)
+    |> Map.put(:action, :insert)
+    |> Ecto.Changeset.add_error(:email, message)
+  end
+
+  @doc """
+  Whether this installation is still waiting for its first account.
+
+  True only while `users` is empty. Checked rather than cached: a cached
+  "closed" flag that went stale would either lock out a fresh install or
+  reopen registration on a live one.
+  """
+  def bootstrap?, do: not Repo.exists?(User)
+
+  @doc """
+  Whether a stranger can register right now.
+
+  The sign-up page asks this to decide between showing the form and explaining
+  that an invitation is needed.
+  """
+  def registration_open?(invitation_token \\ nil) do
+    bootstrap?() or match?({:ok, _}, fetch_pending_invitation(invitation_token))
+  end
+
+  @doc """
+  The address an invitation was issued to, or `nil`.
+
+  The sign-up form pre-fills and locks the email from this, so the person
+  cannot accidentally register the wrong address and burn the invitation.
+  """
+  def invited_email(invitation_token) do
+    case fetch_pending_invitation(invitation_token) do
+      {:ok, invitation} -> invitation.email
+      {:error, _reason} -> nil
+    end
+  end
+
+  ## Accounts and invitations — owner administration
+
+  @doc "Every account, oldest first, for the owner's user list."
+  def list_users do
+    Repo.all(from u in User, order_by: [asc: u.inserted_at, asc: u.id])
+  end
+
+  @doc "How many owners the installation has."
+  def count_owners do
+    Repo.aggregate(from(u in User, where: u.role == "owner"), :count, :id)
+  end
+
+  @doc """
+  Grants `role` to `user`.
+
+  Refuses to demote the last owner: an installation with no owner has nobody
+  who can invite, administer credentials or export the data, and no way back
+  short of a console.
+  """
+  def set_role(%User{} = user, role) when is_binary(role) do
+    cond do
+      user.role == role ->
+        {:ok, user}
+
+      user.role == "owner" and role != "owner" and count_owners() <= 1 ->
+        {:error, :last_owner}
+
+      true ->
+        user
+        |> User.role_changeset(role)
+        |> Repo.update()
+    end
+  end
+
+  @doc "Pending and recent invitations, newest first."
+  def list_invitations do
+    Repo.all(
+      from i in Invitation,
+        order_by: [desc: i.inserted_at, desc: i.id],
+        preload: [:invited_by]
+    )
+  end
+
+  @doc """
+  Invites `email` to create an account, and emails them the link.
+
+  Re-inviting an address replaces its pending invitation rather than leaving
+  two live tokens for one mailbox — the partial unique index enforces that, and
+  this deletes the old one first so re-sending is not an error.
+
+  Returns `{:ok, invitation}`; the raw token only ever exists inside this
+  function and the email it sends.
+  """
+  def invite(email, role, %User{} = invited_by, url_fun) when is_function(url_fun, 1) do
+    normalized = email |> to_string() |> String.trim() |> String.downcase()
+
+    cond do
+      normalized == "" ->
+        {:error, :invalid_email}
+
+      get_user_by_email(normalized) ->
+        {:error, :already_registered}
+
+      true ->
+        {token, changeset} = Invitation.build(normalized, role, invited_by)
+
+        Repo.transaction(fn ->
+          Repo.delete_all(
+            from i in Invitation, where: i.email == ^normalized, where: is_nil(i.accepted_at)
+          )
+
+          case Repo.insert(changeset) do
+            {:ok, invitation} ->
+              UserNotifier.deliver_invitation(invitation, url_fun.(token))
+              invitation
+
+            {:error, changeset} ->
+              Repo.rollback(changeset)
+          end
+        end)
+    end
+  end
+
+  @doc "Withdraws a pending invitation."
+  def revoke_invitation(%Invitation{} = invitation), do: Repo.delete(invitation)
+
+  @doc "Fetches an invitation by id, or `nil`."
+  def get_invitation(id), do: Repo.get(Invitation, id)
 
   @doc """
   Returns an `%Ecto.Changeset{}` for tracking the registration form.

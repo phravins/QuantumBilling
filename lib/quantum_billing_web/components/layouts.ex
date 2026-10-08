@@ -43,7 +43,7 @@ defmodule QuantumBillingWeb.Layouts do
     assigns =
       assigns
       |> assign(:nav_items, nav_items())
-      |> assign(:settings_sections, QuantumBillingWeb.SettingsComponents.sections())
+      |> assign(:settings_sections, visible_settings_sections(assigns[:current_scope]))
 
     ~H"""
     <div class="flex min-h-screen bg-base-200">
@@ -249,6 +249,29 @@ defmodule QuantumBillingWeb.Layouts do
 
   # The topbar renders before anyone signs in (and in tests that mount the
   # layout without a scope), so both helpers tolerate a nil scope.
+  # Staff are not shown the panels they would be refused. Hiding them is a
+  # courtesy on top of the real check — `SettingsLive.handle_params/3` and the
+  # `:require_owner` hook are what actually enforce this; a navigation list is
+  # not a permission.
+  defp visible_settings_sections(scope) do
+    sections = QuantumBillingWeb.SettingsComponents.sections()
+
+    if QuantumBilling.Accounts.Scope.owner?(scope) do
+      sections ++
+        [
+          %{
+            key: :team,
+            title: "Team",
+            short_title: "Team",
+            subtitle: "Accounts and invitations",
+            icon: "hero-user-group"
+          }
+        ]
+    else
+      Enum.reject(sections, &QuantumBillingWeb.SettingsLive.owner_only?(&1.key))
+    end
+  end
+
   # Prefer the name the user set on Account Settings, falling back to the email
   # so an account with no profile filled in still renders.
   defp user_name(%{user: %{full_name: name}}) when is_binary(name) and name != "", do: name
