@@ -123,7 +123,6 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             Create Account
           </.button>
         </.form>
-        <.or_divider :if={@bootstrap?} /> <.github_button :if={@bootstrap?} />
       </div>
       <.legal_note />
     </Layouts.auth>
@@ -166,20 +165,36 @@ defmodule QuantumBillingWeb.UserLive.Registration do
 
     case Accounts.register_user_with_password(user_params, socket.assigns.invitation_token) do
       {:ok, user} ->
-        {:ok, _} =
-          Accounts.deliver_user_confirmation_instructions(
-            user,
-            &url(~p"/users/confirm/#{&1}")
-          )
+        # The account is already saved by this point, so a relay that will not
+        # take the message must not take the page down with it. Matching
+        # `{:ok, _}` here left the account created, unconfirmed and unable to
+        # ever confirm itself, behind a crashed LiveView — which is how the
+        # first unconfirmed accounts in this database got there.
+        case Accounts.deliver_user_confirmation_instructions(
+               user,
+               &url(~p"/users/confirm/#{&1}")
+             ) do
+          {:ok, _email} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :info,
+               "Account created. We sent a confirmation link to #{user.email} — " <>
+                 "open it to activate your account."
+             )
+             |> push_navigate(to: ~p"/users/log-in")}
 
-        {:noreply,
-         socket
-         |> put_flash(
-           :info,
-           "Account created. We sent a confirmation link to #{user.email} — " <>
-             "open it to activate your account."
-         )
-         |> push_navigate(to: ~p"/users/log-in")}
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "Your account was created, but the confirmation email could not be " <>
+                 "sent (#{reason}). Ask an administrator to check Settings > SMTP, " <>
+                 "then use “Forgot password?” to get a fresh link."
+             )
+             |> push_navigate(to: ~p"/users/log-in")}
+        end
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}

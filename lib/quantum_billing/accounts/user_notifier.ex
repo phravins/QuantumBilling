@@ -120,4 +120,27 @@ defmodule QuantumBilling.Accounts.UserNotifier do
     ==============================
     """)
   end
+
+  @doc """
+  Deliver instructions to reset a forgotten password.
+  """
+  def deliver_reset_password_instructions(user, url) do
+    deliver(user.email, "Reset password instructions", """
+
+    ==============================
+
+    Hi #{user.email},
+
+    You can reset your password by visiting the URL below:
+
+    #{url}
+
+    This link expires in 4 hours and can only be used once.
+
+    If you didn't request a new password, please ignore this — your current
+    password will keep working.
+
+    ==============================
+    """)
+  end
 end

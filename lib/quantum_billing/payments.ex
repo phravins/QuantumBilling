@@ -8,8 +8,10 @@ defmodule QuantumBilling.Payments do
   alias QuantumBilling.Payments.RazorpayClient
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Audit
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
   alias QuantumBilling.Webhooks
+  alias QuantumBillingWeb.Format
 
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
@@ -50,7 +52,7 @@ defmodule QuantumBilling.Payments do
     ref_id = payment_link["reference_id"]
     payment_id = payment["id"] || payment_link["id"]
 
-    invoice = if ref_id, do: Invoices.get_invoice_by_number(ref_id)
+    invoice = if ref_id, do: invoice_for_payment(ref_id)
 
     if invoice do
       reconcile_payment(invoice, payment_id)
@@ -69,7 +71,7 @@ defmodule QuantumBilling.Payments do
         _ -> nil
       end
 
-    invoice = if invoice_number, do: Invoices.get_invoice_by_number(invoice_number)
+    invoice = if invoice_number, do: invoice_for_payment(invoice_number)
 
     if invoice do
       reconcile_payment(invoice, payment["id"])
@@ -79,6 +81,14 @@ defmodule QuantumBilling.Payments do
   end
 
   def process_razorpay_webhook(_other), do: {:ok, :ignored}
+
+  # Binned invoices included. A customer can pay from a link sent before the
+  # invoice was moved to the Bin, and the payment has happened whatever the
+  # invoice's state here — it has to be recorded against it, so that restoring
+  # the invoice shows it paid rather than quietly owed.
+  defp invoice_for_payment(invoice_number) do
+    Invoices.get_invoice_by_number(invoice_number, include_binned: true)
+  end
 
   @doc """
   Marks an invoice paid and tells everyone who needs to know.
@@ -117,6 +127,20 @@ defmodule QuantumBilling.Payments do
         end
 
         Invoices.broadcast_change(updated)
+
+        # Money arriving is the one notification nobody would want switched off,
+        # so this one is not gated. Keyed on the provider's payment id, which is
+        # what makes a redelivered webhook add nothing: the invoice guard above
+        # already stops the second reconcile, and this stops the second line in
+        # the feed if it ever gets past it.
+        Notifications.notify(%{
+          kind: "payment",
+          severity: "success",
+          title: "Payment received for #{updated.invoice_number}",
+          body: "#{updated.client_name} · #{Format.rupees(updated.grand_total)}",
+          path: "/invoices/#{updated.id}",
+          dedupe_key: "payment:#{payment_id || "invoice-#{updated.id}"}"
+        })
 
         Webhooks.dispatch("invoice.paid", %{
           invoice_number: updated.invoice_number,

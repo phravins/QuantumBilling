@@ -2,17 +2,20 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
   @moduledoc """
   Enforces the retention window on the tables that grow forever.
 
-  The audit trail, the mail ledger and the webhook receipt log all take one row
-  per event and none per user action undone. On a busy installation they are
-  the three tables that will be largest a year from now, and the audit trail is
-  the one that carries personal data — an IP address against a name — which
-  makes "keep everything for ever" a liability rather than thoroughness.
+  The audit trail, the mail ledger, the webhook receipt log and the notification
+  feed all take one row per event and none per user action undone. On a busy
+  installation they are the four tables that will be largest a year from now, and
+  the audit trail is the one that carries personal data — an IP address against a
+  name — which makes "keep everything for ever" a liability rather than
+  thoroughness.
 
   The window comes from the organisation's `audit_retention_days` setting, so
   this is a policy the business sets rather than a constant in the code. The
-  other two ledgers are operational rather than statutory and keep a fixed 90
-  days, which is long enough to investigate a delivery failure and short enough
-  that the tables stay small.
+  other three are operational rather than statutory and keep a fixed 90 days,
+  which is long enough to investigate a delivery failure and short enough that
+  the tables stay small. Notifications are the exception within that exception:
+  only ones that have been read are eligible, so an unread reminder survives its
+  own retention window rather than disappearing before anybody sees it.
 
   Deletion runs in bounded batches. A single `DELETE` over a year of rows takes
   a lock for as long as it takes, which on a large table is long enough to
@@ -26,6 +29,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
 
   alias QuantumBilling.Audit.AuditLog
   alias QuantumBilling.Mail.Delivery
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Webhooks.WebhookEvent
@@ -44,15 +48,26 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
     audit = prune(AuditLog, audit_days)
     deliveries = prune(Delivery, @ledger_retention_days)
     webhooks = prune(WebhookEvent, @ledger_retention_days)
+    # Through the context rather than through `prune/2` above, because only
+    # notifications that have been *read* may go: an unread one is still
+    # somebody's outstanding item however old it is, and silently deleting it
+    # would be the feed losing something nobody ever saw.
+    notifications = Notifications.prune(@ledger_retention_days)
 
-    if audit + deliveries + webhooks > 0 do
+    if audit + deliveries + webhooks + notifications > 0 do
       Logger.info(
         "[AuditPruneWorker] pruned #{audit} audit logs, #{deliveries} deliveries, " <>
-          "#{webhooks} webhook events"
+          "#{webhooks} webhook events, #{notifications} notifications"
       )
     end
 
-    {:ok, %{audit_logs: audit, email_deliveries: deliveries, webhook_events: webhooks}}
+    {:ok,
+     %{
+       audit_logs: audit,
+       email_deliveries: deliveries,
+       webhook_events: webhooks,
+       notifications: notifications
+     }}
   end
 
   @doc """

@@ -12,6 +12,10 @@ defmodule QuantumBilling.Accounts.UserToken do
   @confirm_validity_in_days 7
   @change_email_validity_in_days 7
   @session_validity_in_days 14
+  # Shorter than a confirmation link for the same reason the magic link is
+  # shorter still: this one sets a password, so anyone who reaches the mailbox
+  # later owns the account.
+  @reset_password_validity_in_hours 4
 
   schema "users_tokens" do
     field :token, :binary
@@ -142,6 +146,35 @@ defmodule QuantumBilling.Accounts.UserToken do
           from token in by_token_and_context_query(hashed_token, "confirm"),
             join: user in assoc(token, :user),
             where: token.inserted_at > ago(@confirm_validity_in_days, "day"),
+            where: token.sent_to == user.email,
+            select: {user, token}
+
+        {:ok, query}
+
+      :error ->
+        :error
+    end
+  end
+
+  @doc """
+  Checks if the token is valid and returns its underlying lookup query.
+
+  If found, the query returns a tuple of the form `{user, token}`.
+
+  Used by the "forgot password" link. `sent_to == user.email` is what makes the
+  token follow the address it was mailed to: if the account's email is changed
+  after the link goes out, the link stops working rather than handing the
+  account to whoever still holds the old mailbox.
+  """
+  def verify_reset_password_token_query(token) do
+    case Base.url_decode64(token, padding: false) do
+      {:ok, decoded_token} ->
+        hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
+
+        query =
+          from token in by_token_and_context_query(hashed_token, "reset_password"),
+            join: user in assoc(token, :user),
+            where: token.inserted_at > ago(@reset_password_validity_in_hours, "hour"),
             where: token.sent_to == user.email,
             select: {user, token}
 

@@ -16,10 +16,18 @@ defmodule QuantumBilling.Invoices.Invoice do
   `recalculate/1` writes the totals into the changeset at save time. A saved
   invoice must keep showing what was actually billed even if this logic is
   changed later.
+
+  ## The Bin
+
+  Deleting an invoice sets `deleted_at` rather than removing the row. A binned
+  invoice is out of every list, total, report and export — `kept/1` is the one
+  filter all of them go through — but its number stays consumed and everything
+  that hangs off it stays where it is, so restoring it is exact.
   """
   use Ecto.Schema
 
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2]
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Invoices.InvoiceItem
@@ -101,15 +109,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :signed_qr_code, :string
     field :signed_invoice, :string
 
-    # E-Way Bill Details
-    field :ewb_number, :string
-    field :ewb_date, :date
-    field :ewb_valid_until, :naive_datetime
-    field :distance_km, :integer
-    field :transporter_id, :string
-    field :transporter_name, :string
-    field :vehicle_number, :string
-    field :mode_of_transport, :string, default: "Road"
+    # E-Way Bills. These used to be eight columns here, which let an invoice
+    # carry exactly one bill for ever — no cancellation under Rule 138(9) and
+    # nowhere to put a Part-B vehicle change. They are rows now.
+    has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
     # Multi-Currency & LUT Export Details
     field :currency, :string, default: "INR"
@@ -129,6 +132,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     # why the structure is snapshotted while the accent and logo stay live.
     field :layout_xml, :string
 
+    # Set when the invoice is moved to the Bin. Never cast: it is written by
+    # `bin_changeset/1` and `restore_changeset/1`, not by any form.
+    field :deleted_at, :utc_datetime
+
     belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
     belongs_to :client, QuantumBilling.Clients.Client
     has_many :items, InvoiceItem, on_replace: :delete, preload_order: [asc: :position]
@@ -143,7 +150,6 @@ defmodule QuantumBilling.Invoices.Invoice do
                company_name company_address company_gstin company_state
                remarks terms status template_id layout_xml
                irn ack_number ack_date signed_qr_code signed_invoice
-               ewb_number ewb_date ewb_valid_until distance_km transporter_id transporter_name vehicle_number mode_of_transport
                currency exchange_rate export_type lut_number
                razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
 
@@ -177,6 +183,32 @@ defmodule QuantumBilling.Invoices.Invoice do
       message: "has already been used — check the numbering series in Settings"
     )
   end
+
+  @doc """
+  Narrows `query` to invoices that are not in the Bin.
+
+  Every read of invoices starts here. A binned invoice that still showed up in
+  a total or a GSTR-1 export would be worse than one that could not be binned
+  at all, so the rule lives in one place rather than in a `where` each caller
+  has to remember.
+  """
+  def kept(query \\ __MODULE__) do
+    from i in query, where: is_nil(i.deleted_at)
+  end
+
+  @doc "Narrows `query` to invoices that are in the Bin."
+  def binned(query \\ __MODULE__) do
+    from i in query, where: not is_nil(i.deleted_at)
+  end
+
+  @doc "Whether this invoice is in the Bin."
+  def binned?(%__MODULE__{deleted_at: deleted_at}), do: not is_nil(deleted_at)
+
+  @doc "Moves an invoice to the Bin."
+  def bin_changeset(invoice), do: change(invoice, deleted_at: DateTime.utc_now(:second))
+
+  @doc "Takes an invoice back out of the Bin."
+  def restore_changeset(invoice), do: change(invoice, deleted_at: nil)
 
   # A due date before the invoice date is a data entry error, not a business
   # case worth supporting.

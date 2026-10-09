@@ -7,9 +7,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.EWayBills
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments.QRCode
+  alias QuantumBilling.Settings
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
@@ -37,6 +39,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:doc, doc)
          |> assign(:accent, accent)
          |> assign(:logo, logo)
+         |> assign(:e_way_bill, EWayBills.live_bill_for_invoice(invoice.id))
+         |> assign(:ewb_defaults, Settings.get_organization())
          |> assign(:show_qr_modal, false)}
     end
   end
@@ -89,18 +93,24 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   end
 
   def handle_event("generate_ewb", params, socket) do
-    case QuantumBilling.EWayBills.generate_e_way_bill(socket.assigns.invoice, params) do
-      {:ok, updated_invoice} ->
-        {doc, accent, logo} = Templates.document_for(updated_invoice)
-
+    case EWayBills.generate_e_way_bill(socket.assigns.invoice, params) do
+      {:ok, bill} ->
         {:noreply,
          socket
-         |> put_flash(:info, "E-Way Bill #{updated_invoice.ewb_number} generated successfully!")
-         |> assign(:invoice, updated_invoice)
-         |> assign(:doc, doc)
-         |> assign(:accent, accent)
-         |> assign(:logo, logo)
+         |> put_flash(:info, "E-Way Bill #{bill.ewb_number} generated successfully!")
+         |> assign(:e_way_bill, bill)
          |> assign(:show_ewb_modal, false)}
+
+      {:error, :already_issued} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "This invoice already carries a live e-way bill.")
+         |> assign(:e_way_bill, EWayBills.live_bill_for_invoice(socket.assigns.invoice.id))
+         |> assign(:show_ewb_modal, false)}
+
+      {:error, :cancelled} ->
+        {:noreply,
+         put_flash(socket, :error, "A cancelled invoice cannot be given an e-way bill.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to generate E-Way Bill: #{inspect(reason)}")}
@@ -175,7 +185,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
         <.link navigate={~p"/invoices"} class="hover:text-base-content">Invoices</.link>
         <.icon name="hero-chevron-right" class="size-3" />
@@ -194,16 +210,16 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               :if={@invoice.status != "E-Invoice Generated"}
               type="button"
               phx-click="generate_einvoice"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-bolt" class="size-4" /> 1-Click Generate IRN
             </button>
 
             <button
-              :if={!@invoice.ewb_number}
+              :if={is_nil(@e_way_bill)}
               type="button"
               phx-click="toggle_ewb_modal"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-truck" class="size-4" /> Generate E-Way Bill
             </button>
@@ -212,7 +228,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               :if={!@invoice.razorpay_payment_url}
               type="button"
               phx-click="generate_payment_link"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-qr-code" class="size-4" /> Razorpay / UPI Link
             </button>
@@ -220,7 +236,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <button
               type="button"
               phx-click="toggle_cn_modal"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-document-duplicate" class="size-4" /> Issue Credit/Debit Note
             </button>
@@ -228,7 +244,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.link
               href={~p"/pay/#{@invoice.public_token || "tok_123"}"}
               target="_blank"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-globe-alt" class="size-4" /> Public Portal Link
             </.link>
@@ -236,7 +252,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <button
               type="button"
               phx-click="send_email"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-paper-airplane" class="size-4" /> Send PDF via Email
             </button>
@@ -290,7 +306,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
         <%!-- Official E-Way Bill Banner --%>
         <div
-          :if={@invoice.ewb_number}
+          :if={@e_way_bill}
           class="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -299,16 +315,41 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 <span class="inline-flex items-center gap-1 rounded-md bg-cyan-600 px-2 py-0.5 text-xs font-bold text-white">
                   <.icon name="hero-truck" class="size-3.5" /> E-Way Bill Generated
                 </span>
+                <%!-- No "MH12AB1234" / "250 km" placeholders here any more.
+                A consignment note that states a vehicle it is not on is worse
+                than one that states none: this is the document an officer
+                reads at a check post. --%>
                 <span class="text-xs text-base-content/60">
                   Vehicle:
-                  <strong class="text-base-content">{@invoice.vehicle_number || "MH12AB1234"}</strong>
+                  <strong class="text-base-content">{@e_way_bill.vehicle_number || "—"}</strong>
                   | Distance:
-                  <strong class="text-base-content">{@invoice.distance_km || 250} km</strong>
+                  <strong class="text-base-content">
+                    {if @e_way_bill.distance_km, do: "#{@e_way_bill.distance_km} km", else: "—"}
+                  </strong>
                 </span>
               </div>
               <p class="font-mono text-xs text-cyan-400 break-all">
-                EWB No: {@invoice.ewb_number}
+                EWB No: {@e_way_bill.ewb_number}
               </p>
+            </div>
+
+            <%!-- The generated bill's own document. Without these the number
+            was the only trace of it anywhere in the application. --%>
+            <div class="flex flex-wrap items-center gap-2">
+              <.link
+                href={~p"/e-way-bills/#{@e_way_bill.id}/print"}
+                target="_blank"
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-document-text" class="size-4" /> View E-Way Bill
+              </.link>
+
+              <.link
+                href={~p"/e-way-bills/#{@e_way_bill.id}/print/download"}
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-arrow-down-tray" class="size-4" /> Download
+              </.link>
             </div>
           </div>
         </div>
@@ -339,7 +380,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <.card padding="p-8">
+      <%!-- Identified so a test can assert against the document itself rather
+      than the page around it: the invoice number and the client name also
+      appear in the notification bell up in the header, and a bare match on the
+      rendered page cannot tell the two apart. --%>
+      <.card id="invoice-document" padding="p-8">
         <Renderer.stylesheet doc={@doc} />
         <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
       </.card>
@@ -425,13 +470,22 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
+          <%!--
+          Nothing here is prefilled with a sample vehicle or distance. A wrong
+          vehicle number on a bill an officer stops the truck to read is worse
+          than an empty field, and these values go straight to the NIC portal.
+          The transporter and mode do come from the organisation's saved
+          defaults, which is what the settings screen offers them for.
+          --%>
           <form phx-submit="generate_ewb" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Distance (in KM)</label>
               <input
                 type="number"
                 name="distance_km"
-                value="250"
+                min="1"
+                max="4000"
+                placeholder="Road distance to the delivery address"
                 class="input input-bordered w-full text-xs"
                 required
               />
@@ -441,8 +495,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <input
                 type="text"
                 name="vehicle_number"
-                value="MH12AB1234"
-                class="input input-bordered w-full text-xs"
+                placeholder="e.g. MH12AB1234"
+                class="input input-bordered w-full text-xs uppercase"
                 required
               />
             </div>
@@ -451,17 +505,21 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <input
                 type="text"
                 name="transporter_id"
-                value="27AAACG1234A1ZP"
-                class="input input-bordered w-full text-xs"
+                value={@ewb_defaults.ewb_transporter_id}
+                placeholder="15-digit GSTIN of the transporter"
+                class="input input-bordered w-full text-xs uppercase"
               />
             </div>
             <div>
               <label class="block text-xs font-semibold mb-1">Mode of Transport</label>
               <select name="mode_of_transport" class="select select-bordered w-full text-xs">
-                <option value="Road">Road</option>
-                <option value="Rail">Rail</option>
-                <option value="Air">Air</option>
-                <option value="Ship">Ship</option>
+                <option
+                  :for={mode <- ~w(Road Rail Air Ship)}
+                  value={mode}
+                  selected={mode == (@ewb_defaults.ewb_transport_mode || "Road")}
+                >
+                  {mode}
+                </option>
               </select>
             </div>
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">

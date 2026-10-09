@@ -59,7 +59,10 @@ defmodule QuantumBillingWeb.DashboardLive do
     |> assign(:active_nav, :dashboard)
     |> assign(:stats, stats(totals, month, obligations))
     |> assign(:chart_months, chart_months)
+    |> assign(:chart_series, chart_series(chart_months))
+    |> assign(:chart_labels, Enum.map(chart_months, & &1.label))
     |> assign(:chart_max, chart_max(chart_months))
+    |> assign(:chart_axis, chart_axis(chart_max(chart_months)))
     |> assign(:donut_segments, donut_segments(status_counts))
     |> assign(:donut_total, totals.count)
     |> assign(:invoices, Invoices.recent_invoices(5))
@@ -68,43 +71,62 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Dashboard
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
           :for={stat <- @stats}
           label={stat.label}
           value={stat.value}
           icon={stat.icon}
-          icon_class={stat.icon_class}
+          tone={stat.tone}
           delta_text={stat.delta_text}
           delta_class={stat.delta_class}
           delta_icon={stat.delta_icon}
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <%!-- A column, so the plot takes the height the card actually has.
+        With a fixed-height chart the card stretched to its neighbour and the
+        difference showed as dead space under the axis. --%>
+        <.card class="flex flex-col lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
 
             <div class="flex items-center gap-4 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
-                <span class="size-2 rounded-full bg-base-content" /> CGST + SGST
+                <span class="size-2 rounded-full bg-blue-500" /> CGST + SGST
               </span>
 
               <span class="flex items-center gap-1.5">
-                <span class="size-2 rounded-full bg-base-content/25" /> IGST
+                <span class="size-2 rounded-full bg-violet-400" /> IGST
               </span>
             </div>
           </div>
-          <.bar_chart :if={@chart_months != []} months={@chart_months} max={@chart_max} />
+          <.area_chart
+            :if={@chart_months != []}
+            id="dashboard-tax-trend"
+            series={@chart_series}
+            labels={@chart_labels}
+            max={@chart_max}
+            axis_labels={@chart_axis}
+            format={&money_axis_label/1}
+            class="min-h-0 flex-1"
+          />
           <.empty_state
             :if={@chart_months == []}
+            class="flex-1 justify-center"
             icon="hero-chart-bar"
             title="No invoice data yet"
             description="This chart fills in once you have invoices to report on."
@@ -118,6 +140,7 @@ defmodule QuantumBillingWeb.DashboardLive do
             :if={@donut_segments != []}
             segments={@donut_segments}
             total={@donut_total}
+            palette={:color}
           />
           <.empty_state
             :if={@donut_segments == []}
@@ -128,8 +151,12 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
+      <%!-- `grow`, not `flex-1`: flex-1 zeroes the basis, which lets a tall
+      table be squashed. This only takes height that is going spare, which is
+      the whole point — the panels reach the bottom of the window instead of
+      leaving a band of empty page under them. --%>
+      <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-3">
+        <.card class="flex flex-col lg:col-span-2">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
 
           <.empty_state
@@ -167,7 +194,7 @@ defmodule QuantumBillingWeb.DashboardLive do
             </.table>
           </div>
 
-          <div class="mt-4 flex items-center justify-between text-sm text-base-content/60">
+          <div class="mt-auto flex items-center justify-between pt-4 text-sm text-base-content/60">
             <span :if={@invoices != []}>Showing 1 to {length(@invoices)} entries</span>
             <.link
               navigate={~p"/invoices"}
@@ -178,12 +205,12 @@ defmodule QuantumBillingWeb.DashboardLive do
           </div>
         </.card>
 
-        <.card>
+        <.card class="flex flex-col">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
           <ul :if={@compliance_items != []} class="space-y-4">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
-              <.compliance_date_badge month={item.month} day={item.day} />
+              <.compliance_date_badge month={item.month} day={item.day} tone={item.tone} />
               <div>
                 <p class="text-sm font-medium">{item.title}</p>
 
@@ -200,7 +227,7 @@ defmodule QuantumBillingWeb.DashboardLive do
           />
           <.link
             navigate={~p"/compliance"}
-            class="mt-4 block text-sm font-medium text-base-content hover:underline"
+            class="mt-auto block pt-4 text-sm font-medium text-base-content hover:underline"
           >
             View all due dates &rarr;
           </.link>
@@ -286,7 +313,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Invoices Issued",
         value: Integer.to_string(totals.count),
         icon: "hero-document-text",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :info,
         delta_text: "#{month.count} this month",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -295,7 +322,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Current Month Tax Liability",
         value: rupees(month.tax),
         icon: "hero-currency-rupee",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :accent,
         delta_text: "on #{rupees(month.taxable_value)} taxable",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -304,7 +331,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Outstanding Receivables",
         value: rupees(totals.outstanding),
         icon: "hero-banknotes",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: :warning,
         delta_text: "#{totals.paid_count} paid in full",
         delta_class: "text-base-content/45",
         delta_icon: nil
@@ -313,7 +340,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         label: "Pending GST Returns",
         value: Integer.to_string(pending_returns),
         icon: "hero-calendar-days",
-        icon_class: "bg-base-200 text-base-content/60",
+        tone: if(overdue_returns > 0, do: :danger, else: :success),
         delta_text:
           if(overdue_returns > 0, do: "#{overdue_returns} overdue", else: "None overdue"),
         delta_class: if(overdue_returns > 0, do: "text-error", else: "text-base-content/45"),
@@ -329,8 +356,24 @@ defmodule QuantumBillingWeb.DashboardLive do
     if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
   end
 
-  # The chart scales against the tallest bar, rounded up so the gridlines land
-  # on round numbers. A fixed ceiling made every real invoice overflow the box.
+  # Two series over one x-axis. Split rather than summed because the whole
+  # point of the panel is which half of the tax the month was: an intra-state
+  # month and an inter-state month of the same size are different facts.
+  defp chart_series(months) do
+    [
+      %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
+      %{label: "IGST", tone: :violet, values: Enum.map(months, & &1.igst)}
+    ]
+  end
+
+  # Five labels, top gridline down, matching the five rules the chart draws.
+  defp chart_axis(max) do
+    Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i) end)
+  end
+
+  # The chart scales against the tallest reading, rounded up so the gridlines
+  # land on round numbers. A fixed ceiling made every real invoice overflow the
+  # box.
   defp chart_max(months) do
     tallest =
       months
@@ -357,7 +400,9 @@ defmodule QuantumBillingWeb.DashboardLive do
         tone: :strong
       },
       %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
-      %{label: "Paid", value: status_counts["Paid"] || 0, tone: :soft},
+      # `:positive`, not `:soft` — under the colour palette `:soft` is the red
+      # that marks a failed e-invoice, and a paid invoice is the opposite.
+      %{label: "Paid", value: status_counts["Paid"] || 0, tone: :positive},
       %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
     ]
     |> Enum.reject(&(&1.value == 0))
@@ -374,7 +419,8 @@ defmodule QuantumBillingWeb.DashboardLive do
         day: Calendar.strftime(obligation.due_date, "%d"),
         title: "#{obligation.type} · #{obligation.period_label}",
         due_text: due_text(obligation),
-        due_class: due_class(obligation)
+        due_class: due_class(obligation),
+        tone: due_tone(obligation)
       }
     end)
   end
@@ -384,6 +430,10 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   defp due_text(%{days_until: 0}), do: "Due today"
   defp due_text(%{days_until: days}), do: "Due in #{days} #{plural(days, "day")}"
+
+  defp due_tone(%{status: "Overdue"}), do: :overdue
+  defp due_tone(%{days_until: days}) when days <= 3, do: :due_soon
+  defp due_tone(_obligation), do: :neutral
 
   defp due_class(%{status: "Overdue"}), do: "text-error"
   defp due_class(%{days_until: days}) when days <= 3, do: "text-warning"

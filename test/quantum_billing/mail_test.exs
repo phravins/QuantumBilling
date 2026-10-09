@@ -13,6 +13,33 @@ defmodule QuantumBilling.MailTest do
       refute Mail.own_relay?(%Organization{})
     end
 
+    test "falls back to the application mailer when a username has no password" do
+      # gen_smtp would answer `no_credentials` to every send with this config,
+      # which took sign-up confirmations and password resets down with it.
+      config =
+        Mail.smtp_config(%Organization{
+          smtp_host: "smtp.example.com",
+          smtp_port: 587,
+          smtp_username: "postmaster",
+          smtp_password: nil
+        })
+
+      assert config == []
+    end
+
+    test "uses the relay when it needs no authentication at all" do
+      config =
+        Mail.smtp_config(%Organization{
+          smtp_host: "smtp.example.com",
+          smtp_port: 587,
+          smtp_username: nil,
+          smtp_password: nil
+        })
+
+      assert config[:relay] == "smtp.example.com"
+      assert config[:auth] == :never
+    end
+
     test "verifies the relay's certificate and requires STARTTLS on 587" do
       config =
         Mail.smtp_config(%Organization{

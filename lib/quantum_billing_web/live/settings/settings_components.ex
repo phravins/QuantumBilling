@@ -1,8 +1,12 @@
 defmodule QuantumBillingWeb.SettingsComponents do
   @moduledoc """
   Building blocks for the Settings page: the labelled toggle used by the
-  boolean settings, the invoice preview on the Customization panel, and the
-  panel for a section that is not built yet.
+  boolean settings, and the panel for a section that is not built yet.
+
+  The Customization panel's previews are no longer in here. They are real
+  renders of a real layout now — the design thumbnails come from
+  `QuantumBillingWeb.InvoiceTemplateComponents`, and the full-size preview and
+  test print are served by `QuantumBillingWeb.InvoicePdfController`.
 
   `sections/0` is the single source of truth for the section list. The app
   sidebar reads it too, which is why it lives here rather than in the LiveView.
@@ -14,10 +18,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
-
-  alias QuantumBillingWeb.InvoiceDoc.Layout
-  alias QuantumBillingWeb.InvoiceDoc.Renderer
-  alias QuantumBillingWeb.InvoiceDocument
 
   # `short_title` is what the sidebar shows. The sidebar is only 12rem wide and
   # already says "Settings" above these, so the suffix is both redundant and too
@@ -138,43 +138,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
         <span :if={@hint} class="mt-0.5 block text-xs text-base-content/45">{@hint}</span>
       </span>
     </label>
-    """
-  end
-
-  @doc """
-  Renders a miniature invoice reflecting the customization settings.
-
-  Rendered by `InvoiceDoc.Renderer` from the layout the settings describe — the
-  same component and the same stylesheet the real document uses — so a toggle
-  that does nothing here does nothing there either. It is scaled down rather
-  than simplified: hiding detail would let the preview agree with a setting it
-  is not actually honouring.
-
-  `settings` is the unsaved changeset draft, so the preview follows the form
-  rather than the stored row.
-  """
-  attr :settings, :map, required: true, doc: "the Organization being edited, saved or not"
-  attr :organization, :map, required: true, doc: "the saved row, for the stored logo path"
-
-  def invoice_preview(assigns) do
-    assigns =
-      assigns
-      |> assign(:doc, Layout.from_legacy(assigns.settings))
-      |> assign(:invoice, InvoiceDocument.sample())
-      |> assign(:accent, assigns.settings.doc_accent_color || "#18181b")
-      |> assign(:logo, assigns.settings.doc_logo_path || assigns.organization.doc_logo_path)
-
-    ~H"""
-    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100 p-3 shadow-sm">
-      <Renderer.stylesheet doc={@doc} />
-      <Renderer.thumbnail
-        doc={@doc}
-        invoice={@invoice}
-        accent={@accent}
-        logo={@logo}
-        scale={0.42}
-      />
-    </div>
     """
   end
 

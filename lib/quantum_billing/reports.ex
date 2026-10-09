@@ -30,6 +30,10 @@ defmodule QuantumBilling.Reports do
 
   @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
 
+  # The most months a trend chart will draw. Two years of readings fit across a
+  # card and still leave the labels legible; beyond that the line is a comb.
+  @trend_months 24
+
   # A dropdown nobody can scroll through is not a filter. Past this many names
   # the list is cut rather than shipped in full to every open Reports page.
   @client_name_limit 500
@@ -49,7 +53,7 @@ defmodule QuantumBilling.Reports do
   in chunks.
   """
   def invoices do
-    Repo.all(from i in Invoice, order_by: [desc: i.invoice_date, desc: i.id])
+    Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
 
@@ -97,7 +101,9 @@ defmodule QuantumBilling.Reports do
   about what "This Quarter, Tax Liability, client X" means.
   """
   def query(filters) when is_map(filters) do
-    Invoice
+    # Binned invoices are out of every report: `kept/1` here covers the page,
+    # the totals and the export, because they all start from this query.
+    Invoice.kept()
     |> filter_dates(range_bounds(filters[:date_range]))
     |> filter_equal(:status, filters[:status], "All Status")
     |> filter_equal(:client_name, filters[:client], "All Clients")
@@ -189,34 +195,112 @@ defmodule QuantumBilling.Reports do
   end
 
   @doc """
-  Per-month totals for the filtered set, oldest first.
+  Per-month totals for the filtered set, oldest first, with quiet months
+  carried as zeroes rather than dropped.
 
   Feeds both the trend chart and the month-over-month deltas on the cards, so
   the two cannot tell different stories about the same month.
   """
-  def monthly_breakdown(filters) when is_map(filters) do
-    filters
-    |> query()
-    |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
-    |> order_by([i], asc: fragment("date_trunc('month', ?)", i.invoice_date))
-    |> select([i], %{
-      month: fragment("date_trunc('month', ?)", i.invoice_date),
-      count: count(i.id),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
-      tax_amount:
-        coalesce(
-          sum(
-            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
-          ),
-          0
-        )
-    })
-    |> Repo.all()
-    |> Enum.map(fn row ->
-      Map.put(row, :label, Calendar.strftime(to_date(row.month), "%b"))
+  def monthly_breakdown(filters, today \\ nil) when is_map(filters) do
+    rows =
+      filters
+      |> query()
+      |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
+      |> order_by([i], asc: fragment("date_trunc('month', ?)", i.invoice_date))
+      |> select([i], %{
+        month: fragment("date_trunc('month', ?)", i.invoice_date),
+        count: count(i.id),
+        taxable_value: coalesce(sum(i.taxable_value), 0),
+        tax_amount:
+          coalesce(
+            sum(
+              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            ),
+            0
+          )
+      })
+      |> Repo.all()
+
+    fill_months(rows, range_bounds(filters[:date_range], today), today)
+  end
+
+  # Every month across the range, whether or not anything was invoiced in it.
+  #
+  # `GROUP BY` only returns months that have rows, and a chart drawn straight
+  # from that is wrong twice over. A quiet month vanishes from the axis, so
+  # March is plotted next to June as though they were consecutive and the slope
+  # between them is a month-per-month rate that nothing measured. And
+  # `month_delta/2` compares the last two rows as "this month against last
+  # month" when they may be a quarter apart.
+  #
+  # Nothing billed at all is a different thing from a quiet month, though:
+  # gap-filling fills gaps between readings, and with no readings there is
+  # nothing to fill. Returning the empty list lets the panel say there are no
+  # invoices in the period rather than drawing a confident flat zero.
+  defp fill_months([], _bounds, _today), do: []
+
+  defp fill_months(rows, bounds, today) do
+    billed = Map.new(rows, &{year_month(to_date(&1.month)), &1})
+
+    rows
+    |> chart_months(bounds, today)
+    |> Enum.map(fn month ->
+      row = Map.get(billed, year_month(month))
+
+      %{
+        month: month,
+        label: Calendar.strftime(month, "%b"),
+        count: (row && row.count) || 0,
+        taxable_value: (row && row.taxable_value) || 0,
+        tax_amount: (row && row.tax_amount) || 0
+      }
     end)
   end
+
+  # The months the chart draws: the selected range, cut off at the current
+  # month so a year-to-date view does not flatline through months that have
+  # not happened, and capped so "All Time" over several years stays a chart
+  # rather than a picket fence. Without bounds — "All Time" — the invoices
+  # themselves say where to start.
+  defp chart_months(rows, bounds, today) do
+    today = today || Date.utc_today()
+
+    first =
+      case bounds do
+        {%Date{} = from, _to} -> Date.beginning_of_month(from)
+        {nil, _to} -> rows |> List.first() |> billed_month()
+      end
+
+    last =
+      case bounds do
+        {_from, %Date{} = to} -> Enum.min([Date.beginning_of_month(to), month_start(today)], Date)
+        {_from, nil} -> rows |> List.last() |> billed_month() |> min_month(month_start(today))
+      end
+
+    case {first, last} do
+      {nil, _} -> []
+      {_, nil} -> []
+      {first, last} -> first |> month_starts(last) |> Enum.take(-@trend_months)
+    end
+  end
+
+  defp billed_month(nil), do: nil
+  defp billed_month(row), do: row.month |> to_date() |> month_start()
+
+  defp min_month(nil, _ceiling), do: nil
+  defp min_month(month, ceiling), do: Enum.min([month, ceiling], Date)
+
+  defp month_start(date), do: Date.beginning_of_month(date)
+  defp year_month(date), do: {date.year, date.month}
+
+  defp month_starts(first, last) do
+    Stream.iterate(first, &next_month/1)
+    |> Enum.take_while(&(Date.compare(&1, last) != :gt))
+  end
+
+  defp next_month(%Date{year: year, month: 12}), do: Date.new!(year + 1, 1, 1)
+  defp next_month(%Date{year: year, month: month}), do: Date.new!(year, month + 1, 1)
 
   defp to_date(%Date{} = date), do: date
   defp to_date(%NaiveDateTime{} = naive), do: NaiveDateTime.to_date(naive)
@@ -655,10 +739,10 @@ defmodule QuantumBilling.Reports do
   business, and every one of those names was also rendered as an `<option>`.
   """
   def client_names do
-    from_clients = from(c in Client, select: %{name: c.name}, where: not is_nil(c.name))
+    from_clients = from(c in Client.kept(), select: %{name: c.name}, where: not is_nil(c.name))
 
     from_invoices =
-      from(i in Invoice, select: %{name: i.client_name}, where: not is_nil(i.client_name))
+      from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))
 
     names =
       from(n in subquery(union(from_clients, ^from_invoices)),

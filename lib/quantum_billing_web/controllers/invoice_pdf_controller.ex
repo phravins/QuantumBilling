@@ -15,8 +15,8 @@ defmodule QuantumBillingWeb.InvoicePdfController do
   signed-in route, so "Download PDF" sent the customer to a login screen for an
   application they have no account on.
 
-  All three render outside the app layout on purpose: the sidebar and page
-  chrome have no business on a document going to a client.
+  Every one of them renders outside the app layout on purpose: the sidebar and
+  page chrome have no business on a document going to a client.
   """
   use QuantumBillingWeb, :controller
 
@@ -40,7 +40,12 @@ defmodule QuantumBillingWeb.InvoicePdfController do
         conn
         |> put_root_layout(false)
         |> put_layout(false)
-        |> render(:show, invoice: invoice, doc: doc, accent: accent, logo: logo)
+        |> render(:show,
+          invoice: invoice,
+          doc: doc,
+          accent: accent,
+          logo: logo
+        )
     end
   end
 

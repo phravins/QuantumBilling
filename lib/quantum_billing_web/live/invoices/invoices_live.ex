@@ -36,8 +36,41 @@ defmodule QuantumBillingWeb.InvoicesLive do
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
      |> assign(:sort_dir, :desc)
+     |> assign(:page, 1)}
+  end
+
+  # Applies a search or status carried in the URL.
+  #
+  # Other pages link here already — the Clients list sends you to this client's
+  # invoices — and until now the query string was read by nobody: the link
+  # arrived at an unfiltered list and quietly showed everything. The page is
+  # loaded from here rather than from `mount/3` so the filters are in place
+  # before the first render, and so a link followed while the page is already
+  # open re-filters it.
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:search, param(params, "q", socket.assigns.search))
+     |> assign(:status_filter, status_param(params, socket.assigns.status_filter))
      |> assign(:page, 1)
      |> load_page()}
+  end
+
+  defp param(params, key, fallback) do
+    case Map.get(params, key) do
+      value when is_binary(value) -> value
+      _missing -> fallback
+    end
+  end
+
+  # Matched against the page's own list rather than trusted: this is a query
+  # string on its way to a WHERE clause, and an unknown status would silently
+  # empty the table.
+  defp status_param(params, fallback) do
+    case Map.get(params, "status") do
+      status when status in @status_options -> status
+      _unknown -> fallback
+    end
   end
 
   def handle_event("search", %{"q" => q}, socket) do
@@ -85,11 +118,12 @@ defmodule QuantumBillingWeb.InvoicesLive do
         {:noreply, put_flash(socket, :error, "That invoice no longer exists.")}
 
       invoice ->
-        case Invoices.delete_invoice(invoice) do
+        # Moves it to the Bin rather than removing it: see `Invoices.delete_invoice/2`.
+        case Invoices.delete_invoice(invoice, user_id: socket.assigns.current_scope.user.id) do
           {:ok, invoice} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Invoice #{invoice.invoice_number} deleted.")
+             |> put_flash(:info, "Invoice #{invoice.invoice_number} moved to the Bin.")
              |> load_page()}
 
           {:error, _changeset} ->
@@ -128,7 +162,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
     assigns = assign(assigns, status_options: @status_options)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Invoices
         <:subtitle>Manage and track all your GST invoices</:subtitle>
@@ -297,19 +337,21 @@ defmodule QuantumBillingWeb.InvoicesLive do
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>
                         </li>
-
-                        <li>
-                          <a
-                            phx-click="delete"
-                            phx-value-id={row.id}
-                            data-confirm={"Delete #{row.number}? This cannot be undone, and the number is not reused."}
-                            class="text-error"
-                          >
-                            <.icon name="hero-trash" class="size-4" /> Delete
-                          </a>
-                        </li>
                       </ul>
                     </div>
+
+                    <button
+                      type="button"
+                      id={"invoice-delete-#{row.id}"}
+                      phx-click="delete"
+                      phx-value-id={row.id}
+                      data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
+                      class={row_delete_class()}
+                      aria-label="Move invoice to the Bin"
+                      title="Move to Bin"
+                    >
+                      <.icon name="hero-trash" class="size-4" />
+                    </button>
                   </div>
                 </td>
               </tr>

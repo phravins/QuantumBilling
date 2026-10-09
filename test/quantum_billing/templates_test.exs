@@ -24,6 +24,18 @@ defmodule QuantumBilling.TemplatesTest do
     template
   end
 
+  defp invoice_under(%InvoiceTemplate{} = template) do
+    Repo.insert!(%Invoices.Invoice{
+      invoice_number: "INV-#{System.unique_integer([:positive])}",
+      invoice_date: ~D[2026-03-01],
+      place_of_supply: "Maharashtra (27)",
+      client_name: "Delta Retailers",
+      grand_total: 1_180,
+      status: "Draft",
+      template_id: template.id
+    })
+  end
+
   describe "ensure_default/0" do
     test "seeds one template and is idempotent" do
       assert Templates.default_template() == nil
@@ -153,12 +165,106 @@ defmodule QuantumBilling.TemplatesTest do
     end
   end
 
-  describe "delete_template/1" do
-    test "removes a template nothing points at" do
+  describe "delete_template/2" do
+    # It used to remove a design nothing pointed at. It archives now, whether
+    # or not anything points at it, so that either can be brought back.
+    test "moves the template to the Bin rather than removing it" do
       template = create(%{"name" => "Unused"})
 
-      assert {:ok, _template} = Templates.delete_template(template)
+      assert {:ok, archived} = Templates.delete_template(template)
+      assert %DateTime{} = archived.archived_at
+
       assert Templates.list_templates() == []
+      assert Enum.map(Templates.list_archived_templates(), & &1.id) == [template.id]
+      assert Templates.get_archived_template(template.id).name == "Unused"
+    end
+
+    test "deleting what is already in the Bin changes nothing" do
+      {:ok, archived} = Templates.delete_template(create(%{"name" => "Unused"}))
+
+      assert {:ok, again} = Templates.delete_template(archived)
+      assert again.archived_at == archived.archived_at
+    end
+
+    test "get_archived_template/1 finds only what is in the Bin" do
+      live = create(%{"name" => "Live"})
+
+      assert Templates.get_archived_template(live.id) == nil
+      assert Templates.get_archived_template("not-an-id") == nil
+    end
+  end
+
+  describe "restore_template/2" do
+    test "puts the template back in the list under its own name" do
+      {:ok, archived} = Templates.delete_template(create(%{"name" => "Letterhead"}))
+
+      assert {:ok, restored} = Templates.restore_template(archived)
+      assert restored.archived_at == nil
+      assert restored.name == "Letterhead"
+
+      assert Enum.map(Templates.list_templates(), & &1.id) == [restored.id]
+      assert Templates.list_archived_templates() == []
+    end
+
+    # Names are unique among live templates only, so the name may have been
+    # taken while the design was in the Bin.
+    test "comes back under a free name when its own has been taken since" do
+      {:ok, archived} = Templates.delete_template(create(%{"name" => "Letterhead"}))
+      create(%{"name" => "Letterhead"})
+
+      assert {:ok, restored} = Templates.restore_template(archived)
+      assert restored.name == "Letterhead (restored)"
+      assert length(Templates.list_templates()) == 2
+    end
+
+    test "does not come back as the default" do
+      first = Templates.ensure_default()
+      second = create(%{"name" => "Second"})
+      {:ok, second} = Templates.set_default(second)
+
+      {:ok, archived} = Templates.delete_template(second)
+      {:ok, _first} = Templates.set_default(Repo.reload!(first))
+
+      assert {:ok, restored} = Templates.restore_template(archived)
+      refute restored.is_default
+      assert Templates.default_template().id == first.id
+    end
+  end
+
+  describe "purge_template/2" do
+    test "removes an archived template nothing points at" do
+      {:ok, archived} = Templates.delete_template(create(%{"name" => "Unused"}))
+
+      refute Templates.in_use?(archived)
+      assert {:ok, _purged} = Templates.purge_template(archived)
+      refute Repo.get(InvoiceTemplate, archived.id)
+    end
+
+    test "is refused while an invoice was issued under it" do
+      template = create(%{"name" => "Issued"})
+      invoice_under(template)
+      {:ok, archived} = Templates.delete_template(template)
+
+      assert Templates.in_use?(archived)
+      assert {:error, :in_use} = Templates.purge_template(archived)
+      assert Repo.get(InvoiceTemplate, archived.id)
+    end
+
+    # An invoice in the Bin can be restored, and has to find its design still
+    # there when it is.
+    test "is refused while an invoice in the Bin was issued under it" do
+      template = create(%{"name" => "Issued"})
+      {:ok, _binned} = template |> invoice_under() |> Invoices.delete_invoice()
+      {:ok, archived} = Templates.delete_template(template)
+
+      assert {:error, :in_use} = Templates.purge_template(archived)
+    end
+
+    test "is refused for a template that is not in the Bin" do
+      template = create(%{"name" => "Live"})
+
+      assert {:error, :not_in_bin} = Templates.purge_template(template)
+      assert Repo.get(InvoiceTemplate, template.id)
     end
   end
 

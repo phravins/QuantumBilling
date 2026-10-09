@@ -4,6 +4,9 @@ defmodule QuantumBilling.Accounts do
   """
 
   import Ecto.Query, warn: false
+
+  require Logger
+
   alias QuantumBilling.Events
   alias QuantumBilling.Repo
 
@@ -605,6 +608,81 @@ defmodule QuantumBilling.Accounts do
     {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
     Repo.insert!(user_token)
     UserNotifier.deliver_confirmation_instructions(user, confirm_url_fun.(encoded_token))
+  end
+
+  @doc ~S"""
+  Emails a password reset link to the account registered at `email`.
+
+  Always returns `:ok`, whatever the address turns out to be. Reporting "no
+  such account" here would turn the form into a way to ask which addresses hold
+  accounts, so the caller cannot tell an unknown address from a known one — and
+  neither can anyone else.
+
+  Unconfirmed accounts are included on purpose: following a link sent to the
+  address proves the same thing confirmation does, so `reset_user_password/2`
+  confirms the account as it sets the password.
+
+  ## Examples
+
+      iex> deliver_user_reset_password_instructions("someone@example.com", &url(~p"/users/reset-password/#{&1}"))
+      :ok
+
+  """
+  def deliver_user_reset_password_instructions(email, reset_url_fun)
+      when is_binary(email) and is_function(reset_url_fun, 1) do
+    case get_user_by_email(email) do
+      %User{} = user ->
+        {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
+        Repo.insert!(user_token)
+
+        case UserNotifier.deliver_reset_password_instructions(
+               user,
+               reset_url_fun.(encoded_token)
+             ) do
+          {:ok, _email} ->
+            :ok
+
+          {:error, reason} ->
+            # The caller is told nothing either way, so this is the only place
+            # a failed reset mail is visible.
+            Logger.warning("password reset email to #{user.email} failed: #{inspect(reason)}")
+            :ok
+        end
+
+      nil ->
+        :ok
+    end
+  end
+
+  @doc """
+  The user a password reset token belongs to, or `nil` when the token is
+  unknown, expired, or was sent to an address the account no longer uses.
+  """
+  def get_user_by_reset_password_token(token) do
+    with {:ok, query} <- UserToken.verify_reset_password_token_query(token),
+         {%User{} = user, _token} <- Repo.one(query) do
+      user
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Sets a new password from the "forgot password" link.
+
+  Every outstanding token is expired on success, so the link is single-use and
+  any session opened with the old password is signed out — if the reset was
+  prompted by someone else being in the account, leaving their session alive
+  would defeat the point.
+
+  The account is confirmed at the same time: the link only arrives by email, so
+  following it proves the address as well as a confirmation link would.
+  """
+  def reset_user_password(%User{} = user, attrs) do
+    user
+    |> User.password_changeset(attrs)
+    |> User.confirm_changeset()
+    |> update_user_and_delete_all_tokens()
   end
 
   @doc """

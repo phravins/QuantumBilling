@@ -47,6 +47,43 @@ defmodule QuantumBillingWeb.Format do
   def format_date(%Date{} = date), do: Calendar.strftime(date, "%d %b %Y")
   def format_date(nil), do: "—"
 
+  @doc """
+  Says how long ago something happened, the way a feed does.
+
+  Coarse on purpose — "2h ago", never "2 hours and 14 minutes ago". The
+  notification bell is read at a glance, and the exact timestamp belongs on the
+  record it points at, not in the list pointing there.
+
+  Anything older than a week gets its date instead: "8d ago" tells you less
+  than "20 May 2024" does, and by then the feed is history rather than news.
+
+  A timestamp in the future reads as `"just now"` rather than something
+  negative — it means the clocks disagree, which is not worth surfacing to
+  somebody reading their notifications.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.relative_time(~U[2024-05-28 09:00:00Z], ~U[2024-05-28 11:30:00Z])
+      "2h ago"
+
+      iex> QuantumBillingWeb.Format.relative_time(~U[2024-05-28 11:29:50Z], ~U[2024-05-28 11:30:00Z])
+      "just now"
+
+  """
+  def relative_time(at, now \\ DateTime.utc_now())
+
+  def relative_time(%DateTime{} = at, %DateTime{} = now) do
+    case DateTime.diff(now, at, :second) do
+      seconds when seconds < 60 -> "just now"
+      seconds when seconds < 3_600 -> "#{div(seconds, 60)}m ago"
+      seconds when seconds < 86_400 -> "#{div(seconds, 3_600)}h ago"
+      seconds when seconds < 604_800 -> "#{div(seconds, 86_400)}d ago"
+      _older -> format_date(DateTime.to_date(at))
+    end
+  end
+
+  def relative_time(nil, _now), do: "—"
+
   @ones ~w(Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve
            Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen)
 

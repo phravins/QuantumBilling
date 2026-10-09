@@ -22,7 +22,8 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
         "transport_mode" => "Road",
         "vehicle_no" => "MH01AB1234",
         "from_place" => "Mumbai",
-        "to_place" => "Pune"
+        "to_place" => "Pune",
+        "distance_km" => "150"
       },
       overrides
     )
@@ -62,7 +63,8 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
             :transport_mode,
             :vehicle_no,
             :from_place,
-            :to_place
+            :to_place,
+            :distance_km
           ] do
         assert ["can't be blank"] = errors[field], "expected #{field} to be required"
       end
@@ -117,6 +119,20 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
         EWayBillForm.changeset(%EWayBillForm{}, valid_attrs(%{"total_goods_value" => "0"}))
 
       assert %{total_goods_value: ["must be greater than 0"]} = errors_on(changeset)
+    end
+
+    # The distance is what the validity is computed from, so a bill without one
+    # has no expiry — the form used not to ask for it at all.
+    test "requires a distance the portal would accept" do
+      assert %{distance_km: ["must be greater than 0"]} =
+               errors_on(
+                 EWayBillForm.changeset(%EWayBillForm{}, valid_attrs(%{"distance_km" => "0"}))
+               )
+
+      assert %{distance_km: ["must be less than or equal to 4000"]} =
+               errors_on(
+                 EWayBillForm.changeset(%EWayBillForm{}, valid_attrs(%{"distance_km" => "9000"}))
+               )
     end
 
     test "rejects negative tax amounts" do

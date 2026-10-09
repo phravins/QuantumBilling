@@ -37,6 +37,13 @@ defmodule QuantumBillingWeb.Layouts do
     default: nil,
     doc: "the key of the active settings section, when one is open"
 
+  # Defaulted rather than required, and assigned by `NotificationsHook` on every
+  # authenticated socket. The defaults are what a page rendered outside that
+  # hook falls back to — an empty bell rather than a crash.
+  attr :notifications, :list, default: [], doc: "the newest notifications, newest first"
+
+  attr :unread_count, :integer, default: 0, doc: "how many of them have not been read"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -61,21 +68,24 @@ defmodule QuantumBillingWeb.Layouts do
               the one way to transition to an unknown height in CSS alone, so
               this needs neither JavaScript nor a server round trip.
 
-              The chevron is the only thing that opens it. Tying it to the
-              current page instead meant Account Settings unfolded the whole
-              list on arrival, since that page marks the same nav item active,
-              and the Settings link could never be followed without the list
-              springing open with it.
+              Open is driven off `@active_sub`, not `@active_nav`. Every
+              settings panel marks a sub-item, so the list holding it unfolds
+              and stays unfolded while you move between sections. Account
+              Settings marks the Settings nav item but no sub-item, so it no
+              longer springs the whole list open on arrival — which is what
+              tying this to `@active_nav` used to do.
 
-              Whether it is open is the browser's to remember: every navigation
-              re-renders this sidebar from scratch, so without the hook below
-              the list would snap shut the moment you picked a section from
-              it. --%>
+              Server-rendered rather than remembered only in the browser: a
+              navigation rebuilds this sidebar from scratch, and restoring the
+              state afterwards in JavaScript meant the list visibly snapped
+              shut and reopened on every section you picked. --%>
               <input
                 :if={item.key == :settings}
                 type="checkbox"
                 id="settings-sections-toggle"
                 phx-hook=".SettingsDisclosure"
+                checked={@active_sub != nil}
+                data-open={to_string(@active_sub != nil)}
                 class="peer sr-only"
               />
               <div class="flex items-center gap-0.5">
@@ -90,7 +100,21 @@ defmodule QuantumBillingWeb.Layouts do
                     )
                   ]}
                 >
-                  <.icon name={item.icon} class="size-4.5 shrink-0" />
+                  <%!-- Each destination keeps its own hue, so the row is
+                  recognisable by colour before the label is read. Dimmed
+                  while inactive: at full strength nine saturated icons
+                  compete with the page itself. --%>
+                  <.icon
+                    name={item.icon}
+                    class={[
+                      "size-4.5 shrink-0 transition-opacity",
+                      item.color,
+                      if(@active_nav == item.key,
+                        do: "opacity-100",
+                        else: "opacity-70 group-hover:opacity-100"
+                      )
+                    ]}
+                  />
                   <span class="truncate">{item.label}</span>
                 </.link>
 
@@ -187,13 +211,110 @@ defmodule QuantumBillingWeb.Layouts do
         <%!-- justify-end, not justify-between: the sidebar toggle used to sit on
         the left and is gone, so anything left aligned would drift over to it. --%>
         <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
-          <button
-            class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
-            aria-label="Notifications"
-          >
-            <.icon name="hero-bell" class="size-4.5" />
-            <span class="absolute right-1 top-1 size-1.5 rounded-full bg-error"></span>
-          </button>
+          <%!-- The bell used to be a button with a permanently lit red dot and
+          nothing behind it: no feed, no count, and no handler for the click.
+          `NotificationsHook` subscribes every authenticated socket to the
+          notifications topic and assigns the feed, so the badge now counts real
+          unread rows and the panel lists them as they arrive.
+
+          Wider than the sidebar's menus because these are sentences rather than
+          labels, and the list is capped and scrolls: a busy morning should not
+          run the panel off the bottom of the screen. --%>
+          <div class="dropdown dropdown-end">
+            <div
+              tabindex="0"
+              role="button"
+              id="notifications-bell"
+              class="relative flex size-7 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content"
+              aria-label={notifications_label(@unread_count)}
+            >
+              <.icon name="hero-bell" class="size-4.5" />
+              <%!-- Hidden at zero rather than always lit, and a number rather
+              than a dot: a marker that never goes out says nothing. --%>
+              <span
+                :if={@unread_count > 0}
+                class="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[0.625rem] font-semibold leading-4 text-white"
+              >
+                {if @unread_count > 9, do: "9+", else: @unread_count}
+              </span>
+            </div>
+
+            <div
+              tabindex="0"
+              id="notifications-panel"
+              class="dropdown-content z-20 mt-2 w-80 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-lg sm:w-96"
+            >
+              <div class="flex items-center justify-between border-b border-base-300 px-4 py-2.5">
+                <span class="text-sm font-semibold tracking-tight">Notifications</span>
+                <button
+                  :if={@unread_count > 0}
+                  type="button"
+                  id="notifications-mark-all"
+                  phx-click="mark_all_notifications_read"
+                  class="text-xs text-base-content/60 transition-colors hover:text-base-content"
+                >
+                  Mark all read
+                </button>
+              </div>
+
+              <div :if={@notifications == []} class="px-4 py-8 text-center">
+                <.icon name="hero-bell-slash" class="mx-auto size-5 text-base-content/30" />
+                <p class="mt-2 text-sm text-base-content/60">Nothing new</p>
+                <p class="mt-0.5 text-xs text-base-content/45">
+                  Invoices, payments and filing reminders land here.
+                </p>
+              </div>
+
+              <ul
+                :if={@notifications != []}
+                class="max-h-96 divide-y divide-base-300 overflow-y-auto"
+              >
+                <li :for={notification <- @notifications} id={"notification-#{notification.id}"}>
+                  <%!-- A button, not a link: the server marks it read and then
+                  navigates, so the two cannot race — a link carrying its own
+                  `phx-click` sometimes leaves the item you just opened
+                  unread. --%>
+                  <button
+                    type="button"
+                    phx-click="open_notification"
+                    phx-value-id={notification.id}
+                    class={[
+                      "flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-base-200",
+                      is_nil(notification.read_at) && "bg-base-200/40"
+                    ]}
+                  >
+                    <span class={[
+                      "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                      notification_tone(notification.severity)
+                    ]}>
+                      <.icon name={notification_icon(notification.kind)} class="size-3.5" />
+                    </span>
+
+                    <span class="min-w-0 flex-1">
+                      <span class="flex items-baseline justify-between gap-2">
+                        <span class={[
+                          "truncate text-sm",
+                          if(is_nil(notification.read_at),
+                            do: "font-semibold",
+                            else: "font-medium text-base-content/70"
+                          )
+                        ]}>
+                          {notification.title}
+                        </span>
+                        <span class="shrink-0 text-xs text-base-content/45">
+                          {relative_time(notification.inserted_at)}
+                        </span>
+                      </span>
+
+                      <span :if={notification.body} class="mt-0.5 block text-xs text-base-content/60">
+                        {notification.body}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
         </header>
 
         <%!-- A flex column so a page can hand a panel `flex-1` and have it take
@@ -214,27 +335,36 @@ defmodule QuantumBillingWeb.Layouts do
     </div>
     <.flash_group flash={@flash} />
     <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsDisclosure">
-      // Keeps the settings sections open across navigation. The server renders
-      // the checkbox unchecked every time, so without this, picking a section
-      // from the list would close the list you picked it from.
-      const KEY = "qb:settings-sections-open"
+      // The server decides whether the list starts open: it is, exactly when a
+      // settings section is on screen (data-open). This hook used to remember a
+      // manual open in localStorage as well, which meant one click on the
+      // chevron unfolded the list on every page from then on -- under Invoices,
+      // under Clients, for ever. Nothing is remembered across pages now.
+      const STALE_KEY = "qb:settings-sections-open"
 
       export default {
         mounted() {
-          this.restore()
-          this.el.addEventListener("change", () =>
-            localStorage.setItem(KEY, this.el.checked)
-          )
+          // Browsers that visited before the change still hold the old flag.
+          try { localStorage.removeItem(STALE_KEY) } catch (_error) {}
+
+          // `null` until the chevron is used on this page. Reset per mount:
+          // arriving somewhere new is not an override.
+          this.choice = null
+          this.apply(this.el.dataset.open === "true")
+          this.el.addEventListener("change", () => (this.choice = this.el.checked))
         },
 
+        // LiveView puts a checkbox back to what the server rendered on every
+        // diff -- a notification arriving is enough. A choice made on this page
+        // has to survive that, so it is put back; otherwise the server's
+        // answer stands.
         updated() {
-          this.restore()
+          this.apply(this.choice === null ? this.el.dataset.open === "true" : this.choice)
         },
 
-        // Restoring is not the user opening it, so it must not animate --
-        // otherwise the list slides open again on every page load.
-        restore() {
-          const open = localStorage.getItem(KEY) === "true"
+        // Not the user opening it, so it must not animate -- otherwise the
+        // list would slide on every page load and every diff.
+        apply(open) {
           if (this.el.checked === open) return
 
           const panel = document.getElementById("settings-sections")
@@ -291,37 +421,111 @@ defmodule QuantumBillingWeb.Layouts do
 
   defp user_initials(_scope), do: "--"
 
+  # Read out by a screen reader in place of "Notifications", which on its own
+  # gives no hint that there is anything to open.
+  defp notifications_label(0), do: "Notifications, none unread"
+  defp notifications_label(1), do: "Notifications, 1 unread"
+  defp notifications_label(count), do: "Notifications, #{count} unread"
+
+  # The kind says what the notification is about, so it picks the glyph; the
+  # severity says how it went, so it picks the colour. Keeping them apart is
+  # what lets a failed e-way bill and a generated one share an icon and still
+  # read differently.
+  defp notification_icon("invoice"), do: "hero-document-text"
+  defp notification_icon("payment"), do: "hero-banknotes"
+  defp notification_icon("e_way_bill"), do: "hero-truck"
+  defp notification_icon("compliance"), do: "hero-clipboard-document-check"
+  defp notification_icon("mail"), do: "hero-envelope"
+  defp notification_icon("client"), do: "hero-user-plus"
+  defp notification_icon(_other), do: "hero-information-circle"
+
+  # Same palette as `status_badge/1`, so a "Paid" badge and a payment
+  # notification are the same green.
+  defp notification_tone("success"), do: "bg-emerald-50 text-emerald-700"
+  defp notification_tone("warning"), do: "bg-amber-50 text-amber-700"
+  defp notification_tone("error"), do: "bg-rose-50 text-rose-700"
+  defp notification_tone(_info), do: "bg-base-200 text-base-content/60"
+
   defp user_designation(%{user: %{designation: title}}) when is_binary(title) and title != "",
     do: title
 
   defp user_designation(_scope), do: nil
 
+  # `color` is a literal class string per item, never assembled from the key:
+  # Tailwind scans source text, so "text-#{hue}-600" is never emitted and the
+  # icon renders in the inherited colour instead.
   defp nav_items do
     [
-      %{key: :dashboard, label: "Dashboard", path: ~p"/dashboard", icon: "hero-squares-2x2"},
-      %{key: :invoices, label: "Invoices", path: ~p"/invoices", icon: "hero-document-text"},
-      %{key: :clients, label: "Clients", path: ~p"/clients", icon: "hero-users"},
-      %{key: :e_way_bills, label: "E-Way Bills", path: ~p"/e-way-bills", icon: "hero-truck"},
+      %{
+        key: :dashboard,
+        label: "Dashboard",
+        path: ~p"/dashboard",
+        icon: "hero-squares-2x2",
+        color: "text-blue-600 dark:text-blue-400"
+      },
+      %{
+        key: :invoices,
+        label: "Invoices",
+        path: ~p"/invoices",
+        icon: "hero-document-text",
+        color: "text-indigo-600 dark:text-indigo-400"
+      },
+      %{
+        key: :clients,
+        label: "Clients",
+        path: ~p"/clients",
+        icon: "hero-users",
+        color: "text-emerald-600 dark:text-emerald-400"
+      },
+      %{
+        key: :e_way_bills,
+        label: "E-Way Bills",
+        path: ~p"/e-way-bills",
+        icon: "hero-truck",
+        color: "text-amber-600 dark:text-amber-400"
+      },
       %{
         key: :hsn_finder,
         label: "HSN Finder",
         path: ~p"/hsn-finder",
-        icon: "hero-magnifying-glass"
+        icon: "hero-magnifying-glass",
+        color: "text-cyan-600 dark:text-cyan-400"
       },
-      %{key: :reports, label: "Reports", path: ~p"/reports", icon: "hero-chart-bar"},
+      %{
+        key: :reports,
+        label: "Reports",
+        path: ~p"/reports",
+        icon: "hero-chart-bar",
+        color: "text-violet-600 dark:text-violet-400"
+      },
       %{
         key: :compliance,
         label: "Compliance",
         path: ~p"/compliance",
-        icon: "hero-shield-check"
+        icon: "hero-shield-check",
+        color: "text-teal-600 dark:text-teal-400"
       },
       %{
         key: :recurring,
         label: "Recurring",
         path: ~p"/recurring",
-        icon: "hero-arrow-path"
+        icon: "hero-arrow-path",
+        color: "text-pink-600 dark:text-pink-400"
       },
-      %{key: :settings, label: "Settings", path: ~p"/settings", icon: "hero-cog-6-tooth"}
+      %{
+        key: :bin,
+        label: "Bin",
+        path: ~p"/bin",
+        icon: "hero-trash",
+        color: "text-slate-600 dark:text-slate-400"
+      },
+      %{
+        key: :settings,
+        label: "Settings",
+        path: ~p"/settings",
+        icon: "hero-cog-6-tooth",
+        color: "text-rose-600 dark:text-rose-400"
+      }
     ]
   end
 

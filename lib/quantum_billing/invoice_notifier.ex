@@ -215,8 +215,9 @@ defmodule QuantumBilling.InvoiceNotifier do
     """
   end
 
-  # Customer-supplied names and numbers go into an HTML document, so they are
-  # escaped rather than trusted — the same rule that applies on a page.
+  # Deliberately plain. The attachment is the thing being tested, and a styled
+  # wrapper around it only makes it harder to tell which of the two you are
+  # looking at.
   defp escape(nil), do: ""
 
   defp escape(value) do

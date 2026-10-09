@@ -207,4 +207,59 @@ defmodule QuantumBillingWeb.ClientNewLiveTest do
       assert client.billing_city == "Mumbai"
     end
   end
+
+  # There was no way into this module with an existing client at all: the list
+  # page's row menu was a button with nothing behind it, so a client could be
+  # created and then never corrected.
+  describe "editing an existing client" do
+    setup do
+      {:ok, client} = Clients.create_client(valid_params())
+      %{client: client}
+    end
+
+    test "opens the form on the stored record", %{conn: conn, client: client} do
+      {:ok, view, html} = live(conn, ~p"/clients/#{client.id}/edit")
+
+      assert html =~ "Edit Acme Traders Private Limited"
+      assert html =~ "Save Changes"
+
+      assert has_element?(
+               view,
+               ~s{#client-form input[name="client[name]"][value="#{client.name}"]}
+             )
+    end
+
+    test "saves a change to the stored record rather than creating another", %{
+      conn: conn,
+      client: client
+    } do
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}/edit")
+
+      view
+      |> form("#client-form", %{"client" => valid_params(%{"billing_city" => "Nagpur"})})
+      |> render_submit()
+
+      assert [only_one] = Clients.list_clients()
+      assert only_one.id == client.id
+      assert only_one.billing_city == "Nagpur"
+    end
+
+    test "keeps the validation rules the new form has", %{conn: conn, client: client} do
+      {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}/edit")
+
+      html =
+        view
+        |> form("#client-form", %{"client" => valid_params(%{"gstin" => ""})})
+        |> render_submit()
+
+      assert html =~ "is required for a Registered Business"
+      assert Clients.get_client(client.id).gstin == "27AABCA1234A1Z5"
+    end
+
+    # A row menu can be rendered before another window deletes the client, and a
+    # 500 is the wrong answer to a stale link.
+    test "redirects rather than raising on a client that has gone", %{conn: conn} do
+      assert {:error, {:live_redirect, %{to: "/clients"}}} = live(conn, ~p"/clients/0/edit")
+    end
+  end
 end

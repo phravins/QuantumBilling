@@ -375,6 +375,88 @@ defmodule QuantumBilling.InvoicesTest do
     end
   end
 
+  describe "page/1 scoped to a client" do
+    setup :setup_company
+
+    setup do
+      {:ok, acme} = client("Acme Traders", "27AABCA1234A1Z5")
+      {:ok, other} = client("Walk-in Buyer", nil)
+
+      %{acme: acme, other: other}
+    end
+
+    defp client(name, gstin) do
+      Clients.create_client(%{
+        "client_type" => if(gstin, do: "Registered Business", else: "Consumer"),
+        "name" => name,
+        "gstin" => gstin,
+        "phone" => "9876543210",
+        "billing_line1" => "1 Main Street",
+        "billing_city" => "Mumbai",
+        "billing_state" => "Maharashtra (27)",
+        "billing_pin" => "400001"
+      })
+    end
+
+    defp ids(page), do: page.rows |> Enum.map(& &1.id) |> Enum.sort()
+
+    test "without the option every invoice is returned", %{acme: acme} do
+      {:ok, linked} = Invoices.create_invoice(attrs(%{"client_id" => acme.id}))
+      {:ok, unlinked} = Invoices.create_invoice(attrs())
+
+      assert ids(Invoices.page()) == Enum.sort([linked.id, unlinked.id])
+    end
+
+    test "returns the invoices linked to that client", %{acme: acme, other: other} do
+      {:ok, mine} =
+        Invoices.create_invoice(attrs(%{"client_id" => acme.id, "client_name" => acme.name}))
+
+      {:ok, _theirs} =
+        Invoices.create_invoice(attrs(%{"client_id" => other.id, "client_name" => other.name}))
+
+      assert ids(Invoices.page(client: acme)) == [mine.id]
+    end
+
+    # `client_id` is optional — the invoice form's name field can be filled
+    # without touching the client picker — so an id-only match would show a
+    # client with a dozen typed invoices an empty history.
+    test "also returns an unlinked invoice that names the client", %{acme: acme} do
+      {:ok, typed} = Invoices.create_invoice(attrs(%{"client_name" => acme.name}))
+      assert is_nil(typed.client_id)
+
+      assert ids(Invoices.page(client: acme)) == [typed.id]
+    end
+
+    # The other half of that rule. `clients.name` has no unique index, so two
+    # clients may share a name; without this, each would claim invoices
+    # explicitly linked to the other.
+    test "never claims an invoice linked to someone else", %{acme: acme, other: other} do
+      {:ok, _theirs} =
+        Invoices.create_invoice(attrs(%{"client_id" => other.id, "client_name" => acme.name}))
+
+      assert Invoices.page(client: acme).rows == []
+      assert Invoices.page(client: acme).total == 0
+    end
+
+    test "counts and pages over the narrowed set", %{acme: acme, other: other} do
+      for _ <- 1..3, do: Invoices.create_invoice(attrs(%{"client_id" => acme.id}))
+      for _ <- 1..5, do: Invoices.create_invoice(attrs(%{"client_id" => other.id}))
+
+      page = Invoices.page(client: acme, per_page: 2)
+
+      assert page.total == 3
+      assert page.total_pages == 2
+      assert length(page.rows) == 2
+    end
+
+    test "combines with the status filter", %{acme: acme} do
+      {:ok, draft} = Invoices.create_invoice(attrs(%{"client_id" => acme.id}))
+
+      assert ids(Invoices.page(client: acme, status: "Draft")) == [draft.id]
+      assert Invoices.page(client: acme, status: "Paid").rows == []
+    end
+  end
+
   describe "without an organisation configured" do
     test "an invoice can still be created" do
       # A fresh installation has no settings row. Defaulting to intra-state and

@@ -111,7 +111,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
       to = Date.end_of_month(from)
 
       summary =
-        Invoice
+        Invoice.kept()
         |> in_period(from, to)
         |> select([i], %{
           count: count(i.id),
@@ -158,7 +158,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     {:ok, sections} =
       Repo.transaction(
         fn ->
-          Invoice
+          Invoice.kept()
           |> in_period(from, to)
           |> order_by([i], asc: i.invoice_date, asc: i.id)
           |> Repo.stream(max_rows: @stream_rows)
@@ -287,6 +287,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     CreditNote
     |> where([n], n.inserted_at >= ^from_at and n.inserted_at < ^to_at)
     |> where([n], n.status != "Cancelled")
+    # A note amends an invoice in this return. When that invoice is in the Bin
+    # it is not in the return, so neither is the note.
+    |> join(:left, [n], i in assoc(n, :invoice))
+    |> where([_n, i], is_nil(i.deleted_at))
     |> order_by([n], asc: n.id)
     |> preload(:invoice)
     |> Repo.all()

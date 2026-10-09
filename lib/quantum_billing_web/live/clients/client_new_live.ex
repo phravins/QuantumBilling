@@ -1,11 +1,18 @@
 defmodule QuantumBillingWeb.ClientNewLive do
   @moduledoc """
-  The "Add New Client" form.
+  The client form, for both a new client and an existing one.
 
   Follows the shape of `EWayBillNewLive`: header carrying Cancel and
   Save, then the form. Nothing here needs a running summary the way an invoice
   does, so the form takes the full width and the standing guidance sits behind
   the header's `help_popover/1` rather than in a permanent right-hand rail.
+
+  One module for both actions rather than two, the same way `InvoiceNewLive`
+  serves `/invoices/new` and `/invoices/:id/edit`: the fields, the validation
+  and the GSTIN rule are identical, and the only thing that differs is whether
+  the changeset starts from a blank struct or a stored one. The list page had
+  no way in here at all before — its row menu was a button with nothing behind
+  it — so a client could be created and then never corrected.
 
   The GSTIN's required marker follows the client type rather than being fixed —
   an unregistered dealer or a walk-in consumer has no GSTIN, and B2C invoicing
@@ -18,17 +25,40 @@ defmodule QuantumBillingWeb.ClientNewLive do
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.EWayBills.EWayBillForm
 
-  def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:page_title, "Add New Client")
-     |> assign(:active_nav, :clients)
-     |> assign_form(Clients.change_client(%Client{}))}
+  def mount(params, _session, socket) do
+    {:ok, apply_action(socket, socket.assigns.live_action, params)}
+  end
+
+  defp apply_action(socket, :new, _params) do
+    socket
+    |> assign(:page_title, "Add New Client")
+    |> assign(:active_nav, :clients)
+    |> assign(:client, %Client{})
+    |> assign_form(Clients.change_client(%Client{}))
+  end
+
+  # Redirected rather than raised on a missing id: the row menu that leads here
+  # may have been rendered before another window deleted the client, and a 500
+  # is the wrong answer to a stale link.
+  defp apply_action(socket, :edit, %{"id" => id}) do
+    case Clients.get_client(id) do
+      nil ->
+        socket
+        |> put_flash(:error, "That client no longer exists.")
+        |> push_navigate(to: ~p"/clients")
+
+      client ->
+        socket
+        |> assign(:page_title, "Edit #{client.name}")
+        |> assign(:active_nav, :clients)
+        |> assign(:client, client)
+        |> assign_form(Clients.change_client(client))
+    end
   end
 
   def handle_event("validate", %{"client" => params}, socket) do
     changeset =
-      %Client{}
+      socket.assigns.client
       |> Clients.change_client(params)
       |> Map.put(:action, :validate)
 
@@ -36,11 +66,11 @@ defmodule QuantumBillingWeb.ClientNewLive do
   end
 
   def handle_event("save", %{"client" => params}, socket) do
-    case Clients.create_client(params) do
+    case save_client(socket.assigns.live_action, socket.assigns.client, params) do
       {:ok, client} ->
         {:noreply,
          socket
-         |> put_flash(:info, "#{client.name} added.")
+         |> put_flash(:info, saved_message(socket.assigns.live_action, client))
          |> push_navigate(to: ~p"/clients")}
 
       {:error, changeset} ->
@@ -50,6 +80,12 @@ defmodule QuantumBillingWeb.ClientNewLive do
          |> assign_form(changeset)}
     end
   end
+
+  defp save_client(:new, _client, params), do: Clients.create_client(params)
+  defp save_client(:edit, client, params), do: Clients.update_client(client, params)
+
+  defp saved_message(:new, client), do: "#{client.name} added."
+  defp saved_message(:edit, client), do: "#{client.name} updated."
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     client_type = Ecto.Changeset.get_field(changeset, :client_type)
@@ -62,10 +98,16 @@ defmodule QuantumBillingWeb.ClientNewLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         <span class="inline-flex items-center gap-2">
-          Add New Client
+          {@page_title}
           <.help_popover id="client-help" label="About adding a client">
             <span class="block">
               <span class="flex items-center gap-2.5">
@@ -101,7 +143,8 @@ defmodule QuantumBillingWeb.ClientNewLive do
           <div class="flex items-center gap-2">
             <.link navigate={~p"/clients"} class={secondary_button_class()}>Cancel</.link>
             <button type="submit" form="client-form" class={action_button_class()}>
-              <.icon name="hero-check" class="size-4" /> Save Client
+              <.icon name="hero-check" class="size-4" />
+              {if @live_action == :edit, do: "Save Changes", else: "Save Client"}
             </button>
           </div>
         </:actions>

@@ -99,7 +99,8 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
   @required ~w(supply_type sub_type document_type document_no document_date
                transaction_type from_party from_state to_party to_state
-               total_goods_value transport_mode vehicle_no from_place to_place)a
+               total_goods_value transport_mode vehicle_no from_place to_place
+               distance_km)a
 
   @amount_fields ~w(total_goods_value cgst_value sgst_value igst_value other_amount)a
 
@@ -135,6 +136,9 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     field :vehicle_no, :string
     field :from_place, :string
     field :to_place, :string
+    # The approximate distance decides how long the bill is valid for —
+    # Rule 138(10), one day per 200 km — so the form cannot leave it out.
+    field :distance_km, :integer
 
     # 5. Other details
     field :remarks, :string
@@ -159,6 +163,9 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     |> validate_inclusion(:to_state, @states)
     |> validate_length(:document_no, max: 30)
     |> validate_number(:total_goods_value, greater_than: 0)
+    # 4,000 km is the portal's own ceiling, and further than any road journey
+    # inside the country.
+    |> validate_number(:distance_km, greater_than: 0, less_than_or_equal_to: 4000)
     |> validate_amounts()
     |> update_change(:vehicle_no, &String.upcase(String.replace(&1 || "", ~r/\s/, "")))
     |> validate_format(:vehicle_no, @vehicle_format, message: "must look like MH01AB1234")

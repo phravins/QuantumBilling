@@ -22,11 +22,19 @@ defmodule QuantumBilling.Templates do
   layout is frozen onto the invoice at issue; the accent is read live from the
   template; the logo is read live from the organisation. See
   `QuantumBilling.Templates.InvoiceTemplate` for why.
+
+  ## Deleting
+
+  `delete_template/2` archives: the design leaves the settings list and shows in
+  the Bin. `restore_template/2` brings it back and `purge_template/2` removes it
+  for good — which is refused while an invoice still points at it, because the
+  row is the record of which design that invoice was issued under.
   """
 
   import Ecto.Query, warn: false
 
   alias Ecto.Multi
+  alias QuantumBilling.Audit
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
@@ -43,6 +51,26 @@ defmodule QuantumBilling.Templates do
   @doc "Every template that has not been archived, oldest first."
   def list_templates do
     Repo.all(from t in InvoiceTemplate, where: is_nil(t.archived_at), order_by: [asc: t.id])
+  end
+
+  @doc "Every archived template — the designs in the Bin — most recently archived first."
+  def list_archived_templates do
+    Repo.all(
+      from t in InvoiceTemplate,
+        where: not is_nil(t.archived_at),
+        order_by: [desc: t.archived_at, desc: t.id]
+    )
+  end
+
+  @doc "One archived template by id, or `nil` — including for an id that is not a number."
+  def get_archived_template(id) do
+    case Integer.parse(to_string(id)) do
+      {int_id, ""} ->
+        Repo.one(from t in InvoiceTemplate, where: t.id == ^int_id and not is_nil(t.archived_at))
+
+      _not_an_id ->
+        nil
+    end
   end
 
   @doc "One template by id, or `nil`. Archived templates are still readable."
@@ -147,19 +175,82 @@ defmodule QuantumBilling.Templates do
   end
 
   @doc """
-  Deletes a template, or archives it when invoices still reference it.
+  Moves a template to the Bin by archiving it.
 
-  Archiving rather than refusing keeps the action predictable — the template
-  disappears from the list either way, and the caller does not have to know
-  whether anything happens to point at it.
+  It used to be removed outright when no invoice pointed at it and archived
+  otherwise. It is always archived now, so that a design deleted by mistake can
+  be brought back whichever of the two it was; `purge_template/2` is the delete
+  that cannot be undone.
+
+  `opts` may carry `:user_id`, recorded against the audit entry.
   """
-  def delete_template(%InvoiceTemplate{} = template) do
+  def delete_template(template, opts \\ [])
+
+  def delete_template(%InvoiceTemplate{archived_at: %DateTime{}} = template, _opts) do
+    {:ok, template}
+  end
+
+  def delete_template(%InvoiceTemplate{} = template, opts) do
+    template
+    |> archive_template()
+    |> audited(:bin_invoice_template, opts)
+  end
+
+  @doc """
+  Takes a template back out of the Bin.
+
+  Names are unique among live templates only, so the name an archived design
+  carries may have been taken since. It then comes back as "Name (restored)"
+  rather than failing: the point of restoring is to get the design back, and
+  it can be renamed afterwards.
+
+  It never comes back as the default — archiving cleared that flag, and another
+  design has been the default since.
+  """
+  def restore_template(%InvoiceTemplate{} = template, opts \\ []) do
+    template
+    |> Ecto.Changeset.change(archived_at: nil, name: restored_name(template))
+    |> Ecto.Changeset.unique_constraint(:name, message: "is already taken by another template")
+    |> Repo.update()
+    |> broadcast()
+    |> audited(:restore_invoice_template, opts)
+  end
+
+  @doc """
+  Deletes an archived template for good.
+
+  Returns `{:error, :in_use}` while any invoice — binned ones included — was
+  issued under it, and `{:error, :not_in_bin}` for a template that has not been
+  archived first.
+  """
+  def purge_template(template, opts \\ [])
+
+  def purge_template(%InvoiceTemplate{archived_at: nil}, _opts), do: {:error, :not_in_bin}
+
+  def purge_template(%InvoiceTemplate{} = template, opts) do
     if referenced?(template) do
-      archive_template(template)
+      {:error, :in_use}
     else
-      template |> Repo.delete() |> broadcast()
+      template
+      |> Repo.delete()
+      |> broadcast()
+      |> audited(:purge_invoice_template, opts)
     end
   end
+
+  @doc "Whether any invoice was issued under this template."
+  def in_use?(%InvoiceTemplate{} = template), do: referenced?(template)
+
+  defp audited({:ok, %InvoiceTemplate{} = template} = result, action, opts) do
+    Audit.log_event(action, "InvoiceTemplate", template.id,
+      user_id: Keyword.get(opts, :user_id),
+      details: %{name: template.name}
+    )
+
+    result
+  end
+
+  defp audited(result, _action, _opts), do: result
 
   @doc """
   What to render `invoice` with: its layout, its accent, and the logo.
@@ -239,6 +330,9 @@ defmodule QuantumBilling.Templates do
 
   # Phase 3 adds `invoices.template_id`. Until the column exists there is
   # nothing that can point at a template, so nothing to preserve.
+  #
+  # Deliberately not `Invoice.kept/1`: an invoice in the Bin can be restored,
+  # and it has to find its design still there when it is.
   defp referenced?(%InvoiceTemplate{} = template) do
     if :template_id in Invoice.__schema__(:fields) do
       Repo.exists?(from i in Invoice, where: i.template_id == ^template.id)
@@ -248,10 +342,20 @@ defmodule QuantumBilling.Templates do
   end
 
   defp copy_name(name) do
+    free_name(["#{name} copy" | Enum.map(2..50, &"#{name} copy #{&1}")], name)
+  end
+
+  defp restored_name(%InvoiceTemplate{name: name}) do
+    free_name([name, "#{name} (restored)" | Enum.map(2..50, &"#{name} (restored #{&1})")], name)
+  end
+
+  # The first candidate no live template is using. Archived names are not in
+  # the way: the unique index on `name` only covers templates that are live.
+  defp free_name(candidates, name) do
     taken = Repo.all(from t in InvoiceTemplate, where: is_nil(t.archived_at), select: t.name)
 
     Enum.find_value(
-      ["#{name} copy" | Enum.map(2..50, &"#{name} copy #{&1}")],
+      candidates,
       "#{name} #{System.unique_integer([:positive])}",
       fn candidate -> if candidate not in taken, do: candidate end
     )

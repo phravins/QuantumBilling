@@ -202,21 +202,13 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   def handle_event("update_page", %{"page" => params}, socket) do
     doc = socket.assigns.doc
 
-    page =
-      Enum.reduce(Layout.page_attrs(), doc.page, fn {xml, key, kind, _default}, acc ->
-        case Map.fetch(params, xml) do
-          {:ok, raw} ->
-            case Catalog.cast_value(raw, kind) do
-              {:ok, value} -> Map.put(acc, key, value)
-              :error -> acc
-            end
+    {:noreply, save(socket, %{doc | page: Layout.cast_page(doc.page, params)})}
+  end
 
-          :error ->
-            acc
-        end
-      end)
+  def handle_event("reset_text", _params, socket) do
+    doc = socket.assigns.doc
 
-    {:noreply, save(socket, %{doc | page: page})}
+    {:noreply, save(socket, %{doc | page: Layout.default_page()})}
   end
 
   def handle_event("update_template", params, socket) do
@@ -339,6 +331,8 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
       current_scope={@current_scope}
       active_nav={@active_nav}
       active_sub={@active_sub}
+      notifications={@notifications}
+      unread_count={@unread_count}
     >
       <nav class="mb-2 flex items-center gap-1.5 text-xs text-base-content/45" aria-label="Breadcrumb">
         <.link navigate={~p"/settings/customization"} class="hover:text-base-content">
@@ -412,57 +406,16 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         </:actions>
       </.header>
 
+      <%!-- The text tools sit over the pad rather than in the palette column:
+      they are the same toolbar Settings shows, and they set the document's
+      typography, not the blocks in it. --%>
+      <.text_tools id="template-page-form" page={@doc.page} class="mb-2" />
+
       <div class="flex flex-1 gap-3">
         <%!-- Palette --%>
         <.card padding="p-2" class="hidden w-44 shrink-0 self-start lg:block">
           <.block_palette doc={@doc} />
           <div class="mt-3 space-y-2 border-t border-base-300 pt-3">
-            <p class="px-1 text-2xs font-medium uppercase tracking-wider text-base-content/45">
-              Page
-            </p>
-
-            <form id="template-page-form" phx-change="update_page" class="space-y-2 px-1">
-              <label class="block">
-                <span class="mb-1 block text-xs text-base-content/60">Margin</span>
-                <select
-                  name="page[margin]"
-                  class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1 text-xs"
-                >
-                  <option
-                    :for={v <- ~w(10mm 14mm 18mm 22mm)}
-                    value={v}
-                    selected={v == @doc.page.margin}
-                  >
-                    {v}
-                  </option>
-                </select>
-              </label>
-
-              <label class="block">
-                <span class="mb-1 block text-xs text-base-content/60">Text size</span>
-                <select
-                  name="page[base-font]"
-                  class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1 text-xs"
-                >
-                  <option :for={v <- 10..14} value={v} selected={v == @doc.page.base_font}>
-                    {v}px
-                  </option>
-                </select>
-              </label>
-
-              <label class="block">
-                <span class="mb-1 block text-xs text-base-content/60">Typeface</span>
-                <select
-                  name="page[font]"
-                  class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1 text-xs"
-                >
-                  <option :for={v <- ~w(sans serif)} value={v} selected={v == @doc.page.font}>
-                    {v}
-                  </option>
-                </select>
-              </label>
-            </form>
-
             <button
               type="button"
               phx-click="reset_layout"

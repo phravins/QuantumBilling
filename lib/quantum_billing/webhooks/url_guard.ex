@@ -142,7 +142,9 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   # IPv4-mapped (::ffff:a.b.c.d) — judged on the address it maps to, or the
   # whole guard is one `::ffff:` prefix away from being bypassed.
   def public?({0, 0, 0, 0, 0, 0xFFFF, ab, cd}) do
-    public?({Bitwise.bsr(ab, 8), Bitwise.band(ab, 0xFF), Bitwise.bsr(cd, 8), Bitwise.band(cd, 0xFF)})
+    public?(
+      {Bitwise.bsr(ab, 8), Bitwise.band(ab, 0xFF), Bitwise.bsr(cd, 8), Bitwise.band(cd, 0xFF)}
+    )
   end
 
   # Unique local addresses, fc00::/7.

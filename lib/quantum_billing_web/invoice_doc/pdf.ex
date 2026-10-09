@@ -117,6 +117,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
       # A page that somehow waits on something still finishes.
       "--virtual-time-budget=5000",
       "--user-data-dir=#{Path.join(directory, "profile")}",
+      # Both spellings of "no date, no page number, no file:// path across the
+      # bottom of a tax document". Chrome renamed the switch, and kept silently
+      # ignoring the old one, so a bill downloaded from here carried the
+      # temporary path it was rendered from. Passing both covers either build.
+      "--no-pdf-header-footer",
       "--print-to-pdf-no-header",
       "--print-to-pdf=#{output}",
       "file://" <> source

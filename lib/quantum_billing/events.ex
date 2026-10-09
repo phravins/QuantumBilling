@@ -26,6 +26,9 @@ defmodule QuantumBilling.Events do
 
       {:client_created, client}
       {:client_updated, client}
+      {:client_binned, client}
+      {:client_restored, client}
+      {:client_purged, client}
       {:invoice_changed, invoice}
       {:e_way_bill_changed, e_way_bill}
       {:settings_updated, organization}
@@ -33,6 +36,8 @@ defmodule QuantumBilling.Events do
       {:profile_updated, user}
       {:audit_log_created, log}
       {:email_delivery_changed, delivery}
+      {:notification_created, notification}
+      {:notifications_read, :all | id}
   """
 
   @pubsub QuantumBilling.PubSub
@@ -73,7 +78,14 @@ defmodule QuantumBilling.Events do
   @doc "Invoices created, edited or cancelled."
   def invoices_topic, do: "invoices"
 
-  @doc "E-way bills generated or cancelled."
+  @doc """
+  E-way bills generated, cancelled, or moved to another vehicle.
+
+  The message carries an `%EWayBill{}`, which it could not before: until the
+  bill had a table of its own, the publisher had nothing but the invoice to
+  send, so this topic broadcast one while its documented message said
+  otherwise.
+  """
   def e_way_bills_topic, do: "e_way_bills"
 
   @doc "Organisation settings."
@@ -107,4 +119,16 @@ defmodule QuantumBilling.Events do
   form each time an invoice goes out.
   """
   def mail_topic, do: "mail"
+
+  @doc """
+  The in-app notification feed.
+
+  Organisation-wide, like the records it reports on: the bell shows the same
+  feed to everyone signed in, and clearing it clears it for the business. Its
+  own topic rather than a share of the others' because every authenticated page
+  subscribes to this one — a page that has no interest in invoices still draws
+  the bell — and because the producers are spread across contexts, workers and
+  a payment webhook.
+  """
+  def notifications_topic, do: "notifications"
 end

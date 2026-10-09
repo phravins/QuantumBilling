@@ -71,7 +71,10 @@ defmodule QuantumBilling.WebhooksTest do
           Settings.get_organization(),
           # A reserved TLD, so nothing is reached: it does not resolve, the
           # delivery fails locally, and no request leaves this machine.
-          %{"webhook_url" => "https://hooks.example.test/hooks", "webhook_secret" => "whsec_test"},
+          %{
+            "webhook_url" => "https://hooks.example.test/hooks",
+            "webhook_secret" => "whsec_test"
+          },
           :integrations
         )
 

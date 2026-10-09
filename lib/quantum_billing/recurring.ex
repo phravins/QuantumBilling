@@ -18,6 +18,13 @@ defmodule QuantumBilling.Recurring do
   against it — the job's uniqueness window, `next_run_date` being advanced in
   the same transaction that issues the invoice, and the `:skip` path below for
   a profile whose date has already moved on.
+
+  ## Deleting
+
+  `delete_profile/2` moves a profile to the Bin, where it stops billing — the
+  sweep does not see it, and a job already queued for it is skipped.
+  `restore_profile/2` puts it back on its schedule as it was;
+  `purge_profile/2` removes it for good.
   """
 
   import Ecto.Query, warn: false
@@ -25,6 +32,7 @@ defmodule QuantumBilling.Recurring do
   require Logger
 
   alias Ecto.Multi
+  alias QuantumBilling.Audit
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Recurring.RecurringProfile
@@ -40,7 +48,9 @@ defmodule QuantumBilling.Recurring do
   Unbounded, for the billing sweep and for tests. The page uses `page/1`.
   """
   def list_profiles do
-    Repo.all(from p in RecurringProfile, order_by: [asc: p.next_run_date], preload: [:client])
+    Repo.all(
+      from p in RecurringProfile.kept(), order_by: [asc: p.next_run_date], preload: [:client]
+    )
   end
 
   @doc """
@@ -55,7 +65,7 @@ defmodule QuantumBilling.Recurring do
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
-    query = status_where(RecurringProfile, Keyword.get(opts, :status))
+    query = status_where(RecurringProfile.kept(), Keyword.get(opts, :status))
 
     total = Repo.aggregate(query, :count, :id)
     total_pages = max(ceil(total / per_page), 1)
@@ -83,18 +93,40 @@ defmodule QuantumBilling.Recurring do
 
   defp clamp(_value, minimum, _maximum), do: minimum
 
-  @doc "Gets a profile by id, raising when it does not exist."
+  @doc "Gets a profile by id, raising when it does not exist or is in the Bin."
   def get_profile!(id) do
-    RecurringProfile
+    RecurringProfile.kept()
     |> Repo.get!(id)
     |> Repo.preload(:client)
   end
 
-  @doc "Gets a profile by id, or `nil`."
-  def get_profile(id) do
-    case Repo.get(RecurringProfile, id) do
-      nil -> nil
-      profile -> Repo.preload(profile, :client)
+  @doc "Gets a profile by id, or `nil`. A profile in the Bin is `nil` here."
+  def get_profile(id), do: fetch_by_id(RecurringProfile.kept(), id)
+
+  @doc "Gets a profile that is in the Bin, or `nil`."
+  def get_deleted_profile(id), do: fetch_by_id(RecurringProfile.binned(), id)
+
+  @doc "Every profile in the Bin, most recently binned first."
+  def list_deleted_profiles do
+    Repo.all(
+      from p in RecurringProfile.binned(),
+        order_by: [desc: p.deleted_at, desc: p.id],
+        preload: [:client]
+    )
+  end
+
+  # The id can arrive from a click, so anything that is not a whole number is
+  # "no such profile" rather than a cast error.
+  defp fetch_by_id(query, id) do
+    case Integer.parse(to_string(id)) do
+      {int_id, ""} ->
+        case Repo.get(query, int_id) do
+          nil -> nil
+          profile -> Repo.preload(profile, :client)
+        end
+
+      _not_an_id ->
+        nil
     end
   end
 
@@ -124,19 +156,75 @@ defmodule QuantumBilling.Recurring do
   end
 
   @doc """
-  Deletes a recurring profile.
+  Moves a recurring profile to the Bin.
+
+  It stops billing from this moment: `due_profiles/1` no longer returns it, and
+  `process_profile/2` skips it if a job for it was already queued. Its schedule
+  is left exactly as it was, so a restore picks up where it stopped.
+
+  `opts` may carry `:user_id`, recorded against the audit entry.
   """
-  def delete_profile(%RecurringProfile{} = profile) do
-    Repo.delete(profile)
+  def delete_profile(%RecurringProfile{} = profile, opts \\ []) do
+    profile
+    |> RecurringProfile.bin_changeset()
+    |> Repo.update()
+    |> audited(:bin_recurring_profile, opts)
   end
 
   @doc """
+  Takes a recurring profile back out of the Bin.
+
+  A profile whose date passed while it was binned is due straight away, and
+  bills once on the next sweep — not once per cycle it missed.
+  """
+  def restore_profile(%RecurringProfile{} = profile, opts \\ []) do
+    profile
+    |> RecurringProfile.restore_changeset()
+    |> Repo.update()
+    |> audited(:restore_recurring_profile, opts)
+  end
+
+  @doc """
+  Deletes a recurring profile for good. Only a profile already in the Bin.
+
+  The invoices it has issued are not touched: they are documents in their own
+  right and carry no reference back to the profile.
+  """
+  def purge_profile(profile, opts \\ [])
+
+  def purge_profile(%RecurringProfile{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
+
+  def purge_profile(%RecurringProfile{} = profile, opts) do
+    profile
+    |> Repo.delete()
+    |> audited(:purge_recurring_profile, opts)
+  end
+
+  defp audited({:ok, profile} = result, action, opts) do
+    Audit.log_event(action, "RecurringProfile", profile.id,
+      user_id: Keyword.get(opts, :user_id),
+      details: %{title: profile.title, frequency: profile.frequency}
+    )
+
+    result
+  end
+
+  defp audited({:error, _changeset} = result, _action, _opts), do: result
+
+  @doc """
   The profiles that are due to bill on `date`.
+
+  A profile whose client is in the Bin is not due. The client has been deleted
+  as far as anyone looking at the screen can tell, and an invoice going out to
+  it regardless would be the surprise. The profile's schedule is not moved, so
+  restoring the client lets it bill again from where it stopped.
   """
   def due_profiles(date \\ Date.utc_today()) do
     Repo.all(
-      from p in RecurringProfile,
+      from p in RecurringProfile.kept(),
+        left_join: c in assoc(p, :client),
         where: p.status == "Active" and p.next_run_date <= ^date,
+        where: is_nil(c.deleted_at),
         order_by: [asc: p.next_run_date, asc: p.id],
         preload: [:client]
     )
@@ -192,6 +280,12 @@ defmodule QuantumBilling.Recurring do
   """
   def process_profile(profile, today \\ Date.utc_today())
 
+  # Binned between the sweep queueing its job and the job running. The sweep
+  # would not have picked it, and the job must not bill it either.
+  def process_profile(%RecurringProfile{deleted_at: %DateTime{}}, _today) do
+    {:skip, :deleted}
+  end
+
   def process_profile(%RecurringProfile{status: status}, _today) when status != "Active" do
     {:skip, :not_active}
   end
@@ -210,6 +304,10 @@ defmodule QuantumBilling.Recurring do
 
       is_nil(profile.client) ->
         {:skip, :client_missing}
+
+      # Binned between the sweep queueing this job and the job running.
+      not is_nil(profile.client.deleted_at) ->
+        {:skip, :client_deleted}
 
       true ->
         bill(profile, today)

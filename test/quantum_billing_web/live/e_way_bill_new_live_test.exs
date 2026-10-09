@@ -3,7 +3,35 @@ defmodule QuantumBillingWeb.EWayBillNewLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias QuantumBilling.EWayBills
+  alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Repo
+
   setup :register_and_log_in_user
+
+  defp invoice_fixture(attrs \\ %{}) do
+    Repo.insert!(
+      struct(
+        %Invoice{
+          invoice_number: "INV-2024-0001",
+          invoice_date: ~D[2024-05-28],
+          invoice_type: "Tax Invoice",
+          place_of_supply: "Maharashtra (27)",
+          company_name: "ABC Solutions Private Limited",
+          company_gstin: "27AABCA1234A1Z5",
+          company_state: "Maharashtra (27)",
+          client_name: "V2V Technologies",
+          client_state: "Maharashtra (27)",
+          client_city: "Pune",
+          taxable_value: 60_000,
+          cgst_amount: 5_400,
+          sgst_amount: 5_400,
+          grand_total: 70_800
+        },
+        attrs
+      )
+    )
+  end
 
   defp valid_attrs(overrides \\ %{}) do
     Map.merge(
@@ -27,7 +55,8 @@ defmodule QuantumBillingWeb.EWayBillNewLiveTest do
         "transporter_name" => "ABC Transport Services",
         "vehicle_no" => "MH01AB1234",
         "from_place" => "Mumbai",
-        "to_place" => "Pune"
+        "to_place" => "Pune",
+        "distance_km" => "150"
       },
       overrides
     )
@@ -114,14 +143,97 @@ defmodule QuantumBillingWeb.EWayBillNewLiveTest do
     assert html =~ "must look like MH01AB1234"
   end
 
-  test "a complete submission generates a number and returns to the list", %{conn: conn} do
+  # The page used to mint a random number into a flash and navigate away
+  # without storing anything: the bill it announced existed nowhere, least of
+  # all on the list it returned to.
+  test "a complete submission issues a real bill against the invoice", %{conn: conn} do
+    invoice = invoice_fixture()
+
     {:ok, view, _html} = live(conn, ~p"/e-way-bills/new")
 
-    result = view |> form("#ewb-form", e_way_bill: valid_attrs()) |> render_submit()
+    assert {:error, {:redirect, %{to: to}}} =
+             view |> form("#ewb-form", e_way_bill: valid_attrs()) |> render_submit()
 
-    assert {:ok, _view, html} = follow_redirect(result, conn, ~p"/e-way-bills")
-    assert html =~ "generated successfully"
-    assert html =~ ~r/E-Way Bill \d{12} generated successfully/
+    bill = EWayBills.live_bill_for_invoice(invoice.id)
+
+    # The document is addressed by the bill, not by the invoice it was raised
+    # against — an invoice may come to carry more than one.
+    assert to == "/e-way-bills/#{bill.id}/print"
+    assert bill.ewb_number =~ ~r/^\d{12}$/
+    assert bill.distance_km == 150
+    assert bill.vehicle_number == "MH01AB1234"
+    assert bill.status == "Active"
+    # One day per 200 km, so 150 km expires at the end of tomorrow.
+    assert NaiveDateTime.to_date(bill.valid_until) == Date.add(Date.utc_today(), 1)
+  end
+
+  test "a document number no invoice carries is a form error", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/e-way-bills/new")
+
+    html =
+      view
+      |> form("#ewb-form", e_way_bill: valid_attrs(%{"document_no" => "INV-NOPE-9"}))
+      |> render_submit()
+
+    assert html =~ "no invoice with this number"
+    assert html =~ "E-Way Bill Summary"
+  end
+
+  test "an invoice that already carries a live bill is refused", %{conn: conn} do
+    invoice = invoice_fixture()
+
+    {:ok, _bill} =
+      EWayBills.generate_e_way_bill(invoice, %{
+        "distance_km" => "150",
+        "vehicle_number" => "MH01AB1234"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/e-way-bills/new")
+
+    html = view |> form("#ewb-form", e_way_bill: valid_attrs()) |> render_submit()
+
+    assert html =~ "already has an e-way bill"
+  end
+
+  # A cancelled bill is history, not a claim on the invoice: the whole reason
+  # the live-bill check is a partial index rather than a plain unique one.
+  test "an invoice whose only bill was cancelled can be billed again", %{conn: conn} do
+    invoice = invoice_fixture()
+
+    {:ok, bill} =
+      EWayBills.generate_e_way_bill(invoice, %{
+        "distance_km" => "150",
+        "vehicle_number" => "MH01AB1234"
+      })
+
+    {:ok, _cancelled} =
+      EWayBills.cancel_e_way_bill(bill, %{"cancellation_reason" => "Data Entry Mistake"})
+
+    {:ok, view, _html} = live(conn, ~p"/e-way-bills/new")
+
+    assert {:error, {:redirect, %{to: to}}} =
+             view |> form("#ewb-form", e_way_bill: valid_attrs()) |> render_submit()
+
+    replacement = EWayBills.live_bill_for_invoice(invoice.id)
+
+    assert to == "/e-way-bills/#{replacement.id}/print"
+    assert replacement.id != bill.id
+  end
+
+  test "loading an invoice fills the consignment in", %{conn: conn} do
+    invoice = invoice_fixture(%{client_name: "Nimbus Logistics"})
+
+    {:ok, view, html} = live(conn, ~p"/e-way-bills/new")
+
+    assert html =~ invoice.invoice_number
+
+    filled =
+      view
+      |> form("#ewb-load-invoice", %{"invoice_id" => to_string(invoice.id)})
+      |> render_change()
+
+    assert filled =~ "Nimbus Logistics"
+    assert filled =~ ~s(value="INV-2024-0001")
   end
 
   test "counts remark characters", %{conn: conn} do

@@ -92,19 +92,36 @@ defmodule QuantumBillingWeb.RecurringLive do
      |> load_profiles()}
   end
 
+  # Moves it to the Bin, where it stops billing: see `Recurring.delete_profile/2`.
   def handle_event("delete", %{"id" => id}, socket) do
-    profile = Recurring.get_profile!(id)
-    {:ok, _} = Recurring.delete_profile(profile)
+    case Recurring.get_profile(id) do
+      nil ->
+        # Already gone — most likely binned in another window.
+        {:noreply,
+         socket
+         |> put_flash(:error, "That recurring profile no longer exists.")
+         |> load_profiles()}
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Recurring profile deleted.")
-     |> load_profiles()}
+      profile ->
+        {:ok, _profile} =
+          Recurring.delete_profile(profile, user_id: socket.assigns.current_scope.user.id)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Recurring profile moved to the Bin.")
+         |> load_profiles()}
+    end
   end
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Recurring Billing
         <:subtitle>Automate scheduled GST invoices for retainers and subscriptions</:subtitle>
@@ -114,7 +131,7 @@ defmodule QuantumBillingWeb.RecurringLive do
             <button
               type="button"
               phx-click="run_now"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+              class={action_button_class()}
             >
               <.icon name="hero-play" class="size-4" /> Run Pending Now
             </button>
@@ -177,7 +194,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                   </span>
                 </td>
                 <td>
-                  <div class="flex justify-end gap-2">
+                  <div class="flex items-center justify-end gap-2">
                     <button
                       type="button"
                       phx-click="toggle_status"
@@ -189,10 +206,13 @@ defmodule QuantumBillingWeb.RecurringLive do
 
                     <button
                       type="button"
+                      id={"recurring-delete-#{p.id}"}
                       phx-click="delete"
                       phx-value-id={p.id}
-                      data-confirm="Delete this recurring profile?"
-                      class="btn btn-xs btn-ghost text-error"
+                      aria-label="Move recurring profile to the Bin"
+                      title="Move to Bin"
+                      data-confirm="Move this recurring profile to the Bin? It stops billing, and can be restored from there."
+                      class={row_delete_class()}
                     >
                       <.icon name="hero-trash" class="size-4" />
                     </button>

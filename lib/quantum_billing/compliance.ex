@@ -166,17 +166,56 @@ defmodule QuantumBilling.Compliance do
   @doc """
   The obligations this tenant is actually tracking.
 
-  Returns `[]` until the filings table exists. `obligations/1` above is the
-  statutory calendar — correct, but the same 30 rows for every business in the
-  country. Showing it before there is a single filing record reads as invented
-  data rather than as this tenant's compliance position, so the page shows
-  nothing instead, the way `Reports.invoices/0` and
-  `EWayBills.list_e_way_bills/0` do for their own unbacked features.
+  `obligations/1` above is the statutory calendar in full: every return the Act
+  defines, which is the same set of rows for every business in the country.
+  What a particular business owes is narrower, and its own registration decides
+  which rows to drop:
 
-  When the schema lands this narrows `obligations/1` to the periods the tenant
-  is registered for and resolves each against `filings/0`.
+    * no GSTIN on file — nothing at all. An unregistered business files no GST
+      returns, so the page stays empty rather than inventing deadlines for
+      someone who owes none.
+    * composition scheme — `CMP-08` quarterly, and no `GSTR-1` or `GSTR-3B`. A
+      composition dealer does not file the monthly returns.
+    * regular registration — `GSTR-1` and `GSTR-3B` monthly, and no `CMP-08`,
+      which exists only for the composition scheme.
+
+  Either way the annual returns apply. This is not invented data: once a GSTIN
+  exists these dates are owed by statute whether or not the application has a
+  record of them.
+
+  Filing records are still the missing half — `filings/0` returns nothing — so
+  every row resolves to `"Pending"` or `"Overdue"` on dates alone.
   """
-  def tracked_obligations(_today \\ Date.utc_today()), do: []
+  def tracked_obligations(today \\ Date.utc_today(), registration \\ nil) do
+    if registered?(registration) do
+      composition? = composition_scheme?(registration)
+
+      today
+      |> obligations()
+      |> Enum.filter(&applies?(&1, composition?))
+    else
+      []
+    end
+  end
+
+  defp applies?(%{type: "CMP-08"}, composition?), do: composition?
+
+  defp applies?(%{type: type}, composition?) when type in ["GSTR-1", "GSTR-3B"],
+    do: not composition?
+
+  defp applies?(_annual_return, _composition?), do: true
+
+  defp registered?(registration) do
+    registration |> registration_field(:gstin) |> to_string() |> String.trim() != ""
+  end
+
+  defp composition_scheme?(registration),
+    do: registration_field(registration, :composition_scheme) == true
+
+  # Takes the organisation struct as readily as a bare map, so a test can pass
+  # `%{gstin: "..."}` without building one.
+  defp registration_field(nil, _key), do: nil
+  defp registration_field(registration, key), do: Map.get(registration, key)
 
   @doc """
   Counts and percentages for the summary cards.
@@ -207,7 +246,15 @@ defmodule QuantumBilling.Compliance do
   defp percentage(count, total), do: Float.round(count / total * 100, 1)
 
   @doc """
-  The next `limit` obligations that are not yet filed, soonest first.
+  The `limit` open obligations closest to `today`, in date order.
+
+  Closest to today, not earliest: the statutory calendar covers a whole
+  financial year and nothing is ever filed, so taking the earliest open rows
+  filled the rail with last April every time — five deadlines months past,
+  under a heading that says "Upcoming". Ranking by distance from today instead
+  gives the window that actually needs attention, the last one or two that
+  slipped and the next few coming up. A tie between an overdue date and a
+  future one the same distance away goes to the overdue one.
 
   Each carries `days_until` — negative once the due date has passed, so the
   caller can distinguish "Due in 5 days" from "Overdue by 12 days".
@@ -215,9 +262,17 @@ defmodule QuantumBilling.Compliance do
   def upcoming(obligations, today \\ Date.utc_today(), limit \\ 5) do
     obligations
     |> Enum.reject(&(&1.status == "Filed"))
-    |> Enum.sort_by(& &1.due_date, Date)
-    |> Enum.take(limit)
     |> Enum.map(&Map.put(&1, :days_until, Date.diff(&1.due_date, today)))
+    |> Enum.sort_by(&{abs(&1.days_until), &1.days_until})
+    |> Enum.take(limit)
+    |> Enum.sort_by(& &1.due_date, Date)
+  end
+
+  @doc """
+  The obligations falling due on one date, in the order the table lists them.
+  """
+  def on_date(obligations, %Date{} = date) do
+    Enum.filter(obligations, &(&1.due_date == date))
   end
 
   @doc """

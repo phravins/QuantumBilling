@@ -55,26 +55,40 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert has_element?(view, ~s(header button[type="submit"][form="settings-form"]))
     end
 
-    # The sections stay in the DOM so the chevron can animate them open, but
-    # nothing opens them on arrival — the chevron is the only control. Account
-    # Settings marks the same nav item active, so binding this to the page
-    # unfolded the whole list there too.
-    test "the sections stay folded on arrival, whatever the page", %{conn: conn} do
-      for path <- [~p"/settings", ~p"/settings/tax", ~p"/users/settings", ~p"/invoices"] do
+    # Open wherever a settings panel is on screen. Each section is a full
+    # navigation, which rebuilds the sidebar from scratch — so a list that only
+    # the chevron could open slammed shut the moment you picked something out
+    # of it, and picking a second section meant opening it again first.
+    test "the sections stay unfolded across the settings panels", %{conn: conn} do
+      for path <- [~p"/settings", ~p"/settings/tax", ~p"/settings/customization"] do
+        {:ok, view, _html} = live(conn, path)
+
+        assert has_element?(view, "#settings-sections-toggle[checked]"),
+               "expected the settings sections open on #{path}"
+      end
+    end
+
+    # Account Settings is not one of these panels — it is the user's own
+    # account — but it marks the same sidebar item active. Driving this off the
+    # nav item rather than the open section unfolded the whole list there, and
+    # on every page that does not touch settings at all.
+    test "and stay folded everywhere else", %{conn: conn} do
+      for path <- [~p"/users/settings", ~p"/invoices"] do
         {:ok, view, _html} = live(conn, path)
 
         refute has_element?(view, "#settings-sections-toggle[checked]"),
-               "expected the settings sections to start folded on #{path}"
+               "expected the settings sections folded on #{path}"
 
         assert has_element?(view, ~s(a[href="/settings/tax"]))
       end
     end
 
-    test "the chevron is the only control that opens them", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+    test "the chevron opens them without a round trip", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
 
-      # A plain label driving the checkbox: no phx-click, so following the
-      # Settings link cannot double as opening the list.
+      # A plain label driving a checkbox, animated in CSS: no phx-click, so
+      # unfolding the list costs nothing and following the Settings link cannot
+      # double as opening it.
       assert has_element?(view, ~s(label[for="settings-sections-toggle"]))
       refute has_element?(view, ~s(a[href="/settings"][phx-click]))
     end
@@ -369,6 +383,20 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
   end
 
+  defp tools_id(template), do: "text-tools-#{template.id}"
+
+  defp page_of(template) do
+    template.id |> Templates.get_template() |> Templates.document_of() |> Map.fetch!(:page)
+  end
+
+  # The toolbar is folded away until its card is opened, so every test that
+  # drives a control has to open that card first.
+  defp open_tools(view, template) do
+    view
+    |> element(~s(button[phx-click=toggle_text_tools][phx-value-id="#{template.id}"]))
+    |> render_click()
+  end
+
   describe "customization" do
     # The panel used to be a form of toggles over one fixed layout. It is now a
     # list of designs, each edited in the pad — so what it owns is the logo and
@@ -380,6 +408,162 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert html =~ "Classic"
       assert html =~ "Default"
       assert Templates.default_template().name == "Classic"
+    end
+
+    # The toolbar writes the document, not a settings column — so the check is
+    # that a control's value comes back out of the stored layout.
+    #
+    # It also belongs to one design rather than to the panel: each card carries
+    # its own, and posts which design it is setting.
+    test "each design has its own text tools", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      first = Templates.default_template()
+      {:ok, second} = Templates.duplicate_template(first)
+
+      assert has_element?(
+               view,
+               ~s(button[phx-click=toggle_text_tools][phx-value-id="#{first.id}"])
+             )
+
+      assert has_element?(
+               view,
+               ~s(button[phx-click=toggle_text_tools][phx-value-id="#{second.id}"])
+             )
+
+      open_tools(view, second)
+
+      assert has_element?(view, ~s(##{tools_id(second)}[phx-change="update_page"]))
+      refute has_element?(view, "##{tools_id(first)}")
+    end
+
+    test "the text tools save typography onto the design they sit in", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      template = Templates.default_template()
+      open_tools(view, template)
+
+      view
+      |> element("##{tools_id(template)}")
+      |> render_change(%{
+        "template_id" => to_string(template.id),
+        "page" => %{
+          "font" => "serif",
+          "base-font" => "13",
+          "line-height" => "relaxed",
+          "heading-weight" => "bold",
+          "label-case" => "normal",
+          "text-color" => "#1d4ed8",
+          "margin" => "18mm"
+        }
+      })
+
+      page = Templates.default_template() |> Templates.document_of() |> Map.fetch!(:page)
+
+      assert page.font == "serif"
+      assert page.base_font == 13
+      assert page.line_height == "relaxed"
+      assert page.heading_weight == "bold"
+      assert page.label_case == "normal"
+      assert page.text_color == "#1d4ed8"
+      assert page.margin == "18mm"
+    end
+
+    # The advanced half of the toolbar: heading typeface and size, letter
+    # spacing, block spacing, table density, figures and the label colour are
+    # all real document settings, so each one has to survive the round trip
+    # through the stored XML the same way the basic ones do.
+    test "the advanced controls save too", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      template = Templates.default_template()
+      open_tools(view, template)
+
+      view
+      |> element("##{tools_id(template)}")
+      |> render_change(%{
+        "template_id" => to_string(template.id),
+        "page" => %{
+          "heading-font" => "serif",
+          "heading-scale" => "large",
+          "heading-color" => "accent",
+          "letter-spacing" => "wide",
+          "paragraph-spacing" => "relaxed",
+          "table-density" => "compact",
+          "numerals" => "tabular",
+          "label-color" => "#0f766e",
+          "muted-color" => "#334155",
+          "size" => "Letter"
+        }
+      })
+
+      page = Templates.default_template() |> Templates.document_of() |> Map.fetch!(:page)
+
+      assert page.heading_font == "serif"
+      assert page.heading_scale == "large"
+      assert page.heading_color == "accent"
+      assert page.letter_spacing == "wide"
+      assert page.paragraph_spacing == "relaxed"
+      assert page.table_density == "compact"
+      assert page.numerals == "tabular"
+      assert page.label_color == "#0f766e"
+      assert page.muted_color == "#334155"
+      assert page.size == "Letter"
+    end
+
+    # One card's toolbar must not reach into another card's design.
+    test "a design's tools leave the other designs alone", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      first = Templates.default_template()
+      {:ok, second} = Templates.duplicate_template(first)
+      open_tools(view, second)
+
+      view
+      |> element("##{tools_id(second)}")
+      |> render_change(%{"template_id" => to_string(second.id), "page" => %{"font" => "mono"}})
+
+      assert page_of(second).font == "mono"
+      assert page_of(first).font == "sans"
+    end
+
+    # A colour field is interpolated into the document's stylesheet, so this is
+    # the one control where a rejected value matters beyond a wrong-looking
+    # invoice.
+    test "the text tools refuse a colour that is not one", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      template = Templates.default_template()
+      open_tools(view, template)
+
+      view
+      |> element("##{tools_id(template)}")
+      |> render_change(%{
+        "template_id" => to_string(template.id),
+        "page" => %{
+          "text-color" => "red; } body { display: none",
+          "label-color" => "url(javascript:alert(1))"
+        }
+      })
+
+      page = page_of(template)
+      assert page.text_color == "#18181b"
+      assert page.label_color == "#71717a"
+    end
+
+    test "clearing formatting puts the typography back", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      template = Templates.default_template()
+      open_tools(view, template)
+
+      view
+      |> element("##{tools_id(template)}")
+      |> render_change(%{
+        "template_id" => to_string(template.id),
+        "page" => %{"font" => "mono", "heading-weight" => "bold", "numerals" => "tabular"}
+      })
+
+      render_click(view, "reset_text", %{"id" => to_string(template.id)})
+
+      page = page_of(template)
+      assert page.font == "sans"
+      assert page.heading_weight == "semibold"
+      assert page.numerals == "proportional"
     end
 
     test "duplicating adds a copy that is not the default", %{conn: conn} do

@@ -30,6 +30,9 @@ defmodule QuantumBillingWeb.SharedComponents do
   @row_action_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
                       "transition-colors hover:bg-base-200 hover:text-base-content"
 
+  @row_delete_class "flex size-7 items-center justify-center rounded-field text-base-content/45 " <>
+                      "transition-colors hover:bg-error/10 hover:text-error"
+
   @form_control_base "w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
                        "text-base-content placeholder:text-base-content/40 focus:outline-none " <>
                        "focus:border-base-content/30 focus:ring-2 focus:ring-base-content/10 " <>
@@ -70,6 +73,15 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
+
+  @doc """
+  The bin button at the end of a table row's actions.
+
+  The same footprint as `row_action_class/0`, turning red under the pointer —
+  it sits beside buttons that only look at a record, and is the one that takes
+  it away.
+  """
+  def row_delete_class, do: @row_delete_class
 
   @doc "A text/date/number input on an app form; same 36px footprint as the toolbar controls."
   def form_input_class, do: @form_input_class
@@ -283,6 +295,14 @@ defmodule QuantumBillingWeb.SharedComponents do
   Anything not consumed here is forwarded to `CoreComponents.input/1`, so
   `type`, `options`, `prompt`, `placeholder`, `readonly` and friends all work.
 
+  ## One error, drawn once
+
+  `input/1` already prints a field's errors, in exactly this markup. This
+  component used to print them again underneath, so every field built with
+  `<.field>` — which is most of them — showed "can't be blank" twice. The
+  errors are still computed here, because the hint hides while a field is in
+  error and the control takes an error border, but only `input/1` draws them.
+
   ## Examples
 
       <.field field={f[:gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
@@ -316,10 +336,6 @@ defmodule QuantumBillingWeb.SharedComponents do
         {@rest}
       />
       <p :if={@hint && @errors == []} class="mt-1 text-2xs text-base-content/45">{@hint}</p>
-
-      <p :for={msg <- @errors} class="mt-1 flex items-center gap-1 text-2xs text-error">
-        <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" /> {msg}
-      </p>
     </div>
     """
   end
@@ -329,7 +345,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp control_class(_type), do: form_input_class()
 
   # `input/1` only renders errors for fields the user has touched; mirror that
-  # rule here so the two never disagree.
+  # rule here so the border and the hint agree with the message it prints.
   defp field_errors(%Phoenix.HTML.FormField{} = field) do
     if Phoenix.Component.used_input?(field) do
       Enum.map(field.errors, &translate_field_error/1)
@@ -386,7 +402,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def empty_state(assigns) do
     ~H"""
-    <div class={["flex flex-col items-center px-6 py-14 text-center", @class]}>
+    <div class={["flex flex-col items-center px-6 py-8 text-center", @class]}>
       <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
         <.icon name={@icon} class="size-4.5" />
       </span>

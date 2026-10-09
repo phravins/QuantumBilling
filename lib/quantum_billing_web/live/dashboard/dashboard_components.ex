@@ -17,7 +17,16 @@ defmodule QuantumBillingWeb.DashboardComponents do
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :icon, :string, required: true
-  attr :icon_class, :string, default: "bg-base-200 text-base-content/60"
+
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :info, :success, :warning, :danger, :accent],
+    doc: "colours the icon badge; `:neutral` is the original grey"
+
+  attr :icon_class, :string,
+    default: nil,
+    doc: "overrides `tone` outright, for a badge that needs its own classes"
+
   attr :delta_text, :string, default: nil
   attr :delta_class, :string, default: "text-success"
   attr :delta_icon, :string, default: nil
@@ -25,7 +34,10 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def stat_card(assigns) do
     ~H"""
     <.card>
-      <div class={["mb-2.5 flex size-7 items-center justify-center rounded-field", @icon_class]}>
+      <div class={[
+        "mb-2.5 flex size-7 items-center justify-center rounded-field",
+        @icon_class || tone_class(@tone)
+      ]}>
         <.icon name={@icon} class="size-3.5" />
       </div>
 
@@ -40,47 +52,222 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  @doc """
-  Renders a grouped vertical bar chart from a list of
-  `%{label:, cgst_sgst:, igst:}` maps, scaled against `max`.
-  """
-  attr :months, :list, required: true
-  attr :max, :integer, default: 2000
+  # Spelled out rather than interpolated — Tailwind scans source text, so a
+  # class assembled at runtime is never emitted and the badge renders bare.
+  defp tone_class(:info), do: "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+  defp tone_class(:success), do: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+  defp tone_class(:warning), do: "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+  defp tone_class(:danger), do: "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+  defp tone_class(:accent), do: "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+  defp tone_class(:neutral), do: "bg-base-200 text-base-content/60"
 
-  def bar_chart(assigns) do
-    months =
-      Enum.map(assigns.months, fn m ->
-        Map.merge(m, %{
-          cgst_pct: m.cgst_sgst / assigns.max * 100,
-          igst_pct: m.igst / assigns.max * 100
+  @doc """
+  Renders a smooth multi-series area chart.
+
+  `series` is a list of `%{label:, tone:, values:}`, all sharing the `labels`
+  x-axis. `tone` is `:blue`, `:violet` or `:emerald`.
+
+  ## How it is drawn
+
+  The plot lives in a 0-100 user-space viewBox stretched with
+  `preserveAspectRatio="none"`, so it fills whatever box it is given. Strokes
+  carry `vector-effect="non-scaling-stroke"` so the stretch does not thicken
+  them, and the point markers are HTML rather than SVG circles — a circle in a
+  non-uniformly scaled viewBox renders as an ellipse.
+
+  Points run edge to edge: the first sits on the left frame and the last on the
+  right, so the fill reaches both sides of the card. Inset points left a bare
+  strip down either side of the plot and gave the area a hard vertical edge
+  that read as a chart that had failed to finish drawing.
+
+  The draw-in is a clip that sweeps across, not a dashed stroke. A dash pattern
+  cannot be used on these paths: `vector-effect: non-scaling-stroke` makes the
+  browser measure dashes in screen pixels, and it then ignores `pathLength`,
+  so whatever length the dash was given, the far end of a wide chart stayed
+  inside the gap and the line stopped before its last reading.
+  """
+  attr :id, :string, required: true, doc: "namespaces the gradient defs"
+  attr :series, :list, required: true
+  attr :labels, :list, required: true
+  attr :max, :any, required: true
+  attr :axis_labels, :list, required: true, doc: "five y-axis labels, top down"
+
+  attr :format, :any,
+    default: nil,
+    doc: "formats a value for the hover tooltip; defaults to plain digits"
+
+  attr :class, :any, default: nil
+
+  def area_chart(assigns) do
+    count = length(assigns.labels)
+    max = if is_number(assigns.max) and assigns.max > 0, do: assigns.max, else: 1
+    format = assigns.format || (&plain_number/1)
+
+    plotted =
+      Enum.map(assigns.series, fn s ->
+        points =
+          s.values
+          |> Enum.with_index()
+          |> Enum.map(fn {value, i} ->
+            %{
+              x: x_at(i, count),
+              y: 100 - value / max * 100,
+              value: value,
+              display: format.(value)
+            }
+          end)
+
+        coords = Enum.map(points, &{&1.x, &1.y})
+
+        Map.merge(s, %{
+          points: points,
+          line: curve(coords),
+          area: area(coords)
         })
       end)
 
-    gridlines = Enum.map(4..0//-1, &(&1 * div(assigns.max, 4)))
+    columns =
+      assigns.labels
+      |> Enum.with_index()
+      |> Enum.map(fn {label, i} ->
+        %{
+          label: label,
+          # Both where the label sits under the plot and, as it happens, where
+          # the point falls inside its own equal-width hover band — for n
+          # points edge to edge across n bands the two fractions are the same.
+          x: x_at(i, count),
+          anchor: anchor(i, count),
+          readings:
+            Enum.map(plotted, fn s ->
+              %{label: s.label, tone: s.tone, display: Enum.at(s.points, i).display}
+            end)
+        }
+      end)
 
-    assigns = assign(assigns, months: months, gridlines: gridlines)
+    dots =
+      Enum.flat_map(plotted, fn s ->
+        Enum.map(s.points, &Map.put(&1, :tone, s.tone))
+      end)
+
+    assigns = assign(assigns, plotted: plotted, columns: columns, dots: dots)
 
     ~H"""
-    <div class="flex gap-3">
-      <div class="flex h-64 flex-col justify-between text-xs text-base-content/45">
-        <span :for={g <- @gridlines}>{g}</span>
+    <div class={["flex min-h-56 gap-3", @class]}>
+      <div class="flex shrink-0 flex-col text-xs text-base-content/45">
+        <div class="flex min-h-0 flex-1 flex-col justify-between">
+          <span :for={label <- @axis_labels}>{label}</span>
+        </div>
+        <%!-- Matches the x-label row below, so the y labels stay level with
+        the gridlines they name rather than with the whole column. --%>
+        <div class="mt-2 h-4" aria-hidden="true"></div>
       </div>
 
-      <div class="relative flex-1">
-        <div class="absolute inset-0 flex flex-col justify-between">
-          <div :for={_g <- @gridlines} class="h-0 border-t border-base-200" />
-        </div>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <div class="group/chart relative min-h-0 flex-1">
+          <div class="absolute inset-0 flex flex-col justify-between">
+            <div :for={_label <- @axis_labels} class="h-0 border-t border-base-200" />
+          </div>
 
-        <div class="relative flex h-64 items-end justify-between gap-6 px-2">
-          <div :for={m <- @months} class="flex h-full flex-1 items-end justify-center gap-1.5">
-            <div class="w-3 rounded-sm bg-base-content" style={"height: #{m.cgst_pct}%"} />
-            <div class="w-3 rounded-sm bg-base-content/25" style={"height: #{m.igst_pct}%"} />
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            class="absolute inset-0 size-full overflow-visible"
+            aria-hidden="true"
+          >
+            <defs>
+              <linearGradient :for={s <- @plotted} id={"#{@id}-#{s.tone}"} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" class={gradient_top_class(s.tone)} />
+                <stop offset="100%" class={gradient_bottom_class(s.tone)} />
+              </linearGradient>
+
+              <%!-- The draw-in. The rect is wider and taller than the plot so
+              that scaling it cannot shave the stroke off the top or bottom
+              edge; only its left-to-right growth is visible. --%>
+              <clipPath id={"#{@id}-sweep"} clipPathUnits="userSpaceOnUse">
+                <rect class="qb-chart-sweep" x="-4" y="-20" width="108" height="140" />
+              </clipPath>
+            </defs>
+
+            <path
+              :for={s <- @plotted}
+              class="qb-chart-area"
+              d={s.area}
+              fill={"url(##{@id}-#{s.tone})"}
+            />
+            <g clip-path={"url(##{@id}-sweep)"}>
+              <path
+                :for={s <- @plotted}
+                class={["qb-chart-line", line_class(s.tone)]}
+                d={s.line}
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                vector-effect="non-scaling-stroke"
+              />
+            </g>
+          </svg>
+
+          <span
+            :for={dot <- @dots}
+            class={[
+              "qb-chart-dot absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
+              "border-2 border-base-100 shadow-sm",
+              dot_fill_class(dot.tone)
+            ]}
+            style={"left: #{fmt(dot.x)}%; top: #{fmt(dot.y)}%"}
+          />
+
+          <%!-- One hover target per month, spanning the full height, so the
+          reading is reachable anywhere in the column rather than only on the
+          2.5px marker itself. --%>
+          <div class="absolute inset-0 flex">
+            <div :for={column <- @columns} class="group/col relative flex-1">
+              <div
+                class={[
+                  "absolute inset-y-0 w-px -translate-x-1/2 bg-base-content/20",
+                  "opacity-0 transition-opacity group-hover/col:opacity-100"
+                ]}
+                style={"left: #{fmt(column.x)}%"}
+              />
+
+              <div
+                class={[
+                  "pointer-events-none absolute top-1 z-10 w-max",
+                  "rounded-field border border-base-300 bg-base-100 px-2.5 py-1.5 shadow-lg",
+                  "opacity-0 transition-opacity group-hover/col:opacity-100",
+                  anchor_class(column.anchor)
+                ]}
+                style={"left: #{fmt(column.x)}%"}
+              >
+                <p class="text-2xs font-medium uppercase tracking-wide text-base-content/45">
+                  {column.label}
+                </p>
+
+                <p
+                  :for={reading <- column.readings}
+                  class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs"
+                >
+                  <span class={["size-1.5 shrink-0 rounded-full", dot_fill_class(reading.tone)]} />
+                  <span class="text-base-content/60">{reading.label}</span>
+                  <span class="ml-auto font-medium">{reading.display}</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="mt-2 flex justify-between gap-6 px-2">
-          <span :for={m <- @months} class="flex-1 text-center text-xs text-base-content/60">
-            {m.label}
+        <%!-- Absolute rather than a row of equal cells: the points sit on the
+        frame at both ends, so a cell centre is no longer under a reading.
+        The first and last labels hang off their own edge instead of straddling
+        it, which would put them half outside the card. --%>
+        <div class="relative mt-2 h-4">
+          <span
+            :for={column <- @columns}
+            class={["absolute text-xs text-base-content/60", anchor_class(column.anchor)]}
+            style={"left: #{fmt(column.x)}%"}
+          >
+            {column.label}
           </span>
         </div>
       </div>
@@ -88,11 +275,169 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
+  # Edge to edge across the plot. A single reading sits in the middle rather
+  # than dividing by zero.
+  defp x_at(i, count) when count > 1, do: i / (count - 1) * 100
+  defp x_at(_i, _count), do: 50.0
+
+  # A monotone cubic (Fritsch-Carlson) through the points, emitted as cubic
+  # beziers. A polyline between six monthly readings reads as a sawtooth; the
+  # curve is what makes it look like a trend rather than a list of numbers.
+  #
+  # Monotone rather than Catmull-Rom because a smooth curve through real
+  # billing data has to stay truthful: Catmull-Rom overshoots around a spike,
+  # so the line dipped below the axis between two positive months and bulged
+  # over the top gridline after a quiet one, drawing revenue that was never
+  # invoiced. This interpolation cannot leave the range of the two readings it
+  # joins, so every point on the curve is a value that could have happened.
+  defp curve([]), do: ""
+  defp curve([{x, y}]), do: "M #{fmt(x)} #{fmt(y)}"
+
+  defp curve([{x0, y0} | _] = points) do
+    body =
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.zip(Enum.chunk_every(tangents(points), 2, 1, :discard))
+      |> Enum.map_join(" ", fn {[{x1, y1}, {x2, y2}], [m1, m2]} ->
+        run = (x2 - x1) / 3
+
+        "C #{fmt(x1 + run)} #{fmt(y1 + m1 * run)}, " <>
+          "#{fmt(x2 - run)} #{fmt(y2 - m2 * run)}, #{fmt(x2)} #{fmt(y2)}"
+      end)
+
+    "M #{fmt(x0)} #{fmt(y0)} " <> body
+  end
+
+  # The slope the curve leaves each point with. Endpoints follow their one
+  # neighbour; interior points average the two secants around them, and the
+  # Fritsch-Carlson limiter then shortens any tangent long enough to overshoot.
+  defp tangents(points) do
+    secants =
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{x1, y1}, {x2, y2}] -> (y2 - y1) / (x2 - x1) end)
+
+    interior =
+      secants
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [before, aftr] -> interior_slope(before, aftr) end)
+
+    limit([hd(secants)] ++ interior ++ [List.last(secants)], secants)
+  end
+
+  # Flat at a turning point: a peak stays a peak instead of rounding past the
+  # reading that made it.
+  defp interior_slope(before, aftr) when before * aftr <= 0, do: 0.0
+  defp interior_slope(before, aftr), do: (before + aftr) / 2
+
+  # Fritsch-Carlson: where a segment's two tangents fall outside the circle of
+  # radius 3, scale both back onto it. That is the condition for the cubic to
+  # stay monotone across the segment.
+  defp limit(raw, secants) do
+    raw
+    |> Enum.with_index()
+    |> Map.new(fn {slope, i} -> {i, slope} end)
+    |> then(fn slopes ->
+      secants
+      |> Enum.with_index()
+      |> Enum.reduce(slopes, &limit_segment/2)
+    end)
+    |> Enum.sort()
+    |> Enum.map(&elem(&1, 1))
+  end
+
+  defp limit_segment({secant, index}, slopes) when secant == 0.0 do
+    slopes |> Map.put(index, 0.0) |> Map.put(index + 1, 0.0)
+  end
+
+  defp limit_segment({secant, index}, slopes) do
+    start = Map.fetch!(slopes, index) / secant
+    finish = Map.fetch!(slopes, index + 1) / secant
+    radius = start * start + finish * finish
+
+    if radius > 9 do
+      scale = 3 / :math.sqrt(radius)
+
+      slopes
+      |> Map.put(index, scale * start * secant)
+      |> Map.put(index + 1, scale * finish * secant)
+    else
+      slopes
+    end
+  end
+
+  # The line, dropped to the axis at both ends and closed.
+  defp area([]), do: ""
+
+  defp area(points) do
+    {first_x, _} = hd(points)
+    {last_x, _} = List.last(points)
+
+    "#{curve(points)} L #{fmt(last_x)} 100 L #{fmt(first_x)} 100 Z"
+  end
+
+  defp fmt(number), do: :erlang.float_to_binary(number * 1.0, decimals: 2)
+
+  defp plain_number(value) when is_float(value), do: plain_number(round(value))
+  defp plain_number(value), do: format_number(value)
+
+  @doc """
+  Formats a rupee amount for a chart axis or tooltip, in Indian units.
+
+  Public because the Reports chart labels its axis the same way, and two
+  copies of this would drift into labelling the same number differently on
+  two pages.
+  """
+  def money_axis_label(value) when value >= 10_000_000,
+    do: "₹" <> short(value / 10_000_000) <> "Cr"
+
+  def money_axis_label(value) when value >= 100_000, do: "₹" <> short(value / 100_000) <> "L"
+  def money_axis_label(value) when value >= 1_000, do: "₹" <> short(value / 1_000) <> "K"
+  def money_axis_label(value), do: "₹#{round(value)}"
+
+  defp short(number) do
+    number
+    |> :erlang.float_to_binary(decimals: 1)
+    |> String.replace_suffix(".0", "")
+  end
+
+  # `stop-color` through a class so the gradient follows the daisyUI theme
+  # rather than pinning a hex that only suits the light one.
+  defp gradient_top_class(:blue), do: "[stop-color:var(--color-blue-500)] [stop-opacity:0.28]"
+  defp gradient_top_class(:violet), do: "[stop-color:var(--color-violet-400)] [stop-opacity:0.28]"
+
+  defp gradient_top_class(:emerald),
+    do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0.28]"
+
+  defp gradient_bottom_class(:blue), do: "[stop-color:var(--color-blue-500)] [stop-opacity:0]"
+  defp gradient_bottom_class(:violet), do: "[stop-color:var(--color-violet-400)] [stop-opacity:0]"
+
+  defp gradient_bottom_class(:emerald),
+    do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0]"
+
+  # Which edge of a label or tooltip is pinned to its point. The ends pin
+  # their own outer edge so nothing overhangs the plot.
+  defp anchor(0, count) when count > 1, do: :start
+  defp anchor(i, count) when i == count - 1 and count > 1, do: :end
+  defp anchor(_i, _count), do: :middle
+
+  defp anchor_class(:start), do: "translate-x-0"
+  defp anchor_class(:end), do: "-translate-x-full"
+  defp anchor_class(:middle), do: "-translate-x-1/2"
+
+  defp line_class(:blue), do: "stroke-blue-500"
+  defp line_class(:violet), do: "stroke-violet-400"
+  defp line_class(:emerald), do: "stroke-emerald-500"
+
+  defp dot_fill_class(:blue), do: "bg-blue-500"
+  defp dot_fill_class(:violet), do: "bg-violet-400"
+  defp dot_fill_class(:emerald), do: "bg-emerald-500"
+
   @doc """
   Renders an SVG donut chart with a centered total and an adjacent legend,
   from a list of `%{label:, value:, tone:}` maps.
 
-  `tone` is one of `:strong`, `:medium`, `:soft` or `:faint`.
+  `tone` is one of `:strong`, `:medium`, `:positive`, `:soft` or `:faint`.
 
   `palette` picks how those tones are rendered:
 
@@ -157,19 +502,23 @@ defmodule QuantumBillingWeb.DashboardComponents do
   # a class built as "stroke-#{tone}" is never emitted and the ring renders blank.
   defp stroke_class(:mono, :strong), do: "stroke-base-content"
   defp stroke_class(:mono, :medium), do: "stroke-base-content/60"
+  defp stroke_class(:mono, :positive), do: "stroke-base-content/45"
   defp stroke_class(:mono, :soft), do: "stroke-base-content/35"
   defp stroke_class(:mono, :faint), do: "stroke-base-content/15"
   defp stroke_class(:color, :strong), do: "stroke-blue-500"
   defp stroke_class(:color, :medium), do: "stroke-amber-500"
+  defp stroke_class(:color, :positive), do: "stroke-emerald-500"
   defp stroke_class(:color, :soft), do: "stroke-rose-500"
   defp stroke_class(:color, :faint), do: "stroke-base-content/20"
 
   defp dot_class(:mono, :strong), do: "bg-base-content"
   defp dot_class(:mono, :medium), do: "bg-base-content/60"
+  defp dot_class(:mono, :positive), do: "bg-base-content/45"
   defp dot_class(:mono, :soft), do: "bg-base-content/35"
   defp dot_class(:mono, :faint), do: "bg-base-content/15"
   defp dot_class(:color, :strong), do: "bg-blue-500"
   defp dot_class(:color, :medium), do: "bg-amber-500"
+  defp dot_class(:color, :positive), do: "bg-emerald-500"
   defp dot_class(:color, :soft), do: "bg-rose-500"
   defp dot_class(:color, :faint), do: "bg-base-content/20"
 
@@ -199,14 +548,32 @@ defmodule QuantumBillingWeb.DashboardComponents do
   attr :month, :string, required: true
   attr :day, :string, required: true
 
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :due_soon, :overdue],
+    doc: "tints the badge so a missed deadline is visible before the text is read"
+
   def compliance_date_badge(assigns) do
     ~H"""
-    <div class="flex size-10 shrink-0 flex-col items-center justify-center rounded-field border border-base-300 bg-base-200 text-base-content">
-      <span class="text-2xs font-medium uppercase text-base-content/45">{@month}</span>
+    <div class={[
+      "flex size-10 shrink-0 flex-col items-center justify-center rounded-field border",
+      badge_tone_class(@tone)
+    ]}>
+      <span class="text-2xs font-medium uppercase opacity-60">{@month}</span>
       <span class="text-sm font-semibold leading-tight">{@day}</span>
     </div>
     """
   end
+
+  defp badge_tone_class(:overdue),
+    do:
+      "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
+
+  defp badge_tone_class(:due_soon),
+    do:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+
+  defp badge_tone_class(:neutral), do: "border-base-300 bg-base-200 text-base-content"
 
   defp format_number(n) when is_integer(n) do
     n

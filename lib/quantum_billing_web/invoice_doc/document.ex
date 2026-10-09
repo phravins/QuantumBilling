@@ -15,11 +15,52 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
 
   alias QuantumBillingWeb.InvoiceDoc.Block
 
-  @type page :: %{size: String.t(), margin: String.t(), base_font: integer(), font: String.t()}
+  @type page :: %{
+          size: String.t(),
+          margin: String.t(),
+          base_font: integer(),
+          font: String.t(),
+          line_height: String.t(),
+          letter_spacing: String.t(),
+          paragraph_spacing: String.t(),
+          heading_font: String.t(),
+          heading_weight: String.t(),
+          heading_scale: String.t(),
+          label_case: String.t(),
+          table_density: String.t(),
+          numerals: String.t(),
+          text_color: String.t(),
+          heading_color: String.t(),
+          label_color: String.t(),
+          muted_color: String.t()
+        }
   @type t :: %__MODULE__{version: integer(), page: page(), blocks: [Block.t()]}
 
+  # `Layout.page_attrs/0` is where the page setup is declared; this mirrors its
+  # defaults rather than reading them, because a struct's defaults are fixed at
+  # compile time and Layout builds `%Document{}` — asking it would be a cycle.
+  # A setting added there and forgotten here is a KeyError the first time a
+  # control reads it, which `LayoutTest` catches by comparing the two.
   defstruct version: 1,
-            page: %{size: "A4", margin: "14mm", base_font: 12, font: "sans"},
+            page: %{
+              size: "A4",
+              margin: "14mm",
+              base_font: 12,
+              font: "sans",
+              line_height: "normal",
+              letter_spacing: "normal",
+              paragraph_spacing: "normal",
+              heading_font: "match",
+              heading_weight: "semibold",
+              heading_scale: "normal",
+              label_case: "upper",
+              table_density: "normal",
+              numerals: "proportional",
+              text_color: "#18181b",
+              heading_color: "text",
+              label_color: "#71717a",
+              muted_color: "#52525b"
+            },
             blocks: []
 
   @doc "The block with `id`, or `nil`."

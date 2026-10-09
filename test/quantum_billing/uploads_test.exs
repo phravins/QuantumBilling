@@ -90,7 +90,12 @@ defmodule QuantumBilling.UploadsTest do
       ]
 
       for {contents, index} <- Enum.with_index(bypasses) do
-        path = Path.join(System.tmp_dir!(), "bypass-#{index}-#{System.unique_integer([:positive])}.svg")
+        path =
+          Path.join(
+            System.tmp_dir!(),
+            "bypass-#{index}-#{System.unique_integer([:positive])}.svg"
+          )
+
         File.write!(path, contents)
         on_exit(fn -> File.rm(path) end)
 

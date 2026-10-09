@@ -1,11 +1,20 @@
 defmodule QuantumBilling.Clients do
   @moduledoc """
   Customers a tenant invoices.
+
+  ## Deleting
+
+  `delete_client/2` moves a client to the Bin: it leaves the directory, the
+  pickers and every lookup here, and its invoices stay exactly as they were —
+  they carry their own copy of the client's name and GSTIN. `restore_client/2`
+  brings it back and `purge_client/2` removes it for good.
   """
 
   import Ecto.Query, warn: false
 
+  alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
   alias QuantumBilling.Repo
 
@@ -35,7 +44,7 @@ defmodule QuantumBilling.Clients do
   Unbounded — for exports, backups and tests. Screens use `page/1`.
   """
   def list_clients do
-    Repo.all(from c in Client, order_by: [asc: c.name])
+    Repo.all(from c in Client.kept(), order_by: [asc: c.name])
   end
 
   @doc """
@@ -56,7 +65,7 @@ defmodule QuantumBilling.Clients do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
     query =
-      Client
+      Client.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
 
@@ -89,11 +98,12 @@ defmodule QuantumBilling.Clients do
 
   The selected client is fetched separately and prepended, because the invoice
   being edited must keep showing its own client even when the current search
-  does not match it.
+  does not match it. That holds for a client that has since been moved to the
+  Bin too — the matches leave it out, the selected one does not.
   """
   def picker_options(search \\ nil, selected_id \\ nil) do
     matches =
-      Client
+      Client.kept()
       |> search_where(search)
       |> order_by([c], asc: c.name, asc: c.id)
       |> limit(^@picker_limit)
@@ -164,12 +174,12 @@ defmodule QuantumBilling.Clients do
   defp clamp(_value, minimum, _maximum), do: minimum
 
   @doc """
-  Fetches a client by id, raising when it does not exist.
+  Fetches a client by id, raising when it does not exist or is in the Bin.
   """
-  def get_client!(id), do: Repo.get!(Client, id)
+  def get_client!(id), do: Repo.get!(Client.kept(), id)
 
   @doc """
-  Fetches a client by id, or `nil`.
+  Fetches a client by id, or `nil` — including for one that is in the Bin.
 
   Takes the id as a string, because that is how it arrives from a form, and
   returns `nil` rather than raising for one that is not a number at all — a
@@ -182,8 +192,35 @@ defmodule QuantumBilling.Clients do
     end
   end
 
-  def get_client(id) when is_integer(id), do: Repo.get(Client, id)
+  def get_client(id) when is_integer(id), do: Repo.get(Client.kept(), id)
   def get_client(_other), do: nil
+
+  @doc """
+  Fetches the client called exactly `name`, or `nil`.
+
+  The comparison ignores case and surrounding spaces, because this is what
+  answers "the user typed a client's name by hand instead of picking it" — but
+  it is never a partial match: "Apex" must not become "Apex Retail Solutions"
+  while the name is still being typed.
+
+  Names are not unique. When several clients share one, the oldest wins, so the
+  answer is at least the same every time.
+  """
+  def get_client_by_name(name) when is_binary(name) do
+    case String.trim(name) do
+      "" ->
+        nil
+
+      trimmed ->
+        Client.kept()
+        |> where([c], fragment("lower(btrim(?))", c.name) == ^String.downcase(trimmed))
+        |> order_by([c], asc: c.id)
+        |> limit(1)
+        |> Repo.one()
+    end
+  end
+
+  def get_client_by_name(_other), do: nil
 
   @doc """
   Builds a changeset for a client form.
@@ -220,6 +257,103 @@ defmodule QuantumBilling.Clients do
   end
 
   defp announce({:error, _changeset} = result, _event), do: result
+
+  @doc """
+  Moves a client to the Bin.
+
+  Nothing that belongs to the client is touched: its invoices, credit notes and
+  recurring profiles all stay, still pointing at it. What changes is that it
+  can no longer be picked for a new invoice, and its recurring profiles stop
+  billing until it is restored — see `QuantumBilling.Recurring.due_profiles/1`.
+
+  `opts` may carry `:user_id`, recorded against the audit entry.
+  """
+  def delete_client(client, opts \\ [])
+
+  def delete_client(%Client{deleted_at: %DateTime{}} = client, _opts), do: {:ok, client}
+
+  def delete_client(%Client{} = client, opts) do
+    client
+    |> Client.bin_changeset()
+    |> Repo.update()
+    |> audited(:bin_client, opts)
+    |> announce(:client_binned)
+  end
+
+  @doc """
+  Takes a client back out of the Bin.
+
+  Returns `{:error, :gstin_taken}` when another client has been registered
+  under its GSTIN while it was away. Two live clients cannot share one, and
+  which of them is the real one is not something to guess at.
+  """
+  def restore_client(%Client{} = client, opts \\ []) do
+    client
+    |> Client.restore_changeset()
+    |> Repo.update()
+    |> case do
+      {:error, %Ecto.Changeset{}} -> {:error, :gstin_taken}
+      result -> result
+    end
+    |> audited(:restore_client, opts)
+    |> announce(:client_restored)
+  end
+
+  @doc """
+  Deletes a client for good.
+
+  Returns `{:error, :not_in_bin}` for a client that has not been binned first,
+  and `{:error, :in_use}` while it has credit notes: a note is a tax document
+  raised against a client and cannot be left pointing at nobody.
+
+  Invoices and recurring profiles do not hold it back. They keep their own copy
+  of the client's details and simply stop being linked to a client record.
+  """
+  def purge_client(client, opts \\ [])
+
+  def purge_client(%Client{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
+
+  def purge_client(%Client{} = client, opts) do
+    if in_use?(client) do
+      {:error, :in_use}
+    else
+      client
+      |> Repo.delete()
+      |> audited(:purge_client, opts)
+      |> announce(:client_purged)
+    end
+  end
+
+  @doc "Whether anything stops this client being deleted for good."
+  def in_use?(%Client{id: nil}), do: false
+
+  def in_use?(%Client{id: id}) do
+    Repo.exists?(from n in CreditNote, where: n.client_id == ^id)
+  end
+
+  @doc "Every client in the Bin, most recently deleted first."
+  def list_deleted_clients do
+    Repo.all(from c in Client.binned(), order_by: [desc: c.deleted_at, desc: c.id])
+  end
+
+  @doc "One client in the Bin by id, or `nil` — including for an id that is not a number."
+  def get_deleted_client(id) do
+    case Integer.parse(to_string(id)) do
+      {int_id, ""} -> Repo.get(Client.binned(), int_id)
+      _not_an_id -> nil
+    end
+  end
+
+  defp audited({:ok, %Client{} = client} = result, action, opts) do
+    Audit.log_event(action, "Client", client.id,
+      user_id: Keyword.get(opts, :user_id),
+      details: %{name: client.name, gstin: client.gstin}
+    )
+
+    result
+  end
+
+  defp audited(result, _action, _opts), do: result
 
   @doc """
   Whether a client of this type must supply a GSTIN.

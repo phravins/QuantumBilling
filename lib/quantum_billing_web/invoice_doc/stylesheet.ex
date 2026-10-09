@@ -50,14 +50,22 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
       --qb-accent: #18181b;
       --qb-rule: #e4e4e7;
       --qb-hairline: #f4f4f5;
-      --qb-muted: #52525b;
-      --qb-label: #71717a;
+      --qb-muted: #{muted_color(page)};
+      --qb-label: #{label_color(page)};
+      --qb-text: #{text_color(page)};
+      --qb-label-case: #{label_case(page)};
+      --qb-label-tracking: #{label_tracking(page)};
+      --qb-heading-weight: #{heading_weight(page)};
+      --qb-heading-color: #{heading_color(page)};
+      --qb-heading-family: #{heading_stack(page)};
       max-width: 800px;
       margin: 0 auto;
       font-family: #{font_stack(page.font)};
       font-size: #{page.base_font}px;
-      line-height: 1.45;
-      color: #18181b;
+      line-height: #{line_height(page)};
+      letter-spacing: #{body_tracking(page)};
+      font-variant-numeric: #{numerals(page)};
+      color: var(--qb-text);
       background: #fff;
     }
     .qb-doc *, .qb-doc *::before, .qb-doc *::after { box-sizing: border-box; }
@@ -65,7 +73,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
 
     /* Blocks stack; the gap lives on the block so a removed one takes its
        spacing with it rather than leaving a hole. */
-    .qb-doc__block { margin-top: 20px; }
+    .qb-doc__block { margin-top: #{block_gap(page)}; }
     .qb-doc__block:first-child { margin-top: 0; }
 
     /* Two consecutive half-width blocks pack into one row. `min-width: 0` stops
@@ -79,8 +87,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
 
     .qb-doc__label {
       font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      text-transform: var(--qb-label-case);
+      letter-spacing: var(--qb-label-tracking);
       color: var(--qb-label);
     }
     .qb-doc__name { font-size: 13px; font-weight: 600; margin: 4px 0; }
@@ -96,13 +104,15 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     .qb-doc--right .qb-doc__logo { margin-left: auto; }
 
     .qb-doc__heading {
-      font-weight: 600;
+      font-family: var(--qb-heading-family);
+      font-weight: var(--qb-heading-weight);
       letter-spacing: -0.01em;
       margin: 0 0 4px;
+      color: var(--qb-heading-color);
     }
-    .qb-doc__heading--sm { font-size: 13px; }
-    .qb-doc__heading--md { font-size: 14px; }
-    .qb-doc__heading--lg { font-size: 15px; }
+    .qb-doc__heading--sm { font-size: #{heading_size(page, :sm)}; }
+    .qb-doc__heading--md { font-size: #{heading_size(page, :md)}; }
+    .qb-doc__heading--lg { font-size: #{heading_size(page, :lg)}; }
     .qb-doc__heading--accent { color: var(--qb-accent); }
 
     .qb-doc__meta-line { margin-bottom: 3px; }
@@ -117,14 +127,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     .qb-doc__items th {
       text-align: left;
       font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      text-transform: var(--qb-label-case);
+      letter-spacing: var(--qb-label-tracking);
       color: var(--qb-label);
       border-bottom: 1px solid var(--qb-rule);
-      padding: 6px 8px 6px 0;
+      padding: #{head_padding(page)};
       white-space: nowrap;
     }
-    .qb-doc__items td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--qb-hairline); }
+    .qb-doc__items td { padding: #{cell_padding(page)}; border-bottom: 1px solid var(--qb-hairline); }
     .qb-doc__items th:last-child, .qb-doc__items td:last-child { padding-right: 0; }
     .qb-doc__items th.qb-doc--right, .qb-doc__items td.qb-doc--right { text-align: right; }
     .qb-doc__items--grow { width: 100%; }
@@ -198,7 +208,100 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     ~s|ui-serif, Georgia, Cambria, "Times New Roman", Times, serif|
   end
 
+  defp font_stack("mono") do
+    ~s|ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace|
+  end
+
   defp font_stack(_sans) do
     ~s|ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif|
   end
+
+  # Each of these reads one page setting and falls back to the stock value, so
+  # a document stored before the setting existed prints exactly as it did.
+  # Every branch returns a literal: nothing a user typed reaches the stylesheet
+  # except the colour, and that one is a validated six-digit hex.
+  defp line_height(%{line_height: "tight"}), do: "1.3"
+  defp line_height(%{line_height: "relaxed"}), do: "1.7"
+  defp line_height(_page), do: "1.45"
+
+  defp heading_weight(%{heading_weight: "medium"}), do: "500"
+  defp heading_weight(%{heading_weight: "bold"}), do: "700"
+  defp heading_weight(_page), do: "600"
+
+  defp label_case(%{label_case: "normal"}), do: "none"
+  defp label_case(_page), do: "uppercase"
+
+  # Letterspacing is there to open up capitals. Set normal case and it reads as
+  # a gap between letters instead, so it comes off with the capitals.
+  defp label_tracking(%{label_case: "normal"}), do: "0"
+  defp label_tracking(_page), do: "0.08em"
+
+  defp text_color(%{text_color: "#" <> _ = color}), do: color
+  defp text_color(_page), do: "#18181b"
+
+  defp label_color(%{label_color: "#" <> _ = color}), do: color
+  defp label_color(_page), do: "#71717a"
+
+  defp muted_color(%{muted_color: "#" <> _ = color}), do: color
+  defp muted_color(_page), do: "#52525b"
+
+  # Body letterspacing. Kept small in both directions: past a hundredth of an em
+  # either way a column of figures stops lining up with its heading.
+  defp body_tracking(%{letter_spacing: "tight"}), do: "-0.01em"
+  defp body_tracking(%{letter_spacing: "wide"}), do: "0.02em"
+  defp body_tracking(_page), do: "normal"
+
+  # Tabular figures are what make a column of amounts line up on the decimal
+  # point. Off by default, because a document stored before the setting existed
+  # printed with whatever figures the typeface leads with.
+  defp numerals(%{numerals: "tabular"}), do: "tabular-nums"
+  defp numerals(_page), do: "normal"
+
+  defp block_gap(%{paragraph_spacing: "tight"}), do: "14px"
+  defp block_gap(%{paragraph_spacing: "relaxed"}), do: "28px"
+  defp block_gap(_page), do: "20px"
+
+  defp head_padding(%{table_density: "compact"}), do: "4px 8px 4px 0"
+  defp head_padding(%{table_density: "relaxed"}), do: "9px 8px 9px 0"
+  defp head_padding(_page), do: "6px 8px 6px 0"
+
+  defp cell_padding(%{table_density: "compact"}), do: "4px 8px 4px 0"
+  defp cell_padding(%{table_density: "relaxed"}), do: "11px 8px 11px 0"
+  defp cell_padding(_page), do: "7px 8px 7px 0"
+
+  # The three heading sizes move together, so a design can be scaled up without
+  # the small headings overtaking the large ones.
+  defp heading_size(%{heading_scale: "small"}, step) do
+    case step do
+      :sm -> "12px"
+      :md -> "12px"
+      :lg -> "13px"
+    end
+  end
+
+  defp heading_size(%{heading_scale: "large"}, step) do
+    case step do
+      :sm -> "15px"
+      :md -> "17px"
+      :lg -> "19px"
+    end
+  end
+
+  defp heading_size(_page, step) do
+    case step do
+      :sm -> "13px"
+      :md -> "14px"
+      :lg -> "15px"
+    end
+  end
+
+  # "Match" is the body face, which is what every document printed with before
+  # headings could carry one of their own.
+  defp heading_stack(%{heading_font: face}) when face in ~w(sans serif mono),
+    do: font_stack(face)
+
+  defp heading_stack(page), do: font_stack(page.font)
+
+  defp heading_color(%{heading_color: "accent"}), do: "var(--qb-accent)"
+  defp heading_color(_page), do: "var(--qb-text)"
 end

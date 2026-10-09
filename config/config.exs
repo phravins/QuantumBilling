@@ -125,7 +125,10 @@ config :quantum_billing, Oban,
      crontab: [
        # Early morning, before the working day, in UTC.
        {"30 1 * * *", QuantumBilling.Workers.RecurringInvoiceWorker},
-       {"0 2 * * *", QuantumBilling.Workers.AuditPruneWorker}
+       {"0 2 * * *", QuantumBilling.Workers.AuditPruneWorker},
+       # After the prune, and before the working day: a filing reminder is only
+       # useful if it is already in the feed when somebody opens the app.
+       {"30 2 * * *", QuantumBilling.Workers.ComplianceReminderWorker}
      ]}
   ]
 

@@ -48,11 +48,27 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   organisation, so rebranding restyles every invoice rather than only the next.\
   """
 
+  # Every default here is the value the document already printed at before the
+  # setting existed, so a layout stored without it parses back to the same
+  # invoice rather than quietly restyling itself.
   @page_attrs [
     {"size", :size, {:enum, ~w(A4 Letter)}, "A4"},
     {"margin", :margin, {:enum, ~w(10mm 14mm 18mm 22mm)}, "14mm"},
     {"base-font", :base_font, :integer, 12},
-    {"font", :font, {:enum, ~w(sans serif)}, "sans"}
+    {"font", :font, {:enum, ~w(sans serif mono)}, "sans"},
+    {"line-height", :line_height, {:enum, ~w(tight normal relaxed)}, "normal"},
+    {"letter-spacing", :letter_spacing, {:enum, ~w(tight normal wide)}, "normal"},
+    {"paragraph-spacing", :paragraph_spacing, {:enum, ~w(tight normal relaxed)}, "normal"},
+    {"heading-font", :heading_font, {:enum, ~w(match sans serif mono)}, "match"},
+    {"heading-weight", :heading_weight, {:enum, ~w(medium semibold bold)}, "semibold"},
+    {"heading-scale", :heading_scale, {:enum, ~w(small normal large)}, "normal"},
+    {"label-case", :label_case, {:enum, ~w(upper normal)}, "upper"},
+    {"table-density", :table_density, {:enum, ~w(compact normal relaxed)}, "normal"},
+    {"numerals", :numerals, {:enum, ~w(proportional tabular)}, "proportional"},
+    {"text-color", :text_color, :color, "#18181b"},
+    {"heading-color", :heading_color, {:enum, ~w(text accent)}, "text"},
+    {"label-color", :label_color, :color, "#71717a"},
+    {"muted-color", :muted_color, :color, "#52525b"}
   ]
 
   @doc "The layout schema version this module writes."
@@ -65,6 +81,34 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   the parser uses, rather than keeping a second list of what a margin may be.
   """
   def page_attrs, do: @page_attrs
+
+  @doc """
+  The stock page setup: every attribute at the value the parser falls back to.
+
+  What "reset formatting" means, and what a document that has never been
+  touched already prints as.
+  """
+  def default_page do
+    Map.new(@page_attrs, fn {_xml, key, _kind, default} -> {key, default} end)
+  end
+
+  @doc """
+  Applies form params — keyed by the XML attribute names — to a page map.
+
+  Both the design pad and the settings toolbar edit the same page, so both
+  fold through here: a value that does not cast is left at what it was, which
+  is why a half-typed colour cannot blank the document's text.
+  """
+  def cast_page(page, params) when is_map(params) do
+    Enum.reduce(@page_attrs, page, fn {xml, key, kind, _default}, acc ->
+      with {:ok, raw} <- Map.fetch(params, xml),
+           {:ok, value} <- Catalog.cast_value(raw, kind) do
+        Map.put(acc, key, value)
+      else
+        _ -> acc
+      end
+    end)
+  end
 
   @doc """
   Parses stored layout XML.

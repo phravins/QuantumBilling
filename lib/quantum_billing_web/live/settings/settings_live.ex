@@ -31,6 +31,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
+  alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoiceDocument
 
   @saveable ~w(general invoice e_way_bill tax notifications preferences customization smtp integrations security)a
@@ -46,12 +47,10 @@ defmodule QuantumBillingWeb.SettingsLive do
      socket
      |> assign(:page_title, "Settings")
      |> assign(:active_nav, :settings)
-     |> assign(:organization, Settings.get_organization())
+     |> assign_organization(Settings.get_organization())
      |> assign(:deliveries, [])
-     # The thumbnails render a real invoice rather than an empty shell, so a
-     # design can be judged by how it handles figures and a long description.
-     |> assign(:sample, InvoiceDocument.sample())
      |> assign(:templates, [])
+     |> assign(:open_tools, nil)
      |> allow_upload(:logo,
        accept: Uploads.accepted_extensions(),
        max_entries: 1,
@@ -76,7 +75,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   def handle_info({:settings_updated, _organization}, socket) do
     {:noreply,
      socket
-     |> assign(:organization, Settings.get_organization())
+     |> assign_organization(Settings.get_organization())
      |> assign_form(socket.assigns.section)}
   end
 
@@ -128,6 +127,20 @@ defmodule QuantumBillingWeb.SettingsLive do
   offering a link that bounces.
   """
   def owner_only?(section), do: section in @owner_only_sections
+
+  # The organisation and the specimen invoice move together.
+  #
+  # The specimen is built *from* the organisation — it prints the real company
+  # name, address and GSTIN — so leaving it behind means the thumbnails and the
+  # test print keep showing the details you just changed away from, which reads
+  # as the save not having worked.
+  defp assign_organization(socket, organization) do
+    socket
+    |> assign(:organization, organization)
+    # The thumbnails render a real invoice rather than an empty shell, so a
+    # design can be judged by how it handles figures and a long description.
+    |> assign(:sample, InvoiceDocument.sample(organization))
+  end
 
   # Read only for the panel that shows them.
   defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
@@ -183,6 +196,27 @@ defmodule QuantumBillingWeb.SettingsLive do
   # do not go through the section's changeset. The design itself is edited in
   # `InvoiceTemplateDesignLive`.
 
+  # ── Text tools ────────────────────────────────────────────────────────────
+  #
+  # These write a design's page setup rather than a settings column: typography
+  # belongs to the document, so a heading weight chosen here is the same one the
+  # design pad shows and the PDF prints. Every change says which design it came
+  # from, because each card carries its own toolbar.
+
+  def handle_event("toggle_text_tools", %{"id" => id}, socket) do
+    open = if to_string(socket.assigns.open_tools) == id, do: nil, else: template_id(id)
+
+    {:noreply, assign(socket, :open_tools, open)}
+  end
+
+  def handle_event("update_page", %{"template_id" => id, "page" => params}, socket) do
+    {:noreply, save_page(socket, id, &Layout.cast_page(&1, params))}
+  end
+
+  def handle_event("reset_text", %{"id" => id}, socket) do
+    {:noreply, save_page(socket, id, fn _page -> Layout.default_page() end)}
+  end
+
   def handle_event("new_template", _params, socket) do
     case Templates.duplicate_template(Templates.ensure_default()) do
       {:ok, template} ->
@@ -202,7 +236,14 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   def handle_event("delete_template", %{"id" => id}, socket) do
-    with_template(socket, id, &Templates.delete_template/1, "That design could not be removed.")
+    user_id = socket.assigns.current_scope.user.id
+
+    with_template(
+      socket,
+      id,
+      &Templates.delete_template(&1, user_id: user_id),
+      "That design could not be removed."
+    )
   end
 
   def handle_event("validate", %{"organization" => params}, socket) do
@@ -222,7 +263,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       {:ok, organization} ->
         {:noreply,
          socket
-         |> assign(:organization, organization)
+         |> assign_organization(organization)
          |> assign_form(socket.assigns.section)
          |> put_flash(:info, "#{section(socket.assigns.section).title} saved.")}
 
@@ -242,7 +283,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       {:ok, organization} ->
         {:noreply,
          socket
-         |> assign(:organization, organization)
+         |> assign_organization(organization)
          |> assign_form(:customization)
          |> put_flash(:info, "Logo removed.")}
 
@@ -259,8 +300,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   # to the person who just pressed the button. Every other message in the
   # application goes through the queue.
   def handle_event("send_test_email", _params, socket) do
-    recipient =
-      socket.assigns.current_scope.user.email || socket.assigns.organization.email
+    recipient = test_recipient(socket.assigns)
 
     case recipient && Mail.send_test(recipient) do
       {:ok, _metadata} ->
@@ -298,7 +338,7 @@ defmodule QuantumBillingWeb.SettingsLive do
             {:noreply,
              socket
              |> put_flash(:info, "Restored #{restored_summary(counts)}.")
-             |> assign(:organization, Settings.get_organization())
+             |> assign_organization(Settings.get_organization())
              |> assign_form(socket.assigns.section)}
 
           {:error, reason} ->
@@ -327,6 +367,34 @@ defmodule QuantumBillingWeb.SettingsLive do
   # Writes the newly uploaded file, if there is one, and puts its path into the
   # params so the changeset saves it alongside everything else in the panel.
   # Nothing else in the form knows the logo is a file rather than a field.
+  # Re-read rather than trusting the assign: the toolbar is one of several
+  # windows onto the same row, and writing back a page derived from a stale
+  # render would undo whatever the design pad changed in between.
+  defp save_page(socket, id, fun) do
+    case Templates.get_template(id) do
+      nil ->
+        assign_templates(socket)
+
+      template ->
+        doc = Templates.document_of(template)
+        doc = %{doc | page: fun.(doc.page)}
+
+        case Templates.update_template(template, %{"layout_xml" => Layout.to_xml(doc)}) do
+          {:ok, _template} -> assign_templates(socket)
+          {:error, _changeset} -> put_flash(socket, :error, "That change could not be saved.")
+        end
+    end
+  end
+
+  # The toolbar posts the id as a string; the assign is compared against the
+  # template's own id, so it is kept as whatever the list holds.
+  defp template_id(id) do
+    case Integer.parse(id) do
+      {parsed, ""} -> parsed
+      _other -> id
+    end
+  end
+
   # Runs a template action by id, refreshing the list either way. An id the list
   # no longer holds — a stale click from a window opened before it was removed —
   # is a no-op that re-reads rather than an error.
@@ -381,6 +449,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       current_scope={@current_scope}
       active_nav={@active_nav}
       active_sub={@section}
+      notifications={@notifications}
+      unread_count={@unread_count}
     >
       <%!-- The open section names the page. A standing "Settings / Manage your
       account and application settings" said nothing the sidebar had not
@@ -567,10 +637,21 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
 
       <div class="mt-4">
+        <%!--
+        Says what it does today rather than what its name promises. The switch
+        is saved and read, but nothing generates a bill on its own: that needs
+        a background worker calling the NIC portal unattended, which is a
+        larger change than a toggle. Better to name the gap than to offer a
+        switch that quietly does nothing.
+        --%>
         <.toggle
           field={f[:ewb_auto_generate]}
-          label="Generate an e-way bill automatically"
-          hint="When an invoice exceeds the threshold value."
+          label="Flag invoices that need an e-way bill"
+          hint={
+            "Invoices above the threshold are listed on the Generate E-Way Bill page. " <>
+              "Bills are not raised automatically — each one is still confirmed by hand, " <>
+              "because the transport details are not on the invoice."
+          }
         />
       </div>
     </.form>
@@ -642,7 +723,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <button
           type="button"
           phx-click="send_test_email"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+          class={action_button_class()}
         >
           <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
         </button>
@@ -802,7 +883,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <button
           type="button"
           phx-click="send_test_email"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+          class={action_button_class()}
         >
           <.icon name="hero-paper-airplane" class="size-4" /> Send Test Email
         </button>
@@ -924,8 +1005,9 @@ defmodule QuantumBillingWeb.SettingsLive do
             <h3 class="text-sm font-semibold tracking-tight">Invoice designs</h3>
 
             <p class="mt-1 text-sm text-base-content/60">
-              Build your own layout block by block. New invoices use the default;
-              an invoice keeps the design it was issued with.
+              Build your own layout block by block, and set each one's typography
+              with its own text tools. New invoices use the default; an invoice
+              keeps the design it was issued with.
             </p>
           </div>
 
@@ -934,7 +1016,12 @@ defmodule QuantumBillingWeb.SettingsLive do
           </button>
         </div>
 
-        <.template_list templates={@templates} invoice={@sample} logo={@organization.doc_logo_path} />
+        <.template_list
+          templates={@templates}
+          invoice={@sample}
+          logo={@organization.doc_logo_path}
+          open_tools={@open_tools}
+        />
       </div>
     </div>
     """
@@ -987,7 +1074,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           <button
             type="submit"
             disabled={@uploads.backup_file.entries == []}
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold shadow transition"
+            class={[action_button_class(), "disabled:opacity-50"]}
           >
             <.icon name="hero-arrow-path" class="size-4" /> Execute Restore
           </button>
@@ -1094,4 +1181,24 @@ defmodule QuantumBillingWeb.SettingsLive do
     </.form>
     """
   end
+
+  # Who a test goes to: the person signed in, then the organisation's contact
+  # address. Never a client, and never typed in.
+  defp test_recipient(%{current_scope: scope, organization: organization}),
+    do: test_recipient(scope, organization)
+
+  defp test_recipient(scope, organization) do
+    presence(scope && scope.user && scope.user.email) || presence(organization.email)
+  end
+
+  defp presence(nil), do: nil
+
+  defp presence(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp presence(value), do: value
 end
