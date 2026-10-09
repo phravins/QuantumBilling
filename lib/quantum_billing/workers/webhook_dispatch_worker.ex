@@ -29,6 +29,7 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
 
   alias QuantumBilling.Settings
   alias QuantumBilling.Webhooks
+  alias QuantumBilling.Webhooks.UrlGuard
 
   @request_timeout_ms 10_000
 
@@ -37,13 +38,23 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
     organization = Settings.get_organization()
     url = organization.webhook_url
 
-    if is_nil(url) or url == "" do
-      # The endpoint was removed between queueing and running. Nothing to
-      # deliver to, and no amount of retrying will conjure one.
-      :discard
-    else
-      body = Jason.encode!(%{event: event, payload: args["payload"] || %{}, sent_at: now()})
-      post(url, body, organization.webhook_secret, event)
+    cond do
+      is_nil(url) or url == "" ->
+        # The endpoint was removed between queueing and running. Nothing to
+        # deliver to, and no amount of retrying will conjure one.
+        :discard
+
+      # Re-checked here and not only at save time: a hostname that resolved to
+      # a public address when it was saved can resolve to 127.0.0.1 by the time
+      # this runs, which is exactly how DNS rebinding works.
+      match?({:error, _}, UrlGuard.check(url)) ->
+        {:error, reason} = UrlGuard.check(url)
+        Logger.warning("[WebhookDispatchWorker] refusing #{event}: endpoint #{reason}")
+        :discard
+
+      true ->
+        body = Jason.encode!(%{event: event, payload: args["payload"] || %{}, sent_at: now()})
+        post(url, body, organization.webhook_secret, event)
     end
   end
 
@@ -63,6 +74,10 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
            headers: headers,
            receive_timeout: @request_timeout_ms,
            retry: false,
+           # Not followed: a redirect is a second destination, and it never
+           # went through `UrlGuard`. An allowed public host could otherwise
+           # bounce this straight at the metadata address.
+           redirect: false,
            decode_body: false
          ) do
       {:ok, %{status: status}} when status in 200..299 ->

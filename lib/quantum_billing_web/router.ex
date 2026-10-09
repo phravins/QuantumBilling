@@ -10,6 +10,7 @@ defmodule QuantumBillingWeb.Router do
     plug :put_root_layout, html: {QuantumBillingWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug QuantumBillingWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_scope_for_user
     plug QuantumBillingWeb.Plugs.EnforceSecurityPolicies
   end
@@ -35,6 +36,30 @@ defmodule QuantumBillingWeb.Router do
     get "/pay/:token/pdf", InvoicePdfController, :public
   end
 
+  # Owner-only. These are the things that administer the installation rather
+  # than use it: the accounts, and the full database export.
+  #
+  # Every account on this installation shares one dataset — there is no
+  # per-user scoping on invoices or clients, by design, because the
+  # application bills for one business. So an account is access to the books,
+  # and handing out accounts, plus taking a copy of everything, belongs to
+  # whoever owns the business rather than to everyone who can sign in.
+  scope "/", QuantumBillingWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_owner]
+
+    live_session :owner,
+      on_mount: [
+        {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_owner}
+      ] do
+      live "/settings/team", SettingsLive.Team, :index
+    end
+
+    get "/settings/backup/download", BackupController, :download
+  end
+
+  # Declared before the scope below: Phoenix matches in definition order, and
+  # "/settings/:section" there would otherwise swallow "/settings/team".
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -96,7 +121,6 @@ defmodule QuantumBillingWeb.Router do
     get "/e-way-bills/:id/print", EWayBillPdfController, :show
     get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
-    get "/settings/backup/download", BackupController, :download
   end
 
   # Deliberately on `:api` and not `:browser`: a container probe must not need

@@ -156,10 +156,19 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       end
     end
 
-    test "every settings section renders", %{conn: conn} do
+    test "every settings section an owner can open renders", %{conn: conn, user: user} do
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+
       for section <- ~w(general invoice tax e-way-bill smtp integrations security notifications) do
         assert {:ok, _view, _html} = live(conn, ~p"/settings/#{section}"),
                "settings/#{section} did not mount"
+      end
+    end
+
+    test "the sections a staff account may open render", %{conn: conn} do
+      for section <- ~w(general invoice tax e-way-bill notifications) do
+        assert {:ok, _view, _html} = live(conn, ~p"/settings/#{section}"),
+               "settings/#{section} did not mount for staff"
       end
     end
   end
@@ -271,10 +280,85 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert %{"fp" => ^period, "b2b" => [_ | _]} = Jason.decode!(body)
     end
 
-    test "the backup download answers", %{conn: conn} do
+    test "the backup download answers for an owner", %{conn: conn, user: user} do
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
       assert %{"version" => "2.1", "invoices" => [_ | _]} = Jason.decode!(body)
+    end
+  end
+
+  describe "what a staff account may not reach" do
+    @owner_only_sections ~w(smtp integrations security)
+
+    test "the credential settings panels are refused", %{conn: conn} do
+      for section <- @owner_only_sections do
+        assert {:error, {:live_redirect, %{to: "/settings/general", flash: flash}}} =
+                 live(conn, ~p"/settings/#{section}"),
+               "settings/#{section} let a staff account in"
+
+        assert flash["error"] =~ "owners"
+      end
+    end
+
+    test "the full data export is refused", %{conn: conn} do
+      conn = get(conn, ~p"/settings/backup/download")
+
+      # Every account shares one dataset, so a copy of everything is the whole
+      # business in one file. That belongs to whoever owns it.
+      assert redirected_to(conn) == ~p"/dashboard"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "owners"
+    end
+
+    test "the team page is refused", %{conn: conn} do
+      assert {:error, {:redirect, %{to: "/dashboard", flash: flash}}} =
+               live(conn, ~p"/settings/team")
+
+      assert flash["error"] =~ "owners"
+    end
+
+    test "the settings sidebar does not offer what it would refuse", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/settings")
+
+      refute html =~ ~s(href="/settings/smtp")
+      refute html =~ ~s(href="/settings/integrations")
+      refute html =~ ~s(href="/settings/team")
+
+      # What staff can actually use is still there.
+      assert html =~ ~s(href="/settings/general")
+    end
+
+    test "but everything else still works", %{conn: conn, invoice: invoice} do
+      # Staff bill. The gate is on administering the installation, not on
+      # doing the job.
+      assert {:ok, _view, _html} = live(conn, ~p"/invoices")
+      assert {:ok, _view, _html} = live(conn, ~p"/invoices/new")
+      assert {:ok, _view, _html} = live(conn, ~p"/clients")
+      assert {:ok, _view, _html} = live(conn, ~p"/reports")
+      assert conn |> get(~p"/invoices/#{invoice.id}/pdf") |> response(200)
+      assert conn |> get(~p"/reports/export") |> response(200)
+    end
+  end
+
+  describe "the owner-only pages, as an owner" do
+    setup %{user: user} do
+      {:ok, owner} = QuantumBilling.Accounts.set_role(user, "owner")
+      %{owner: owner}
+    end
+
+    test "the team page renders", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/settings/team")
+
+      assert html =~ "Team"
+      assert html =~ "Invite someone"
+    end
+
+    test "the sidebar offers the owner-only sections", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/settings")
+
+      assert html =~ ~s(href="/settings/smtp")
+      assert html =~ ~s(href="/settings/team")
     end
   end
 
