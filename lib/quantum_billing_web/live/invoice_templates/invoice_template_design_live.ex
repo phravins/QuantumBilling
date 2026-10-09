@@ -153,8 +153,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         {:noreply, socket}
 
       block ->
-        # Through the catalogue's whitelist, never straight onto the struct: an
-        # injected param cannot set an option this block does not have.
+        # Through the catalogue's whitelist, never straight onto the struct.
         {:noreply, save(socket, Document.put_block(doc, Catalog.cast_block(block, params)))}
     end
   end
@@ -244,9 +243,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
   # ── Saving ────────────────────────────────────────────────────────────────
 
-  # Every mutation lands here. The document in memory is updated either way, so a
-  # rejected save leaves the canvas showing what the user did rather than
-  # silently reverting it; the message says what is wrong.
+  # A rejected save keeps the user's change on the canvas and shows why.
   defp save(socket, doc) do
     socket = assign(socket, :doc, doc)
 
@@ -268,7 +265,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     |> List.first()
   end
 
-  # Applies `fun` to the selected block, saving when it returns a document.
   defp with_selected(socket, fun) do
     doc = socket.assigns.doc
 
@@ -406,13 +402,9 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         </:actions>
       </.header>
 
-      <%!-- The text tools sit over the pad rather than in the palette column:
-      they are the same toolbar Settings shows, and they set the document's
-      typography, not the blocks in it. --%>
       <.text_tools id="template-page-form" page={@doc.page} class="mb-2" />
 
       <div class="flex flex-1 gap-3">
-        <%!-- Palette --%>
         <.card padding="p-2" class="hidden w-44 shrink-0 self-start lg:block">
           <.block_palette doc={@doc} />
           <div class="mt-3 space-y-2 border-t border-base-300 pt-3">
@@ -426,15 +418,9 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             </button>
           </div>
         </.card>
-        <%!-- Canvas --%>
         <.card padding="p-6" class="min-w-0 flex-1">
           <Renderer.stylesheet doc={@doc} />
-          <%!-- The hook listens on this container and delegates, rather than
-          binding every card, so blocks added later need no rebinding. It pushes
-          an id order and leaves the DOM alone: the server's re-render is the
-          only thing that moves anything, which is why `phx-update="ignore"`
-          would be wrong here — it would freeze the list against the pad's own
-          add and move events. --%>
+          <%!-- The hook delegates from this container and pushes an id order; no phx-update="ignore", since the server re-render moves the blocks. --%>
           <div id="canvas-blocks" phx-hook=".BlockSort" class="mx-auto max-w-[800px] space-y-1">
             <.canvas_block
               :for={{block, index} <- Enum.with_index(@doc.blocks)}
@@ -453,7 +439,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             This template is empty. Add a block from the left to begin.
           </p>
         </.card>
-        <%!-- Inspector --%>
         <.card padding="p-3" class="hidden w-72 shrink-0 self-start xl:block">
           <.inspector block={@selected} page={@doc.page} />
         </.card>

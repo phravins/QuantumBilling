@@ -157,9 +157,7 @@ defmodule QuantumBilling.Accounts do
 
   defp insert_invited_user(attrs, invitation) do
     Ecto.Multi.new()
-    # Claimed first, and conditionally: `accepted_at IS NULL` in the WHERE
-    # means the second of two racing submissions updates no rows and the whole
-    # transaction rolls back, rather than both inserting a user.
+    # Conditional claim: of two racing submissions, the second updates nothing and rolls back.
     |> Ecto.Multi.run(:claim, fn repo, _changes ->
       query =
         from(i in Invitation, where: i.id == ^invitation.id, where: is_nil(i.accepted_at))
@@ -184,8 +182,7 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  # The email the invitation was sent to is the email the account gets. Without
-  # this, one invitation would register any address at all.
+  # The account gets the invited email, not any address.
   defp fetch_pending_invitation(nil), do: {:error, :closed}
   defp fetch_pending_invitation(""), do: {:error, :closed}
 
@@ -302,7 +299,8 @@ defmodule QuantumBilling.Accounts do
   this deletes the old one first so re-sending is not an error.
 
   Returns `{:ok, invitation}`; the raw token only ever exists inside this
-  function and the email it sends.
+  function and the email it sends. When the relay refuses the email, returns
+  `{:error, {:delivery_failed, message}}` and no invitation is left pending.
   """
   def invite(email, role, %User{} = invited_by, url_fun) when is_function(url_fun, 1) do
     normalized = email |> to_string() |> String.trim() |> String.downcase()
@@ -317,20 +315,35 @@ defmodule QuantumBilling.Accounts do
       true ->
         {token, changeset} = Invitation.build(normalized, role, invited_by)
 
-        Repo.transaction(fn ->
-          Repo.delete_all(
-            from i in Invitation, where: i.email == ^normalized, where: is_nil(i.accepted_at)
-          )
+        with {:ok, invitation} <- replace_pending_invitation(normalized, changeset) do
+          send_invitation(invitation, url_fun.(token))
+        end
+    end
+  end
 
-          case Repo.insert(changeset) do
-            {:ok, invitation} ->
-              UserNotifier.deliver_invitation(invitation, url_fun.(token))
-              invitation
+  defp replace_pending_invitation(email, changeset) do
+    Repo.transaction(fn ->
+      Repo.delete_all(
+        from i in Invitation, where: i.email == ^email, where: is_nil(i.accepted_at)
+      )
 
-            {:error, changeset} ->
-              Repo.rollback(changeset)
-          end
-        end)
+      case Repo.insert(changeset) do
+        {:ok, invitation} -> invitation
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  # Sent after commit so a failure stays in the delivery ledger.
+  # An invitation whose email was refused is withdrawn.
+  defp send_invitation(invitation, url) do
+    case UserNotifier.deliver_invitation(invitation, url) do
+      {:ok, _email} ->
+        {:ok, invitation}
+
+      {:error, message} ->
+        Repo.delete(invitation)
+        {:error, {:delivery_failed, message}}
     end
   end
 
@@ -403,8 +416,6 @@ defmodule QuantumBilling.Accounts do
       |> User.profile_changeset(attrs)
       |> Repo.update()
 
-    # Keyed to this user: their other windows should pick the new name up in
-    # the sidebar, nobody else's should.
     with {:ok, saved} <- result do
       Events.broadcast(Events.user_topic(saved.id), {:profile_updated, saved})
     end
@@ -643,8 +654,6 @@ defmodule QuantumBilling.Accounts do
             :ok
 
           {:error, reason} ->
-            # The caller is told nothing either way, so this is the only place
-            # a failed reset mail is visible.
             Logger.warning("password reset email to #{user.email} failed: #{inspect(reason)}")
             :ok
         end

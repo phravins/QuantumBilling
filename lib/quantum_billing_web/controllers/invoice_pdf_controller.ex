@@ -32,9 +32,7 @@ defmodule QuantumBillingWeb.InvoicePdfController do
         |> redirect(to: ~p"/invoices")
 
       invoice ->
-        # The same layout `InvoiceShowLive` resolves, rendered by the same
-        # component, so the printed document and the one on screen cannot
-        # disagree about what appears on them.
+        # Same layout and component as InvoiceShowLive.
         {doc, accent, logo} = Templates.document_for(invoice)
 
         conn
@@ -100,8 +98,7 @@ defmodule QuantumBillingWeb.InvoicePdfController do
             )
 
           {:error, _reason} ->
-            # No renderer here: hand over the print-styled page, which the
-            # customer's own browser can save as a PDF.
+            # No renderer: send the print page for the browser to save as PDF.
             conn
             |> put_root_layout(false)
             |> put_layout(false)

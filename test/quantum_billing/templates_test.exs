@@ -48,10 +48,7 @@ defmodule QuantumBilling.TemplatesTest do
       assert length(Templates.list_templates()) == 1
     end
 
-    # Seeds the stock layout. An installation that had customised its invoices
-    # before designs existed had those settings captured into a template by the
-    # migration that dropped the old columns, so this path only ever runs for an
-    # installation that has none.
+    # Only runs on an installation that has no templates yet.
     test "seeds the stock layout" do
       template = Templates.ensure_default()
       items = template |> Templates.document_of() |> block(:items)
@@ -73,9 +70,7 @@ defmodule QuantumBilling.TemplatesTest do
       assert Templates.default_template().id == second.id
     end
 
-    # The partial unique index is the thing keeping "which template does a new
-    # invoice get" from being answered by row order, so assert it actually bites
-    # rather than trusting the application to be careful.
+    # The partial unique index enforces a single default.
     test "a second default cannot be written directly" do
       Templates.ensure_default()
 
@@ -166,8 +161,7 @@ defmodule QuantumBilling.TemplatesTest do
   end
 
   describe "delete_template/2" do
-    # It used to remove a design nothing pointed at. It archives now, whether
-    # or not anything points at it, so that either can be brought back.
+    # Archives rather than deletes, so it can be restored.
     test "moves the template to the Bin rather than removing it" do
       template = create(%{"name" => "Unused"})
 
@@ -269,9 +263,7 @@ defmodule QuantumBilling.TemplatesTest do
   end
 
   describe "document_for/1" do
-    # A page view is a read. Rendering an invoice on a fresh install must not
-    # insert a row, and must still print what the application printed before
-    # templates existed.
+    # A page view must not insert a row.
     test "falls back to the stock layout when no design exists" do
       {document, accent, _logo} = Templates.document_for(%QuantumBilling.Invoices.Invoice{})
 
@@ -306,9 +298,7 @@ defmodule QuantumBilling.TemplatesTest do
     end
   end
 
-  # These encode the whole structure-frozen / branding-live decision. If a future
-  # change makes a template edit reach documents that have already been sent,
-  # this is what should go red.
+  # Structure is frozen at issue; branding stays live.
   describe "the layout an issued invoice keeps" do
     setup do
       template = Templates.ensure_default()
@@ -362,9 +352,8 @@ defmodule QuantumBilling.TemplatesTest do
       refute Document.has_type?(document, :amount_in_words)
     end
 
-    # Judging by the stored status, not the params, is what makes this hold: a
-    # save that also flips the status must not re-freeze the document on its way
-    # out of draft.
+    # Judged by the stored status, so a save that also changes the status cannot
+    # re-freeze the document.
     test "a non-draft snapshot cannot be rewritten even when sent explicitly",
          %{invoice: invoice} do
       {:ok, invoice} = Invoices.update_invoice(invoice, %{"status" => "E-Invoice Generated"})

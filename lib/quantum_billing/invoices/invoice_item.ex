@@ -48,9 +48,7 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
     |> put_amount()
   end
 
-  # Derived, never taken from the form: the amount column must always equal
-  # quantity × rate, and letting it be submitted would allow the two to
-  # disagree.
+  # Always quantity × rate; never taken from the form.
   defp put_amount(changeset) do
     quantity = get_field(changeset, :quantity) || 0
     rate = get_field(changeset, :rate) || 0

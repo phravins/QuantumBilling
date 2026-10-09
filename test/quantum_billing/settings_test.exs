@@ -117,11 +117,8 @@ defmodule QuantumBilling.SettingsTest do
     end
 
     test "a blank prefix resets to the default rather than clearing" do
-      # Ecto's cast/4 replaces an empty value with the *field's default* rather
-      # than dropping it, so clearing this box resets the prefix to "INV" — it
-      # does not keep the previous value and does not leave it blank. That is
-      # the behaviour we want for a required setting: the numbering scheme can
-      # never end up with no prefix at all.
+      # cast/4 replaces an empty value with the field default, so the prefix resets
+      # to "INV" rather than going blank.
       {:ok, _} = save(%{"invoice_prefix" => "GST"}, :invoice)
       assert {:ok, organization} = save(%{"invoice_prefix" => ""}, :invoice)
 

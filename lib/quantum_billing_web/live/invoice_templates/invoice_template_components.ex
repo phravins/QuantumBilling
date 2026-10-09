@@ -20,9 +20,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
-  # What the palette offers, in the order it offers it. Labels are the user's
-  # words for a block, which are not always the element name — `invoice-meta` is
-  # "Invoice Details" to anyone who has not read the schema.
   @palette [
     {:logo, "Logo", "hero-photo"},
     {:heading, "Heading", "hero-bookmark"},
@@ -174,8 +171,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         </button>
       </div>
 
-      <%!-- The real thing, not a placeholder: the pad's whole promise is that
-      what is on the canvas is what prints. --%>
       <div class="pointer-events-none">
         <Renderer.document
           doc={@doc}
@@ -207,8 +202,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       </div>
 
       <form id={"block-form-#{@block.id}"} phx-change="update_block" class="space-y-3">
-        <%!-- `_id` rather than `id`: a form input named `id` overrides the DOM
-        id of the form element it sits in, which LiveView needs to track it. --%>
+        <%!-- _id, not id: an input named id overrides the form's DOM id. --%>
         <input type="hidden" name="_id" value={@block.id} />
         <.option
           :for={{xml, key, kind, _default} <- Catalog.attrs(@block.type)}
@@ -284,8 +278,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     xml |> String.replace("-", " ") |> String.capitalize()
   end
 
-  # Which columns the item table has, or which lines the totals box shows. The
-  # required ones render without a remove button rather than erroring on click.
+  # Required items render without a remove button.
   attr :block, :map, required: true
 
   defp children_editor(assigns) do
@@ -368,9 +361,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
   defp humanise(field), do: field |> String.replace("_", " ") |> String.capitalize()
 
-  # The toolbar's own vocabulary. Each value is one the document's parser
-  # already accepts, so a control cannot offer a setting the layout would drop
-  # on the way back in.
+  # Only values the layout parser accepts.
   @typefaces [{"sans", "Sans"}, {"serif", "Serif"}, {"mono", "Mono"}]
 
   @heading_faces [
@@ -497,11 +488,9 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           @collapsible && "border-t border-base-300"
         ]}
       >
-        <%!-- Which design this toolbar belongs to. The page it edits is stored
-        on the template, so the change has to say which one it came from. --%>
+        <%!-- Which design this toolbar edits. --%>
         <input :if={@template_id} type="hidden" name="template_id" value={@template_id} />
 
-        <%!-- Body text --%>
         <.tool_row label="Body">
           <label class="flex items-center">
             <span class="sr-only">Typeface</span>
@@ -523,10 +512,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
           <span class={tool_divider_class()} aria-hidden="true" />
 
-          <%!-- Radios rather than buttons: a press has to say which value it set,
-          and a radio group already carries that on the wire and to a screen
-          reader. The visible chip is the label, so the input itself can be
-          sr-only without losing the keyboard. --%>
+          <%!-- Radios carry the chosen value and stay keyboard accessible behind the sr-only input. --%>
           <fieldset class="flex items-center gap-0.5">
             <legend class="sr-only">Line spacing</legend>
             <.tool_radio
@@ -556,8 +542,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
           <span class={tool_divider_class()} aria-hidden="true" />
 
-          <%!-- Debounced because a colour picker fires on every step of a drag,
-          and each change here is a write to the stored layout. --%>
+          <%!-- Debounced: a colour drag fires on every step, and each change is a write. --%>
           <.tool_color name="page[text-color]" value={@page.text_color} glyph="A" label="Text colour" />
 
           <.tool_color
@@ -583,7 +568,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           </label>
         </.tool_row>
 
-        <%!-- Headings and labels --%>
         <.tool_row label="Headings">
           <label class="flex items-center">
             <span class="sr-only">Heading typeface</span>
@@ -663,7 +647,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           />
         </.tool_row>
 
-        <%!-- The sheet itself --%>
         <.tool_row label="Page">
           <label class="flex items-center">
             <span class="sr-only">Paper size</span>
@@ -732,8 +715,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     """
   end
 
-  # What the collapsed toolbar says it is set to, so a design's typography can
-  # be read off the card without opening anything.
   defp summary(page) do
     [
       page.font |> String.capitalize(),
@@ -783,8 +764,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     """
   end
 
-  # Written out rather than built from a variable: Tailwind scans source text,
-  # so an interpolated class is never emitted into the stylesheet.
+  # Literal class strings so Tailwind emits them.
   defp tool_select_class do
     "h-7 cursor-pointer rounded-field border border-base-300 bg-base-100 px-1.5 text-xs " <>
       "text-base-content transition-colors hover:border-base-content/30"
@@ -792,8 +772,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
 
   defp tool_divider_class, do: "mx-0.5 h-5 w-px bg-base-300"
 
-  # The chip shows the setting it sets: the letters themselves are spaced the
-  # way the document will be.
   defp tracking_glyph_class("tight"), do: "tracking-tighter"
   defp tracking_glyph_class("wide"), do: "tracking-widest"
   defp tracking_glyph_class(_normal), do: "tracking-normal"

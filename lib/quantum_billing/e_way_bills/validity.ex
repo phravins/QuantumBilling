@@ -50,8 +50,7 @@ defmodule QuantumBilling.EWayBills.Validity do
     max(1, ceil(distance_km / kilometres_per_day(cargo)))
   end
 
-  # No distance recorded is still a bill, and a bill is valid for at least a
-  # day. Better a conservative floor than a crash on a half-filled consignment.
+  # No distance recorded: the one-day minimum.
   def days(_unknown_distance, _cargo), do: 1
 
   @doc "Kilometres that earn one day of validity, by cargo type."

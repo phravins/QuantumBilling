@@ -21,8 +21,6 @@ defmodule QuantumBilling.Accounts.Invitation do
   @hash_algorithm :sha256
   @rand_size 32
 
-  # Long enough to survive a weekend and a forwarded email, short enough that a
-  # token which leaks a month later is already dead.
   @validity_days 7
 
   schema "invitations" do

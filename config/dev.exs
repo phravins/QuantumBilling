@@ -1,10 +1,6 @@
 import Config
 
-# Configure your database.
-#
-# Credentials and the database name live in config/runtime.exs, which reads
-# them from the environment (and from .env if present). Only the non-secret
-# development conveniences stay here.
+# Configure your database. Credentials live in config/runtime.exs.
 config :quantum_billing, QuantumBilling.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,

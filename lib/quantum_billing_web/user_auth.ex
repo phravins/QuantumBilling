@@ -9,8 +9,7 @@ defmodule QuantumBillingWeb.UserAuth do
 
   @owner_only_message "That area is limited to account owners."
 
-  # Make the remember me cookie valid for 14 days. This should match
-  # the session validity setting in UserToken.
+  # Should match the session validity in UserToken.
   @max_cookie_age_in_days 14
   @remember_me_cookie "_quantum_billing_web_user_remember_me"
   @remember_me_options [
@@ -19,13 +18,7 @@ defmodule QuantumBillingWeb.UserAuth do
     same_site: "Lax"
   ]
 
-  # How old the session token should be before a new one is issued. When a request is made
-  # with a session token older than this value, then a new session token will be created
-  # and the session and remember-me cookies (if set) will be updated with the new token.
-  # Lowering this value will result in more tokens being created by active users. Increasing
-  # it will result in less time before a session token expires for a user to get issued a new
-  # token. This can be set to a value greater than `@max_cookie_age_in_days` to disable
-  # the reissuing of tokens completely.
+  # Tokens older than this are reissued.
   @session_reissue_age_in_days 7
 
   @doc """
@@ -113,10 +106,7 @@ defmodule QuantumBillingWeb.UserAuth do
     conn
     |> renew_session(nil)
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
-    # Straight to the sign-in page, not to `/`. The root is a protected route,
-    # so going there on the way out meant every sign-out bounced off
-    # `require_authenticated_user/2` and stacked a red "You must log in" on top
-    # of the goodbye message.
+    # To the sign-in page: / is protected and would add a "must log in" flash.
     |> redirect(to: ~p"/users/log-in")
   end
 
@@ -161,14 +151,8 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # This function is the one responsible for creating session tokens
-  # and storing them safely in the session and cookies. It may be called
-  # either when logging in, during sudo mode, or to renew a session which
-  # will soon expire.
-  #
-  # When the session is created, rather than extended, the renew_session
-  # function will clear the session to avoid fixation attacks. See the
-  # renew_session function to customize this behaviour.
+  # Called on login, in sudo mode, or to renew a session.
+  # A new session is cleared first to prevent fixation.
   defp create_or_extend_session(conn, user, params) do
     token = Accounts.generate_user_session_token(user)
     remember_me = get_session(conn, :user_remember_me)
@@ -266,20 +250,14 @@ defmodule QuantumBillingWeb.UserAuth do
 
     cond do
       session_expired?(session) ->
-        # A tab that has been open and idle past the organisation's inactivity
-        # window. The plug cannot see it — no HTTP request has been made — so
-        # without this check a long-lived LiveView outlives the policy it is
-        # supposed to obey.
+        # An idle tab makes no HTTP request, so the plug cannot expire it.
         socket =
           socket
           |> Phoenix.LiveView.put_flash(
             :error,
             "Your session has expired due to inactivity. Please log in again."
           )
-          # Sent to the sign-in page rather than logged out from here: a
-          # LiveView cannot clear a session cookie. The full page load this
-          # causes goes through `EnforceSecurityPolicies`, which does the
-          # actual sign-out with the same message.
+          # Redirect: a LiveView cannot clear the cookie; EnforceSecurityPolicies signs out.
           |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
         {:halt, socket}
@@ -327,8 +305,7 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # Reads the same session stamp and the same setting the plug does, so the two
-  # cannot disagree about when a session has gone stale.
+  # Same stamp and setting as the plug.
   defp session_expired?(session) do
     with last_activity when is_integer(last_activity) <- session["last_activity_at"],
          minutes when is_integer(minutes) and minutes > 0 <-
@@ -339,13 +316,7 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # The sidebar renders the signed-in user's name, initials and designation from
-  # `current_scope`, and every authenticated page draws that sidebar. Subscribing
-  # here rather than in each LiveView means editing your profile refreshes it in
-  # all of your open windows, with no page having to know about it.
-  #
-  # The `handle_info` hook is attached rather than left to the page: a LiveView
-  # with no matching clause would crash on a message it never asked for.
+  # Profile edits refresh the sidebar in all of the user's windows.
   defp watch_own_account(socket) do
     if Phoenix.LiveView.connected?(socket) do
       Accounts.subscribe_user(socket.assigns.current_scope.user)
@@ -422,10 +393,7 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # Only worth saying when the visitor was after something in particular.
-  # The root is the dashboard, so opening the bare address signed out lands
-  # here too — and being told off for opening the app is not information, it
-  # is noise on the first screen anyone sees.
+  # Only when the visitor asked for a specific page.
   defp maybe_explain_redirect(conn) do
     if current_path(conn) == "/" do
       conn

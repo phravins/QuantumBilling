@@ -41,8 +41,7 @@ defmodule QuantumBillingWeb.HealthController do
       {:error, error} -> {:error, Exception.message(error)}
     end
   rescue
-    # A pool with no free connections raises rather than returning an error
-    # tuple, and that is precisely the state a probe exists to catch.
+    # An exhausted pool raises rather than returning an error.
     error -> {:error, Exception.message(error)}
   catch
     :exit, _reason -> {:error, "database connection unavailable"}

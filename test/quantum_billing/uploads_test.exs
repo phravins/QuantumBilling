@@ -71,11 +71,8 @@ defmodule QuantumBilling.UploadsTest do
       File.write!(svg_path, ~s[<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>])
       on_exit(fn -> File.rm(svg_path) end)
 
-      # SVG was accepted, filtered by regexes for `<script`, `on…=` handlers
-      # and `javascript:` URLs. A blocklist over SVG does not hold — see the
-      # bypasses listed in `QuantumBilling.Uploads` — and an upload here is
-      # served from this application's own origin, so a script that gets
-      # through runs with the application's privileges.
+      # SVG is refused outright: a blocklist over SVG does not hold, and uploads are
+      # served from the application's own origin.
       assert {:error, message} = Uploads.store(svg_path, "image/svg+xml")
       assert message =~ "PNG, JPEG, GIF or WebP"
       refute message =~ "SVG"
@@ -104,10 +101,8 @@ defmodule QuantumBilling.UploadsTest do
     end
 
     test "refuses a file whose bytes are not the type it claims to be" do
-      # The content type comes from the browser and decides both the stored
-      # extension and the served `Content-Type`. Without this, a file could be
-      # stored as `.png`, served as `image/png`, and be something else
-      # entirely.
+      # The browser's content type sets the stored extension and the served
+      # Content-Type, so it must match the bytes.
       path = Path.join(System.tmp_dir!(), "liar-#{System.unique_integer([:positive])}.png")
       File.write!(path, ~s[<svg><script>alert(1)</script></svg>])
       on_exit(fn -> File.rm(path) end)

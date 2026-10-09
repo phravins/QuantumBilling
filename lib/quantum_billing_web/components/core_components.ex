@@ -58,11 +58,7 @@ defmodule QuantumBillingWeb.CoreComponents do
     assigns =
       assigns
       |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
-      # The dismissal key has to be the plain flash string, never the rendered
-      # slot. The connection toasts pass markup as their body, and markup in an
-      # attribute breaks out of the quotes and takes the rest of the tag with
-      # it — `hidden` and `class` included, which left them unhidden, unstyled
-      # and sitting in the page flow.
+      # The plain flash string, never the rendered slot: markup breaks out of the attribute.
       |> assign(:dismiss_key, Phoenix.Flash.get(assigns.flash, assigns.kind))
 
     ~H"""
@@ -135,8 +131,6 @@ defmodule QuantumBillingWeb.CoreComponents do
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    # Heights and type match SharedComponents.action_button_class/0 so daisyUI's
-    # own `.btn` sizing never introduces a second button height in the app.
     variants = %{
       "primary" => "btn-primary",
       nil => "btn-primary btn-soft"
@@ -320,7 +314,6 @@ defmodule QuantumBillingWeb.CoreComponents do
     """
   end
 
-  # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
     <div class="fieldset mb-2">
@@ -344,9 +337,6 @@ defmodule QuantumBillingWeb.CoreComponents do
     """
   end
 
-  # Helper used by inputs to generate form errors
-  # Matches the error `SharedComponents.field/1` renders. They sat at different
-  # sizes, so which style you got depended on which component drew the field.
   defp error(assigns) do
     ~H"""
     <p class="mt-1 flex items-center gap-1 text-2xs text-error">
@@ -532,16 +522,7 @@ defmodule QuantumBillingWeb.CoreComponents do
   Translates an error message using gettext.
   """
   def translate_error({msg, opts}) do
-    # When using gettext, we typically pass the strings we want
-    # to translate as a static argument:
-    #
-    #     # Translate the number of files with plural rules
-    #     dngettext("errors", "1 file", "%{count} files", count)
-    #
-    # However the error messages in our forms and APIs are generated
-    # dynamically, so we need to translate them by calling Gettext
-    # with our gettext backend as first argument. Translations are
-    # available in the errors.po file (as we use the "errors" domain).
+    # Messages are dynamic, so translate through the backend ("errors" domain).
     if count = opts[:count] do
       Gettext.dngettext(QuantumBillingWeb.Gettext, "errors", msg, msg, count, opts)
     else

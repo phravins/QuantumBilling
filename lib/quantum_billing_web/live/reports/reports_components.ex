@@ -60,12 +60,8 @@ defmodule QuantumBillingWeb.ReportsComponents do
     """
   end
 
-  # Rounds the axis up to a readable maximum divisible by four, so the five
-  # gridline labels land on round numbers.
-  #
-  # The ladder is deliberately fine-grained. A coarse one (1/2/5/10 only) forces
-  # a value of 21L onto a 40L axis, leaving the plot using half its height; the
-  # intermediate steps keep the line filling the box.
+  # Rounds the axis up to a maximum divisible by four. The fine ladder keeps the line
+  # filling the plot.
   @step_multipliers [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
 
   defp nice_max(max) when max <= 0, do: 4

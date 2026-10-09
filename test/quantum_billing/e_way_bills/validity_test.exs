@@ -4,10 +4,7 @@ defmodule QuantumBilling.EWayBills.ValidityTest do
   alias QuantumBilling.EWayBills.Validity
 
   describe "days/2" do
-    # Rule 138(10): one day per 200 km "or part thereof". The two sums this
-    # replaced gave a day per 100 km on the portal path and a day per 100 km
-    # plus one in the sandbox, so the same consignment expired on different
-    # days depending on which path issued it.
+    # Rule 138(10): one day per 200 km "or part thereof".
     test "one day per 200 km, or part of one" do
       assert Validity.days(1) == 1
       assert Validity.days(200) == 1

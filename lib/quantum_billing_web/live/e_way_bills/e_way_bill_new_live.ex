@@ -105,8 +105,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
-  # The portal issues the number, so this goes through the same context call
-  # the invoice page uses rather than minting one locally.
   defp generate(socket, invoice, form, changeset) do
     case EWayBills.generate_e_way_bill(invoice, transport_params(form)) do
       {:ok, bill} ->
@@ -126,9 +124,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
-  # A cancelled bill does not block a new one: Rule 138(9) exists so a fresh
-  # bill can be raised against the same document, which is why this asks for
-  # the *live* bill rather than for any bill.
+  # Only the live bill blocks a new one; Rule 138(9) allows reissue after cancelling.
   defp fetch_document(%EWayBillForm{document_no: document_no}) do
     case Invoices.get_invoice_by_number(String.trim(document_no || "")) do
       nil ->
@@ -142,8 +138,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
-  # The keys `NICClient` reads off the params, so what the form collected is
-  # what the portal is asked for.
   defp transport_params(%EWayBillForm{} = form) do
     %{
       "distance_km" => form.distance_km,
@@ -175,9 +169,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     assign(socket, :invoice_options, options)
   end
 
-  # Everything the portal needs that the invoice already knows. A state the
-  # e-way bill vocabulary does not recognise is dropped rather than prefilled
-  # into a field that would then refuse to validate.
+  # Unrecognised states are dropped rather than prefilled.
   defp prefill(invoice) do
     organization = Settings.get_organization()
 
@@ -199,10 +191,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       sgst_value: invoice.sgst_amount,
       igst_value: invoice.igst_amount,
       other_amount: invoice.cess_amount,
-      # Transport details belong to the bill, not the document, so there is
-      # nothing on the invoice to prefill them from. The organisation's saved
-      # defaults are the next best thing and are what the settings screen
-      # offers them for.
+      # Transport details come from the organisation's saved defaults.
       transport_mode: organization_field(organization, :ewb_transport_mode) || "Road",
       transporter_name: nil,
       transporter_id: organization_field(organization, :ewb_transporter_id),
@@ -224,7 +213,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     if state in EWayBillForm.states(), do: state, else: nil
   end
 
-  # "Maharashtra (27)" is a state, not a place; the place field wants the town.
   defp state_name(nil), do: nil
   defp state_name(state), do: state |> String.replace(~r/\s*\(\d+\)$/, "") |> String.trim()
 
@@ -268,9 +256,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
 
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div class="space-y-4 lg:col-span-2">
-          <%!-- A bill is raised against a document. Picking the invoice here
-          fills in the parties, the amounts and the transport details it
-          already knows, and is what the submission is matched back to. --%>
           <.card class="p-4">
             <form id="ewb-load-invoice" phx-change="load_invoice">
               <.input
@@ -575,8 +560,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     |> assign(:validity, validity(summary.distance_km))
   end
 
-  # The same Rule 138(10) sum the issued bill will be dated by, shown while
-  # the distance is still being typed.
   defp validity(nil), do: nil
 
   defp validity(distance_km) do

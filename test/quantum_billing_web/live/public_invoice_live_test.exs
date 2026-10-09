@@ -44,9 +44,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
         grand_total: 11_800
       })
 
-    # The page used to link at `/invoices/:id/pdf`, which lives behind
-    # authentication — so a customer clicking "Download PDF" landed on a login
-    # screen for an application they have no account on.
+    # The public PDF route, not the authenticated `/invoices/:id/pdf`.
     conn = get(conn, ~p"/pay/#{invoice.public_token}/pdf")
 
     assert conn.status == 200

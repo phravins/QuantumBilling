@@ -49,6 +49,12 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
       {:error, :invalid_email} ->
         {:noreply, put_flash(socket, :error, "Enter an email address to invite.")}
 
+      {:error, {:delivery_failed, message}} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "The invitation email could not be sent: #{message}")
+         |> load_team()}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "That invitation could not be sent.")}
     end

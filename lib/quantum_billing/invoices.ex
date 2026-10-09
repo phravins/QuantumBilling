@@ -44,10 +44,7 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
-  # The list page's sortable columns, and the database column each one means.
-  # An allowlist rather than a lookup: the sort field arrives from a click in
-  # the browser, and turning user input into a column name — or into an atom —
-  # is how an ordering control becomes an injection point.
+  # Allowlisted: the sort field comes from the browser.
   @sortable %{
     seq: :id,
     number: :invoice_number,
@@ -245,19 +242,13 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # Credit and debit notes raised against invoices that are still owed.
-  #
-  # Joined to the invoice rather than summed on their own: a note against an
-  # invoice already paid or cancelled has nothing left to reduce, and counting
-  # it would push the receivable figure below what is genuinely owed.
+  # Notes against invoices still owed; a paid or cancelled invoice has nothing left to reduce.
   defp note_adjustments do
     totals =
       CreditNote
       |> join(:inner, [n], i in Invoice, on: i.id == n.invoice_id)
       |> where([n], n.status != "Cancelled")
       |> where([_n, i], i.status not in ["Paid", "Cancelled"])
-      # A note against a binned invoice adjusts a receivable that is no longer
-      # being counted, so it goes with it.
       |> where([_n, i], is_nil(i.deleted_at))
       |> select([n], %{
         credits: coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0),
@@ -392,22 +383,8 @@ defmodule QuantumBilling.Invoices do
 
   defp client_where(query, nil), do: query
 
-  # Matched on the foreign key *or* on the name of an invoice that has no
-  # foreign key, and deliberately not on the name alone.
-  #
-  # `client_id` is optional: the invoice form's client picker sets it, but
-  # `client_name` is a plain text field that can be filled without ever
-  # touching the picker, and invoices restored from a backup or created through
-  # the API frequently carry a name and nothing else. Keying on the id alone
-  # would show a client with a dozen typed invoices an empty history, which is
-  # worse than showing too much.
-  #
-  # The `is_nil(i.client_id)` guard is what keeps the name match honest.
-  # `clients.name` has no unique index — only `gstin` does — so two clients may
-  # share a name, and without the guard each would claim invoices explicitly
-  # linked to the other. With it, an invoice that names its client is never
-  # reattributed; only the unlinked ones are matched by name, and for those
-  # there is no information to do better with.
+  # Matched on client_id, or by name only for invoices without one.
+  # Client names are not unique, so a linked invoice is never reattributed by name.
   defp client_where(query, %Client{id: id, name: name}) do
     where(query, [i], i.client_id == ^id or (is_nil(i.client_id) and i.client_name == ^name))
   end
@@ -416,9 +393,7 @@ defmodule QuantumBilling.Invoices do
     column = Map.get(@sortable, field, :invoice_date)
     direction = if direction == :asc, do: :asc, else: :desc
 
-    # The id is the tie-breaker. Without it, two invoices sharing a date can
-    # swap places between one page and the next, which shows a row twice and
-    # hides another.
+    # The id breaks ties so paging is stable.
     order_by(query, [i], [{^direction, field(i, ^column)}, {^direction, i.id}])
   end
 
@@ -440,8 +415,6 @@ defmodule QuantumBilling.Invoices do
       invoice_date: invoice.invoice_date,
       due_date: invoice.due_date || invoice.invoice_date,
       amount: invoice.grand_total,
-      # Which taxes the supply attracts, not the document type: an intra-state
-      # supply splits into CGST and SGST, an inter-state one is a single IGST.
       tax_type: if(Invoice.intra_state?(invoice), do: "CGST + SGST", else: "IGST"),
       status: invoice.status
     }
@@ -507,8 +480,6 @@ defmodule QuantumBilling.Invoices do
   @doc "How many invoices are in the Bin."
   def count_deleted_invoices, do: Repo.aggregate(Invoice.binned(), :count, :id)
 
-  # The id arrives from a URL or a click, so anything that is not a whole
-  # number is "no such invoice" rather than a cast error.
   defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do
       {int_id, ""} -> query |> Repo.get(int_id) |> with_items()
@@ -538,21 +509,14 @@ defmodule QuantumBilling.Invoices do
   concurrent saves cannot collide.
   """
   def create_invoice(attrs) do
-    # Outside the transaction on purpose: the lock below can only lock a row
-    # that already exists, and racing to create it *inside* the transaction is
-    # what deadlocks concurrent callers.
+    # Outside the transaction: creating the row inside it deadlocks concurrent callers.
     organization = Settings.ensure_organization() || %Organization{}
 
-    # Read-only, and outside the transaction. Issuing an invoice must not create
-    # a design: two saves racing to insert the first one contend on the partial
-    # unique index over `is_default` and deadlock each other. Seeding belongs to
-    # the screens that are about to write anyway — the settings panel and the
-    # design pad.
+    # Read-only: inserting the first design inside the transaction deadlocks concurrent saves.
     template = resolve_template(attrs)
 
     Multi.new()
-    # Locked for update, so two transactions cannot read the same next number
-    # before either has written its increment.
+    # Locked so two transactions cannot take the same number.
     |> Multi.run(:organization, fn repo, _changes ->
       case repo.one(from o in Organization, order_by: [asc: o.id], limit: 1, lock: "FOR UPDATE") do
         nil -> {:ok, %Organization{}}
@@ -567,10 +531,7 @@ defmodule QuantumBilling.Invoices do
       |> then(&Invoice.changeset(%Invoice{}, &1))
     end)
     |> Multi.run(:advance_number, fn repo, %{organization: organization} ->
-      # A brand new installation has no settings row yet. Insert one rather
-      # than skipping the increment: without somewhere durable to keep the
-      # counter, every invoice would be handed number 1 and the second would
-      # die on the unique index.
+      # A new installation has no settings row; without one every invoice would get number 1.
       organization
       |> Ecto.Changeset.change(%{
         invoice_next_number: (organization.invoice_next_number || 1) + 1
@@ -580,12 +541,8 @@ defmodule QuantumBilling.Invoices do
     |> Repo.transaction()
     |> case do
       {:ok, %{invoice: invoice}} ->
-        # The list, Dashboard and Reports pages already subscribe to this from
-        # the realtime work, so they update without any further wiring.
         broadcast_change(invoice, :invoice_changed)
 
-        # And anything the business has pointed at its own webhook endpoint —
-        # an accounting system, an internal dashboard — hears about it too.
         Webhooks.dispatch("invoice.created", %{
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
@@ -594,10 +551,7 @@ defmodule QuantumBilling.Invoices do
           invoice_date: to_string(invoice.invoice_date)
         })
 
-        # And the bell in the top bar, gated on `notify_invoice_created` — a
-        # switch the settings form has always saved and nothing has ever read.
-        # Unmatched, and its result ignored: the invoice is already in the
-        # table, and failing to write a line about it must not undo it.
+        # Result ignored: a failed notification must not undo the invoice.
         if organization.notify_invoice_created != false do
           Notifications.notify(%{
             kind: "invoice",
@@ -667,8 +621,7 @@ defmodule QuantumBilling.Invoices do
   def queue_einvoice(%Invoice{} = invoice) do
     case %{"invoice_id" => invoice.id} |> EInvoiceWorker.new() |> Oban.insert() do
       {:ok, _job} ->
-        # Deliberately not through `update_invoice/2`: this is a status stamp,
-        # not an edit, and it must not re-take the layout snapshot.
+        # Not via update_invoice/2: a status stamp must not re-take the layout snapshot.
         invoice
         |> Ecto.Changeset.change(%{status: "Pending E-Invoice"})
         |> Repo.update()
@@ -781,8 +734,6 @@ defmodule QuantumBilling.Invoices do
     |> announce(:purge_invoice, opts)
   end
 
-  # Audited and broadcast only when the write happened; the caller gets back
-  # exactly what the repo returned.
   defp announce({:ok, invoice} = result, action, opts) do
     Audit.log_event(action, "Invoice", invoice.id,
       user_id: Keyword.get(opts, :user_id),
@@ -811,8 +762,6 @@ defmodule QuantumBilling.Invoices do
     |> put_attr("company_state", organization.state)
   end
 
-  # The caller may name a template; without one it gets whichever is default at
-  # the moment of issue. Read-only by design — see `create_invoice/1`.
   defp resolve_template(attrs) do
     case template_id_from(attrs) do
       nil -> Templates.default_template()
@@ -820,33 +769,24 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # Freezes the design onto the invoice.
   defp with_layout_snapshot(attrs, %{id: id, layout_xml: xml}, _organization) do
     attrs |> put_attr("template_id", id) |> put_attr("layout_xml", xml)
   end
 
-  # No design exists yet — this installation has never opened the design pad.
-  # The layout is still frozen, so an invoice issued now keeps its document even
-  # if a design is created and edited afterwards. Freezing the XML rather than
-  # creating a template row is what keeps issuing an invoice a read as far as
-  # designs are concerned.
+  # No design exists yet; freeze the default layout so later edits don't change this invoice.
   defp with_layout_snapshot(attrs, nil, _organization) do
     xml = Catalog.classic() |> Layout.to_xml()
 
     attrs |> put_attr("template_id", nil) |> put_attr("layout_xml", xml)
   end
 
-  # Only while it is a draft, and judged by the *stored* status rather than the
-  # incoming params: reading it from params would let a save that also flips the
-  # status re-freeze a document that has already gone out.
+  # Judged by the stored status, not the params, so a sent document is never re-frozen.
   defp refresh_layout(attrs, %Invoice{status: "Draft"}) do
     with_layout_snapshot(attrs, resolve_template(attrs), Settings.get_organization())
   end
 
   defp refresh_layout(attrs, %Invoice{}), do: drop_layout_attrs(attrs)
 
-  # A non-draft must not have its snapshot rewritten even by a caller that sends
-  # the fields explicitly.
   defp drop_layout_attrs(attrs) do
     Enum.reduce(["layout_xml", "template_id"], attrs, fn key, acc ->
       Map.drop(acc, [key, String.to_existing_atom(key)])
@@ -872,9 +812,7 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # The form submits string-keyed params; tests and other callers may pass
-  # atoms. Writing in whichever style the map already uses keeps `cast/3` from
-  # seeing a mix, which it rejects.
+  # Match the map's key style; cast/3 rejects mixed keys.
   defp put_attr(attrs, key, value) do
     if Enum.any?(Map.keys(attrs), &is_atom/1) do
       Map.put(attrs, String.to_existing_atom(key), value)

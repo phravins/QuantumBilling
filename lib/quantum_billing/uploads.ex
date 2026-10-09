@@ -14,20 +14,8 @@ defmodule QuantumBilling.Uploads do
   reimplementing those two, not chasing call sites.
   """
 
-  # Bitmap formats only. Anything else is refused rather than stored and served
-  # back to other people.
-  #
-  # SVG used to be accepted, filtered by a handful of regexes looking for
-  # `<script`, `on…=` handlers and `javascript:` URLs. A blocklist over SVG does
-  # not hold: `<animate attributeName="href" values="javascript:…">`,
-  # `<set attributeName="onload" to="…">`, HTML-entity-encoded handlers and
-  # `<use href="data:image/svg+xml;base64,…">` all walk straight past it. And
-  # an upload here is served from this application's own origin, so a script
-  # that survives runs with the application's privileges — able to read a CSRF
-  # token off a page and act as whoever opened it.
-  #
-  # A logo does not need to be SVG. Keeping a parser-based allowlist current
-  # against SVG bypasses is a standing cost for a format nothing was using.
+  # Bitmap formats only. SVG is refused: a blocklist cannot make it safe to serve
+  # from this origin.
   @content_types %{
     "image/png" => ".png",
     "image/jpeg" => ".jpg",
@@ -69,11 +57,7 @@ defmodule QuantumBilling.Uploads do
     end
   end
 
-  # The declared content type decides the extension and the served
-  # `Content-Type`, and it arrives from the browser. Checking the magic bytes
-  # means a file cannot be stored as `.png` and served as `image/png` while
-  # actually being something else — which is the other half of how an upload
-  # turns into script on this origin.
+  # The magic bytes must match the declared type, which comes from the browser.
   defp validate_content(<<0x89, "PNG\r\n", 0x1A, "\n", _rest::binary>>, "image/png"), do: :ok
   defp validate_content(<<0xFF, 0xD8, 0xFF, _rest::binary>>, "image/jpeg"), do: :ok
   defp validate_content(<<"GIF87a", _rest::binary>>, "image/gif"), do: :ok
@@ -96,8 +80,7 @@ defmodule QuantumBilling.Uploads do
   def delete(nil), do: :ok
 
   def delete("/uploads/" <> name) do
-    # Guard against a stored path being edited into something that escapes the
-    # uploads directory. Names we write never contain a separator.
+    # Refuse a stored path that escapes the uploads directory.
     if String.contains?(name, ["/", "\\", ".."]) do
       {:error, "not a stored upload"}
     else

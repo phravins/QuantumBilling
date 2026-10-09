@@ -150,10 +150,7 @@ defmodule QuantumBilling.EInvoice do
 
   defp status(_invoice), do: nil
 
-  # Not coerced to INV. A bill of supply is issued precisely because no tax is
-  # charged, and an export invoice needs shipping details the schema asks for and
-  # this application does not collect — calling either a tax invoice would be a
-  # misstatement, not a formatting choice.
+  # Not coerced to INV: calling either a tax invoice would misstate it.
   defp document_type(%Invoice{invoice_type: type}) do
     if Payload.type_code(type) do
       nil
@@ -180,8 +177,7 @@ defmodule QuantumBilling.EInvoice do
     ]
   end
 
-  # A buyer without a GSTIN is a B2C supply, which is legitimate — so the GSTIN
-  # is only checked when one is present. The address parts are needed either way.
+  # GSTIN checked only when present; B2C buyers have none.
   defp buyer(%Invoice{} = invoice) do
     [
       unless(present?(invoice.client_name), do: "The client's name is missing."),
@@ -205,15 +201,7 @@ defmodule QuantumBilling.EInvoice do
     end
   end
 
-  # HSN is mandatory in INV-01 and optional on a line item here, so this is the
-  # failure most people will actually hit. The message points at the tool the
-  # application already has for finding one.
-  # Before the `is_list` clause below, which an empty list also matches: a
-  # preloaded invoice with nothing on it arrives here as `[]`, took that
-  # clause, found no lines missing an HSN and reported no problem at all. The
-  # message below was unreachable for every invoice the application could
-  # actually load, and an invoice with no goods or services on it went to the
-  # portal as a valid supply.
+  # Must come before the is_list clause, which [] also matches.
   defp items(%Invoice{items: []}), do: "This invoice has no line items."
 
   defp items(%Invoice{items: items}) when is_list(items) do

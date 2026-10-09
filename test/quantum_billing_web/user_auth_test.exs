@@ -348,9 +348,7 @@ defmodule QuantumBillingWeb.UserAuthTest do
                "You must log in to access this page."
     end
 
-    # Opening the bare address is not an error. The root is the dashboard, so
-    # every signed-out visitor lands here — telling them off for opening the
-    # app is noise on the first screen anyone sees.
+    # The root is the dashboard, so a plain visit gets no flash.
     test "says nothing when the visitor only opened the app root" do
       conn = reject_request_for("/")
 

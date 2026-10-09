@@ -26,11 +26,7 @@ defmodule QuantumBilling.RateLimiter do
     now = System.system_time(:second)
     reset_at = now + window_seconds
 
-    # `update_counter/4` increments in place and inserts the default tuple if
-    # the key is absent, both atomically. The previous read-then-write let two
-    # requests read the same count and write the same increment, so a burst of
-    # parallel attempts — which is precisely what a password-guessing script
-    # sends — counted as one.
+    # Atomic increment, so parallel attempts are all counted.
     count = :ets.update_counter(@table, key, {2, 1}, {key, 0, reset_at})
 
     case :ets.lookup(@table, key) do
@@ -42,8 +38,6 @@ defmodule QuantumBilling.RateLimiter do
         end
 
       _expired_or_swept ->
-        # The window closed. Start a new one at this hit rather than carrying
-        # the old count into it.
         :ets.insert(@table, {key, 1, reset_at})
         {:ok, limit - 1}
     end

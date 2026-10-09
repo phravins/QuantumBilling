@@ -154,8 +154,7 @@ defmodule QuantumBilling.InvoicesPageTest do
           "grand_total" => Decimal.new("4000")
         })
 
-      # An invoice partly credited is partly owed. The figure used to be the
-      # full invoice value however much of it had been credited back.
+      # A partly credited invoice is partly owed.
       assert Invoices.totals().outstanding == 6_000
     end
 

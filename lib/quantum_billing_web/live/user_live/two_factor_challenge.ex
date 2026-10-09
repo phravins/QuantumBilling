@@ -15,9 +15,7 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
 
   @impl true
   def mount(_params, session, socket) do
-    # Only a sign-in already past the password step may see this page. Anything
-    # else is sent back to the start rather than shown a code box that could
-    # never work.
+    # Only reachable after the password step.
     case session["pending_two_factor"] do
       %{"user_id" => _} ->
         {:ok,

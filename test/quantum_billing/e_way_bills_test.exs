@@ -131,9 +131,7 @@ defmodule QuantumBilling.EWayBillsTest do
                EWayBills.cancel_e_way_bill(cancelled, %{"cancellation_reason" => "Duplicate"})
     end
 
-    # Rule 138(9) gives twenty-four hours from generation. Past that the number
-    # stays spent at the portal, and recording a cancellation the portal did
-    # not accept would make this table disagree with the government's.
+    # Rule 138(9): a bill can only be cancelled within 24 hours of generation.
     test "refuses a bill whose twenty-four hours have passed" do
       stale =
         bill_fixture()
@@ -170,10 +168,7 @@ defmodule QuantumBilling.EWayBillsTest do
 
       assert updated.vehicle_number == "KA05CD9876"
 
-      # The first leg is the vehicle the bill was raised with. Nothing records
-      # it while it is the only one, so the first update writes it down before
-      # overwriting it — otherwise the journey would begin at its second
-      # vehicle, which is exactly the history a check post asks for.
+      # The first update records the original vehicle as the first leg.
       assert [first, second] = updated.part_b_updates
       assert first.vehicle_number == "MH04CD5678"
       assert second.vehicle_number == "KA05CD9876"

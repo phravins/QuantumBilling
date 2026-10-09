@@ -42,8 +42,6 @@ defmodule QuantumBillingWeb.BinLive do
   alias QuantumBilling.Templates
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  # The chips, in the order they are drawn. The keys are also the `type` a row
-  # carries, which is what a click sends back.
   @filters [
     {"all", "All"},
     {"invoice", "Invoices"},
@@ -55,9 +53,7 @@ defmodule QuantumBillingWeb.BinLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      # So a record binned, restored or purged in another window shows here
-      # without a reload. Recurring profiles have no topic; they change only
-      # from their own page, and are re-read whenever this one does anything.
+      # Recurring profiles have no topic; they are re-read after each action.
       Invoices.subscribe()
       Clients.subscribe()
       EWayBills.subscribe()
@@ -74,7 +70,6 @@ defmodule QuantumBillingWeb.BinLive do
   end
 
   def handle_event("filter", %{"type" => type}, socket) do
-    # Matched against the page's own list rather than trusted.
     if Enum.any?(@filters, fn {key, _label} -> key == type end) do
       {:noreply, socket |> assign(:filter, type) |> load_entries()}
     else
@@ -107,13 +102,11 @@ defmodule QuantumBillingWeb.BinLive do
     {:noreply, load_entries(socket)}
   end
 
-  # The clients topic also carries new clients, which cannot be in the Bin.
   def handle_info({:client_created, %Client{}}, socket), do: {:noreply, socket}
 
   # ── Actions ───────────────────────────────────────────────────────────────
 
-  # Looked up among the binned records only, so an id for something that is
-  # not in the Bin — or never existed — is simply not found.
+  # Binned records only.
   defp fetch("invoice", id), do: Invoices.get_deleted_invoice(id)
   defp fetch("client", id), do: Clients.get_deleted_client(id)
   defp fetch("e_way_bill", id), do: EWayBills.get_deleted_e_way_bill(id)
@@ -122,7 +115,6 @@ defmodule QuantumBillingWeb.BinLive do
   defp fetch(_unknown_type, _id), do: nil
 
   defp act(socket, nil, _action) do
-    # Most likely restored or purged in another window a moment ago.
     put_flash(socket, :error, "That item is no longer in the Bin.")
   end
 
@@ -182,8 +174,7 @@ defmodule QuantumBillingWeb.BinLive do
       {:ok, %InvoiceTemplate{name: ^old_name}} ->
         {:ok, "Design “#{old_name}” restored."}
 
-      # Its name was taken while it was in the Bin, and saying what it is
-      # called now is the only way anyone would find it again.
+      # Renamed because its name was taken while binned.
       {:ok, %InvoiceTemplate{name: new_name}} ->
         {:ok, "Design “#{old_name}” restored as “#{new_name}”."}
 
@@ -260,13 +251,10 @@ defmodule QuantumBillingWeb.BinLive do
     shown =
       entries
       |> Enum.filter(&(socket.assigns.filter in ["all", &1.type]))
-      # Newest first across every kind, which the separate queries cannot do
-      # between themselves.
       |> Enum.sort_by(& &1.deleted_at, {:desc, DateTime})
 
     socket
-    # Streams cannot be counted, so the numbers the chips and the empty state
-    # need are kept beside the stream rather than read off it.
+    # Streams cannot be counted, so counts are kept beside them.
     |> assign(:counts, counts)
     |> assign(:shown, length(shown))
     |> stream(:entries, shown, reset: true)
@@ -438,8 +426,7 @@ defmodule QuantumBillingWeb.BinLive do
           />
         </div>
 
-        <%!-- Hidden rather than left out while empty: the stream's container
-        has to stay in the page for the rows to have somewhere to arrive. --%>
+        <%!-- Hidden rather than removed: the stream container must stay in the DOM. --%>
         <div class={[@shown == 0 && "hidden"]}>
           <table class="table table-fixed">
             <thead>

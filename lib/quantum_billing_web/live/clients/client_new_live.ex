@@ -37,9 +37,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
     |> assign_form(Clients.change_client(%Client{}))
   end
 
-  # Redirected rather than raised on a missing id: the row menu that leads here
-  # may have been rendered before another window deleted the client, and a 500
-  # is the wrong answer to a stale link.
+  # Redirect on a missing id: the link may be stale.
   defp apply_action(socket, :edit, %{"id" => id}) do
     case Clients.get_client(id) do
       nil ->

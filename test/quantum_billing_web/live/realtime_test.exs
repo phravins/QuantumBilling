@@ -124,9 +124,7 @@ defmodule QuantumBillingWeb.RealtimeTest do
 
   describe "own profile" do
     test "the sidebar updates on every page the user has open", %{conn: conn, user: user} do
-      # Mounted on the dashboard, which knows nothing about profiles — the
-      # subscription lives in the on_mount hook that every authenticated page
-      # shares.
+      # Subscribed through the shared on_mount hook, so any page receives it.
       {:ok, view, html} = live(conn, ~p"/dashboard")
 
       refute html =~ "Priya Sharma"

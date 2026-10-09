@@ -43,6 +43,28 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
       assert html =~ "already has an account"
     end
 
+    test "says so when the email could not be sent, and lists nothing", %{conn: conn} do
+      # A relay on a closed local port: refused at once, without the network.
+      QuantumBilling.Settings.ensure_organization()
+
+      QuantumBilling.Repo.update_all(QuantumBilling.Settings.Organization,
+        set: [smtp_host: "127.0.0.1", smtp_port: 1, smtp_username: nil, smtp_password: nil]
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/team")
+
+      html =
+        view
+        |> form("#invite-form", %{
+          "invitation" => %{"email" => "new@example.com", "role" => "staff"}
+        })
+        |> render_submit()
+
+      assert html =~ "could not be sent"
+      refute html =~ "Invitation sent"
+      assert Accounts.list_invitations() == []
+    end
+
     test "re-inviting replaces the pending invitation rather than adding a second" do
       owner = owner_fixture()
 

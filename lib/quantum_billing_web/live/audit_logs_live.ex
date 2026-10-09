@@ -31,8 +31,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> load_page()}
   end
 
-  # Only the first page shows live arrivals: an event appearing at the top of
-  # page four would push everything down by one and change what page five is.
+  # Only the first page shows live arrivals, so later pages don't shift.
   def handle_info({:audit_log_created, _log}, socket) do
     if socket.assigns.page == 1 do
       {:noreply, load_page(socket)}
@@ -175,7 +174,6 @@ defmodule QuantumBillingWeb.AuditLogsLive do
         </div>
       </.card>
 
-      <%!-- Audit Log Detail Modal --%>
       <div
         :if={@selected_log}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
