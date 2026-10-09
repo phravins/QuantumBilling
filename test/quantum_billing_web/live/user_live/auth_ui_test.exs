@@ -13,7 +13,9 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       {:ok, _view, html} = live(conn, ~p"/users/register")
 
       assert html =~ "Create an account"
-      assert html =~ "Enter your details below to create your account"
+      # No accounts exist yet in this sandbox, so the page is in its
+      # first-account state. Registration is invite-only after that.
+      assert html =~ "This installation has no accounts yet"
       assert html =~ ~s(placeholder="Username")
       assert html =~ ~s(placeholder="name@example.com")
       assert html =~ ~s(placeholder="Confirm password")

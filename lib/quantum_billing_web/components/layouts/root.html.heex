@@ -15,7 +15,11 @@
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
 
-    <script>
+    <%!-- Nonced, not 'unsafe-inline': this has to run before the first paint
+    so the page does not flash the wrong theme, and allowing inline script
+    wholesale would allow every injected one too. See
+    QuantumBillingWeb.Plugs.ContentSecurityPolicy. --%>
+    <script nonce={assigns[:csp_nonce]}>
       (() => {
         const systemTheme = () => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 

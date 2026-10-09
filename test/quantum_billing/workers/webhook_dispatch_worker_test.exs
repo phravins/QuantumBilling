@@ -136,6 +136,34 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorkerTest do
     end
   end
 
+  describe "the endpoint is re-checked immediately before sending" do
+    test "a job is discarded when the endpoint now points inside the network" do
+      # Saved as something acceptable, then changed underneath — which is also
+      # what DNS rebinding looks like: the name that passed at save time now
+      # resolves somewhere private. The check at save time cannot catch that;
+      # this one can, because it runs against live DNS right before connecting.
+      Settings.get_organization()
+      |> Ecto.Changeset.change(%{webhook_url: "http://169.254.169.254/latest/meta-data/"})
+      |> Repo.update!()
+
+      Req.Test.stub(__MODULE__, fn _conn ->
+        flunk("a request was sent to the metadata address")
+      end)
+
+      assert :discard = run(%{"event" => "invoice.created", "payload" => %{}})
+    end
+
+    test "loopback is refused too" do
+      Settings.get_organization()
+      |> Ecto.Changeset.change(%{webhook_url: "http://127.0.0.1:5432/"})
+      |> Repo.update!()
+
+      Req.Test.stub(__MODULE__, fn _conn -> flunk("a request was sent to loopback") end)
+
+      assert :discard = run(%{"event" => "invoice.created", "payload" => %{}})
+    end
+  end
+
   describe "a job with nothing to deliver to" do
     test "is discarded when the endpoint has been removed since queueing" do
       {:ok, _organization} =

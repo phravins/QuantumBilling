@@ -1,4 +1,4 @@
-# QuantumBilling ⚡
+# QuantumBilling 
 
 > **Next-Generation GST Invoicing, E-Invoicing, and Tax Compliance Software for Indian Businesses.**
 
@@ -6,7 +6,7 @@ QuantumBilling is an all-in-one financial billing and compliance platform design
 
 ---
 
-## 💼 Why Business Owners Choose QuantumBilling
+## Why Business Owners Choose QuantumBilling
 
 Running a business in India requires strict adherence to GST regulations. Mistakes in tax classification, inaccurate calculations, or missed return deadlines lead to hefty penalties, blocked Input Tax Credit (ITC), and strained vendor relationships.
 
@@ -19,7 +19,7 @@ QuantumBilling simplifies the entire process into a seamless, automated workflow
 
 ---
 
-## 🌟 Core Business Features
+## Core Business Features
 
 ### 1. Smart GST Invoicing & Documents
 - **Complete Document Suite**: Create **Tax Invoices**, **Bills of Supply**, **Export Invoices**, **Credit Notes**, and **Debit Notes**.
@@ -66,7 +66,7 @@ QuantumBilling simplifies the entire process into a seamless, automated workflow
 
 ---
 
-## 🚀 How It Works (The Business Workflow)
+## How It Works (The Business Workflow)
 
 ```mermaid
 graph LR
@@ -84,11 +84,11 @@ graph LR
 
 ---
 
-## 🛠️ Getting Started & Technical Setup
+## Getting Started & Technical Setup
 
 For technical documentation, local environment setup, and deployment guides, please see:
 
-- 📖 **[Local Running & Setup Guide (RUN.md)](file:///d:/QUANTUM_BILLING/QuantumBilling/RUN.md)** — Step-by-step instructions for running via **Docker Compose** or native **Elixir & PostgreSQL**.
+- **[Local Running & Setup Guide (RUN.md)](file:///d:/QUANTUM_BILLING/QuantumBilling/RUN.md)** — Step-by-step instructions for running via **Docker Compose** or native **Elixir & PostgreSQL**.
 
 ### Quick Start with Docker
 ```bash
@@ -98,7 +98,7 @@ Open [http://localhost:4000](http://localhost:4000) in your browser.
 
 ---
 
-## 📜 Technology Stack
+## Technology Stack
 
 - **Backend**: [Elixir](https://elixir-lang.org/) & [Phoenix Framework 1.8](https://phoenixframework.org/) on Erlang/OTP
 - **Real-Time UI**: [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view/) over Phoenix PubSub
@@ -109,7 +109,7 @@ Open [http://localhost:4000](http://localhost:4000) in your browser.
 
 ---
 
-## ⚙️ How It Holds Up Under Load
+## How It Holds Up Under Load
 
 - **The database does the work.** Lists, reports and the audit trail are
   searched, filtered, sorted, counted and paged in SQL, so a page costs the same
@@ -131,6 +131,6 @@ See [RUN.md](RUN.md) for the queue layout, the schedule and the security notes.
 
 ---
 
-## 📄 License & Legal
+## License & Legal
 
 Built for modern Indian commerce. All rights reserved. See [`/terms`](http://localhost:4000/terms) and [`/privacy`](http://localhost:4000/privacy) when running the application.

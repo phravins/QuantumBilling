@@ -24,6 +24,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   import QuantumBillingWeb.SettingsComponents
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
+  alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
@@ -97,14 +98,35 @@ defmodule QuantumBillingWeb.SettingsLive do
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
-    {:noreply,
-     socket
-     |> assign(:section, section)
-     |> assign(:page_title, section(section).title)
-     |> assign_form(section)
-     |> assign_templates(section)
-     |> assign_deliveries(section)}
+    if owner_only?(section) and not Scope.owner?(socket.assigns.current_scope) do
+      # These three panels hold the credentials for other systems — the SMTP
+      # relay, the payment gateway keys, the IRP password, the webhook signing
+      # secret — and the security policy that governs everyone's sessions.
+      # Staff bill; owners administer.
+      {:noreply,
+       socket
+       |> put_flash(:error, "Those settings are limited to account owners.")
+       |> push_patch(to: ~p"/settings/general")}
+    else
+      {:noreply,
+       socket
+       |> assign(:section, section)
+       |> assign(:page_title, section(section).title)
+       |> assign_form(section)
+       |> assign_templates(section)
+       |> assign_deliveries(section)}
+    end
   end
+
+  @owner_only_sections [:smtp, :integrations, :security]
+
+  @doc """
+  Whether a settings section is owner-only.
+
+  Public so the navigation can hide what it would refuse to open, rather than
+  offering a link that bounces.
+  """
+  def owner_only?(section), do: section in @owner_only_sections
 
   # The organisation and the specimen invoice move together.
   #
@@ -416,7 +438,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     "That file is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
   end
 
-  defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF, WebP or SVG image."
+  defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF or WebP image."
   defp upload_message(:too_many_files), do: "One logo at a time."
   defp upload_message(other), do: "That file could not be uploaded (#{inspect(other)})."
 
@@ -953,7 +975,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         </div>
 
         <p class="mt-1 text-2xs text-base-content/45">
-          PNG, JPEG, GIF, WebP or SVG, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
+          PNG, JPEG, GIF or WebP, up to {div(Uploads.max_bytes(), 1_000_000)}MB.
         </p>
 
         <div :for={entry <- @uploads.logo.entries} class="mt-2 flex items-center gap-2 text-xs">

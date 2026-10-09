@@ -7,6 +7,8 @@ defmodule QuantumBillingWeb.UserAuth do
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
 
+  @owner_only_message "That area is limited to account owners."
+
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
   @max_cookie_age_in_days 14
@@ -310,6 +312,21 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_owner, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if Scope.owner?(socket.assigns.current_scope) do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, @owner_only_message)
+        |> Phoenix.LiveView.redirect(to: ~p"/dashboard")
+
+      {:halt, socket}
+    end
+  end
+
   # Reads the same session stamp and the same setting the plug does, so the two
   # cannot disagree about when a session has gone stale.
   defp session_expired?(session) do
@@ -367,6 +384,28 @@ defmodule QuantumBillingWeb.UserAuth do
   end
 
   def signed_in_path(_), do: ~p"/"
+
+  @doc """
+  Plug for routes only an owner may reach.
+
+  Both this and `on_mount(:require_owner, ...)` exist, and both are needed: the
+  plug covers controller routes, and the hook covers LiveViews, which a plug
+  does not protect once the socket connects.
+
+  A staff account is redirected to the dashboard rather than shown a 404. They
+  are legitimately signed in; they just do not administer the installation, and
+  pretending the page does not exist would be a worse answer than saying so.
+  """
+  def require_owner(conn, _opts) do
+    if Scope.owner?(conn.assigns[:current_scope]) do
+      conn
+    else
+      conn
+      |> put_flash(:error, @owner_only_message)
+      |> redirect(to: ~p"/dashboard")
+      |> halt()
+    end
+  end
 
   @doc """
   Plug for routes that require the user to be authenticated.

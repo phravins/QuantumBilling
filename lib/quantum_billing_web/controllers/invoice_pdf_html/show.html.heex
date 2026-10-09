@@ -15,8 +15,13 @@
   <body>
     <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
     <%!-- A raw script rather than a colocated hook: this is a controller-
-    rendered page with no LiveSocket, so there is no hook to colocate onto. --%>
-    <script>
+    rendered page with no LiveSocket, so there is no hook to colocate onto.
+
+    Nonced like the one in the root layout. This page renders with the layout
+    switched off, so it does not inherit that tag — and without the nonce the
+    Content-Security-Policy blocks this, which does not fail loudly: the page
+    renders perfectly and simply never opens the print dialog. --%>
+    <script nonce={@conn.assigns[:csp_nonce]}>
       // Straight into the print dialog, where "Save as PDF" writes the file.
       window.addEventListener("load", () => window.print())
     </script>

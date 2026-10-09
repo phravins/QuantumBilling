@@ -150,14 +150,123 @@ defmodule QuantumBilling.AccountsTest do
     end
 
     test "validates username uniqueness" do
+      # The first account takes the bootstrap slot, so the second needs an
+      # invitation before its username is even looked at.
       user = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
 
       {:error, changeset} =
         Accounts.register_user_with_password(
-          valid_registration_attributes(username: user.username)
+          valid_registration_attributes(username: user.username, email: "invited@example.com"),
+          token
         )
 
       assert "has already been taken" in errors_on(changeset).username
+    end
+
+    test "the first account is the owner, and registration then closes" do
+      assert Accounts.bootstrap?()
+
+      first = registered_user_fixture()
+      assert first.role == "owner"
+
+      refute Accounts.bootstrap?()
+      refute Accounts.registration_open?()
+
+      # An account here is access to the whole of the business's books — there
+      # is no per-user scoping on invoices or clients — so a second one is
+      # granted, never claimed.
+      assert {:error, changeset} =
+               Accounts.register_user_with_password(valid_registration_attributes())
+
+      assert ["Registration on this installation is by invitation." <> _] =
+               errors_on(changeset).email
+    end
+
+    test "an invitation admits exactly one account, for the invited address" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      assert Accounts.registration_open?(token)
+      assert Accounts.invited_email(token) == "invited@example.com"
+
+      assert {:ok, user} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "invited@example.com"),
+                 token
+               )
+
+      assert user.role == "staff"
+
+      # Spent, not reusable.
+      refute Accounts.registration_open?(token)
+
+      assert {:error, _changeset} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "someone@example.com"),
+                 token
+               )
+    end
+
+    test "an expired invitation is refused" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      QuantumBilling.Repo.update_all(QuantumBilling.Accounts.Invitation,
+        set: [
+          expires_at: DateTime.utc_now() |> DateTime.add(-1, :day) |> DateTime.truncate(:second)
+        ]
+      )
+
+      refute Accounts.registration_open?(token)
+
+      assert {:error, changeset} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "invited@example.com"),
+                 token
+               )
+
+      assert ["That invitation link is invalid or has expired."] = errors_on(changeset).email
+    end
+
+    test "a submitted role is ignored — it is granted, not claimed" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      assert {:ok, user} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "invited@example.com", role: "owner"),
+                 token
+               )
+
+      # `role` appears in no `cast/3` list anywhere, so posting it alongside a
+      # username does nothing at all. The invitation decides the role.
+      assert user.role == "staff"
+    end
+
+    test "the last owner cannot be demoted" do
+      owner = registered_user_fixture()
+      assert owner.role == "owner"
+
+      assert {:error, :last_owner} = Accounts.set_role(owner, "staff")
+      assert Accounts.count_owners() == 1
+
+      # With a second owner in place it is allowed.
+      second = user_fixture()
+      {:ok, _} = Accounts.set_role(second, "owner")
+
+      assert {:ok, demoted} = Accounts.set_role(owner, "staff")
+      assert demoted.role == "staff"
+      assert Accounts.count_owners() == 1
+    end
+
+    test "a token that is not a token is refused without reaching the database" do
+      _first = registered_user_fixture()
+
+      for bogus <- ["", "not-base64!!", "YWJj", nil] do
+        refute Accounts.registration_open?(bogus)
+        assert Accounts.invited_email(bogus) == nil
+      end
     end
 
     test "validates the email alongside the password" do

@@ -356,19 +356,22 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
+  # Checked by `Webhooks.UrlGuard`, not just parsed. This is the one address a
+  # user supplies that the *server* then opens a connection to, and accepting
+  # any syntactically valid host meant accepting
+  # `http://169.254.169.254/latest/meta-data/` — the cloud metadata service —
+  # along with loopback and everything else inside the deployment's network.
+  # The worker checks again immediately before sending, because DNS can change
+  # in between.
   defp validate_webhook_url(changeset) do
     case get_field(changeset, :webhook_url) do
       blank when blank in [nil, ""] ->
         changeset
 
       url ->
-        case URI.new(url) do
-          {:ok, %URI{scheme: scheme, host: host}}
-          when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-            changeset
-
-          _invalid ->
-            add_error(changeset, :webhook_url, "must be a full http:// or https:// URL")
+        case QuantumBilling.Webhooks.UrlGuard.check(url) do
+          :ok -> changeset
+          {:error, message} -> add_error(changeset, :webhook_url, message)
         end
     end
   end

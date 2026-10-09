@@ -14,14 +14,25 @@ defmodule QuantumBilling.Uploads do
   reimplementing those two, not chasing call sites.
   """
 
-  # Bitmap formats a browser will render inside an `<img>`, plus SVG. Anything
-  # else is refused rather than stored and served back to other people.
+  # Bitmap formats only. Anything else is refused rather than stored and served
+  # back to other people.
+  #
+  # SVG used to be accepted, filtered by a handful of regexes looking for
+  # `<script`, `on…=` handlers and `javascript:` URLs. A blocklist over SVG does
+  # not hold: `<animate attributeName="href" values="javascript:…">`,
+  # `<set attributeName="onload" to="…">`, HTML-entity-encoded handlers and
+  # `<use href="data:image/svg+xml;base64,…">` all walk straight past it. And
+  # an upload here is served from this application's own origin, so a script
+  # that survives runs with the application's privileges — able to read a CSRF
+  # token off a page and act as whoever opened it.
+  #
+  # A logo does not need to be SVG. Keeping a parser-based allowlist current
+  # against SVG bypasses is a standing cost for a format nothing was using.
   @content_types %{
     "image/png" => ".png",
     "image/jpeg" => ".jpg",
     "image/gif" => ".gif",
-    "image/webp" => ".webp",
-    "image/svg+xml" => ".svg"
+    "image/webp" => ".webp"
   }
 
   @max_bytes 2_000_000
@@ -58,26 +69,22 @@ defmodule QuantumBilling.Uploads do
     end
   end
 
-  defp validate_content(contents, "image/svg+xml") do
-    cond do
-      Regex.match?(~r/<\s*script\b/i, contents) ->
-        {:error, "SVG contains unsafe script elements"}
+  # The declared content type decides the extension and the served
+  # `Content-Type`, and it arrives from the browser. Checking the magic bytes
+  # means a file cannot be stored as `.png` and served as `image/png` while
+  # actually being something else — which is the other half of how an upload
+  # turns into script on this origin.
+  defp validate_content(<<0x89, "PNG\r\n", 0x1A, "\n", _rest::binary>>, "image/png"), do: :ok
+  defp validate_content(<<0xFF, 0xD8, 0xFF, _rest::binary>>, "image/jpeg"), do: :ok
+  defp validate_content(<<"GIF87a", _rest::binary>>, "image/gif"), do: :ok
+  defp validate_content(<<"GIF89a", _rest::binary>>, "image/gif"), do: :ok
 
-      Regex.match?(~r/<\s*foreignObject\b/i, contents) ->
-        {:error, "SVG contains unsafe embedded elements"}
+  defp validate_content(<<"RIFF", _size::binary-size(4), "WEBP", _rest::binary>>, "image/webp"),
+    do: :ok
 
-      Regex.match?(~r/\bon\w+\s*=/i, contents) ->
-        {:error, "SVG contains unsafe event handlers"}
-
-      Regex.match?(~r/\b(href|src)\s*=\s*['"]\s*javascript:/i, contents) ->
-        {:error, "SVG contains unsafe javascript links"}
-
-      true ->
-        :ok
-    end
+  defp validate_content(_contents, type) do
+    {:error, "does not look like a #{type} image"}
   end
-
-  defp validate_content(_contents, _other_type), do: :ok
 
   @doc """
   Removes a previously stored file, given the path `store/2` returned.
@@ -112,7 +119,7 @@ defmodule QuantumBilling.Uploads do
   defp extension_for(content_type) do
     case Map.fetch(@content_types, content_type) do
       {:ok, extension} -> {:ok, extension}
-      :error -> {:error, "must be a PNG, JPEG, GIF, WebP or SVG image"}
+      :error -> {:error, "must be a PNG, JPEG, GIF or WebP image"}
     end
   end
 

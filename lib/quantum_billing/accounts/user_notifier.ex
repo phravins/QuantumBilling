@@ -22,6 +22,39 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   end
 
   @doc """
+  Invites someone to create an account on this installation.
+
+  Says plainly what the account is for and that the link expires, because an
+  invitation to a billing system that explains nothing looks exactly like
+  phishing.
+  """
+  def deliver_invitation(invitation, url) do
+    days = QuantumBilling.Accounts.Invitation.validity_days()
+
+    deliver(invitation.email, "You have been invited to QuantumBilling", """
+
+    ==============================
+
+    Hi #{invitation.email},
+
+    You have been invited to create an account on QuantumBilling, the GST
+    billing and compliance system used by this business.
+
+    Create your account here:
+
+    #{url}
+
+    This link works once and expires in #{days} days. It only works for this
+    email address.
+
+    If you were not expecting this, ignore it — no account is created until
+    someone uses the link.
+
+    ==============================
+    """)
+  end
+
+  @doc """
   Deliver instructions to update a user email.
   """
   def deliver_update_email_instructions(user, url) do

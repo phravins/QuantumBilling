@@ -10,7 +10,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
-  setup :register_and_log_in_user
+  setup :register_and_log_in_owner
 
   # A one-pixel PNG, so an upload test moves real image bytes, with unique
   # trailing bytes per call. Stored files are named by content hash, so two
