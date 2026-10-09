@@ -124,8 +124,7 @@ defmodule QuantumBilling.EInvoiceTest do
       assert text(tree, ["Version"]) == "1.1"
     end
 
-    # The whole point of being honest about what this is. If somebody later adds
-    # a fabricated IRN or an unsigned QR, this is what should stop them.
+    # Guards against a fabricated IRN or an unsigned QR.
     test "carries no IRN, acknowledgement or QR code" do
       names = all_names(tree(invoice()))
 

@@ -63,11 +63,7 @@ defmodule QuantumBilling.Repo.Migrations.CreateOrganizationSettings do
       add :language, :string, null: false, default: "en"
       add :rows_per_page, :integer, null: false, default: 10
 
-      # There is exactly one organisation until tenancy exists. This column is
-      # always true, so a unique index on it permits a single row and makes a
-      # second insert fail loudly instead of silently creating a rival copy of
-      # the settings. A unique index on :id would not do this — the primary key
-      # is already unique, so every row would satisfy it.
+      # Always true; the unique index on it allows a single settings row.
       add :singleton, :boolean, null: false, default: true
 
       timestamps(type: :utc_datetime)

@@ -154,9 +154,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
       class="qb-doc__logo"
       style={"max-height: #{@block.opts.max_height}px; max-width: #{@block.opts.max_width}px"}
     />
-    <%!-- The fallback mark is an inline SVG rather than the application's
-    `hero-*` classes, which are CSS masks from a stylesheet the print page does
-    not load — through those the icon saved to PDF as a blank square. --%>
+    <%!-- Inline SVG: the print page does not load the hero-* mask classes. --%>
     <div :if={is_nil(@logo) and @block.opts.fallback == "mark"} class="qb-doc__brand">
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -402,12 +400,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
   defp align_class(_other), do: nil
 
-  # -- field vocabularies ---------------------------------------------------
-  #
-  # Each of these is exhaustive over the field lists in `InvoiceDoc.Catalog`,
-  # and the parser has already dropped anything outside them. The catch-all
-  # clauses exist so a layout written by a future version renders a blank cell
-  # rather than taking the invoice off the screen.
+  # -- field vocabularies --
+  # Catch-alls render a blank for fields from a newer version.
 
   defp item_value(%{field: "serial"}, _item, index), do: index
   defp item_value(%{field: "description"}, item, _index), do: item.description
@@ -437,7 +431,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp meta_value("status", invoice), do: invoice.status
   defp meta_value(_field, _invoice), do: nil
 
-  # Which tax applies is decided by the supply, not by the template.
   defp visible_totals(%Block{children: lines}, %Invoice{} = invoice) do
     intra_state? = Invoice.intra_state?(invoice)
 
@@ -463,9 +456,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp present?(""), do: false
   defp present?(_value), do: true
 
-  # Line figures carry no space after the rupee sign and totals do. That is the
-  # screen document's existing treatment; the print page disagreed on the line
-  # figures, which is one of the divergences collapsing the two markups fixes.
+  # No space after the rupee sign on line figures; totals have one.
   defp money(nil), do: Format.rupees(0, decimals: 2)
   defp money(amount), do: Format.rupees(amount, decimals: 2)
 end

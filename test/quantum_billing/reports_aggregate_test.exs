@@ -199,9 +199,7 @@ defmodule QuantumBilling.ReportsAggregateTest do
       filters |> Reports.monthly_breakdown(today) |> Enum.map(& &1.label)
     end
 
-    # A month nobody invoiced in is a reading of zero, not a month that did not
-    # happen. Dropping the empty ones made the trend line skip from March
-    # straight to September and draw the gap as a rise.
+    # Empty months read as zero so the trend line has no gaps.
     test "a month with no invoices is still a month" do
       insert_invoice(%{invoice_number: "INV-1", invoice_date: ~D[2026-03-10]})
       insert_invoice(%{invoice_number: "INV-2", invoice_date: ~D[2026-06-10]})
@@ -246,10 +244,7 @@ defmodule QuantumBilling.ReportsAggregateTest do
       assert labels(@all) == ~w(Aug Sep)
     end
 
-    # A bounded range makes months to draw whether or not anything was billed
-    # in them, so an empty period has to be caught before the gap-filling: a
-    # flat zero line reads as a measurement, and the panel should say there is
-    # nothing to measure.
+    # No invoices in a bounded range draws nothing, not a flat zero line.
     test "no invoices at all draws nothing rather than a flat year" do
       assert labels(@all) == []
       assert labels(%{@all | date_range: "This Year"}) == []

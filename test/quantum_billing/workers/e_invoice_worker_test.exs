@@ -121,11 +121,7 @@ defmodule QuantumBilling.Workers.EInvoiceWorkerTest do
     test "refuses an invoice with no line items instead of crashing on it" do
       invoice = bare_invoice()
 
-      # `EInvoice.validate/2` passed this: its items check guarded on
-      # `is_list/1`, which an empty list satisfies, so it found no line missing
-      # an HSN and reported nothing wrong. The invoice then reached the QR
-      # builder, which called `hd([])` and raised `ArgumentError` — inside a
-      # job that retried the same crash five times over half an hour.
+      # An item-less invoice must be refused before the QR builder calls `hd([])`.
       assert {:error, message} = run(%{"invoice_id" => invoice.id})
       assert message =~ "no line items"
 

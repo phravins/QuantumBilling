@@ -210,9 +210,7 @@ defmodule QuantumBilling.Accounts.TwoFactorTest do
       svg = TwoFactor.qr_svg(user)
 
       assert svg =~ "<svg"
-      # Drawn as rects, not fetched: no <image> and no external reference, so
-      # the secret is never handed to a QR service. (The w3.org strings in the
-      # markup are XML namespaces — identifiers, not requests.)
+      # Drawn as rects: the secret is never handed to a QR service.
       refute svg =~ "<image"
       refute svg =~ "xlink:href=\"http"
       # And the secret itself is not sitting in the markup in readable form.

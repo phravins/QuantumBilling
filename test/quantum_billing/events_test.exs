@@ -5,9 +5,7 @@ defmodule QuantumBilling.EventsTest do
 
   describe "topics" do
     test "organisation data is shared, so its topics carry no user" do
-      # Two signed-in users looking at /clients see the same list, so a write by
-      # one has to reach the other. Keying these by user would silently break
-      # that.
+      # Not keyed by user: every signed-in user sees the same list.
       assert Events.clients_topic() == "clients"
       assert Events.invoices_topic() == "invoices"
       assert Events.e_way_bills_topic() == "e_way_bills"

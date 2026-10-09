@@ -121,8 +121,7 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
       assert %{total_goods_value: ["must be greater than 0"]} = errors_on(changeset)
     end
 
-    # The distance is what the validity is computed from, so a bill without one
-    # has no expiry — the form used not to ask for it at all.
+    # The validity is computed from the distance, so it is required.
     test "requires a distance the portal would accept" do
       assert %{distance_km: ["must be greater than 0"]} =
                errors_on(

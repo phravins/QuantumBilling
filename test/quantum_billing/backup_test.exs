@@ -60,8 +60,6 @@ defmodule QuantumBilling.BackupTest do
       client = client_fixture()
       invoice_fixture(client)
 
-      # The previous exporter handed structs to Jason, which raises on
-      # `__meta__` — so the download button returned a 500 every time.
       json = Backup.export_json()
       data = Jason.decode!(json)
 
@@ -132,8 +130,6 @@ defmodule QuantumBilling.BackupTest do
       assert counts.invoices == 1
       assert counts.invoice_items == 1
 
-      # The previous restore deleted invoices and re-inserted only clients, so
-      # restoring a backup destroyed the invoices it was meant to bring back.
       [restored] = Invoices.list_invoices()
       assert restored.number == invoice.invoice_number
 
@@ -186,9 +182,7 @@ defmodule QuantumBilling.BackupTest do
       assert Recurring.due_profiles() == []
     end
 
-    # The same for the two kinds that reached the Bin later. A restore that
-    # dropped `deleted_at` here would put a deleted customer back in every
-    # picker, and have a deleted e-way bill claim its invoice again.
+    # The same for clients and e-way bills in the Bin.
     test "a client and an e-way bill that were in the Bin are still in it afterwards" do
       kept = client_fixture()
 
@@ -288,9 +282,7 @@ defmodule QuantumBilling.BackupTest do
       client = client_fixture()
       invoice = invoice_fixture(client)
 
-      # What a 2.0 export looked like: the bill lived on the invoice, in eight
-      # columns that no longer exist on the schema. Users still hold these
-      # files, so refusing them would destroy working backups.
+      # A 2.0 export kept the bill on the invoice; users still hold these files.
       legacy =
         Backup.export_json()
         |> Jason.decode!()
@@ -384,10 +376,7 @@ defmodule QuantumBilling.BackupTest do
 
       chunks = Enum.reverse(chunks)
 
-      # The whole point of the rework: the download starts on the first chunk
-      # and the file is never assembled in memory. `export_json/0` at fifty
-      # thousand invoices held a hundred megabytes of binary at once and took
-      # thirty-six seconds before the browser saw a byte.
+      # Streamed: the download starts on the first chunk and is never held in memory whole.
       assert length(chunks) > 25
       assert hd(chunks) =~ ~s("version":"2.1")
 
@@ -413,9 +402,7 @@ defmodule QuantumBilling.BackupTest do
   describe "restore_json/1 at volume" do
     test "inserts in batches rather than one statement per section" do
       client = client_fixture()
-      # Postgres refuses a statement with more than 65,535 parameters, so a
-      # single `insert_all` over a real backup's invoices fails outright. These
-      # are few enough to be quick and many enough to cross a batch boundary.
+      # Enough rows to cross an insert_all batch boundary (Postgres caps parameters at 65,535).
       for _ <- 1..120, do: invoice_fixture(client)
 
       json = Backup.export_json()

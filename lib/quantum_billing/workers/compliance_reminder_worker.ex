@@ -75,9 +75,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
     written
   end
 
-  # `{:ok, :duplicate}` from a day this obligation was already announced is a
-  # success, not a failure — it is the whole point of the dedupe key — so it is
-  # simply not counted.
+  # {:ok, :duplicate} is not counted.
   defp announce(obligation) do
     Notifications.notify(%{
       kind: "compliance",
@@ -105,7 +103,6 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
     "#{obligation.type} for #{obligation.period_label} is due in #{obligation.days_until} days"
   end
 
-  # An explicit date in the job args, so a test does not have to travel in time.
   defp today(%{"today" => date}) when is_binary(date) do
     case Date.from_iso8601(date) do
       {:ok, parsed} -> parsed

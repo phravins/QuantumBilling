@@ -36,16 +36,10 @@ defmodule QuantumBillingWeb.DashboardLive do
     {:noreply, assign(socket, :qr_modal_invoice, nil)}
   end
 
-  # Every panel is derived from the invoice set, so a change to it rebuilds all
-  # of them together rather than leaving the cards and the charts disagreeing.
   def handle_info({:invoice_changed, _invoice}, socket) do
     {:noreply, assign_dashboard(socket)}
   end
 
-  # Counts come from aggregate queries and the table from a limited one. The
-  # dashboard used to load every invoice in the database in order to count them
-  # and show five, on every page load and on every change anywhere in the
-  # application.
   defp assign_dashboard(socket) do
     today = Date.utc_today()
     totals = Invoices.totals()
@@ -97,9 +91,6 @@ defmodule QuantumBillingWeb.DashboardLive do
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <%!-- A column, so the plot takes the height the card actually has.
-        With a fixed-height chart the card stretched to its neighbour and the
-        difference showed as dead space under the axis. --%>
         <.card class="flex flex-col lg:col-span-2">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
@@ -151,10 +142,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <%!-- `grow`, not `flex-1`: flex-1 zeroes the basis, which lets a tall
-      table be squashed. This only takes height that is going spare, which is
-      the whole point — the panels reach the bottom of the window instead of
-      leaving a band of empty page under them. --%>
+      <%!-- grow, not flex-1: flex-1 zeroes the basis and would let a tall table shrink. --%>
       <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
           <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
@@ -234,7 +222,6 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <%!-- Dashboard Quick Invoice QR Modal --%>
       <div
         :if={@qr_modal_invoice}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -298,10 +285,6 @@ defmodule QuantumBillingWeb.DashboardLive do
     """
   end
 
-  # Every card is a figure this system actually holds. They used to be three
-  # hardcoded zeros and a count, which is indistinguishable from a business
-  # that has issued nothing — and stayed that way no matter how much was
-  # invoiced.
   defp stats(totals, month, obligations) do
     pending_returns =
       Enum.count(obligations, &(&1.status in ["Pending", "Overdue"] and &1.category == :returns))
@@ -349,16 +332,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     ]
   end
 
-  # Six months of zeros is not a chart, it is an empty state — and drawing one
-  # makes a business that has issued nothing look like one whose invoices went
-  # missing.
+  # All zeros is an empty state, not a chart.
   defp billed_months(months) do
     if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
   end
 
-  # Two series over one x-axis. Split rather than summed because the whole
-  # point of the panel is which half of the tax the month was: an intra-state
-  # month and an inter-state month of the same size are different facts.
   defp chart_series(months) do
     [
       %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
@@ -366,14 +344,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     ]
   end
 
-  # Five labels, top gridline down, matching the five rules the chart draws.
   defp chart_axis(max) do
     Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i) end)
   end
 
-  # The chart scales against the tallest reading, rounded up so the gridlines
-  # land on round numbers. A fixed ceiling made every real invoice overflow the
-  # box.
+  # Rounded up so gridlines land on round numbers.
   defp chart_max(months) do
     tallest =
       months
@@ -390,8 +365,6 @@ defmodule QuantumBillingWeb.DashboardLive do
     end
   end
 
-  # Real counts, in a fixed order so the ring's colours stay stable, with empty
-  # statuses dropped.
   defp donut_segments(status_counts) do
     [
       %{
@@ -400,16 +373,13 @@ defmodule QuantumBillingWeb.DashboardLive do
         tone: :strong
       },
       %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
-      # `:positive`, not `:soft` — under the colour palette `:soft` is the red
-      # that marks a failed e-invoice, and a paid invoice is the opposite.
+      # :positive, not :soft, which is the failure red.
       %{label: "Paid", value: status_counts["Paid"] || 0, tone: :positive},
       %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
     ]
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # The next statutory deadlines, from the same calendar the Compliance page
-  # shows — so the dashboard and that page cannot disagree about what is due.
   defp compliance_items(obligations, today) do
     obligations
     |> Compliance.upcoming(today, 4)

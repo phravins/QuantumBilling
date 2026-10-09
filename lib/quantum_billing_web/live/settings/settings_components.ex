@@ -19,9 +19,7 @@ defmodule QuantumBillingWeb.SettingsComponents do
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
 
-  # `short_title` is what the sidebar shows. The sidebar is only 12rem wide and
-  # already says "Settings" above these, so the suffix is both redundant and too
-  # long to fit.
+  # short_title fits the narrow sidebar.
   @sections [
     %{
       key: :general,

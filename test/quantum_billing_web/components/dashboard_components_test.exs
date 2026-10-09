@@ -17,9 +17,7 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
   end
 
   describe "donut_chart/1 palette" do
-    # `palette` is opt-in: a caller that does not ask for colour gets the
-    # monochrome ramp. The dashboard and Reports both pass `:color` now, but
-    # the default is what every other caller inherits, so it is pinned here.
+    # `palette` is opt-in; the default is monochrome.
     test "defaults to monochrome" do
       html = donut(segments: @segments, total: 14)
 
@@ -81,10 +79,7 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
       |> Enum.take_every(2)
     end
 
-    # The reason the plotter is monotone rather than Catmull-Rom. Around a
-    # spike, Catmull-Rom overshoots: the line dipped below the axis between two
-    # positive months and bulged over the top gridline after a quiet one,
-    # drawing revenue that was never invoiced.
+    # Monotone, not Catmull-Rom, which overshoots around spikes.
     test "never leaves the plot box, however spiky the readings" do
       for values <- [
             [0, 5, 4, 90, 3, 3, 40, 0],
@@ -106,12 +101,8 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
              "a level series wobbled: #{inspect(ys)}"
     end
 
-    # The draw-in used to be a dash: `stroke-dasharray: 1` over
-    # `pathLength="1"`. Chrome ignores pathLength once `non-scaling-stroke` is
-    # set and measures the dash in screen pixels instead, so the far end of a
-    # wide chart stayed inside the gap and the trend line stopped short of its
-    # last reading — on the finished chart, not only mid-animation. A clip that
-    # sweeps across has no length to normalise, so it cannot do that.
+    # A sweeping clip, not a dash: Chrome ignores pathLength with
+    # non-scaling-stroke, so a dash stopped the line short.
     test "draws itself in with a clip, never a dash" do
       html = chart([1, 2, 3])
 
@@ -122,9 +113,7 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
       refute html =~ "stroke-dasharray"
     end
 
-    # Every x the path visits. The readings sit on the frame at both ends
-    # rather than inset from it, so the curve fills the plot instead of
-    # leaving a dead margin down each side.
+    # The readings sit on the frame at both ends.
     defp path_xs(html) do
       [_all, d] = Regex.run(~r/class="qb-chart-line[^"]*"\s+d="([^"]+)"/, html)
 
@@ -143,10 +132,7 @@ defmodule QuantumBillingWeb.DashboardComponentsTest do
       assert Enum.max(xs) == 100.0
     end
 
-    # The labels used to be a row of equal cells, which puts a cell centre
-    # under each point only when the points are inset. They are positioned
-    # off the same fractions as the curve now, and the two ends pin their
-    # own outer edge so neither hangs off the card.
+    # Labels are positioned off the same fractions as the curve.
     test "labels sit under the points they name" do
       html = chart([10, 40, 20])
 

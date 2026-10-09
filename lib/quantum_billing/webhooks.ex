@@ -47,9 +47,7 @@ defmodule QuantumBilling.Webhooks do
       })
 
     case Repo.insert(changeset, on_conflict: :nothing, conflict_target: [:provider, :event_id]) do
-      # `on_conflict: :nothing` returns a struct with no id when the row was
-      # already there — that is the duplicate, and the existing row is what the
-      # caller wants to see.
+      # A struct with no id means the row already existed.
       {:ok, %WebhookEvent{id: nil}} ->
         {:duplicate, get_event(provider, event_id)}
 

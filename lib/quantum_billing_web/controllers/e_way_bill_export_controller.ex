@@ -79,14 +79,11 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     Calendar.strftime(valid_until, "%d/%m/%Y %H:%M")
   end
 
-  # Plain numbers, not the ₹-prefixed display strings: a spreadsheet has to be
-  # able to sum this column.
+  # Plain numbers so a spreadsheet can sum them.
   defp amount(nil), do: ""
   defp amount(%Decimal{} = value), do: Decimal.to_string(Decimal.round(value, 2), :normal)
   defp amount(value), do: :erlang.float_to_binary(value * 1.0, decimals: 2)
 
-  # A dependency-free writer, copied in intent from `ReportsController`: a
-  # client name containing a comma must not shift every following column.
   defp to_csv(headers, rows) do
     Enum.map_join([headers | rows], "", &csv_line/1)
   end

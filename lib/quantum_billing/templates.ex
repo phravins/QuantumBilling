@@ -307,9 +307,6 @@ defmodule QuantumBilling.Templates do
     end
   end
 
-  # The stock layout. An installation that had customised its invoices before
-  # designs existed had those settings captured into a template by the migration
-  # that dropped the columns, so there is nothing left here to carry across.
   defp seed_default do
     %InvoiceTemplate{}
     |> InvoiceTemplate.changeset(%{
@@ -320,19 +317,13 @@ defmodule QuantumBilling.Templates do
     })
     |> Repo.insert(on_conflict: :nothing)
 
-    # Re-read rather than trusting the insert: on a conflict it comes back
-    # without an id, because the row that exists belongs to whoever won the
-    # race. Same reasoning as `Settings.ensure_organization/0`.
+    # Re-read: on a conflict the insert comes back without an id.
     default_template() || Repo.one(from t in InvoiceTemplate, order_by: [asc: t.id], limit: 1)
   end
 
   defp referenced?(%InvoiceTemplate{id: nil}), do: false
 
-  # Phase 3 adds `invoices.template_id`. Until the column exists there is
-  # nothing that can point at a template, so nothing to preserve.
-  #
-  # Deliberately not `Invoice.kept/1`: an invoice in the Bin can be restored,
-  # and it has to find its design still there when it is.
+  # Includes binned invoices, which can be restored and need their design.
   defp referenced?(%InvoiceTemplate{} = template) do
     if :template_id in Invoice.__schema__(:fields) do
       Repo.exists?(from i in Invoice, where: i.template_id == ^template.id)
@@ -349,8 +340,7 @@ defmodule QuantumBilling.Templates do
     free_name([name, "#{name} (restored)" | Enum.map(2..50, &"#{name} (restored #{&1})")], name)
   end
 
-  # The first candidate no live template is using. Archived names are not in
-  # the way: the unique index on `name` only covers templates that are live.
+  # Archived names don't count: the unique index covers live templates only.
   defp free_name(candidates, name) do
     taken = Repo.all(from t in InvoiceTemplate, where: is_nil(t.archived_at), select: t.name)
 
@@ -365,9 +355,7 @@ defmodule QuantumBilling.Templates do
   defp presence(""), do: nil
   defp presence(value), do: value
 
-  # Broadcast from, not to: the window that saved has already re-rendered with
-  # its own result, and handling its own echo would rebuild the canvas it is
-  # still working in.
+  # Broadcast from the saving window, which has already re-rendered.
   defp broadcast({:ok, %InvoiceTemplate{} = template} = result) do
     Events.broadcast_from(Events.invoice_templates_topic(), {:invoice_template_changed, template})
     result

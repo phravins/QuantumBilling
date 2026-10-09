@@ -63,15 +63,7 @@ defmodule QuantumBillingWeb.SettingsLive do
      )}
   end
 
-  # Settings saved in another window. `update_section/3` broadcasts *from* the
-  # saver, so this only ever reaches other windows — the one that saved keeps
-  # the form it is sitting in.
-  #
-  # The struct in the message is deliberately ignored and the row re-read. A
-  # broadcast is a signal that something changed, not a value to trust: the
-  # payload was loaded by a different process, on a different connection, and
-  # adopting it wholesale hands this page a record it never read itself. The
-  # clients list takes the same approach for the same reason.
+  # Only other windows get this. Re-read rather than trusting the payload.
   def handle_info({:settings_updated, _organization}, socket) do
     {:noreply,
      socket
@@ -79,14 +71,10 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign_form(socket.assigns.section)}
   end
 
-  # A template edited in the pad, or in another window. Same reasoning as the
-  # settings broadcast: re-read rather than adopt the payload.
   def handle_info({:invoice_template_changed, _template}, socket) do
     {:noreply, assign_templates(socket)}
   end
 
-  # A message going out while the SMTP panel is open. The panel is the one
-  # place that shows delivery state, so nothing else needs rebuilding.
   def handle_info({:email_delivery_changed, _delivery}, socket) do
     if socket.assigns[:section] == :smtp do
       {:noreply, assign_deliveries(socket)}
@@ -99,10 +87,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     section = section_from(params["section"])
 
     if owner_only?(section) and not Scope.owner?(socket.assigns.current_scope) do
-      # These three panels hold the credentials for other systems — the SMTP
-      # relay, the payment gateway keys, the IRP password, the webhook signing
-      # secret — and the security policy that governs everyone's sessions.
-      # Staff bill; owners administer.
+      # Credentials and security policy: owners only.
       {:noreply,
        socket
        |> put_flash(:error, "Those settings are limited to account owners.")
@@ -128,21 +113,13 @@ defmodule QuantumBillingWeb.SettingsLive do
   """
   def owner_only?(section), do: section in @owner_only_sections
 
-  # The organisation and the specimen invoice move together.
-  #
-  # The specimen is built *from* the organisation — it prints the real company
-  # name, address and GSTIN — so leaving it behind means the thumbnails and the
-  # test print keep showing the details you just changed away from, which reads
-  # as the save not having worked.
+  # The specimen invoice is built from the organisation, so it moves with it.
   defp assign_organization(socket, organization) do
     socket
     |> assign(:organization, organization)
-    # The thumbnails render a real invoice rather than an empty shell, so a
-    # design can be judged by how it handles figures and a long description.
     |> assign(:sample, InvoiceDocument.sample(organization))
   end
 
-  # Read only for the panel that shows them.
   defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
   defp assign_deliveries(socket, _section), do: socket
 
@@ -150,9 +127,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     assign(socket, :deliveries, Mail.list_recent_deliveries(8))
   end
 
-  # Only the Customization panel lists templates, and `ensure_default/0` writes —
-  # so this is called from the one place a user has actually asked to see them,
-  # rather than on every settings page load.
+  # Only here: ensure_default/0 writes.
   defp assign_templates(socket, :customization) do
     Templates.ensure_default()
     assign_templates(socket)
@@ -175,10 +150,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     Enum.find_value(sections(), :general, fn s -> if to_string(s.key) == value, do: s.key end)
   end
 
-  # Built from the scrubbed organisation: stored credentials must not travel
-  # back to the browser, and a `password` input renders whatever value it is
-  # given. Saving still works on the real struct — a blank secret box means
-  # "leave it as it is".
+  # From the scrubbed organisation, so stored credentials never reach the browser.
   defp assign_form(socket, section) when section in @saveable do
     changeset =
       socket.assigns.organization
@@ -190,18 +162,11 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
 
-  # ── Invoice designs ───────────────────────────────────────────────────────
-  #
-  # These are list actions rather than form fields, so they are plain clicks and
-  # do not go through the section's changeset. The design itself is edited in
-  # `InvoiceTemplateDesignLive`.
+  # ── Invoice designs ──
+  # List actions; the design itself is edited in InvoiceTemplateDesignLive.
 
-  # ── Text tools ────────────────────────────────────────────────────────────
-  #
-  # These write a design's page setup rather than a settings column: typography
-  # belongs to the document, so a heading weight chosen here is the same one the
-  # design pad shows and the PDF prints. Every change says which design it came
-  # from, because each card carries its own toolbar.
+  # ── Text tools ──
+  # Write the design's page setup, not a settings column.
 
   def handle_event("toggle_text_tools", %{"id" => id}, socket) do
     open = if to_string(socket.assigns.open_tools) == id, do: nil, else: template_id(id)
@@ -296,9 +261,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, cancel_upload(socket, :logo, ref)}
   end
 
-  # Synchronous on purpose — the whole point is to report what the relay said,
-  # to the person who just pressed the button. Every other message in the
-  # application goes through the queue.
+  # Synchronous: reports what the relay said.
   def handle_event("send_test_email", _params, socket) do
     recipient = test_recipient(socket.assigns)
 
@@ -306,7 +269,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       {:ok, _metadata} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Test email sent to #{recipient}.")
+         |> put_flash(:info, test_sent_message(recipient))
          |> assign_deliveries()}
 
       {:error, message} ->
@@ -350,8 +313,6 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Says what actually came back, so "restored" is a statement of fact rather
-  # than an assurance.
   defp restored_summary(counts) do
     [
       {:clients, "clients"},
@@ -364,12 +325,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     |> Enum.join(", ")
   end
 
-  # Writes the newly uploaded file, if there is one, and puts its path into the
-  # params so the changeset saves it alongside everything else in the panel.
-  # Nothing else in the form knows the logo is a file rather than a field.
-  # Re-read rather than trusting the assign: the toolbar is one of several
-  # windows onto the same row, and writing back a page derived from a stale
-  # render would undo whatever the design pad changed in between.
+  # Re-read rather than trusting the assign, which may be stale.
   defp save_page(socket, id, fun) do
     case Templates.get_template(id) do
       nil ->
@@ -386,8 +342,6 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # The toolbar posts the id as a string; the assign is compared against the
-  # template's own id, so it is kept as whatever the list holds.
   defp template_id(id) do
     case Integer.parse(id) do
       {parsed, ""} -> parsed
@@ -395,9 +349,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Runs a template action by id, refreshing the list either way. An id the list
-  # no longer holds — a stale click from a window opened before it was removed —
-  # is a no-op that re-reads rather than an error.
+  # A stale id re-reads instead of erroring.
   defp with_template(socket, id, fun, message) do
     case Templates.get_template(id) do
       nil ->
@@ -416,7 +368,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
     case consume_uploaded_entries(socket, :logo, &store_logo/2) do
       [{:ok, path}] ->
-        # The old file is only unlinked once the new one is safely on disk.
+        # Unlink the old file only once the new one is on disk.
         if previous && previous != path, do: Uploads.delete(previous)
         {Map.put(params, "doc_logo_path", path), socket}
 
@@ -432,8 +384,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:ok, Uploads.store(path, entry.client_type)}
   end
 
-  # LiveView rejects a file before it ever reaches `Uploads.store/2`, so these
-  # have to be worded here rather than by the context.
+  # LiveView rejects these before Uploads.store/2 sees them.
   defp upload_message(:too_large) do
     "That file is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
   end
@@ -452,11 +403,6 @@ defmodule QuantumBillingWeb.SettingsLive do
       notifications={@notifications}
       unread_count={@unread_count}
     >
-      <%!-- The open section names the page. A standing "Settings / Manage your
-      account and application settings" said nothing the sidebar had not
-      already said, and left the panel repeating the section title inside its
-      own card. Save sits here for the same reason it does on every other form
-      page: it belongs to the page, not to the panel. --%>
       <.header>
         {section(@section).title}
         <:actions :if={@form}>
@@ -466,18 +412,11 @@ defmodule QuantumBillingWeb.SettingsLive do
         </:actions>
       </.header>
 
-      <%!-- `gap-4` rather than `space-y-4`: this is a flex column now, so the
-      panel can take the height left over instead of stopping under its last
-      field. The Logo card below it keeps its natural height. --%>
       <div class="flex flex-1 flex-col gap-4">
         <.card padding="p-6" class="flex flex-1 flex-col">
           {render_panel(assigns)}
         </.card>
 
-        <%!-- The logo moved to Customization, where it sits beside the preview
-        that shows what it will look like. This card points at it rather than
-        offering a second upload that would fight the first over the same
-        column. --%>
         <.card :if={@section == :general} padding="p-6">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -527,8 +466,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         prompt="Select state"
         options={EWayBillForm.states()}
       />
-      <%!-- Beside the address rather than inside it: the e-invoice export needs
-      the city and the PIN as their own fields. --%>
+      <%!-- Separate fields: the e-invoice export needs the city and PIN. --%>
       <.field field={f[:city]} label="City" placeholder="Mumbai" />
       <.field
         field={f[:pincode]}
@@ -637,13 +575,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
 
       <div class="mt-4">
-        <%!--
-        Says what it does today rather than what its name promises. The switch
-        is saved and read, but nothing generates a bill on its own: that needs
-        a background worker calling the NIC portal unattended, which is a
-        larger change than a toggle. Better to name the gap than to offer a
-        switch that quietly does nothing.
-        --%>
+        <%!-- The switch is saved, but nothing generates bills automatically yet. --%>
         <.toggle
           field={f[:ewb_auto_generate]}
           label="Flag invoices that need an e-way bill"
@@ -1182,13 +1114,27 @@ defmodule QuantumBillingWeb.SettingsLive do
     """
   end
 
-  # Who a test goes to: the person signed in, then the organisation's contact
-  # address. Never a client, and never typed in.
+  # The signed-in user, then the organisation's address; never a client.
   defp test_recipient(%{current_scope: scope, organization: organization}),
     do: test_recipient(scope, organization)
 
   defp test_recipient(scope, organization) do
     presence(scope && scope.user && scope.user.email) || presence(organization.email)
+  end
+
+  # With no relay in development, mail goes to the local preview.
+  defp test_sent_message(recipient) do
+    local_preview? =
+      not Mail.own_relay?(Settings.get_organization()) and
+        Application.get_env(:quantum_billing, QuantumBilling.Mailer)[:adapter] ==
+          Swoosh.Adapters.Local
+
+    if local_preview? do
+      "No SMTP relay is set, so the test went to the local preview at /dev/mailbox, " <>
+        "not to #{recipient}."
+    else
+      "Test email sent to #{recipient}."
+    end
   end
 
   defp presence(nil), do: nil

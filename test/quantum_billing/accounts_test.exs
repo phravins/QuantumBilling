@@ -173,9 +173,7 @@ defmodule QuantumBilling.AccountsTest do
       refute Accounts.bootstrap?()
       refute Accounts.registration_open?()
 
-      # An account here is access to the whole of the business's books — there
-      # is no per-user scoping on invoices or clients — so a second one is
-      # granted, never claimed.
+      # Accounts share all the books, so a second one is invited, never claimed.
       assert {:error, changeset} =
                Accounts.register_user_with_password(valid_registration_attributes())
 
@@ -206,6 +204,34 @@ defmodule QuantumBilling.AccountsTest do
                  valid_registration_attributes(email: "someone@example.com"),
                  token
                )
+    end
+
+    test "an invitation whose email is refused is not left pending, and is logged" do
+      owner = owner_fixture()
+
+      # A relay on a closed local port: refused at once, without the network.
+      QuantumBilling.Settings.ensure_organization()
+
+      Repo.update_all(QuantumBilling.Settings.Organization,
+        set: [smtp_host: "127.0.0.1", smtp_port: 1, smtp_username: nil, smtp_password: nil]
+      )
+
+      assert {:error, {:delivery_failed, message}} =
+               Accounts.invite("invited@example.com", "staff", owner, &"http://localhost/#{&1}")
+
+      assert message =~ "127.0.0.1"
+      assert Accounts.list_invitations() == []
+
+      assert [%{kind: "account", status: "failed"}] = deliveries_to("invited@example.com")
+    end
+
+    test "a sent invitation is logged as delivered" do
+      _token = invitation_token_fixture("invited@example.com")
+
+      assert [%{kind: "account", status: "sent", subject: subject}] =
+               deliveries_to("invited@example.com")
+
+      assert subject =~ "invited"
     end
 
     test "an expired invitation is refused" do
@@ -239,8 +265,7 @@ defmodule QuantumBilling.AccountsTest do
                  token
                )
 
-      # `role` appears in no `cast/3` list anywhere, so posting it alongside a
-      # username does nothing at all. The invitation decides the role.
+      # `role` is never cast; the invitation decides it.
       assert user.role == "staff"
     end
 
@@ -361,6 +386,14 @@ defmodule QuantumBilling.AccountsTest do
       assert user_token.user_id == user.id
       assert user_token.sent_to == user.email
       assert user_token.context == "change:current@example.com"
+    end
+
+    test "is written to the delivery ledger", %{user: user} do
+      {:ok, _email} =
+        Accounts.deliver_user_update_email_instructions(user, "current@example.com", & &1)
+
+      assert %{kind: "account", status: "sent"} =
+               Enum.find(deliveries_to(user.email), &(&1.subject == "Update email instructions"))
     end
   end
 
@@ -625,5 +658,9 @@ defmodule QuantumBilling.AccountsTest do
     test "does not include password" do
       refute inspect(%User{password: "123456"}) =~ "password: \"123456\""
     end
+  end
+
+  defp deliveries_to(email) do
+    Enum.filter(QuantumBilling.Mail.list_recent_deliveries(100), &(&1.to_email == email))
   end
 end

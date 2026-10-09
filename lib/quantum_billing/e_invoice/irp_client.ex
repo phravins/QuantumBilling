@@ -70,7 +70,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   defp simulate_irp_response(%Invoice{} = invoice) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    # Generate a deterministic 64-char hex IRN based on invoice number and company gstin
+    # Deterministic 64-char hex IRN from GSTIN and invoice number.
     raw_key = "#{invoice.company_gstin}:#{invoice.invoice_number}:#{invoice.grand_total}"
     irn = :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)
     ack_no = "1" <> to_string(:erlang.phash2(raw_key, 900_000_000) + 100_000_000)
@@ -101,15 +101,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
      }}
   end
 
-  # The QR carries the HSN of the invoice's principal supply, which is the
-  # first line. `hd(items || [...])` looked like it handled the empty case, but
-  # a preloaded invoice with no lines is `[]` rather than `nil`, so the
-  # fallback never fired and this raised `ArgumentError` — inside an Oban job,
-  # which then retried the same crash five times over half an hour.
-  #
-  # `EInvoice.validate/2` now refuses such an invoice before it reaches here.
-  # This stays defensive rather than inventing a code: a fabricated HSN in a
-  # signed QR is worse than an absent one.
+  # The HSN of the first line. No fallback code: a made-up HSN in a signed QR is worse.
   defp main_hsn_code(%Invoice{items: [%{hsn_sac: hsn} | _rest]}) when is_binary(hsn), do: hsn
   defp main_hsn_code(_invoice), do: nil
 

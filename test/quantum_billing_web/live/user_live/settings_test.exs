@@ -26,10 +26,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
       assert %{"error" => "You must log in to access this page."} = flash
     end
 
-    # This test changed meaning deliberately. The page used to carry
-    # `on_mount :require_sudo_mode`, so any visit more than ten minutes after
-    # sign-in redirected to the login screen — you could not look at your own
-    # name. The gate now sits on the sensitive actions instead.
+    # The page stays open; only sensitive actions need a recent sign-in.
     test "stays open without recent sign-in, but refuses a password change", %{conn: conn} do
       user = user_fixture()
 
@@ -133,7 +130,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
 
       assert html =~ "Priya Sharma"
       assert html =~ "GST Officer"
-      # Initials come from the name now, not the first two letters of the email.
+      # Initials come from the name.
       assert html =~ ">\n            PS\n          <" or html =~ "PS"
     end
 

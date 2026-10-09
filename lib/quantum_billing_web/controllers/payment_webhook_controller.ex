@@ -72,8 +72,7 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
            payload: params
          }) do
       {:duplicate, _event} ->
-        # Already handled. Acknowledged rather than reprocessed — and
-        # acknowledged rather than refused, or the provider retries for ever.
+        # Acknowledged, or the provider retries for ever.
         conn |> put_status(:ok) |> json(%{status: "ok", message: "Already processed"})
 
       {:ok, event} ->
@@ -98,9 +97,7 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     end
   end
 
-  # The provider's own event id when it sends one. Otherwise a digest of the
-  # body, which is the same for a redelivery of the same event and different
-  # for a genuinely new one — so deduplication still holds.
+  # The provider's event id, or a digest of the body.
   defp event_id(conn, params) do
     case get_req_header(conn, "x-razorpay-event-id") do
       [id | _] when byte_size(id) > 0 ->

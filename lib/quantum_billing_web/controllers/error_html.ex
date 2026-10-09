@@ -6,13 +6,8 @@ defmodule QuantumBillingWeb.ErrorHTML do
   """
   use QuantumBillingWeb, :html
 
-  # Branded pages for the two statuses users actually see. Each template is a
-  # complete HTML document, so it renders the same whether it arrives here via
-  # the catch-all route or via render_errors (configured `layout: false`).
   embed_templates "error_html/*"
 
-  # Every other status falls back to a plain text page based on the template
-  # name. For example, "403.html" becomes "Forbidden".
   def render("403.html", %{message: message}) when is_binary(message) do
     message
   end

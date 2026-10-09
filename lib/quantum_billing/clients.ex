@@ -26,16 +26,12 @@ defmodule QuantumBilling.Clients do
   """
   def subscribe, do: Events.subscribe(Events.clients_topic())
 
-  # The list page's sortable columns. An allowlist, because the field arrives
-  # from a click in the browser and ends up in an ORDER BY.
+  # Allowlisted: the sort field comes from the browser.
   @sortable %{name: :name, outstanding: :outstanding, status: :status}
 
   @default_per_page 10
   @max_per_page 200
 
-  # How many clients a picker offers at once. Enough that a small business
-  # never has to search, small enough that a large one does not ship its whole
-  # customer list to the browser.
   @picker_limit 50
 
   @doc """
@@ -153,8 +149,6 @@ defmodule QuantumBilling.Clients do
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query
   defp status_where(query, status), do: where(query, [c], c.status == ^status)
 
-  # No column chosen: alphabetical, which is what the directory has always
-  # shown by default.
   defp order(query, nil, _direction), do: order_by(query, [c], asc: c.name, asc: c.id)
 
   defp order(query, field, direction) do
@@ -249,8 +243,6 @@ defmodule QuantumBilling.Clients do
     |> announce(:client_updated)
   end
 
-  # Only a successful write is announced, and the notification never changes
-  # the result the caller gets back.
   defp announce({:ok, client} = result, event) do
     Events.broadcast(Events.clients_topic(), {event, client})
     result

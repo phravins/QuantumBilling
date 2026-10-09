@@ -51,9 +51,7 @@ defmodule QuantumBilling.Repo.Migrations.CreateClients do
 
       add :status, :string, null: false, default: "Active"
 
-      # Owed by this client. Derived from unpaid invoices once the invoices
-      # table exists — it is NOT something the client form collects, and stays
-      # 0 until then.
+      # Owed by this client, derived from unpaid invoices.
       add :outstanding, :integer, null: false, default: 0
 
       timestamps(type: :utc_datetime)

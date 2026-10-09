@@ -45,8 +45,7 @@ defmodule QuantumBilling.Templates.InvoiceTemplate do
     |> cast(attrs, @castable)
     |> validate_required([:name, :layout_xml])
     |> validate_length(:name, max: 60)
-    # Same rule and same reason as the organisation's accent: it is written
-    # into a style attribute, so it has to be a colour and nothing else.
+    # Written into a style attribute, so only a hex colour.
     |> validate_format(:accent, ~r/^#[0-9A-Fa-f]{6}$/,
       message: "must be a hex colour like #1D4ED8"
     )

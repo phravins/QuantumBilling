@@ -25,8 +25,7 @@ defmodule QuantumBilling.Workers.EInvoiceWorker do
 
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}) do
-    # 1, 4, 9, 16 minutes — quadratic, so a portal outage is waited out rather
-    # than polled.
+    # 1, 4, 9, 16 minutes.
     trunc(:math.pow(attempt, 2) * 60)
   end
 
@@ -38,8 +37,7 @@ defmodule QuantumBilling.Workers.EInvoiceWorker do
         :discard
 
       %{irn: irn} when is_binary(irn) and irn != "" ->
-        # Already registered — by an earlier attempt whose reply was lost, or
-        # by hand. Asking again would be a duplicate registration.
+        # Already registered, by an earlier attempt or by hand.
         :ok
 
       invoice ->

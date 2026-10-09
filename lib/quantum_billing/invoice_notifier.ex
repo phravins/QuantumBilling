@@ -93,13 +93,7 @@ defmodule QuantumBilling.InvoiceNotifier do
     {:ok, email}
   end
 
-  # The invoice itself, as a PDF where one can be printed.
-  #
-  # Where it cannot — no headless browser on this machine — the HTML document
-  # goes instead, named `.html` and typed as HTML. The customer gets something
-  # they can open either way; what they do not get is an HTML file called
-  # `INV-1234.pdf`, which is what used to be attached and what mail clients
-  # refuse to open.
+  # A PDF where one can be printed, otherwise the HTML document named .html.
   defp document_attachment(%Invoice{} = invoice) do
     name = invoice.invoice_number || "invoice"
 
@@ -133,9 +127,6 @@ defmodule QuantumBilling.InvoiceNotifier do
     name
   end
 
-  # Checked here rather than at the relay: a blank or malformed recipient is a
-  # bug in the caller, and finding out three retries later costs a customer
-  # their invoice.
   defp validate_recipient(email) when is_binary(email) do
     trimmed = String.trim(email)
 
@@ -197,8 +188,6 @@ defmodule QuantumBilling.InvoiceNotifier do
     """
   end
 
-  # Mail clients that refuse HTML, and spam filters that score its absence,
-  # both want this — and it costs one function.
   defp text_content(%Invoice{} = invoice, from_name) do
     """
     Dear #{invoice.client_name || "Customer"},
@@ -215,9 +204,6 @@ defmodule QuantumBilling.InvoiceNotifier do
     """
   end
 
-  # Deliberately plain. The attachment is the thing being tested, and a styled
-  # wrapper around it only makes it harder to tell which of the two you are
-  # looking at.
   defp escape(nil), do: ""
 
   defp escape(value) do

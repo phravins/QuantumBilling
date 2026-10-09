@@ -46,14 +46,6 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   @transport_modes ["Road", "Rail", "Air", "Ship"]
 
   # Every GST state and union territory code, in code order.
-  #
-  # This used to carry eighteen of them, which meant a business in Uttarakhand,
-  # Jharkhand, Goa or any other omission could not record its own state — and
-  # since `Organization.state`, `Client.billing_state` and
-  # `Invoice.place_of_supply` all validate against this list, it could not issue
-  # a correct invoice either. The codes are the ones the GSTN publishes and the
-  # ones a GSTIN's first two digits carry, so they are also what the e-invoice
-  # export reads back out.
   @states [
     "Jammu & Kashmir (01)",
     "Himachal Pradesh (02)",
@@ -136,8 +128,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     field :vehicle_no, :string
     field :from_place, :string
     field :to_place, :string
-    # The approximate distance decides how long the bill is valid for —
-    # Rule 138(10), one day per 200 km — so the form cannot leave it out.
+    # Rule 138(10): validity depends on distance.
     field :distance_km, :integer
 
     # 5. Other details
@@ -163,8 +154,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     |> validate_inclusion(:to_state, @states)
     |> validate_length(:document_no, max: 30)
     |> validate_number(:total_goods_value, greater_than: 0)
-    # 4,000 km is the portal's own ceiling, and further than any road journey
-    # inside the country.
+    # The portal's ceiling.
     |> validate_number(:distance_km, greater_than: 0, less_than_or_equal_to: 4000)
     |> validate_amounts()
     |> update_change(:vehicle_no, &String.upcase(String.replace(&1 || "", ~r/\s/, "")))

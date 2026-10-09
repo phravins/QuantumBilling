@@ -89,8 +89,7 @@ defmodule QuantumBilling.GSTNExporterTest do
 
       numbers = for party <- json["b2b"], inv <- party["inv"], do: inv["inum"]
 
-      # The export used to put every invoice ever issued into every month's
-      # return, which is a false filing rather than an inconvenience.
+      # Only invoices dated in the period belong in its return.
       assert numbers == ["IN-PERIOD"]
     end
 
@@ -126,7 +125,6 @@ defmodule QuantumBilling.GSTNExporterTest do
 
       rates = entry["itms"] |> Enum.map(& &1["itm_det"]["rt"]) |> Enum.sort()
 
-      # Every line used to be reported at 18% whatever was charged.
       assert rates == [5.0, 18.0]
 
       assert Enum.sum(Enum.map(entry["itms"], & &1["itm_det"]["txval"])) == 20_000
@@ -137,8 +135,6 @@ defmodule QuantumBilling.GSTNExporterTest do
       invoice = invoice(%{invoice_number: "HSN-ONE"})
       item(invoice, %{hsn_sac: "998313", tax_rate: 18})
 
-      # `item.hsn_code` does not exist on the schema. Reading it raised
-      # KeyError, so this export had never once produced a file.
       assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
 
       assert [%{"hsn_sc" => "998313"} = row] = json["hsn"]["data"]

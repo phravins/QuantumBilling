@@ -417,9 +417,7 @@ defmodule QuantumBilling.InvoicesTest do
       assert ids(Invoices.page(client: acme)) == [mine.id]
     end
 
-    # `client_id` is optional — the invoice form's name field can be filled
-    # without touching the client picker — so an id-only match would show a
-    # client with a dozen typed invoices an empty history.
+    # `client_id` is optional, so invoices are also matched by name.
     test "also returns an unlinked invoice that names the client", %{acme: acme} do
       {:ok, typed} = Invoices.create_invoice(attrs(%{"client_name" => acme.name}))
       assert is_nil(typed.client_id)
@@ -427,9 +425,7 @@ defmodule QuantumBilling.InvoicesTest do
       assert ids(Invoices.page(client: acme)) == [typed.id]
     end
 
-    # The other half of that rule. `clients.name` has no unique index, so two
-    # clients may share a name; without this, each would claim invoices
-    # explicitly linked to the other.
+    # `clients.name` is not unique, so an explicit link wins over a name match.
     test "never claims an invoice linked to someone else", %{acme: acme, other: other} do
       {:ok, _theirs} =
         Invoices.create_invoice(attrs(%{"client_id" => other.id, "client_name" => acme.name}))

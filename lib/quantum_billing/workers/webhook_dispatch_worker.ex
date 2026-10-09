@@ -40,13 +40,9 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
 
     cond do
       is_nil(url) or url == "" ->
-        # The endpoint was removed between queueing and running. Nothing to
-        # deliver to, and no amount of retrying will conjure one.
         :discard
 
-      # Re-checked here and not only at save time: a hostname that resolved to
-      # a public address when it was saved can resolve to 127.0.0.1 by the time
-      # this runs, which is exactly how DNS rebinding works.
+      # Re-checked here against DNS rebinding.
       match?({:error, _}, UrlGuard.check(url)) ->
         {:error, reason} = UrlGuard.check(url)
         Logger.warning("[WebhookDispatchWorker] refusing #{event}: endpoint #{reason}")
@@ -74,18 +70,14 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
            headers: headers,
            receive_timeout: @request_timeout_ms,
            retry: false,
-           # Not followed: a redirect is a second destination, and it never
-           # went through `UrlGuard`. An allowed public host could otherwise
-           # bounce this straight at the metadata address.
+           # Not followed: a redirect target never went through UrlGuard.
            redirect: false,
            decode_body: false
          ) do
       {:ok, %{status: status}} when status in 200..299 ->
         :ok
 
-      # The endpoint is telling us the request itself is wrong — a bad URL, a
-      # rejected signature, a payload it will never accept. Repeating it
-      # unchanged cannot help.
+      # The endpoint rejected the request itself; retrying cannot help.
       {:ok, %{status: status}} when status in 400..499 and status not in [408, 429] ->
         Logger.warning("[WebhookDispatchWorker] #{event} rejected with HTTP #{status}")
         :discard

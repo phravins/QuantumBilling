@@ -80,12 +80,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             class={input_class()}
             error_class="border-red-500"
           />
-          <%!--
-          Read-only when invited: the invitation is bound to one address, and
-          letting it be edited here would only burn the invitation on a
-          mismatch. The server re-checks it either way — a readonly attribute
-          is a courtesy, not a control.
-          --%>
+          <%!-- Read-only when invited; the server re-checks the address regardless. --%>
           <.input
             field={@form[:email]}
             type="email"
@@ -154,9 +149,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
-    # The invitation decides the address, not the form. Even with the readonly
-    # attribute removed in the browser, what gets registered is what was
-    # invited.
+    # The invitation decides the address, not the form.
     user_params =
       case socket.assigns.invited_email do
         nil -> user_params
@@ -165,11 +158,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
 
     case Accounts.register_user_with_password(user_params, socket.assigns.invitation_token) do
       {:ok, user} ->
-        # The account is already saved by this point, so a relay that will not
-        # take the message must not take the page down with it. Matching
-        # `{:ok, _}` here left the account created, unconfirmed and unable to
-        # ever confirm itself, behind a crashed LiveView — which is how the
-        # first unconfirmed accounts in this database got there.
+        # The account is already saved, so a mail failure must not crash the page.
         case Accounts.deliver_user_confirmation_instructions(
                user,
                &url(~p"/users/confirm/#{&1}")

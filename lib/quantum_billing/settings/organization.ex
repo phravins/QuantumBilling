@@ -14,7 +14,6 @@ defmodule QuantumBilling.Settings.Organization do
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
 
-  # The statutory GST slabs.
   @gst_rates [0, 5, 12, 18, 28]
 
   @currencies ["INR (₹) - Indian Rupee"]
@@ -36,10 +35,7 @@ defmodule QuantumBilling.Settings.Organization do
     field :company_name, :string
     field :trade_name, :string
     field :address, :string
-    # Structured beside the address blob rather than parsed out of it: the GST
-    # e-invoice schema wants a location and a PIN as their own fields, and
-    # guessing at where they sit inside a free-text address gets it wrong for
-    # anyone who formats theirs unusually.
+    # Kept apart from the address: the e-invoice schema needs city and PIN as fields.
     field :city, :string
     field :pincode, :string
     field :phone, :string
@@ -78,9 +74,7 @@ defmodule QuantumBilling.Settings.Organization do
     field :language, :string, default: "en"
     field :rows_per_page, :integer, default: 10
 
-    # Custom SMTP Settings. The password is encrypted at rest — see
-    # `QuantumBilling.Encrypted.Secret` — because a mail relay has to be given
-    # it verbatim, so it cannot be hashed like a login password.
+    # SMTP. The password is encrypted at rest (see Encrypted.Secret).
     field :smtp_host, :string
     field :smtp_port, :integer, default: 587
     field :smtp_username, :string
@@ -89,13 +83,11 @@ defmodule QuantumBilling.Settings.Organization do
     field :smtp_from_email, :string
     field :smtp_from_name, :string
 
-    # UPI. Printed on the invoice and encoded into its payment QR, so this is
-    # published information rather than a credential.
+    # UPI: printed on the invoice, so not a secret.
     field :upi_vpa, :string
     field :upi_payee_name, :string
 
-    # API & Webhook Integrations. Same treatment for the three credentials
-    # among them; the ids and the URL are configuration and stay readable.
+    # Integrations. The credentials among them are encrypted.
     field :razorpay_key_id, :string
     field :razorpay_key_secret, Encrypted.Secret
     field :irp_username, :string
@@ -155,9 +147,7 @@ defmodule QuantumBilling.Settings.Organization do
     |> cast(attrs, @general)
     |> validate_required([:company_name])
     |> validate_length(:company_name, max: 160)
-    # Optional, because it is new and nobody has been asked for it — but an
-    # Indian PIN is exactly six digits, so a wrong one is caught here rather
-    # than by the e-invoice export weeks later.
+    # An Indian PIN is exactly six digits.
     |> validate_format(:pincode, ~r/^\d{6}$/, message: "must be six digits")
     |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
       message: "must have the @ sign and no spaces"
@@ -216,10 +206,6 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_inclusion(:rows_per_page, @rows_per_page)
   end
 
-  # The accent's hex validation moved to `InvoiceTemplate` along with the column,
-  # for the same reason it existed here: it is written straight into a `style`
-  # attribute on the document, so it is pinned to six hex digits rather than
-  # accepting any CSS colour string.
   def changeset(organization, attrs, :customization) do
     cast(organization, attrs, @customization)
   end
@@ -233,13 +219,9 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_format(:smtp_from_email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
       message: "must have the @ sign and no spaces"
     )
-    # A relay address with a scheme or a path in it is a copied-and-pasted URL,
-    # and gen_smtp would spend its connection timeout finding that out.
     |> validate_format(:smtp_host, ~r|^[^\s/:]+$|,
       message: "must be a hostname only, without https:// or a port"
     )
-    # Anonymous relays exist, but a username with no password is always a
-    # half-filled form, and it fails at the relay with an error nobody can read.
     |> validate_smtp_credentials_paired()
   end
 
@@ -291,15 +273,10 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
-  # An empty secret box means "unchanged", because the form never showed what
-  # was there. Clearing a credential is done by removing the host or the key it
-  # belongs to, which is visible in the form and therefore deliberate.
+  # A blank secret field means "unchanged"; the form never shows the stored value.
   defp keep_stored_secrets(changeset) do
     Enum.reduce(@write_only, changeset, fn field, acc ->
-      # `fetch_change/2` rather than `get_change/2`: an empty box casts to a
-      # `nil` change, and `get_change/2` cannot tell that apart from no change
-      # at all — which is exactly the difference between "clear the password"
-      # and "I did not touch it".
+      # fetch_change/2 tells a cleared field (nil change) from an untouched one.
       case fetch_change(acc, field) do
         {:ok, nil} -> delete_change(acc, field)
         {:ok, value} when is_binary(value) -> maybe_drop_blank(acc, field, value)
@@ -312,9 +289,6 @@ defmodule QuantumBilling.Settings.Organization do
     if String.trim(value) == "", do: delete_change(changeset, field), else: changeset
   end
 
-  # Whitespace around a host, a username or a URL is invisible in the form and
-  # fatal at the other end, so it is removed on the way in rather than at every
-  # point of use.
   defp trim(changeset, fields) do
     Enum.reduce(fields, changeset, fn field, acc ->
       case get_change(acc, field) do
@@ -335,9 +309,7 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
-  # A VPA is `name@handle`, and the common mistake is an email address — which
-  # every UPI app rejects when it is scanned, long after the settings page said
-  # nothing was wrong.
+  # The common mistake is entering an email address.
   defp validate_upi_vpa(changeset) do
     case get_field(changeset, :upi_vpa) do
       blank when blank in [nil, ""] ->
@@ -356,13 +328,7 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
-  # Checked by `Webhooks.UrlGuard`, not just parsed. This is the one address a
-  # user supplies that the *server* then opens a connection to, and accepting
-  # any syntactically valid host meant accepting
-  # `http://169.254.169.254/latest/meta-data/` — the cloud metadata service —
-  # along with loopback and everything else inside the deployment's network.
-  # The worker checks again immediately before sending, because DNS can change
-  # in between.
+  # Checked by UrlGuard to block internal addresses; the worker re-checks before sending.
   defp validate_webhook_url(changeset) do
     case get_field(changeset, :webhook_url) do
       blank when blank in [nil, ""] ->
@@ -376,9 +342,6 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
-  # Each entry is a single address or a CIDR block. Validating here means a
-  # typo is caught in the form rather than at the door, where a malformed entry
-  # would simply never match and lock everyone out.
   defp validate_allowed_ips(changeset) do
     case get_field(changeset, :allowed_ips) do
       blank when blank in [nil, ""] ->
@@ -419,7 +382,6 @@ defmodule QuantumBilling.Settings.Organization do
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
-  # The transporter ID is optional, but must be a GSTIN when supplied.
   defp maybe_validate_transporter_id(changeset) do
     case get_field(changeset, :ewb_transporter_id) do
       blank when blank in [nil, ""] -> changeset

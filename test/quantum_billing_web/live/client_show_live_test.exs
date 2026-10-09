@@ -154,8 +154,7 @@ defmodule QuantumBillingWeb.ClientShowLiveTest do
       refute has_element?(view, "#client-invoice-history", "No invoices for this client yet")
     end
 
-    # The whole point of the page. A history that shows everybody's invoices is
-    # the same defect as an eye icon that opens the wrong screen.
+    # The history shows this client's invoices only.
     test "does not list another client's invoices", %{conn: conn, client: client, other: other} do
       mine = invoice_for(client)
       theirs = invoice_for(other)
@@ -166,9 +165,7 @@ defmodule QuantumBillingWeb.ClientShowLiveTest do
       refute has_element?(view, "#client-invoice-#{theirs.id}")
     end
 
-    # `client_id` is optional — the invoice form's name field can be filled
-    # without ever touching the client picker — so keying the history on the
-    # foreign key alone would show a real client an empty page.
+    # `client_id` is optional, so invoices are also matched by name.
     test "includes an invoice that carries the name but no client_id", %{
       conn: conn,
       client: client
@@ -207,9 +204,7 @@ defmodule QuantumBillingWeb.ClientShowLiveTest do
              )
     end
 
-    # Against its own tile rather than the row of four: the credit limit beside
-    # it renders "2,50,000.00", so a count asserted over the whole summary
-    # block would be satisfied by a digit belonging to another figure.
+    # Scoped to its tile: other figures contain the same digits.
     test "the invoice count tile follows the history", %{conn: conn, client: client} do
       {:ok, view, _html} = live(conn, ~p"/clients/#{client.id}")
       assert has_element?(view, "#client-invoice-count", "0")

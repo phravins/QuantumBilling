@@ -58,8 +58,6 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   defp check_scheme(_scheme), do: {:error, "must be a full http:// or https:// URL"}
 
   defp check_host(host) when is_binary(host) and host != "" do
-    # Names that only resolve inside a private network. These usually fail to
-    # resolve here anyway, but saying so plainly beats a DNS error.
     if String.ends_with?(host, [".internal", ".local", ".localdomain"]) or
          host in ["localhost", "metadata.google.internal"] do
       {:error, "cannot point inside the server's own network"}
@@ -70,23 +68,10 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
 
   defp check_host(_host), do: {:error, "must include a hostname"}
 
-  # A short timeout: this runs inside a form submit, and a resolver that is not
-  # answering should not hold the save open.
   @resolve_timeout_ms 2_000
 
-  # A name that does not resolve is allowed through rather than refused.
-  #
-  # Failing to resolve is not evidence of pointing somewhere private — it is
-  # usually DNS that has not been set up yet, or a resolver this host cannot
-  # reach. Refusing it would block legitimate endpoints while protecting
-  # nothing: an unresolvable name cannot be connected to either, so the
-  # delivery simply fails on its own and retries.
-  #
-  # Nothing is lost by allowing it. A literal private address
-  # (`169.254.169.254`, `127.0.0.1`) needs no DNS and is caught above, and the
-  # case that does need DNS — a hostname pointing at a private address — is
-  # caught by the worker's check, which resolves against live DNS immediately
-  # before it connects.
+  # An unresolvable name is allowed: it cannot be connected to either, and the worker
+  # re-checks against live DNS before connecting.
   defp resolve(host, _port) do
     charlist = String.to_charlist(host)
 
@@ -101,9 +86,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
     end
   end
 
-  # Every address the name resolves to has to be acceptable. A name with one
-  # public and one private address is a name that can send this request
-  # somewhere it should not go.
+  # Every resolved address must be public.
   defp check_addresses([]), do: :ok
 
   defp check_addresses(addresses) do
@@ -139,8 +122,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   # IPv6 loopback and unspecified.
   def public?({0, 0, 0, 0, 0, 0, 0, 1}), do: false
   def public?({0, 0, 0, 0, 0, 0, 0, 0}), do: false
-  # IPv4-mapped (::ffff:a.b.c.d) — judged on the address it maps to, or the
-  # whole guard is one `::ffff:` prefix away from being bypassed.
+  # IPv4-mapped addresses are judged on the address they map to.
   def public?({0, 0, 0, 0, 0, 0xFFFF, ab, cd}) do
     public?(
       {Bitwise.bsr(ab, 8), Bitwise.band(ab, 0xFF), Bitwise.bsr(cd, 8), Bitwise.band(cd, 0xFF)}

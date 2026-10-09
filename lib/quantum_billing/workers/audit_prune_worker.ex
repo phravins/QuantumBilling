@@ -48,10 +48,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
     audit = prune(AuditLog, audit_days)
     deliveries = prune(Delivery, @ledger_retention_days)
     webhooks = prune(WebhookEvent, @ledger_retention_days)
-    # Through the context rather than through `prune/2` above, because only
-    # notifications that have been *read* may go: an unread one is still
-    # somebody's outstanding item however old it is, and silently deleting it
-    # would be the feed losing something nobody ever saw.
+    # Through the context: only read notifications may be pruned.
     notifications = Notifications.prune(@ledger_retention_days)
 
     if audit + deliveries + webhooks + notifications > 0 do

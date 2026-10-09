@@ -48,9 +48,7 @@ defmodule QuantumBilling.Settings do
         |> Ecto.Changeset.change(%{})
         |> Repo.insert(on_conflict: :nothing, conflict_target: :singleton)
 
-        # Re-read rather than trusting the insert's return: on a conflict it
-        # comes back without an id, because the row that exists is someone
-        # else's.
+        # Re-read: on a conflict the insert comes back without an id.
         Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1)
 
       organization ->
@@ -61,11 +59,6 @@ defmodule QuantumBilling.Settings do
   @doc """
   Builds a changeset for one section of the settings.
   """
-  # No default for `attrs`. With one, the two-argument form meant
-  # `(organization, section)` rather than the `(organization, attrs)` every
-  # reader assumes, and getting it wrong raised `FunctionClauseError` deep
-  # inside `Organization.changeset/3` instead of at the call site. Requiring
-  # all three makes a wrong call a compile error.
   def change_organization(%Organization{} = organization, attrs, section) do
     Organization.changeset(organization, attrs, section)
   end
@@ -81,9 +74,7 @@ defmodule QuantumBilling.Settings do
       |> Organization.changeset(attrs, section)
       |> Repo.insert_or_update()
 
-    # Broadcast from, not to: the window that saved has already re-rendered
-    # with its own result, and handling its own echo would rebuild the form it
-    # is still sitting in.
+    # Broadcast from the saving window, which has already re-rendered.
     with {:ok, saved} <- result do
       Events.broadcast_from(Events.settings_topic(), {:settings_updated, saved})
     end

@@ -34,8 +34,7 @@ defmodule QuantumBillingWeb.ReportsLive do
      |> load_report()}
   end
 
-  # Recomputed, not reset: the active filters stay put, so a report someone is
-  # reading does not jump when an invoice changes in another window.
+  # Recomputed with the active filters kept.
   def handle_info({:invoice_changed, _invoice}, socket) do
     {:noreply, load_report(socket)}
   end
@@ -51,8 +50,7 @@ defmodule QuantumBillingWeb.ReportsLive do
     {:noreply, socket |> assign(:filters, filters) |> load_report()}
   end
 
-  # The Apply button submits the same form; the change handler has already
-  # applied everything, so this only needs to acknowledge it.
+  # The change handler has already applied the filters.
   def handle_event("apply_filters", params, socket) do
     handle_event("filter", params, socket)
   end
@@ -68,7 +66,6 @@ defmodule QuantumBillingWeb.ReportsLive do
      |> load_report()}
   end
 
-  # One trip to the database per filter change, rather than per panel.
   defp load_report(socket) do
     assign(socket, :report, Reports.aggregate(socket.assigns.filters))
   end

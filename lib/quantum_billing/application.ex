@@ -15,10 +15,7 @@ defmodule QuantumBilling.Application do
       {DNSCluster, query: Application.get_env(:quantum_billing, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QuantumBilling.PubSub},
       QuantumBilling.RateLimiter,
-      # Scheduled work — recurring billing, retention pruning — is Oban's,
-      # through its Cron plugin. It used to be a GenServer with a 12-hour
-      # timer, which ran on every node: two nodes billed every recurring
-      # profile twice, and a restart reset the clock.
+      # Scheduled work runs through Oban's Cron plugin, so it runs once across nodes.
       {Oban, Application.fetch_env!(:quantum_billing, Oban)},
       QuantumBillingWeb.Endpoint
     ]
@@ -33,27 +30,16 @@ defmodule QuantumBilling.Application do
     :ok
   end
 
-  # Silences the OTP crash reports emitted when a client aborts its TCP
-  # connection. See `QuantumBillingWeb.TransportErrorFilter` for why these are
-  # not application errors, and why ThousandIsland's own
-  # `silent_terminate_on_error` option does not cover them.
-  #
-  # A primary filter, so it applies before any handler. `:already_exist` is
-  # expected whenever the application is restarted in a running VM, as the code
-  # reloader does in development.
-  # Job failures are the one class of error nobody is watching a screen for:
-  # they happen minutes after the click that caused them, in another process,
-  # and without this they appear in the logs as a bare crash report with no
-  # indication of which job it was. Oban's own handler prints the worker, the
-  # arguments and the attempt.
+  # Oban's handler logs the worker, args and attempt for failed jobs.
   defp attach_job_logger do
     :ok = Oban.Telemetry.attach_default_logger(level: :info)
   rescue
-    # Already attached — the application being restarted in a running VM, as
-    # the code reloader does in development.
+    # Already attached after a code reload.
     ArgumentError -> :ok
   end
 
+  # Silences crash reports from clients aborting their TCP connection;
+  # see QuantumBillingWeb.TransportErrorFilter.
   defp install_transport_error_filter do
     :logger.add_primary_filter(
       :quantum_billing_transport_errors,

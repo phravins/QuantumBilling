@@ -4,10 +4,7 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   alias QuantumBilling.Accounts.User
   alias QuantumBilling.Mail
 
-  # Account mail goes out over the same relay as everything else — the
-  # organisation's own SMTP server when one is configured — and from the same
-  # sender address. A confirmation link arriving from a stranger's domain is
-  # how a sign-in mail ends up in a spam folder.
+  # Sent now (the person is waiting for the link) but recorded in the delivery ledger.
   defp deliver(recipient, subject, body) do
     email =
       new()
@@ -16,8 +13,20 @@ defmodule QuantumBilling.Accounts.UserNotifier do
       |> subject(subject)
       |> text_body(body)
 
-    with {:ok, _metadata} <- Mail.deliver(email) do
-      {:ok, email}
+    delivery =
+      case Mail.record_queued(%{to_email: recipient, kind: "account", subject: subject}) do
+        {:ok, delivery} -> delivery
+        {:error, _changeset} -> nil
+      end
+
+    case Mail.deliver(email) do
+      {:ok, _metadata} ->
+        delivery && Mail.mark_sent(delivery)
+        {:ok, email}
+
+      {:error, message} ->
+        delivery && Mail.mark_failed(delivery, message, true)
+        {:error, message}
     end
   end
 

@@ -38,8 +38,6 @@ defmodule QuantumBillingWeb.ClientsComponents do
     """
   end
 
-  # Initials of the first two words; single-word names fall back to their
-  # first two characters.
   defp initials(name) do
     case String.split(name, ~r/\s+/, trim: true) do
       [single] -> single |> String.slice(0, 2) |> String.upcase()

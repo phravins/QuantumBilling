@@ -30,12 +30,8 @@ defmodule QuantumBilling.Reports do
 
   @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
 
-  # The most months a trend chart will draw. Two years of readings fit across a
-  # card and still leave the labels legible; beyond that the line is a comb.
   @trend_months 24
 
-  # A dropdown nobody can scroll through is not a filter. Past this many names
-  # the list is cut rather than shipped in full to every open Reports page.
   @client_name_limit 500
 
   import Ecto.Query, warn: false
@@ -101,8 +97,7 @@ defmodule QuantumBilling.Reports do
   about what "This Quarter, Tax Liability, client X" means.
   """
   def query(filters) when is_map(filters) do
-    # Binned invoices are out of every report: `kept/1` here covers the page,
-    # the totals and the export, because they all start from this query.
+    # Binned invoices are excluded from every report.
     Invoice.kept()
     |> filter_dates(range_bounds(filters[:date_range]))
     |> filter_equal(:status, filters[:status], "All Status")
@@ -225,19 +220,8 @@ defmodule QuantumBilling.Reports do
     fill_months(rows, range_bounds(filters[:date_range], today), today)
   end
 
-  # Every month across the range, whether or not anything was invoiced in it.
-  #
-  # `GROUP BY` only returns months that have rows, and a chart drawn straight
-  # from that is wrong twice over. A quiet month vanishes from the axis, so
-  # March is plotted next to June as though they were consecutive and the slope
-  # between them is a month-per-month rate that nothing measured. And
-  # `month_delta/2` compares the last two rows as "this month against last
-  # month" when they may be a quarter apart.
-  #
-  # Nothing billed at all is a different thing from a quiet month, though:
-  # gap-filling fills gaps between readings, and with no readings there is
-  # nothing to fill. Returning the empty list lets the panel say there are no
-  # invoices in the period rather than drawing a confident flat zero.
+  # Fills months with no invoices so the chart's axis is continuous.
+  # With no rows at all, returns [] so the panel can say there is nothing to show.
   defp fill_months([], _bounds, _today), do: []
 
   defp fill_months(rows, bounds, today) do
@@ -258,11 +242,7 @@ defmodule QuantumBilling.Reports do
     end)
   end
 
-  # The months the chart draws: the selected range, cut off at the current
-  # month so a year-to-date view does not flatline through months that have
-  # not happened, and capped so "All Time" over several years stays a chart
-  # rather than a picket fence. Without bounds — "All Time" — the invoices
-  # themselves say where to start.
+  # The selected range, capped at the current month and at @trend_months.
   defp chart_months(rows, bounds, today) do
     today = today || Date.utc_today()
 
@@ -341,9 +321,7 @@ defmodule QuantumBilling.Reports do
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # The same rule `to_row/1` applies in Elixir, expressed in SQL so the
-  # grouping can happen in the database: which taxes were actually charged,
-  # falling back to where the supply went when an invoice carries no tax at all.
+  # Same rule as to_row/1, in SQL so grouping happens in the database.
   @tax_type_sql """
   CASE
     WHEN COALESCE(cgst_amount, 0) > 0 OR COALESCE(sgst_amount, 0) > 0 THEN 'CGST + SGST'
@@ -380,8 +358,6 @@ defmodule QuantumBilling.Reports do
       ]
       |> Enum.reject(&is_nil/1)
 
-    # The totals row is present even with nothing to total, matching
-    # `tax_summary/1`: the table always shows its bottom line, reading zero.
     rows ++ [totals_row(rows)]
   end
 
@@ -490,8 +466,6 @@ defmodule QuantumBilling.Reports do
   defp matches?(_value, all, all), do: true
   defp matches?(value, filter, _all), do: value == filter
 
-  # "Sales Register" is every invoice; the other report types narrow to the
-  # rows that report actually concerns.
   defp matches_report_type?(_row, nil), do: true
   defp matches_report_type?(_row, "All Reports"), do: true
   defp matches_report_type?(_row, "Sales Register"), do: true
@@ -532,9 +506,7 @@ defmodule QuantumBilling.Reports do
 
   defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
 
-  # Percentage change between the last two months represented in the set.
-  # Returns nil when there is nothing to compare against, so the caller can omit
-  # the caption rather than print a meaningless 0%.
+  # nil when there is nothing to compare, so the caption is omitted.
   defp delta([], _measure), do: nil
 
   defp delta(invoices, measure) do
@@ -638,8 +610,7 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  # Totals only cover the columns that actually applied to some row, so an
-  # all-inter-state period shows a dash under CGST rather than a misleading 0.
+  # Only columns that applied to some row are totalled, so unused ones show a dash.
   defp sum_present(rows, fun) do
     case Enum.filter(rows, &(fun.(&1) != nil)) do
       [] -> nil

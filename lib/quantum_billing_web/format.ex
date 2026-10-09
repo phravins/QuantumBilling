@@ -114,8 +114,7 @@ defmodule QuantumBillingWeb.Format do
     "Rupees " <> String.trim(in_words(amount)) <> " Only"
   end
 
-  # Indian grouping: crore, then lakh, then the last three digits read as a
-  # Western hundred.
+  # Indian grouping: crore, lakh, then hundreds.
   defp in_words(0), do: ""
 
   defp in_words(n) when n >= 10_000_000 do
@@ -134,15 +133,12 @@ defmodule QuantumBillingWeb.Format do
     in_words(div(n, 100)) <> " Hundred" <> in_words(rem(n, 100))
   end
 
-  # Everything below twenty has its own name, which is why the table runs that
-  # far rather than stopping at nine.
   defp in_words(n) when n >= 20 do
     " " <> Enum.at(@tens, div(n, 10)) <> in_words(rem(n, 10))
   end
 
   defp in_words(n), do: " " <> Enum.at(@ones, n)
 
-  # Groups the last three digits, then every two digits above that:
   # 1500000 -> "15,00,000"
   defp group_indian(amount) do
     digits = amount |> abs() |> Integer.to_string()

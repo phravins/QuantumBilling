@@ -6,11 +6,8 @@ defmodule QuantumBillingWeb.CoreComponentsTest do
   setup :register_and_log_in_user
 
   describe "the connection toasts" do
-    # These ship hidden and are revealed by `phx-disconnected` only. An
-    # attribute that breaks its own quoting swallows everything after it in the
-    # tag, so `hidden` and `class` vanish and the toasts render unstyled in the
-    # page flow — two spinners stuck at the bottom of every screen, adding
-    # height and a second scrollbar.
+    # Hidden until `phx-disconnected`. A broken attribute would drop `hidden` and
+    # `class` and leave them visible in the page flow.
     test "stay hidden and keep their attributes intact", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/dashboard")
 

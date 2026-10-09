@@ -30,6 +30,11 @@ defmodule QuantumBilling.Mail do
   that cannot upgrade fails rather than silently sending the password in the
   clear.
 
+  Two allowances keep that verification working with relays that OpenSSL
+  accepts and Erlang/OTP 27 does not — see `verify_cert/3` for the certificate
+  chain, and `middlebox_comp_mode: false` in `tls_options/1` for the TLS 1.3
+  handshake. Neither relaxes what is checked about the relay itself.
+
   `SMTP_TLS_VERIFY=false` turns verification off for a relay using a
   self-signed certificate on a trusted network. It is deliberately a
   deployment-level switch and not a per-organisation setting: it is the kind of
@@ -68,8 +73,7 @@ defmodule QuantumBilling.Mail do
       {:error, reason} -> {:error, error_message(reason)}
     end
   rescue
-    # gen_smtp raises rather than returning for some option and DNS failures,
-    # and a background job or a LiveView should not come down with it.
+    # gen_smtp raises on some option and DNS failures.
     exception -> {:error, error_message(exception)}
   end
 
@@ -97,19 +101,15 @@ defmodule QuantumBilling.Mail do
           port: port,
           username: presence(organization.smtp_username),
           password: presence(organization.smtp_password),
-          # Implicit TLS from the first byte on 465; STARTTLS everywhere else,
-          # required rather than opportunistic.
+          # Implicit TLS on 465; required STARTTLS elsewhere.
           ssl: implicit_tls?,
           tls: if(implicit_tls?, do: :never, else: :always),
           tls_options: tls,
           sockopts: if(implicit_tls?, do: tls, else: []),
           auth: if(presence(organization.smtp_username), do: :always, else: :never),
-          # A relay named by hostname is the relay to use. An MX lookup would
-          # quietly send the mail somewhere else.
           no_mx_lookups: true,
           timeout: @connect_timeout_ms,
-          # Oban owns retrying, with backoff and a record of each attempt.
-          # gen_smtp retrying inside the job as well would multiply the two.
+          # Oban handles retries.
           retries: 0
         ]
         |> Enum.reject(fn {_key, value} -> is_nil(value) end)
@@ -118,20 +118,8 @@ defmodule QuantumBilling.Mail do
 
   def smtp_config(_no_organization), do: []
 
-  # The organisation's relay, or `nil` when it cannot be used.
-  #
-  # A host with a username but no password is not a relay that might work — it
-  # is one that cannot. `auth: :always` without a password makes gen_smtp fail
-  # with `no_credentials` on every single send, and since *all* account mail
-  # goes through here, a half-filled panel silently takes down sign-up
-  # confirmations and password resets along with the invoices.
-  #
-  # The settings form rejects this pairing now (see
-  # `Organization.validate_smtp_credentials_paired/1`), so reaching this clause
-  # means a row that predates that check, or a password that was never
-  # re-entered after the encryption key changed. Falling back to the
-  # application mailer delivers the message; failing delivers nothing. The
-  # warning is what makes the half-configured panel visible.
+  # A username without a password can never authenticate, so fall back to the
+  # application mailer rather than fail every send, sign-up and reset mail included.
   defp usable_relay(%Organization{} = organization) do
     host = presence(organization.smtp_host)
     username = presence(organization.smtp_username)
@@ -278,14 +266,7 @@ defmodule QuantumBilling.Mail do
       |> Repo.update()
       |> broadcast_delivery()
 
-    # Only on the final failure, for the same reason the ledger only says
-    # "failed" then: a retry that is still coming is not news, and a notice per
-    # attempt would bury the one that matters under four that do not.
-    #
-    # An invoice the customer never received is invisible otherwise — the
-    # delivery list is three clicks into Settings, and nobody opens it until
-    # somebody rings up asking where their bill is. The path points at the SMTP
-    # panel because a failure here is nearly always the relay.
+    # Only on the final failure; a retry still to come is not news.
     if final? do
       Notifications.notify(%{
         kind: "mail",
@@ -336,19 +317,56 @@ defmodule QuantumBilling.Mail do
         verify: :verify_peer,
         cacerts: cacerts(),
         depth: 3,
-        # Both are needed: SNI so a shared relay presents the right
-        # certificate, and the hostname match so the certificate it presents is
-        # actually for the host we asked for.
         server_name_indication: to_charlist(host),
         customize_hostname_check: [
           match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
         ],
-        versions: [:"tlsv1.2", :"tlsv1.3"]
+        verify_fun: {&__MODULE__.verify_cert/3, nil},
+        versions: [:"tlsv1.2", :"tlsv1.3"],
+        middlebox_comp_mode: false
       ]
     else
-      [verify: :verify_none, versions: [:"tlsv1.2", :"tlsv1.3"]]
+      [verify: :verify_none, versions: [:"tlsv1.2", :"tlsv1.3"], middlebox_comp_mode: false]
     end
   end
+
+  # Some relays (mail.osworks.in among them) never send the TLS 1.3
+  # change_cipher_spec record, and OTP 27 aborts without it. Costs no security.
+
+  @doc """
+  The certificate check used on every relay connection.
+
+  Identical to OTP's default except for one case: a *CA* certificate whose
+  KeyUsage (`keyCertSign`, `cRLSign`) sits alongside an extendedKeyUsage of
+  `serverAuth`. OTP 27.2 rejects that pairing as `key_usage_mismatch`;
+  OpenSSL and browsers accept it, and Let's Encrypt's "ISRG Root YR" chain
+  (2026) has it, so without this every relay with a current Let's Encrypt
+  certificate fails with `tls_failed`.
+
+  Only a certificate that can sign certificates is excused. The relay's own
+  certificate, the hostname check, expiry and the chain of trust are all still
+  enforced.
+
+  Public because `config/runtime.exs` uses it for the `SMTP_*` relay too.
+  """
+  def verify_cert(
+        _cert,
+        {:bad_cert, {:key_usage_mismatch, {key_usage, _ext_key_usage}}} = reason,
+        state
+      ) do
+    case key_usage do
+      {:Extension, _oid, _critical, usages} when is_list(usages) ->
+        if :keyCertSign in usages, do: {:valid, state}, else: {:fail, reason}
+
+      _other ->
+        {:fail, reason}
+    end
+  end
+
+  def verify_cert(_cert, {:bad_cert, _} = reason, _state), do: {:fail, reason}
+  def verify_cert(_cert, {:extension, _}, state), do: {:unknown, state}
+  def verify_cert(_cert, :valid, state), do: {:valid, state}
+  def verify_cert(_cert, :valid_peer, state), do: {:valid, state}
 
   defp verify_tls?, do: Application.get_env(:quantum_billing, :smtp_tls_verify, true)
 

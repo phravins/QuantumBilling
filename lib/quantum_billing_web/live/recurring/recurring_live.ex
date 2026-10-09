@@ -92,11 +92,9 @@ defmodule QuantumBillingWeb.RecurringLive do
      |> load_profiles()}
   end
 
-  # Moves it to the Bin, where it stops billing: see `Recurring.delete_profile/2`.
   def handle_event("delete", %{"id" => id}, socket) do
     case Recurring.get_profile(id) do
       nil ->
-        # Already gone — most likely binned in another window.
         {:noreply,
          socket
          |> put_flash(:error, "That recurring profile no longer exists.")
@@ -228,7 +226,6 @@ defmodule QuantumBillingWeb.RecurringLive do
         </div>
       </.card>
 
-      <%!-- Create Recurring Profile Modal --%>
       <div
         :if={@show_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -259,11 +256,7 @@ defmodule QuantumBillingWeb.RecurringLive do
             <div>
               <label class="block text-xs font-semibold mb-1">Select Client</label>
 
-              <%!--
-              phx-keyup rather than its own form: a nested <form> is invalid
-              HTML and would end the profile form early. It carries no name,
-              so it is never submitted as a profile field.
-              --%>
+              <%!-- phx-keyup with no name, not a nested form, which would end the profile form early. --%>
               <input
                 type="text"
                 id="recurring-client-search"

@@ -74,8 +74,7 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
     test "refuses to invite an address that already has an account" do
       user = user_fixture(%{email: "test@email.com"})
 
-      # The duplicate-email case is now caught before an invitation is ever
-      # issued, which is a better place to catch it than the sign-up form.
+      # A duplicate email is caught when inviting.
       assert {:error, :already_registered} =
                Accounts.invite(user.email, "staff", owner_fixture(), & &1)
     end
@@ -185,18 +184,9 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
     end
 
     test "still creates the account when the relay is half-configured", %{conn: conn} do
-      # A host and a username with no password: gen_smtp answers
-      # `no_credentials` to this, and matching `{:ok, _}` on the confirmation
-      # mail used to bring the LiveView down *after* the account was inserted,
-      # leaving an account that could never confirm itself.
-      #
-      # Written past the changeset on purpose. The settings form rejects this
-      # pairing now, so the only way to hold it is the way real databases do —
-      # a row saved before that validation existed.
-      # `ensure_organization/0` rather than `get_organization/0`: the latter
-      # hands back an unsaved struct when the table is empty, and there is
-      # nothing to write past. The settings row is a singleton, so the whole
-      # table is the one row.
+      # A relay with a username and no password, written past the changeset as an
+      # older row could be. ensure_organization/0 because get_organization/0 returns
+      # an unsaved struct on an empty table.
       QuantumBilling.Settings.ensure_organization()
 
       QuantumBilling.Repo.update_all(QuantumBilling.Settings.Organization,

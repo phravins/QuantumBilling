@@ -174,10 +174,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "line items" do
-    # These drive the change handler directly rather than through form/3.
-    # form/3 checks every value against the inputs currently rendered, which
-    # cannot express "add a row that does not exist yet" — the browser sends
-    # exactly these params, so this is what the handler has to cope with.
+    # Drives the change handler directly: form/3 cannot add a row that is not rendered yet.
     defp line(description, rate, position) do
       %{
         "description" => description,
@@ -259,8 +256,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "the tax on a row" do
-    # The rows from the bug report: 12 × 3,000 and 23 × 30, both at 18%. The
-    # Amount column showed 36,000 and 690 whatever rate was chosen.
+    # 12 × 3,000 and 23 × 30, both at 18%.
     defp taxed_line(description, quantity, rate, tax_rate, position) do
       %{
         "description" => description,
@@ -365,10 +361,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "editing items" do
-    # The edit form is where rows used to multiply: a stored row that comes back
-    # without its id is read as a new one, and the stored one is kept beside it.
-    # These go through form/3 on purpose, so what is submitted is what the page
-    # actually rendered — hidden ids included.
+    # Through form/3, so the hidden row ids are submitted as on the real page.
     setup do
       {:ok, invoice} =
         Invoices.create_invoice(

@@ -208,9 +208,6 @@ defmodule QuantumBillingWeb.ClientNewLiveTest do
     end
   end
 
-  # There was no way into this module with an existing client at all: the list
-  # page's row menu was a button with nothing behind it, so a client could be
-  # created and then never corrected.
   describe "editing an existing client" do
     setup do
       {:ok, client} = Clients.create_client(valid_params())

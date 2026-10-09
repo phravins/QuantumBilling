@@ -27,7 +27,6 @@ defmodule QuantumBilling.Clients.Client do
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
 
-  # Registration types that carry a GSTIN. The rest legitimately have none.
   @gstin_types ["Registered Business", "Composition Scheme", "SEZ Unit"]
 
   @client_types @gstin_types ++ ["Unregistered", "Overseas", "Consumer"]
@@ -166,7 +165,6 @@ defmodule QuantumBilling.Clients.Client do
   """
   def gstin_required?(client_type), do: client_type in @gstin_types
 
-  # Required only for the registration types that actually have one.
   defp validate_gstin(changeset) do
     changeset = GST.validate_gstin(changeset, :gstin)
 
@@ -186,8 +184,7 @@ defmodule QuantumBilling.Clients.Client do
     end
   end
 
-  # The first two characters of a GSTIN are the state code, and the state
-  # labels carry the same code — "Maharashtra (27)". They must agree.
+  # A GSTIN's first two digits are the state code and must match the state.
   defp validate_gstin_state(changeset) do
     gstin = get_field(changeset, :gstin)
     state = get_field(changeset, :billing_state)
@@ -219,8 +216,6 @@ defmodule QuantumBilling.Clients.Client do
     end
   end
 
-  # Indian numbers are ten digits; other countries vary, so only length-bound
-  # those rather than inventing a rule per country.
   defp validate_phone(changeset) do
     changeset = update_change(changeset, :phone, &strip_spaces/1)
 
@@ -242,10 +237,7 @@ defmodule QuantumBilling.Clients.Client do
     |> validate_pin(:billing_pin)
   end
 
-  # Only when it is actually its own address. While "same as billing" is on the
-  # shipping fields are a copy the form does not even show, so validating them
-  # would report an invisible duplicate of a billing error and block the save
-  # with nothing on screen to fix.
+  # Skipped while "same as billing" is on: the shipping fields are hidden.
   defp validate_shipping_address(changeset) do
     if get_field(changeset, :shipping_same_as_billing) do
       changeset
@@ -268,8 +260,6 @@ defmodule QuantumBilling.Clients.Client do
     end
   end
 
-  # Store a complete shipping address either way, so nothing downstream has to
-  # branch on the flag to know where to deliver.
   defp copy_billing_to_shipping(changeset) do
     if get_field(changeset, :shipping_same_as_billing) do
       changeset
@@ -283,8 +273,7 @@ defmodule QuantumBilling.Clients.Client do
     end
   end
 
-  # `validate_inclusion` fails a blank value, which is wrong for an optional
-  # dropdown — leaving it unset must stay allowed.
+  # validate_inclusion rejects blanks, but these dropdowns are optional.
   defp validate_optional_inclusion(changeset, field, allowed) do
     case get_field(changeset, field) do
       blank when blank in [nil, ""] -> changeset

@@ -53,8 +53,7 @@ defmodule QuantumBilling.HsnFinderTest do
     end
 
     test "restaurant services are 18%, the post-reform rate" do
-      # Pre-reform this was widely 5%. Getting this right is the whole point of
-      # having verified the current structure rather than assumed it.
+      # The post-reform rate; this was widely 5% before.
       assert [%{code: "9963", rate: 18}] = HsnFinder.search_by_keyword("restaurant")
     end
 

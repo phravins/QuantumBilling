@@ -80,10 +80,7 @@ defmodule QuantumBilling.Repo.Migrations.CreateEWayBills do
 
     create index(:e_way_bill_part_b_updates, [:e_way_bill_id])
 
-    # Backfill. `ewb_valid_until` was nullable while the columns lived on the
-    # invoice, and `valid_until` here is not, so a bill with no recorded
-    # validity is given one day from its issue date — Rule 138(10)'s floor, and
-    # the most conservative reading of a bill whose validity was never stored.
+    # Backfill: a bill with no stored validity gets one day from issue, Rule 138(10)'s floor.
     execute("""
     INSERT INTO e_way_bills (
       ewb_number, ewb_date, valid_until, status, distance_km, mode_of_transport,

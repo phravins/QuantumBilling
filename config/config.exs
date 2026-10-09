@@ -62,13 +62,8 @@ config :esbuild,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-# Configure tailwind (the version is required)
-#
-# Pinned to 4.2.4: the 4.3.0 windows-x64 standalone binary crashes on startup with
-# "TypeError: undefined is not a constructor (evaluating 'new import_oxide.Scanner')"
-# — its native oxide scanner fails to load, so no stylesheet can be built at all.
-# The fault is in the binary itself (it fails on an empty input with no sources),
-# not in this project's CSS. Revisit when a later release fixes it.
+# Configure tailwind (the version is required). Pinned to 4.2.4: the 4.3.0
+# windows-x64 standalone binary crashes on startup.
 config :tailwind,
   version: "4.2.4",
   quantum_billing: [
@@ -85,26 +80,13 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-# Background work.
-#
-# Everything that can be slow, can fail, or must survive a restart runs here
-# rather than in the request that asked for it: sending invoices, registering
-# them with the IRP, billing recurring profiles, posting webhooks, pruning the
-# audit trail. Oban keeps its jobs in Postgres, so a deploy or a crash loses
-# none of them, and the same jobs are visible and retriable afterwards.
-#
-# Queues are separated by what they wait on rather than by importance. Webhooks
-# wait on other people's servers, so they get a wide concurrency and cannot
-# starve anything else while they do; mail is narrower because each message
-# prints a PDF, and maintenance is narrower still because its jobs delete in
-# batches and there is no value in two at once.
+# Background work. Queues are split by what they wait on: webhooks on other
+# servers, mail on PDF rendering, maintenance on batched deletes.
 config :quantum_billing, Oban,
   repo: QuantumBilling.Repo,
   queues: [
     default: 10,
-    # Each invoice email prints a PDF, which starts a headless browser. Twenty
-    # at once is twenty browsers; five keeps the queue moving without the mail
-    # backlog becoming the thing that takes the machine down.
+    # Each email prints a PDF in a headless browser.
     mailers: 5,
     recurring: 5,
     webhooks: 10,
@@ -118,9 +100,7 @@ config :quantum_billing, Oban,
     {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)},
     # The jobs table churns heavily; its indexes bloat without this.
     {Oban.Plugins.Reindexer, schedule: "@weekly"},
-    # Scheduled work. Inserted by the Oban leader — one node, no matter how
-    # many are running — which is exactly what a plain GenServer timer could
-    # not promise: on two nodes it billed every recurring profile twice.
+    # Cron runs on the Oban leader only, so each job runs once across nodes.
     {Oban.Plugins.Cron,
      crontab: [
        # Early morning, before the working day, in UTC.

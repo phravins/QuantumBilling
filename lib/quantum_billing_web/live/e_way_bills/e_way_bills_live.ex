@@ -79,8 +79,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     {:noreply, socket |> assign(:page, String.to_integer(page_str)) |> load_page()}
   end
 
-  # The row carries only what the table renders, so the bill is loaded here
-  # rather than held for every row on screen.
   def handle_event("open_action", %{"action" => action, "id" => id}, socket)
       when action in ["cancel", "part_b"] do
     case EWayBills.get_e_way_bill(id) do
@@ -130,9 +128,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     end
   end
 
-  # Moves the bill to the Bin. Not a cancellation — see
-  # `EWayBills.delete_e_way_bill/2` — which is why it is offered for a bill in
-  # any state, and why the confirmation for an Active one says so.
+  # Bins the bill; this is not a cancellation.
   def handle_event("delete", %{"id" => id}, socket) do
     case EWayBills.get_e_way_bill(id) do
       nil ->
@@ -157,13 +153,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     {:noreply, load_page(socket)}
   end
 
-  # Rule 138(9) and the portal's own refusals, said in a sentence. A changeset
-  # reaching here means the reason was blank or too short, which the form
-  # requires but a crafted submit can still skip.
-  # The modal may have been open for a while, and what it holds is the bill as
-  # it was when it opened. Both actions are refused on state — cancelled,
-  # expired, out of its twenty-four hours — so they are decided against the row
-  # as it is now, not as it was on screen.
+  # Re-read: the modal may hold a stale copy, and both actions depend on current state.
   defp with_fresh_bill(%{assigns: %{action_bill: nil}}, _action), do: {:error, :gone}
 
   defp with_fresh_bill(%{assigns: %{action_bill: bill}}, action) do
@@ -173,8 +163,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     end
   end
 
-  # Binning an Active bill is the one place this could be mistaken for the
-  # button beside it, so the confirmation spells the difference out.
   defp delete_confirmation(%{status: "Active", ewb_no: number}) do
     "Move e-way bill #{number} to the Bin? This only takes it off this list — it is NOT " <>
       "cancelled on the e-way bill portal and stays valid there. It can be restored from the Bin."
@@ -265,10 +253,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             </ul>
           </div>
 
-          <%!-- Carries the filters the user is looking at, so the file matches
-          the table. It used to point at the reports endpoint with an unknown
-          `report_type`, which fell through to the default and handed back a
-          GST tax summary. --%>
+          <%!-- Carries the current filters so the export matches the table. --%>
           <.link
             href={~p"/e-way-bills/export?#{[q: @search, status: @status_filter]}"}
             class={filter_button_class()}
@@ -356,12 +341,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 <td><.status_badge status={row.status} /></td>
 
                 <td>
-                  <%!-- All three open the official EWB-01 the controller
-                  renders. These used to point at `/invoices?q=<doc no>`, a
-                  filtered invoice list, and the third was a button that did
-                  nothing at all — so the one document a driver has to carry
-                  could not be opened, printed or saved from the page that
-                  lists it. --%>
+                  <%!-- Open the official EWB-01 rendered by the controller. --%>
                   <div class="flex justify-end gap-1">
                     <.link
                       href={~p"/e-way-bills/#{row.id}/print"}
@@ -389,13 +369,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                       <.icon name="hero-arrow-down-tray" class="size-4" />
                     </.link>
 
-                    <%!-- Part-B and cancellation are what the table was
-                    missing: the EWB-01 itself tells the driver Part-B must be
-                    updated before the vehicle changes, and Rule 138(9) gives
-                    twenty-four hours to cancel. Neither is offered once the
-                    bill is cancelled or expired, because the portal refuses
-                    both and an enabled button that always fails is worse than
-                    no button. --%>
+                    <%!-- Not offered once cancelled or expired: the portal refuses both. --%>
                     <button
                       :if={row.status == "Active"}
                       type="button"
@@ -563,8 +537,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   attr :title, :string, required: true
   slot :inner_block, required: true
 
-  # A shell shared by both row actions: the same dialog chrome, and the bill it
-  # is about named at the top so the user can see which row they clicked.
   defp action_modal(assigns) do
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -593,9 +565,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     """
   end
 
-  # Compared against the allowlist rather than turned into an atom first:
-  # `String.to_existing_atom/1` raises on anything unrecognised, which is a
-  # crashed page for a stale or hand-edited sort link.
+  # Allowlisted without String.to_existing_atom/1, which raises on stale links.
   defp sort_field(field_str) do
     Enum.find(EWayBills.sortable_fields(), &(Atom.to_string(&1) == field_str))
   end

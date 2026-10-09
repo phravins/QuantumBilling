@@ -185,9 +185,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
         nil ->
-          # No headless browser here. Sending the print page beats sending
-          # something that is not a PDF, which is what the mail attachment
-          # used to do.
+          # No headless browser here, so it falls back to the print page.
           assert redirected_to(conn) == ~p"/invoices/#{invoice.id}/pdf"
 
         _binary ->
@@ -195,10 +193,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       end
     end
 
-    # Both e-way bill row actions used to link at a filtered invoice list:
-    # the form GST EWB-01 a driver must carry was nowhere in the application.
-    # Addressed by the bill, not the invoice: an invoice can carry a cancelled
-    # bill and its live replacement, and the two need separate URLs.
+    # Addressed by the bill: an invoice can carry a cancelled bill and its replacement.
     test "the e-way bill document answers", context do
       %{conn: conn, interstate: interstate, bill: bill} = context
 
@@ -228,7 +223,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       body = conn |> get(~p"/e-way-bills/export") |> response(200)
 
-      # Not the GST tax summary the button used to hand back.
       assert body =~ "EWB Number,Document Number"
       assert body =~ bill.ewb_number
       assert body =~ interstate.invoice_number

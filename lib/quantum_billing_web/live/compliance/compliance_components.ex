@@ -90,16 +90,11 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   defp countdown_class(days) when days <= 7, do: "text-warning"
   defp countdown_class(_days), do: "text-base-content/45"
 
-  # Same thresholds the countdown text uses, so the date block and the line
-  # under it cannot disagree about how urgent a deadline is.
   defp badge_tone(days) when days < 0, do: :overdue
   defp badge_tone(days) when days <= 7, do: :due_soon
   defp badge_tone(_days), do: :neutral
 
-  # Written out in full rather than interpolated: Tailwind scans source text,
-  # so a class built from a variable is never emitted. Each carries its dark
-  # variant — the light tints alone left these pills as a pale smudge on the
-  # dark theme.
+  # Literal class strings so Tailwind emits them.
   defp status_tone("Filed"),
     do:
       "border-emerald-200 bg-emerald-50 text-emerald-700 " <>
@@ -165,10 +160,6 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           {day}
         </span>
 
-        <%!-- A day is a button, not a label. The grid marked the deadlines and
-        then had nothing to say about them: every cell was inert, so the dots
-        were the one thing on the page that could not be followed through to
-        what they stood for. --%>
         <button
           :for={cell <- List.flatten(@weeks)}
           type="button"
@@ -275,8 +266,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     """
   end
 
-  # Spoken form of a cell, since the dots carry the meaning and a screen reader
-  # sees only the number.
+  # Screen-reader label for a cell.
   defp day_label(%{obligations: []} = cell), do: Format.format_date(cell.date)
 
   defp day_label(cell) do

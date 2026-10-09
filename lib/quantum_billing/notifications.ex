@@ -48,8 +48,6 @@ defmodule QuantumBilling.Notifications do
   alias QuantumBilling.Notifications.Notification
   alias QuantumBilling.Repo
 
-  # How many the bell holds. The panel is a glance at what just happened, not
-  # an archive — anything older is reached through the page it points at.
   @feed_limit 15
 
   @doc """
@@ -185,8 +183,7 @@ defmodule QuantumBilling.Notifications do
   defdelegate kinds(), to: Notification
   defdelegate severities(), to: Notification
 
-  # Accepts either key style, because producers here are a mix of contexts
-  # writing atoms and workers building maps from job args.
+  # Producers pass atom or string keys.
   defp normalize(attrs) when is_map(attrs) do
     Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
   end

@@ -48,9 +48,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   organisation, so rebranding restyles every invoice rather than only the next.\
   """
 
-  # Every default here is the value the document already printed at before the
-  # setting existed, so a layout stored without it parses back to the same
-  # invoice rather than quietly restyling itself.
+  # Defaults match the old output, so stored layouts render unchanged.
   @page_attrs [
     {"size", :size, {:enum, ~w(A4 Letter)}, "A4"},
     {"margin", :margin, {:enum, ~w(10mm 14mm 18mm 22mm)}, "14mm"},
@@ -203,10 +201,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     organization |> Map.from_struct() |> from_legacy()
   end
 
-  # Takes a plain map rather than only the struct so the migration that drops
-  # these columns can read them straight out of the database and preserve what
-  # they said. By the time that migration runs the schema no longer declares the
-  # fields, so a struct is not available to it.
+  # Takes a plain map: the migration that drops these columns reads them raw.
   def from_legacy(settings) when is_map(settings) do
     Catalog.classic()
     |> put_heading(get(settings, :doc_heading))
@@ -310,8 +305,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     {Catalog.element_name(block.type), attrs, block_children(block)}
   end
 
-  # Text blocks carry exactly one child and no indentation: whitespace inside
-  # them would become part of the printed footer.
+  # No whitespace inside text blocks: it would print.
   defp block_children(%Block{text: text} = block) when is_binary(text) do
     if text == "" and block.children == [], do: [], else: [{:characters, text}]
   end
@@ -448,8 +442,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
 
   defp parse_text(_type, _children), do: nil
 
-  # A layout whose ids were lost or duplicated still has to be editable: the
-  # pad addresses blocks by id, and two blocks sharing one would move together.
+  # Duplicate or missing ids would make blocks move together in the pad.
   defp assign_ids(blocks) do
     {blocks, _taken} =
       Enum.map_reduce(blocks, MapSet.new(), fn block, taken ->

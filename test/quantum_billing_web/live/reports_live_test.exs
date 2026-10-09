@@ -7,11 +7,6 @@ defmodule QuantumBillingWeb.ReportsLiveTest do
 
   setup :register_and_log_in_user
 
-  # Assertions about figures moving as filters change need rows to aggregate,
-  # and there are none until the invoices table exists. Those tests come back
-  # with the schema; the aggregation logic itself stays covered by
-  # QuantumBilling.ReportsTest, which supplies its own fixtures.
-
   describe "page" do
     test "renders every panel", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/reports")

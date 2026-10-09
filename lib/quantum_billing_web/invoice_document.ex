@@ -34,10 +34,7 @@ defmodule QuantumBillingWeb.InvoiceDocument do
   def sample(%Organization{} = organization) do
     seller = seller_fields(organization)
 
-    # Place of supply follows the seller's own state so the supply stays
-    # intra-state and the hard-coded CGST + SGST split below stays true of it.
-    # Left on the seller's state, an invoice from Karnataka to Maharashtra
-    # would print a CGST line that a real one would have raised as IGST.
+    # Seller's own state, so the hard-coded CGST + SGST split stays correct.
     place = seller[:company_state] || "Maharashtra (27)"
 
     sample(nil)
@@ -99,9 +96,7 @@ defmodule QuantumBillingWeb.InvoiceDocument do
     }
   end
 
-  # Only the fields that are actually filled in: a blank company name in
-  # settings should leave the placeholder standing rather than print an
-  # invoice with no seller on it.
+  # Only filled fields, so blanks keep the placeholder.
   defp seller_fields(%Organization{} = organization) do
     address =
       [organization.address, "#{organization.city} #{organization.pincode}"]

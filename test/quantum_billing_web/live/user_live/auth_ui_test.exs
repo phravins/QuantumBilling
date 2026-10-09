@@ -20,13 +20,10 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
       assert html =~ ~s(placeholder="name@example.com")
       assert html =~ ~s(placeholder="Confirm password")
       assert html =~ "Create Account"
-      # shadcn's 350px form column, and the app's own heading step — these
-      # screens run on the same type scale as the rest of the product rather
-      # than a private one.
+      # The 350px form column on the app's shared type scale.
       assert html =~ "sm:w-[350px]"
       assert html =~ "text-xl font-semibold tracking-tight"
-      # Email and password are the only way in. The GitHub button was never
-      # wired to an OAuth provider, so it offered a route that did nothing.
+      # Email and password only; there is no OAuth button.
       refute html =~ "Or continue with"
       refute html =~ "GitHub"
       assert html =~ "Terms of Service"

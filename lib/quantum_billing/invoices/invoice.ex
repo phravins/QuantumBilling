@@ -40,8 +40,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     "Debit Note"
   ]
 
-  # Label to days. "Due on Receipt" is same-day; "Custom" leaves the due date
-  # alone so it can be set by hand.
+  # Label to days. "Custom" leaves the due date to be set by hand.
   @payment_terms [
     {"Due on Receipt", 0},
     {"Net 7 Days", 7},
@@ -69,16 +68,13 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :payment_terms, :string
     field :place_of_supply, :string
 
-    # Snapshotted at issue. See the migration for why these are copied rather
-    # than read live through the association.
+    # Snapshotted at issue.
     field :client_name, :string
     field :client_gstin, :string
     field :client_pan, :string
     field :client_billing_address, :string
     field :client_email, :string
     field :client_state, :string
-    # Snapshotted beside the address blob, which is what prints. These are what
-    # the e-invoice export needs as their own fields.
     field :client_city, :string
     field :client_pincode, :string
 
@@ -109,9 +105,6 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :signed_qr_code, :string
     field :signed_invoice, :string
 
-    # E-Way Bills. These used to be eight columns here, which let an invoice
-    # carry exactly one bill for ever — no cancellation under Rule 138(9) and
-    # nowhere to put a Part-B vehicle change. They are rows now.
     has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
     # Multi-Currency & LUT Export Details
@@ -128,12 +121,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     # Public Client Portal Access Token
     field :public_token, :string
 
-    # The design this was issued under, frozen at issue. See the migration for
-    # why the structure is snapshotted while the accent and logo stay live.
+    # The design this was issued under, frozen at issue.
     field :layout_xml, :string
 
-    # Set when the invoice is moved to the Bin. Never cast: it is written by
-    # `bin_changeset/1` and `restore_changeset/1`, not by any form.
+    # Set only by bin_changeset/1 and restore_changeset/1.
     field :deleted_at, :utc_datetime
 
     belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
@@ -176,9 +167,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> validate_due_date()
     |> validate_has_items()
     |> recalculate()
-    # The transaction is what stops two saves being handed the same number.
-    # This makes anything that still slips past it surface as a changeset error
-    # rather than an unhandled Ecto.ConstraintError.
+    # Backstop for the numbering transaction: a clash becomes a changeset error.
     |> unique_constraint(:invoice_number,
       message: "has already been used — check the numbering series in Settings"
     )
@@ -210,8 +199,6 @@ defmodule QuantumBilling.Invoices.Invoice do
   @doc "Takes an invoice back out of the Bin."
   def restore_changeset(invoice), do: change(invoice, deleted_at: nil)
 
-  # A due date before the invoice date is a data entry error, not a business
-  # case worth supporting.
   defp validate_due_date(changeset) do
     invoice_date = get_field(changeset, :invoice_date)
     due_date = get_field(changeset, :due_date)
@@ -223,7 +210,6 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  # An invoice with nothing on it is not an invoice.
   defp validate_has_items(changeset) do
     case get_field(changeset, :items) do
       [] -> add_error(changeset, :items, "add at least one item")
@@ -270,19 +256,16 @@ defmodule QuantumBilling.Invoices.Invoice do
     {cgst, sgst, igst} =
       if intra_state? do
         cgst = div(tax, 2)
-        # Deliberately not div(tax, 2) a second time: an odd tax amount would
-        # lose a rupee, and the halves would not add back to the total.
+        # Not div(tax, 2) twice: an odd amount would lose a rupee.
         {cgst, tax - cgst, 0}
       else
         {0, 0, tax}
       end
 
-    # Nothing on this form feeds a cess rate, so this is always zero for now.
-    # The column exists so the summary can show the line the design has.
+    # No cess rate is entered yet, so this is always zero.
     cess = 0
 
-    # Exact under integer arithmetic — there is nothing to round. Kept so the
-    # column is correct if fractional pricing is ever introduced.
+    # Always zero under integer arithmetic.
     round_off = 0
 
     %{

@@ -12,10 +12,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
   describe "the page setup" do
-    # `%Document{}` carries its own copy of these defaults, because a struct's
-    # defaults are fixed at compile time and Layout is the module that builds
-    # the struct. A setting declared in one and not the other is a KeyError the
-    # first time a control reads it off a document nobody has saved yet.
+    # `%Document{}` duplicates Layout's defaults (struct defaults are compile-time),
+    # so the two must agree.
     test "the struct's defaults are the ones the parser falls back to" do
       assert %Document{}.page == Layout.default_page()
     end
@@ -50,10 +48,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   end
 
   describe "round trip" do
-    # Byte identity holds only because `to_xml/1` emits attributes in the order
-    # `Catalog.attrs/1` declares rather than map order, and writes every option
-    # whether or not it differs from its default. That is what makes a save
-    # that changed nothing a no-op instead of a spurious diff.
+    # Holds because `to_xml/1` emits attributes in Catalog order and writes every option.
     test "serialising a parsed layout returns the identical string" do
       xml = Layout.to_xml(Catalog.classic())
 
@@ -104,9 +99,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   end
 
   describe "escaping" do
-    # Saxy escapes text passed as a `{:characters, _}` node but emits a raw
-    # binary child verbatim, which would produce a layout nothing can parse.
-    # This is the test that catches that mistake being reintroduced.
+    # Saxy emits a raw binary child unescaped.
     test "markup characters in element content survive" do
       text = ~s|Smith & Sons <"quoted"> 'apostrophe'|
 
@@ -138,9 +131,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   end
 
   describe "parsing hostile or unfamiliar input" do
-    # This is the property Saxy was chosen for. `:xmerl` expands internal
-    # entities by default, which is how a small document becomes a very large
-    # one; Saxy has no DTD support at all, so the entity is never expanded.
+    # Saxy has no DTD support, so an entity is never expanded.
     test "an internal entity is not expanded" do
       xml = """
       <?xml version="1.0"?>
@@ -173,9 +164,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
       assert message =~ "not an invoice layout"
     end
 
-    # Dropping rather than failing: a layout that has lost one block is still a
-    # usable invoice, whereas refusing to parse would take a customer's document
-    # off the screen over an attribute nobody recognises.
+    # Dropped, rather than refusing to parse the whole layout.
     test "an unknown block element is dropped" do
       xml = inject(~s|<hologram id="b99" width="full"/>|)
 
@@ -242,13 +231,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
     end
   end
 
-  # The bridge that lets the renderer replace three hand-written markups without
-  # changing anybody's invoice. Each of the old booleans has to come out as the
-  # presence or absence of exactly one block or column.
+  # Each legacy boolean maps to exactly one block or column.
   describe "from_legacy/1" do
-    # The stock layout carries a footer block for the pad to type into, but an
-    # organisation with no footer text has never printed one — so the bridge
-    # drops it rather than introducing a rule nobody asked for.
+    # No footer text means no footer block.
     test "an untouched organisation produces the stock layout, less the empty footer" do
       document = Layout.from_legacy(organization())
 
@@ -282,8 +267,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
       end
     end
 
-    # The old rule was that cess needed both the setting and a non-zero figure.
-    # Off removes the line; on keeps it conditional rather than always printed.
+    # Cess on keeps the line conditional rather than always printed.
     test "cess off removes the line, cess on leaves it conditional" do
       off = Layout.from_legacy(organization(%{doc_show_cess: false}))
       refute "cess" in total_fields(off)
@@ -317,9 +301,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
 
   # -- helpers --------------------------------------------------------------
 
-  # A plain map, which is what `from_legacy/1` takes: the columns these describe
-  # have been dropped, and the only caller left is the migration that dropped
-  # them, which reads them with raw SQL because no struct declares them any more.
+  # A plain map: the legacy columns no longer exist on any struct.
   defp organization(overrides \\ %{}) do
     Map.merge(
       %{

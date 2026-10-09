@@ -76,8 +76,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
 
   defp payload(%Invoice{} = invoice) do
     %{
-      # Razorpay counts in paise; every amount in this application is whole
-      # rupees.
+      # Razorpay counts in paise.
       "amount" => (invoice.grand_total || 0) * 100,
       "currency" => invoice.currency || "INR",
       "accept_partial" => false,
@@ -91,8 +90,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
     }
   end
 
-  # Razorpay validates the contact details it is given, so a placeholder
-  # address would fail the call for an invoice that simply has no email on it.
+  # Razorpay rejects placeholder contact details.
   defp customer(%Invoice{} = invoice) do
     %{"name" => invoice.client_name}
     |> maybe_put("email", invoice.client_email)
@@ -158,8 +156,6 @@ defmodule QuantumBilling.Payments.RazorpayClient do
     end
   end
 
-  # Marked in the id itself: a link that came from here should be recognisable
-  # as simulated in the database, in the audit trail and on the invoice.
   defp sandbox_payment_link(%Invoice{} = invoice) do
     suffix = :crypto.strong_rand_bytes(6) |> Base.url_encode64(padding: false)
 

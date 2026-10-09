@@ -143,9 +143,6 @@ defmodule QuantumBillingWeb.EWayBillNewLiveTest do
     assert html =~ "must look like MH01AB1234"
   end
 
-  # The page used to mint a random number into a flash and navigate away
-  # without storing anything: the bill it announced existed nowhere, least of
-  # all on the list it returned to.
   test "a complete submission issues a real bill against the invoice", %{conn: conn} do
     invoice = invoice_fixture()
 

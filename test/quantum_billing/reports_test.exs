@@ -6,9 +6,7 @@ defmodule QuantumBilling.ReportsTest do
   alias QuantumBilling.Repo
   alias QuantumBilling.Reports
 
-  # The aggregations all take a list, so they stay fully testable with no sample
-  # data in the application. These fixtures live here, in the test, which is the
-  # only place invented records belong.
+  # The aggregations take a list, so the fixtures live here in the test.
   defp invoice(attrs) do
     Map.merge(
       %{
@@ -380,10 +378,7 @@ defmodule QuantumBilling.ReportsTest do
     end
 
     test "the list is capped rather than shipped whole to every page" do
-      # This used to read every client name *and* every invoice's client name
-      # into memory to dedupe them in Elixir — fifty-two thousand strings and
-      # eleven megabytes per Reports page load, on a real dataset, to produce
-      # two thousand names that were then all rendered as `<option>`s.
+      # Distinct names are capped in the query rather than deduped in memory.
       for n <- 1..(Reports.client_name_limit() + 25) do
         Repo.insert!(%Client{name: "Client #{String.pad_leading(to_string(n), 4, "0")}"})
       end

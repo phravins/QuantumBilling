@@ -93,9 +93,7 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
       assert body =~ "Wireless keyboard"
     end
 
-    # The statutory lettering is gone from the page: the first block has no
-    # heading and counts its rows 1 to 10, and the second is named for what it
-    # holds rather than "Part - B".
+    # No Part A / Part B lettering: the rows are numbered 1 to 10.
     test "numbers the consignment rows and drops the Part A / Part B labels", %{conn: conn} do
       bill = invoice_with_bill()
 

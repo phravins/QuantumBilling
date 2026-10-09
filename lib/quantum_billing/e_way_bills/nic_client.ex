@@ -29,8 +29,6 @@ defmodule QuantumBilling.EWayBills.NICClient do
     client_gstin = invoice.client_gstin || "27AAAAA0000A1Z5"
     company_gstin = invoice.company_gstin || "27BBBBB0000B1Z5"
 
-    # The invoice no longer carries these: a bill is its own record, so the
-    # transport details come from the form that raises it.
     distance = integer(Map.get(params, "distance_km"), 250)
     transporter_id = presence(Map.get(params, "transporter_id")) || "27AAACG1234A1ZP"
     transporter_name = presence(Map.get(params, "transporter_name")) || "Express Logistics India"
@@ -97,9 +95,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
 
     payload = %{
       "ewbNo" => bill.ewb_number,
-      # The portal's own codes: 1 duplicate, 2 order cancelled, 3 data entry
-      # mistake, 4 others. The UI collects a sentence; anything unmapped is
-      # "others", which is what a free-text reason is.
+      # Portal codes: 1 duplicate, 2 order cancelled, 3 data entry mistake, 4 others.
       "cancelRsnCode" => cancel_reason_code(Map.get(params, "cancellation_reason")),
       "cancelRmrk" => Map.get(params, "cancellation_reason")
     }
@@ -133,12 +129,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
     end
   end
 
-  # One place that decides whether we are talking to the portal at all, so the
-  # three operations cannot drift apart on what counts as configured.
-  #
-  # `:sandbox` rather than an error: an unreachable portal must not stop a
-  # consignment being recorded, and the caller cannot tell the difference
-  # between "not configured" and "did not answer" in any way that matters.
+  # Falls back to the sandbox: an unreachable portal must not block recording a consignment.
   defp post(path, payload) do
     base_url = System.get_env("NIC_EWB_API_URL")
 
@@ -170,8 +161,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
     "1910" <> Enum.map_join(1..8, fn _ -> to_string(Enum.random(0..9)) end)
   end
 
-  # Rule 138(10), in one place, so the portal path and the sandbox path cannot
-  # disagree about when a consignment's bill lapses.
+  # Rule 138(10).
   defp validity(distance) do
     NaiveDateTime.utc_now()
     |> Validity.valid_until(distance)

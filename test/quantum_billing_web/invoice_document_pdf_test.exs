@@ -73,9 +73,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentPdfTest do
       with_logo(fn _path ->
         html = InvoicePdfGenerator.generate_html(invoice())
 
-        # `/uploads/logo.png` resolves only against the running app, so in an
-        # emailed document or a locally printed page it was a broken image and
-        # the customisation looked like it had not applied.
+        # Inlined so emailed and printed copies show the logo.
         assert html =~ "data:image/png;base64,"
         refute html =~ ~s(src="/uploads/)
       end)
@@ -104,8 +102,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentPdfTest do
 
         _binary ->
           assert {:ok, pdf} = InvoicePdfGenerator.generate_pdf(invoice())
-          # It used to return the HTML string, which the mailer attached as
-          # `.pdf`; this is the check that catches that regression.
+          # Must be a real PDF, not HTML.
           assert <<"%PDF-", _rest::binary>> = pdf
           assert byte_size(pdf) > 1_000
       end
@@ -145,8 +142,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentPdfTest do
 
       case PDF.executable() do
         nil ->
-          # Named and typed for what it actually is. The bug being guarded
-          # against is an HTML file called `INV-1234.pdf`.
+          # Named for what it is: never an HTML file called `.pdf`.
           assert attachment.filename == "#{invoice.invoice_number}.html"
           assert attachment.content_type == "text/html"
 

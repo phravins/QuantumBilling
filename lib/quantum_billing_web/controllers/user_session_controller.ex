@@ -79,13 +79,8 @@ defmodule QuantumBillingWeb.UserSessionController do
     end
   end
 
-  # Both doors — password and magic link — end here, which is the point: a
-  # second factor that only guarded one of them would be no second factor at
-  # all for anyone holding the inbox.
-  #
-  # The exception is a caller that is already signed in as this user, which is
-  # `update_password/2` re-issuing a session. Challenging there would ask for a
-  # code moments after the account was proven, to no benefit.
+  # Both password and magic-link login end here, so 2FA guards both.
+  # Skipped for a caller already signed in as this user.
   defp finish_login(conn, user, user_params, info) do
     cond do
       already_signed_in_as?(conn, user) ->

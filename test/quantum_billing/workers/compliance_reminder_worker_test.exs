@@ -6,13 +6,8 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Workers.ComplianceReminderWorker
 
-  # Every assertion names a fixed reference date, so nothing here changes
-  # meaning as the calendar moves. On 28 May 2024 exactly two obligations of a
-  # regular registrant's first FY month are inside a seven-day window, both
-  # already past their due date: April's GSTR-1 (due 11 May) and April's GSTR-3B
-  # (due 20 May). May's GSTR-1 is due 11 June, which is fourteen days out — so
-  # the lead window is what decides whether it is mentioned, and that is
-  # testable rather than incidental.
+  # On this date April's GSTR-1 (due 11 May) and GSTR-3B (20 May) are overdue, and
+  # May's GSTR-1 is fourteen days out, so the lead window decides it.
   @today ~D[2024-05-28]
   @gstin "27AABCU9603R1ZM"
 

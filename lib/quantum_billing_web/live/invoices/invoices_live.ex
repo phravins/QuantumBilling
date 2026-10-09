@@ -39,14 +39,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
      |> assign(:page, 1)}
   end
 
-  # Applies a search or status carried in the URL.
-  #
-  # Other pages link here already — the Clients list sends you to this client's
-  # invoices — and until now the query string was read by nobody: the link
-  # arrived at an unfiltered list and quietly showed everything. The page is
-  # loaded from here rather than from `mount/3` so the filters are in place
-  # before the first render, and so a link followed while the page is already
-  # open re-filters it.
+  # Applies a search or status from the URL before the first render.
   def handle_params(params, _uri, socket) do
     {:noreply,
      socket
@@ -63,9 +56,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
-  # Matched against the page's own list rather than trusted: this is a query
-  # string on its way to a WHERE clause, and an unknown status would silently
-  # empty the table.
+  # Allowlisted status.
   defp status_param(params, fallback) do
     case Map.get(params, "status") do
       status when status in @status_options -> status
@@ -82,8 +73,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    # Matched against the context's allowlist rather than converted: a sort
-    # field is user input on its way to an ORDER BY.
+    # Allowlisted: the sort field comes from the browser.
     case Enum.find(Invoices.sortable_fields(), &(to_string(&1) == field_str)) do
       nil ->
         {:noreply, socket}
@@ -113,12 +103,9 @@ defmodule QuantumBillingWeb.InvoicesLive do
   def handle_event("delete", %{"id" => id}, socket) do
     case Invoices.get_invoice(id) do
       nil ->
-        # Already gone — most likely deleted in another window, whose broadcast
-        # is about to refresh this list anyway.
         {:noreply, put_flash(socket, :error, "That invoice no longer exists.")}
 
       invoice ->
-        # Moves it to the Bin rather than removing it: see `Invoices.delete_invoice/2`.
         case Invoices.delete_invoice(invoice, user_id: socket.assigns.current_scope.user.id) do
           {:ok, invoice} ->
             {:noreply,
@@ -136,9 +123,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
     {:noreply, load_page(socket)}
   end
 
-  # One query pair — a count and a page — per interaction. The page number is
-  # re-clamped by the context, so deleting the last row of the last page lands
-  # on a page that exists instead of an empty one.
+  # The context clamps the page number, so deleting the last row stays on a real page.
   defp load_page(socket) do
     result =
       Invoices.page(
@@ -278,8 +263,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
             </thead>
 
             <tbody>
-              <%!-- The serial carries on across pages rather than restarting at
-              1, so it reads as a position in the list, not on the screen. --%>
+              <%!-- The serial continues across pages. --%>
               <tr
                 :for={{row, index} <- Enum.with_index(@rows)}
                 id={"invoice-#{row.id}"}
@@ -330,9 +314,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                         </li>
 
                         <li>
-                          <%!-- A real navigation, not a LiveView event: the
-                          print view is a plain page the browser has to load
-                          before it can offer to save it. --%>
+                          <%!-- Real navigation: the print view is a plain page. --%>
                           <.link href={~p"/invoices/#{row.id}/pdf/download"}>
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>

@@ -108,19 +108,13 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
       # See the moduledoc: the input is our own file, not a page a user chose.
       "--no-sandbox",
       "--disable-dev-shm-usage",
-      # Nothing in the document is fetched over the network, and nothing in it
-      # runs. Both are belt and braces around a local template.
       "--disable-extensions",
       "--disable-background-networking",
       "--no-first-run",
       "--no-default-browser-check",
-      # A page that somehow waits on something still finishes.
       "--virtual-time-budget=5000",
       "--user-data-dir=#{Path.join(directory, "profile")}",
-      # Both spellings of "no date, no page number, no file:// path across the
-      # bottom of a tax document". Chrome renamed the switch, and kept silently
-      # ignoring the old one, so a bill downloaded from here carried the
-      # temporary path it was rendered from. Passing both covers either build.
+      # Both spellings: Chrome renamed the switch and ignores the old one.
       "--no-pdf-header-footer",
       "--print-to-pdf-no-header",
       "--print-to-pdf=#{output}",
@@ -147,8 +141,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
 
   defp read_output(path) do
     case File.read(path) do
-      # A PDF starts with %PDF-. Checking is how a browser that exits zero
-      # having written nothing useful is caught here rather than by a customer.
+      # Catches a browser that exits zero without writing a PDF.
       {:ok, <<"%PDF-", _rest::binary>> = pdf} -> {:ok, pdf}
       {:ok, _not_a_pdf} -> {:error, :not_a_pdf}
       {:error, reason} -> {:error, {:unreadable, reason}}

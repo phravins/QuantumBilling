@@ -73,7 +73,6 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
     ~H"""
     <div class="min-h-screen bg-base-200/50 py-8 px-4 sm:px-6 lg:px-8">
       <div class="max-w-4xl mx-auto space-y-6">
-        <%!-- Header Navigation & Quick Actions --%>
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-base-100 p-6 rounded-2xl border border-base-300 shadow-sm">
           <div>
             <span class="text-xs font-bold uppercase tracking-wider text-base-content/50">Client Invoice Portal</span>
@@ -113,7 +112,6 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           </div>
         </div>
 
-        <%!-- Status Alert Banner --%>
         <div
           :if={@invoice.status == "Paid"}
           class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 font-medium flex items-center gap-2"
@@ -123,7 +121,6 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           <strong class="font-mono">{@invoice.razorpay_payment_id || "Direct Receipt"}</strong></span>
         </div>
 
-        <%!-- UPI Instant Scan & Pay Card (Unpaid Invoices) --%>
         <div
           :if={@invoice.status != "Paid"}
           class="bg-base-100 p-6 rounded-2xl border border-emerald-500/30 shadow-md flex flex-col sm:flex-row items-center justify-between gap-6"
@@ -157,13 +154,11 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           </div>
         </div>
 
-        <%!-- Main Invoice Document Render --%>
         <div class="bg-base-100 p-8 rounded-2xl border border-base-300 shadow-xl">
           <Renderer.stylesheet doc={@doc} />
           <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
         </div>
 
-        <%!-- Footer Information --%>
         <div class="text-center text-xs text-base-content/45 py-4">
           Powered by
           <strong class="text-base-content/60">QuantumBilling Enterprise GST Engine</strong>

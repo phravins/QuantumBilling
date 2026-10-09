@@ -32,9 +32,7 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
       without_sandbox(fn ->
         assert {:error, message} = RazorpayClient.create_payment_link(invoice())
 
-        # The old behaviour was to answer every failure with a fabricated
-        # `plink_…` id and an `rzp.io` URL that does not exist, record it on
-        # the invoice, and report success.
+        # Fails loudly rather than fabricating a payment link.
         assert message =~ "not configured"
         refute RazorpayClient.configured?()
       end)

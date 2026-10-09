@@ -24,10 +24,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDFTest do
       end
     end
 
-    # Chrome renamed the switch that turns the print header and footer off and
-    # then ignored the old spelling, so every downloaded document carried the
-    # date, a page number and the file:///tmp/... path it happened to be
-    # rendered from across the bottom of a tax record.
+    # Chrome renamed the header/footer switch; no date, page number or temp path
+    # may print on a tax record.
     test "prints no date, page number or temporary path", context do
       unless context[:skip] do
         assert {:ok, pdf} = PDF.render(@html)

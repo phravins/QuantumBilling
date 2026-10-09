@@ -30,9 +30,7 @@ defmodule QuantumBilling.Payments.QRCodeTest do
 
   describe "generate_svg/2" do
     test "actually returns a QR" do
-      # `EQRCode.encode/1` returns the matrix rather than `{:ok, matrix}`, so
-      # matching on `{:ok, _}` silently produced an empty string on every call
-      # — which is what every QR in the application used to render.
+      # `EQRCode.encode/1` returns the matrix, not `{:ok, matrix}`.
       svg = QRCode.generate_svg("https://example.test/pay/inv_abc")
 
       assert svg =~ ~r/^<svg/
@@ -76,8 +74,7 @@ defmodule QuantumBilling.Payments.QRCodeTest do
     end
 
     test "an email address is not a UPI ID, and is refused as one" do
-      # The old code used the organisation's contact email as the payee VPA,
-      # which produced a QR that every UPI app rejects when scanned.
+      # The payee VPA must be a UPI id, never the contact email.
       refute QRCode.upi_configured?(%Organization{upi_vpa: "billing@company.com"})
 
       assert {:error, changeset} =
