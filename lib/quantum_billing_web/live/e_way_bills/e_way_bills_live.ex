@@ -215,7 +215,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </:actions>
       </.header>
 
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="ewb-search"
           phx-change="search"
@@ -263,7 +263,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </div>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"
@@ -280,21 +280,21 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           }
         />
         <div :if={@total > 0}>
-          <table class="table table-fixed">
+          <table id="e-way-bills" class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
 
-                <th>
+                <th class="w-36">
                   <.sortable_th
                     label="EWB No."
                     field={:ewb_no}
                   />
                 </th>
 
-                <th>Document No.</th>
+                <th class="w-32">Document No.</th>
 
-                <th>
+                <th class="w-28">
                   <.sortable_th
                     label="Issued On"
                     field={:issued_on}
@@ -303,18 +303,18 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
                 <th>To</th>
 
-                <th>Route</th>
+                <th class="w-60">Route</th>
 
-                <th>
+                <th class="w-32 text-right">
                   <.sortable_th
                     label="Value"
                     field={:value}
                   />
                 </th>
 
-                <th>Status</th>
+                <th class="w-24">Status</th>
 
-                <th class="text-right">Actions</th>
+                <th class="w-52 text-right">Actions</th>
               </tr>
             </thead>
 
@@ -324,21 +324,32 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 id={"ewb-#{row.ewb_no}"}
                 class={table_row_class()}
               >
-                <td class="text-base-content/45">{@row_offset + index + 1}</td>
+                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                  {@row_offset + index + 1}
+                </td>
 
-                <td class="font-medium">{row.ewb_no}</td>
+                <td class="truncate whitespace-nowrap font-medium tabular-nums">{row.ewb_no}</td>
 
-                <td class="text-base-content/60">{row.document_no}</td>
+                <td class="truncate whitespace-nowrap text-base-content/60" title={row.document_no}>
+                  {row.document_no}
+                </td>
 
-                <td class="text-base-content/60">{format_date(row.issued_on)}</td>
+                <td class="whitespace-nowrap text-base-content/60">{format_date(row.issued_on)}</td>
 
-                <td>{row.to_party}</td>
+                <td class="truncate whitespace-nowrap" title={row.to_party}>{row.to_party}</td>
 
-                <td class="text-base-content/60">{row.from_place} &rarr; {row.to_place}</td>
+                <td
+                  class="truncate whitespace-nowrap text-base-content/60"
+                  title={"#{row.from_place} → #{row.to_place}"}
+                >
+                  {place_name(row.from_place)} &rarr; {place_name(row.to_place)}
+                </td>
 
-                <td class="font-medium">{rupees(row.value, decimals: 2, space: true)}</td>
+                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                  {rupees(row.value, decimals: 2, space: true)}
+                </td>
 
-                <td><.status_badge status={row.status} /></td>
+                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
                   <%!-- Open the official EWB-01 rendered by the controller. --%>
@@ -540,7 +551,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   defp action_modal(assigns) do
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div class="w-full max-w-md space-y-4 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl">
+      <div class="w-full max-w-md space-y-3 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl">
         <div class="flex items-start justify-between border-b border-base-200 pb-3">
           <div>
             <h3 class="text-base font-bold">{@title}</h3>
@@ -569,4 +580,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   defp sort_field(field_str) do
     Enum.find(EWayBills.sortable_fields(), &(Atom.to_string(&1) == field_str))
   end
+
+  # "Maharashtra (27)" reads as "Maharashtra" in the list; the code stays in the tooltip.
+  defp place_name(place) when is_binary(place), do: String.replace(place, ~r/\s*\(\d+\)\s*$/, "")
+  defp place_name(place), do: place
 end

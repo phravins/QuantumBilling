@@ -256,6 +256,32 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
   end
 
+  describe "smtp delivery log" do
+    test "a delivery can be removed from Recent Deliveries", %{conn: conn} do
+      {:ok, delivery} = QuantumBilling.Mail.record_queued(%{to_email: "log@example.com"})
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+      assert has_element?(view, "#delivery-#{delivery.id}")
+
+      view |> element("#delivery-delete-#{delivery.id}") |> render_click()
+
+      refute has_element?(view, "#delivery-#{delivery.id}")
+      assert QuantumBilling.Mail.get_delivery(delivery.id) == nil
+    end
+
+    test "a non-owner cannot remove a delivery", %{conn: conn} do
+      {:ok, delivery} = QuantumBilling.Mail.record_queued(%{to_email: "keep@example.com"})
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      conn = log_in_user(conn, staff)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
+      render_hook(view, "delete_delivery", %{"id" => to_string(delivery.id)})
+
+      assert QuantumBilling.Mail.get_delivery(delivery.id)
+    end
+  end
+
   describe "smtp" do
     test "renders and saves custom SMTP configuration", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/smtp")

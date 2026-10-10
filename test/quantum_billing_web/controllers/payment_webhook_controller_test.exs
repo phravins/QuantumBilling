@@ -42,7 +42,14 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
     %{
       "event" => "payment_link.paid",
       "payload" => %{
-        "payment_link" => %{"entity" => %{"reference_id" => number, "id" => "plink_1"}},
+        "payment_link" => %{
+          "entity" => %{
+            "reference_id" => number,
+            "id" => "plink_1",
+            "amount_paid" => 1_180_000,
+            "currency" => "INR"
+          }
+        },
         "payment" => %{"entity" => %{"id" => "pay_123"}}
       }
     }
@@ -145,7 +152,8 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
     # parsed params would produce different bytes and a different HMAC.
     body = """
     { "event" : "payment_link.paid" ,
-      "payload" : { "payment_link" : { "entity" : { "reference_id" : "INV-7006" } } ,
+      "payload" : { "payment_link" : { "entity" : { "reference_id" : "INV-7006" ,
+                                                  "amount_paid" : 1180000 , "currency" : "INR" } } ,
                     "payment" : { "entity" : { "id" : "pay_7006" } } } }
     """
 
@@ -159,6 +167,50 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
     assert json_response(conn, 200)["status"] == "success"
     assert Repo.get(Invoice, invoice.id).status == "Paid"
+  end
+
+  test "an under-payment is refused and the invoice stays unpaid", %{conn: conn} do
+    invoice = invoice_fixture("INV-7010")
+
+    body =
+      invoice.invoice_number
+      |> payload()
+      |> put_in(["payload", "payment_link", "entity", "amount_paid"], 100)
+      |> Jason.encode!()
+
+    conn = post_signed(conn, body, event_id: "evt_7010")
+
+    assert json_response(conn, 422)["reason"] == "amount_mismatch"
+    assert Repo.get(Invoice, invoice.id).status == "Draft"
+  end
+
+  test "the ledger keeps no payer details, and stores the event encrypted", %{conn: conn} do
+    invoice = invoice_fixture("INV-7011")
+
+    body =
+      invoice.invoice_number
+      |> payload()
+      |> put_in(["payload", "payment", "entity"], %{
+        "id" => "pay_7011",
+        "email" => "payer@example.com",
+        "contact" => "+919999999999",
+        "vpa" => "payer@okaxis",
+        "card" => %{"last4" => "4242"}
+      })
+      |> Jason.encode!()
+
+    conn = post_signed(conn, body, event_id: "evt_7011")
+    assert json_response(conn, 200)["status"] == "success"
+
+    {:duplicate, event} = Webhooks.claim("razorpay", "evt_7011")
+    assert event.payload["payment"] == %{"id" => "pay_7011"}
+    assert event.payload["payment_link"]["amount_paid"] == 1_180_000
+
+    %{rows: [[raw]]} =
+      Repo.query!("SELECT payload FROM webhook_events WHERE event_id = $1", ["evt_7011"])
+
+    refute String.contains?(raw, "pay_7011")
+    refute String.contains?(raw, "payer@example.com")
   end
 
   test "verify_webhook_signature/3 rejects anything but an exact match" do

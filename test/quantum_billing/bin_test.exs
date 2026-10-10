@@ -236,7 +236,14 @@ defmodule QuantumBilling.BinTest do
       payload = %{
         "event" => "payment_link.paid",
         "payload" => %{
-          "payment_link" => %{"entity" => %{"id" => "plink_1", "reference_id" => "INV-7701"}},
+          "payment_link" => %{
+            "entity" => %{
+              "id" => "plink_1",
+              "reference_id" => "INV-7701",
+              "amount_paid" => gone.grand_total * 100,
+              "currency" => "INR"
+            }
+          },
           "payment" => %{"entity" => %{"id" => "pay_1"}}
         }
       }

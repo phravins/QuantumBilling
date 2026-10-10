@@ -214,13 +214,28 @@ defmodule QuantumBilling.MailTest do
       assert %{"sent" => 1, "queued" => 1} = Mail.delivery_counts()
     end
 
+    test "a delivery can be removed from the log" do
+      {:ok, delivery} = Mail.record_queued(%{to_email: "gone@example.com"})
+      Mail.subscribe()
+
+      assert {:ok, _} = Mail.delete_delivery(delivery.id)
+      assert Mail.get_delivery(delivery.id) == nil
+
+      # Pinned: other async tests broadcast on the same topic.
+      id = delivery.id
+      assert_receive {:email_delivery_changed, %{id: ^id}}
+
+      assert Mail.delete_delivery(delivery.id) == {:error, :not_found}
+    end
+
     test "announces changes on the mail topic" do
       Mail.subscribe()
 
       {:ok, delivery} = Mail.record_queued(%{to_email: "watch@example.com"})
 
-      assert_receive {:email_delivery_changed, %{id: id}}
-      assert id == delivery.id
+      # Pinned: other async tests broadcast on the same topic.
+      id = delivery.id
+      assert_receive {:email_delivery_changed, %{id: ^id}}
     end
   end
 

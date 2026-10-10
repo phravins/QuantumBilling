@@ -170,7 +170,7 @@ defmodule QuantumBillingWeb.ReportsLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="flex flex-col lg:col-span-5">
-          <div class="mb-4 flex items-center justify-between gap-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold tracking-tight">Invoice Value Trend</h2>
             <span class="text-xs text-base-content/45">{@filters.date_range}</span>
           </div>
@@ -178,7 +178,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-4">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoices by Status</h2>
 
           <.donut_chart
             :if={@breakdown != []}
@@ -193,7 +193,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-3">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Filters</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Filters</h2>
 
           <form
             id="reports-filters"
@@ -236,7 +236,7 @@ defmodule QuantumBillingWeb.ReportsLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="lg:col-span-8">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
 
           <div class="overflow-x-auto">
             <table class="w-full">
@@ -285,7 +285,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-4">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Top Clients by Invoice Value</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Top Clients by Invoice Value</h2>
 
           <ul class="space-y-3.5">
             <.top_client_row

@@ -278,7 +278,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         />
       </div>
 
-      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid gap-3 lg:grid-cols-3">
         <.card id="client-identity" class="lg:col-span-1">
           <h2 class="text-sm font-semibold tracking-tight">Identity</h2>
 
@@ -299,7 +299,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
             <.detail label="Phone" value={phone(@client)} />
           </dl>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Commercial</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Commercial</h2>
 
           <dl class="mt-3 space-y-2.5">
             <.detail
@@ -317,7 +317,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {address_lines(@client, :billing)}
           </p>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Shipping address</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Shipping address</h2>
 
           <%!-- Use the flag: when shipping follows billing the shipping fields are empty. --%>
           <p :if={@client.shipping_same_as_billing} class="mt-3 text-sm text-base-content/45">
@@ -455,7 +455,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   defp detail(assigns) do
     ~H"""
-    <div class="flex items-baseline justify-between gap-4">
+    <div class="flex items-baseline justify-between gap-3">
       <dt class="shrink-0 text-xs text-base-content/45">{@label}</dt>
       <dd class={[
         "text-right text-sm",

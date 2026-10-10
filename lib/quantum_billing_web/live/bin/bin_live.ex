@@ -378,7 +378,7 @@ defmodule QuantumBillingWeb.BinLive do
         </:subtitle>
       </.header>
 
-      <div id="bin-filters" class="mb-4 flex flex-wrap items-center gap-2">
+      <div id="bin-filters" class="mb-3 flex flex-wrap items-center gap-2">
         <button
           :for={{key, label} <- @filters}
           type="button"
@@ -409,7 +409,7 @@ defmodule QuantumBillingWeb.BinLive do
         </button>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <div :if={@shown == 0} id="bin-empty" class="flex flex-1 flex-col justify-center">
           <.empty_state
             icon="hero-trash"
@@ -439,7 +439,7 @@ defmodule QuantumBillingWeb.BinLive do
 
                 <th class="w-36">Deleted on</th>
 
-                <th class="w-64 text-right">Actions</th>
+                <th class="w-56 text-right">Actions</th>
               </tr>
             </thead>
 
@@ -475,7 +475,10 @@ defmodule QuantumBillingWeb.BinLive do
                       phx-click="restore"
                       phx-value-type={entry.type}
                       phx-value-id={entry.record_id}
-                      class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
+                      class={[
+                        bin_action_class(),
+                        "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                      ]}
                     >
                       <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Restore
                     </button>
@@ -488,19 +491,21 @@ defmodule QuantumBillingWeb.BinLive do
                       phx-value-type={entry.type}
                       phx-value-id={entry.record_id}
                       data-confirm={entry.purge_confirm}
+                      title="Delete permanently"
+                      aria-label={"Delete #{entry.title} permanently"}
                       class={[
-                        secondary_button_class(),
-                        "h-8 px-2.5 text-xs text-error hover:border-error/40 hover:bg-error/10"
+                        bin_action_class(),
+                        "text-error hover:border-error/40 hover:bg-error/10"
                       ]}
                     >
-                      <.icon name="hero-trash" class="size-3.5" /> Delete permanently
+                      <.icon name="hero-trash" class="size-3.5" /> Delete
                     </button>
 
                     <span
                       :if={entry.locked}
                       id={"bin-locked-#{entry.id}"}
                       title={entry.locked}
-                      class="inline-flex h-8 items-center gap-1.5 px-2.5 text-xs text-base-content/45"
+                      class={[bin_action_class(), "cursor-help border-dashed text-base-content/45"]}
                     >
                       <.icon name="hero-lock-closed" class="size-3.5" /> In use
                     </span>
@@ -513,5 +518,11 @@ defmodule QuantumBillingWeb.BinLive do
       </.card>
     </Layouts.app>
     """
+  end
+
+  # One fixed slot for Restore, Delete and "In use", so every row lines up.
+  defp bin_action_class do
+    "inline-flex h-8 w-24 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap " <>
+      "rounded-field border border-base-300 bg-base-100 px-2 text-xs transition-colors"
   end
 end

@@ -113,7 +113,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
         </:actions>
       </.header>
 
-      <.card class="flex flex-1 flex-col p-4">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@logs == []}
           class="flex-1 justify-center"
@@ -166,7 +166,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
           </table>
         </div>
 
-        <div :if={@total_pages > 1} class="mt-auto flex items-center justify-between gap-4 pt-4">
+        <div :if={@total_pages > 1} class="mt-auto flex items-center justify-between gap-3 pt-4">
           <p class="text-xs text-base-content/45">
             {@total} recorded {if @total == 1, do: "event", else: "events"}
           </p>
@@ -178,7 +178,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
         :if={@selected_log}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-3">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">Audit Event Detail</h3>
             <button

@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.Endpoint do
     store: :cookie,
     key: "_quantum_billing_key",
     signing_salt: "QEN7M6qy",
+    # Encrypted as well as signed, so the cookie's contents are not readable.
+    encryption_salt: "B3jws6iS",
     same_site: "Lax"
   ]
 

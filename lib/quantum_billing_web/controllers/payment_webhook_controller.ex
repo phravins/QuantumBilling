@@ -20,6 +20,9 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     * **Delivery is rate limited by source.** A signature check is cheap but
       not free, and this is a public endpoint.
 
+    * **Payer details are not kept.** The ledger stores only what reconciliation
+      needs (`Payments.webhook_record/1`), encrypted at rest.
+
   Successfully handled duplicates return 200: a provider that is told "already
   done" with a 4xx will simply keep retrying.
   """
@@ -67,9 +70,10 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
   defp process(conn, params) do
     event_id = event_id(conn, params)
 
+    # Trimmed of payer details, and encrypted at rest by the ledger itself.
     case Webhooks.claim("razorpay", event_id, %{
            event_type: params["event"],
-           payload: params
+           payload: Payments.webhook_record(params)
          }) do
       {:duplicate, _event} ->
         # Acknowledged, or the provider retries for ever.

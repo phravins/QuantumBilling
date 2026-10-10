@@ -165,7 +165,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         </:actions>
       </.header>
 
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="invoice-search"
           phx-change="search"
@@ -209,7 +209,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         </div>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"
@@ -231,7 +231,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Invoice"
                     field={:seq}
@@ -240,25 +240,25 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
                 <th>Client</th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Invoice Date"
                     field={:invoice_date}
                   />
                 </th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Due Date"
                     field={:due_date}
                   />
                 </th>
 
-                <th>Total Amount</th>
+                <th class="w-36 text-right">Total Amount</th>
 
-                <th>Status</th>
+                <th class="w-28">Status</th>
 
-                <th class="text-right">Actions</th>
+                <th class="w-24 text-right">Actions</th>
               </tr>
             </thead>
 
@@ -269,19 +269,25 @@ defmodule QuantumBillingWeb.InvoicesLive do
                 id={"invoice-#{row.id}"}
                 class={table_row_class()}
               >
-                <td class="text-base-content/45">{@row_offset + index + 1}</td>
+                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                  {@row_offset + index + 1}
+                </td>
 
-                <td class="font-medium">{row.number}</td>
+                <td class="truncate whitespace-nowrap font-medium">{row.number}</td>
 
-                <td>{row.client}</td>
+                <td class="truncate whitespace-nowrap" title={row.client}>{row.client}</td>
 
-                <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
+                <td class="whitespace-nowrap text-base-content/60">
+                  {format_date(row.invoice_date)}
+                </td>
 
-                <td class="text-base-content/60">{format_date(row.due_date)}</td>
+                <td class="whitespace-nowrap text-base-content/60">{format_date(row.due_date)}</td>
 
-                <td class="font-medium">{rupees(row.amount)}</td>
+                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                  {rupees(row.amount)}
+                </td>
 
-                <td><.status_badge status={row.status} /></td>
+                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
                   <div class="flex justify-end gap-1">

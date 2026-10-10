@@ -126,7 +126,7 @@ defmodule QuantumBillingWeb.ReportsComponents do
 
   def top_client_row(assigns) do
     ~H"""
-    <li class="flex items-center justify-between gap-4 text-sm">
+    <li class="flex items-center justify-between gap-3 text-sm">
       <span class="flex min-w-0 items-center gap-2.5">
         <span class="w-4 shrink-0 text-xs text-base-content/45">{@rank}.</span>
         <span class="truncate text-base-content/80">{@name}</span>

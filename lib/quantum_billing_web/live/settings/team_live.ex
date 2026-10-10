@@ -115,7 +115,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
         </:subtitle>
       </.header>
 
-      <.card class="mb-4">
+      <.card class="mb-3">
         <h3 class="mb-1 text-sm font-semibold">Invite someone</h3>
         <p class="mb-3 text-xs text-base-content/60">
           Registration is closed — this is the only way to add an account. The link
@@ -144,7 +144,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
         </form>
       </.card>
 
-      <.card class="mb-4">
+      <.card class="mb-3">
         <h3 class="mb-3 text-sm font-semibold">Accounts</h3>
 
         <table class="table table-fixed">

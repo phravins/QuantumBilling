@@ -22,7 +22,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
 
   def tabs(assigns) do
     ~H"""
-    <div class="-mb-px flex items-center gap-6 border-b border-base-300">
+    <div class="-mb-px flex items-center gap-4 border-b border-base-300">
       <button
         :for={{key, label} <- @categories}
         type="button"
@@ -195,7 +195,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
         </button>
       </div>
 
-      <div class="mt-3 flex items-center justify-center gap-4 border-t border-base-300 pt-3">
+      <div class="mt-3 flex items-center justify-center gap-3 border-t border-base-300 pt-3">
         <span
           :for={status <- ~w(Filed Pending Overdue)}
           class="flex items-center gap-1.5 text-xs text-base-content/60"
@@ -218,7 +218,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   def obligation_detail(assigns) do
     ~H"""
     <div class="rounded-box border border-base-300 bg-base-200/60 p-4">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold tracking-tight">
             {@obligation.type} &mdash; {@obligation.period_label}

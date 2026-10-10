@@ -107,7 +107,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.card class="lg:col-span-2" padding="p-6">…</.card>
   """
   attr :class, :any, default: nil
-  attr :padding, :string, default: "p-4"
+  attr :padding, :string, default: "p-3"
   attr :as, :string, default: "div", doc: "the tag to render, e.g. `button` for clickable tiles"
   attr :rest, :global, include: ~w(type)
 

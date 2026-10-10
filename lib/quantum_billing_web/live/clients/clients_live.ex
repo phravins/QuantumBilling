@@ -169,7 +169,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         </:actions>
       </.header>
 
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <form
           phx-change="search"
           phx-submit="search"
@@ -213,7 +213,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         </div>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
           class="flex-1 justify-center"
@@ -242,22 +242,22 @@ defmodule QuantumBillingWeb.ClientsLive do
                   />
                 </th>
 
-                <th>GSTIN</th>
+                <th class="w-44">GSTIN</th>
 
-                <th>Email</th>
+                <th class="w-56">Email</th>
 
-                <th>Phone</th>
+                <th class="w-36">Phone</th>
 
-                <th>
+                <th class="w-36 text-right">
                   <.sortable_th
                     label="Outstanding"
                     field={:outstanding}
                   />
                 </th>
 
-                <th>Status</th>
+                <th class="w-24">Status</th>
 
-                <th class="text-right">Actions</th>
+                <th class="w-24 text-right">Actions</th>
               </tr>
             </thead>
 
@@ -267,23 +267,34 @@ defmodule QuantumBillingWeb.ClientsLive do
                 id={"client-#{row.id}"}
                 class={table_row_class()}
               >
-                <td class="text-base-content/45">{@row_offset + index + 1}</td>
+                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                  {@row_offset + index + 1}
+                </td>
 
                 <td>
-                  <div class="flex items-center gap-3">
-                    <.client_avatar name={row.name} /> <span class="font-medium">{row.name}</span>
+                  <div class="flex min-w-0 items-center gap-3">
+                    <.client_avatar name={row.name} />
+                    <span class="truncate font-medium" title={row.name}>{row.name}</span>
                   </div>
                 </td>
 
-                <td class="text-base-content/60">{row.gstin}</td>
+                <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
+                  {row.gstin}
+                </td>
 
-                <td class="text-base-content/60">{row.email}</td>
+                <td class="truncate whitespace-nowrap text-base-content/60" title={row.email}>
+                  {row.email}
+                </td>
 
-                <td class="text-base-content/60">{row.phone}</td>
+                <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
+                  {row.phone}
+                </td>
 
-                <td class="font-medium">{rupees(row.outstanding, decimals: 2, space: true)}</td>
+                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                  {rupees(row.outstanding, decimals: 2, space: true)}
+                </td>
 
-                <td><.status_badge status={row.status} /></td>
+                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
                   <div class="flex justify-end gap-1">

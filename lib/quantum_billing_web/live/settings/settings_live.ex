@@ -288,6 +288,22 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # The section is checked on navigation, but an event can be sent from any of them.
+  def handle_event("delete_delivery", %{"id" => id}, socket) do
+    if Scope.owner?(socket.assigns.current_scope) do
+      case Mail.delete_delivery(id) do
+        {:ok, _delivery} ->
+          {:noreply, socket |> put_flash(:info, "Delivery removed.") |> assign_deliveries()}
+
+        {:error, _reason} ->
+          {:noreply,
+           socket |> put_flash(:error, "That delivery is already gone.") |> assign_deliveries()}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
   def handle_event("restore_backup", _params, socket) do
     entries =
       consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
@@ -412,13 +428,13 @@ defmodule QuantumBillingWeb.SettingsLive do
         </:actions>
       </.header>
 
-      <div class="flex flex-1 flex-col gap-4">
-        <.card padding="p-6" class="flex flex-1 flex-col">
+      <div class="flex flex-1 flex-col gap-3">
+        <.card padding="p-4" class="flex flex-1 flex-col">
           {render_panel(assigns)}
         </.card>
 
-        <.card :if={@section == :general} padding="p-6">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <.card :if={@section == :general} padding="p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
 
@@ -445,7 +461,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       id="settings-form"
       phx-change="validate"
       phx-submit="save"
-      class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
     >
       <.field field={f[:company_name]} label="Company Name" required />
       <.field
@@ -507,7 +523,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :invoice} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <.field field={f[:invoice_prefix]} label="Invoice Prefix" required placeholder="INV" />
         <.field field={f[:invoice_next_number]} label="Next Number" type="number" required min="1" />
         <.field
@@ -527,7 +543,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         </p>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:invoice_due_days]}
           label="Default Payment Terms (days)"
@@ -552,7 +568,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :e_way_bill} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:ewb_transport_mode]}
           label="Default Transport Mode"
@@ -593,7 +609,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :tax} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:default_gst_rate]}
           label="Default GST Rate (%)"
@@ -632,7 +648,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:reminder_lead_days]}
           label="Remind me this many days ahead"
@@ -643,8 +659,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="mt-4 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold tracking-tight">SMTP Mailer Test</h3>
           <p class="mt-1 text-xs text-base-content/60">
@@ -667,7 +683,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :preferences} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:language]}
           label="Language"
@@ -683,7 +699,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
+    <div class="mt-4 border-t border-base-300 pt-5">
       <p class="text-sm font-medium">Theme</p>
 
       <p class="mt-1 text-sm text-base-content/60">
@@ -699,16 +715,16 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :security} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <.form
         :let={f}
         for={@form}
         id="settings-form"
         phx-change="validate"
         phx-submit="save"
-        class="space-y-4"
+        class="space-y-3"
       >
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:allowed_ips]}
             label="Allowed IP Ranges (Whitelisting)"
@@ -740,8 +756,8 @@ defmodule QuantumBillingWeb.SettingsLive do
 
       <hr class="border-base-300" />
 
-      <dl class="space-y-4">
-        <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
+      <dl class="space-y-3">
+        <div class="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
           <div>
             <dt class="text-sm font-medium">Account Email</dt>
             <dd class="mt-0.5 text-sm text-base-content/60">{@current_scope.user.email}</dd>
@@ -770,7 +786,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :smtp} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field field={f[:smtp_host]} label="SMTP Server Host" placeholder="smtp.mailgun.org" />
         <.field field={f[:smtp_port]} label="Port" type="number" placeholder="587" />
         <.field
@@ -802,8 +818,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="mt-4 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold tracking-tight">Test SMTP Mail Dispatch</h3>
           <p class="mt-1 text-xs text-base-content/60">
@@ -822,7 +838,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </div>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
+    <div class="mt-4 border-t border-base-300 pt-5">
       <h3 class="text-sm font-semibold tracking-tight">Recent Deliveries</h3>
       <p class="mt-1 text-xs text-base-content/60">
         Every message the application has tried to send, whether it arrived, and what went wrong
@@ -835,22 +851,29 @@ defmodule QuantumBillingWeb.SettingsLive do
       </p>
 
       <div :if={@deliveries != []} class="mt-3 overflow-x-auto">
-        <table class="table table-sm">
+        <table id="deliveries" class="table table-sm table-fixed">
           <thead>
             <tr class={table_head_class()}>
-              <th>When</th>
-              <th>To</th>
+              <th class="w-28">When</th>
+              <th class="w-56">To</th>
               <th>Subject</th>
-              <th>Status</th>
+              <th class="w-40">Status</th>
+              <th class="w-12"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
-            <tr :for={delivery <- @deliveries} id={"delivery-#{delivery.id}"} class="text-xs">
+            <tr
+              :for={delivery <- @deliveries}
+              id={"delivery-#{delivery.id}"}
+              class="align-middle text-xs"
+            >
               <td class="whitespace-nowrap text-base-content/50">
                 {Calendar.strftime(delivery.inserted_at, "%d %b %H:%M")}
               </td>
-              <td class="truncate">{delivery.to_email}</td>
-              <td class="truncate text-base-content/60">{delivery.subject}</td>
+              <td class="truncate" title={delivery.to_email}>{delivery.to_email}</td>
+              <td class="truncate text-base-content/60" title={delivery.subject}>
+                {delivery.subject}
+              </td>
               <td>
                 <span class={[
                   "badge badge-sm",
@@ -860,9 +883,27 @@ defmodule QuantumBillingWeb.SettingsLive do
                 ]}>
                   {delivery.status}
                 </span>
-                <span :if={delivery.last_error} class="ml-1 block text-2xs text-error">
+                <span
+                  :if={delivery.last_error}
+                  class="mt-0.5 block truncate text-2xs text-error"
+                  title={delivery.last_error}
+                >
                   {delivery.last_error}
                 </span>
+              </td>
+              <td class="text-right">
+                <button
+                  type="button"
+                  id={"delivery-delete-#{delivery.id}"}
+                  phx-click="delete_delivery"
+                  phx-value-id={delivery.id}
+                  data-confirm="Remove this delivery from the log?"
+                  class={row_delete_class()}
+                  aria-label={"Remove delivery to #{delivery.to_email}"}
+                  title="Remove from log"
+                >
+                  <.icon name="hero-trash" class="size-4" />
+                </button>
               </td>
             </tr>
           </tbody>
@@ -874,7 +915,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :customization} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
         <h3 class="text-sm font-semibold tracking-tight">Logo</h3>
 
@@ -961,7 +1002,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :backup} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold tracking-tight">1-Click Full System Backup</h3>
         <p class="mt-1 text-sm text-base-content/60">
@@ -1024,7 +1065,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       id="settings-form"
       phx-change="validate"
       phx-submit="save"
-      class="space-y-6"
+      class="space-y-4"
     >
       <div>
         <h3 class="text-sm font-semibold tracking-tight">UPI Payments</h3>
@@ -1033,7 +1074,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           payment QR code — without it, no payment QR is drawn.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:upi_vpa]}
             label="UPI ID (VPA)"
@@ -1057,7 +1098,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           are refused rather than simulated.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field field={f[:razorpay_key_id]} label="Razorpay Key ID" placeholder="rzp_live_..." />
           <.field
             field={f[:razorpay_key_secret]}
@@ -1076,7 +1117,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           Configure direct IRP / ClearTax API credentials for 1-click IRN & Signed QR code fetching.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <.field field={f[:irp_username]} label="IRP Username" placeholder="GSTIN_USER" />
           <.field
             field={f[:irp_password]}
@@ -1096,7 +1137,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           Stream realtime webhooks on invoice creation, payment completion, e-invoicing, and e-way bill events.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:webhook_url]}
             label="Webhook Payload Endpoint URL"

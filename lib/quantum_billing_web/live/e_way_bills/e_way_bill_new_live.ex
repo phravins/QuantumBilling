@@ -254,9 +254,9 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div class="space-y-4 lg:col-span-2">
-          <.card class="p-4">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div class="space-y-3 lg:col-span-2">
+          <.card>
             <form id="ewb-load-invoice" phx-change="load_invoice">
               <.input
                 type="select"
@@ -284,10 +284,10 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             id="ewb-form"
             phx-change="validate"
             phx-submit="save"
-            class="space-y-4"
+            class="space-y-3"
           >
             <.form_section step="1" title="Transaction Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <.field
                   field={f[:supply_type]}
                   label="Supply Type"
@@ -320,7 +320,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                     Transaction Type<span class="ml-0.5 text-error">*</span>
                   </span>
 
-                  <div class="flex h-9 items-center gap-6">
+                  <div class="flex h-9 items-center gap-4">
                     <.radio_option
                       :for={type <- EWayBillForm.transaction_types()}
                       field={f[:transaction_type]}
@@ -333,8 +333,8 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="2" title="Parties Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div class="space-y-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="space-y-3">
                   <.field
                     field={f[:from_party]}
                     label="From (Dispatch From)"
@@ -357,7 +357,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                   />
                 </div>
 
-                <div class="space-y-4">
+                <div class="space-y-3">
                   <.field
                     field={f[:to_party]}
                     label="To (Ship To)"
@@ -383,7 +383,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="3" title="Item Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <.field
                   field={f[:total_goods_value]}
                   label="Total Value of Goods"
@@ -411,7 +411,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="4" title="Transport Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <.field
                   field={f[:transport_mode]}
                   label="Transport Mode"
@@ -464,10 +464,10 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
           </.form>
         </div>
 
-        <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <div class="space-y-3 lg:sticky lg:top-16 lg:self-start">
           <.card>
-            <.brand_mark class="mb-4 border-b border-base-300 pb-4" icon_class="size-6" />
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
+            <.brand_mark class="mb-3 border-b border-base-300 pb-4" icon_class="size-6" />
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
 
             <div class="space-y-2.5">
               <.summary_row label="Supply Type" value={@summary.supply_type} />

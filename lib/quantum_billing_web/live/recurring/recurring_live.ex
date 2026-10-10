@@ -145,7 +145,7 @@ defmodule QuantumBillingWeb.RecurringLive do
         </:actions>
       </.header>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@profiles == []}
           class="flex-1 justify-center"
@@ -230,7 +230,7 @@ defmodule QuantumBillingWeb.RecurringLive do
         :if={@show_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-3">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">New Recurring Billing Profile</h3>
             <button
@@ -242,7 +242,7 @@ defmodule QuantumBillingWeb.RecurringLive do
             </button>
           </div>
 
-          <.form for={@form} id="recurring-profile-form" phx-submit="save" class="space-y-4">
+          <.form for={@form} id="recurring-profile-form" phx-submit="save" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Profile Title</label>
               <.input
@@ -276,7 +276,7 @@ defmodule QuantumBillingWeb.RecurringLive do
               </p>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-xs font-semibold mb-1">Frequency</label>
                 <select name={@form[:frequency].name} class="select select-bordered w-full text-xs">

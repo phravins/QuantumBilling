@@ -323,9 +323,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       id="profile_form"
       phx-change="validate_profile"
       phx-submit="save_profile"
-      class="mt-5"
+      class="mt-4"
     >
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field field={@profile_form[:full_name]} label="Full Name" placeholder="Your name" />
         <.field
           field={@profile_form[:designation]}
@@ -334,15 +334,15 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         /> <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
       </div>
 
-      <button type="submit" class={[action_button_class(), "mt-5"]}>
+      <button type="submit" class={[action_button_class(), "mt-4"]}>
         <.icon name="hero-check" class="size-4" /> Save Changes
       </button>
     </.form>
 
-    <div class="mt-8 border-t border-base-300 pt-6">
+    <div class="mt-4 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Profile Picture</h2>
 
-      <div class="mt-3 flex flex-wrap items-center gap-4">
+      <div class="mt-3 flex flex-wrap items-center gap-3">
         <%!-- current_scope, kept in step by the on_mount hook. --%>
         <span class={[avatar_class(), "size-14 bg-base-300 text-base text-base-content"]}>
           {initials(@current_scope.user)}
@@ -360,7 +360,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </div>
     </div>
 
-    <div class="mt-8 border-t border-base-300 pt-6">
+    <div class="mt-4 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Email Address</h2>
 
       <p class="mt-1 text-sm text-base-content/60">
@@ -375,7 +375,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         phx-submit="update_email"
         class="mt-4"
       >
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={@email_form[:email]}
             label="Email Address"
@@ -410,7 +410,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       phx-change="validate_password"
       phx-submit="update_password"
       phx-trigger-action={@trigger_submit}
-      class="mt-5"
+      class="mt-4"
     >
       <input
         name={@password_form[:email].name}
@@ -419,7 +419,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         spellcheck="false"
         value={@current_email}
       />
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={@password_form[:password]}
           label="New password"
@@ -436,7 +436,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         />
       </div>
 
-      <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-5"]}>
+      <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-4"]}>
         <.icon name="hero-lock-closed" class="size-4" /> Update Password
       </button>
     </.form>
@@ -452,8 +452,8 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     </p>
 
     <%!-- Shown once: they are stored hashed. --%>
-    <div :if={@new_recovery_codes} class="mt-5 rounded-box border border-base-300 bg-base-200 p-4">
-      <div class="flex items-start justify-between gap-4">
+    <div :if={@new_recovery_codes} class="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
+      <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold tracking-tight">Save your recovery codes</p>
 
@@ -480,7 +480,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </ul>
     </div>
 
-    <div :if={TwoFactor.enabled?(@user)} class="mt-5">
+    <div :if={TwoFactor.enabled?(@user)} class="mt-4">
       <div class="flex flex-wrap items-center gap-3 rounded-field border border-base-300 px-4 py-3">
         <.status_badge status="Active" />
         <p class="text-sm text-base-content/60">
@@ -504,8 +504,8 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </div>
     </div>
 
-    <div :if={TwoFactor.pending?(@user)} class="mt-5">
-      <ol class="space-y-5">
+    <div :if={TwoFactor.pending?(@user)} class="mt-4">
+      <ol class="space-y-4">
         <li>
           <p class="text-sm font-medium">1. Scan this with your authenticator app</p>
 
@@ -560,7 +560,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </ol>
     </div>
 
-    <div :if={not TwoFactor.enabled?(@user) and not TwoFactor.pending?(@user)} class="mt-5">
+    <div :if={not TwoFactor.enabled?(@user) and not TwoFactor.pending?(@user)} class="mt-4">
       <p class="text-sm text-base-content/60">
         With this on, signing in asks for a code from your phone as well as your password.
       </p>

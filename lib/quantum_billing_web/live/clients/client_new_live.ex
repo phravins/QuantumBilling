@@ -150,10 +150,10 @@ defmodule QuantumBillingWeb.ClientNewLive do
 
       <div>
         <.form :let={f} for={@form} id="client-form" phx-change="validate" phx-submit="save">
-          <.card padding="p-6">
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Basic Information</h2>
+          <.card padding="p-4">
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Basic Information</h2>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field
                 field={f[:client_type]}
                 label="Client Type"
@@ -200,9 +200,9 @@ defmodule QuantumBillingWeb.ClientNewLive do
               />
             </div>
             <hr class="my-6 border-base-300" />
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Contact Information</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Contact Information</h2>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div class="flex gap-2">
                 <div class="w-28 shrink-0">
                   <.field
@@ -231,9 +231,9 @@ defmodule QuantumBillingWeb.ClientNewLive do
               />
             </div>
             <hr class="my-6 border-base-300" />
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Billing Address</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Billing Address</h2>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <.field
                 field={f[:billing_line1]}
                 label="Address Line 1"
@@ -247,7 +247,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
               />
             </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field field={f[:billing_city]} label="City" required placeholder="Enter city" />
               <.field
                 field={f[:billing_state]}
@@ -277,9 +277,9 @@ defmodule QuantumBillingWeb.ClientNewLive do
             </label>
 
             <div :if={not @same_address?}>
-              <h2 class="mb-4 mt-6 text-sm font-semibold tracking-tight">Shipping Address</h2>
+              <h2 class="mb-2.5 mt-4 text-sm font-semibold tracking-tight">Shipping Address</h2>
 
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <.field
                   field={f[:shipping_line1]}
                   label="Address Line 1"
@@ -292,7 +292,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 />
               </div>
 
-              <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <.field field={f[:shipping_city]} label="City" placeholder="Enter city" />
                 <.field
                   field={f[:shipping_state]}
@@ -309,7 +309,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
               </div>
             </div>
 
-            <details class="group mt-6 border-t border-base-300 pt-4">
+            <details class="group mt-4 border-t border-base-300 pt-4">
               <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold tracking-tight">
                 Additional Information
                 <span class="font-normal text-base-content/45">(Optional)</span>
@@ -319,7 +319,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 />
               </summary>
 
-              <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <.field
                   field={f[:credit_limit]}
                   label="Credit Limit (₹)"

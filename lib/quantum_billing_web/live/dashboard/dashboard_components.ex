@@ -425,7 +425,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
     assigns = assign(assigns, :segments, donut_geometry(assigns.segments))
 
     ~H"""
-    <div class="flex items-center gap-6">
+    <div class="flex items-center gap-4">
       <div class="relative size-40 shrink-0">
         <svg viewBox="0 0 42 42" class="size-40 -rotate-90">
           <circle
@@ -448,7 +448,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
       </div>
 
       <ul class="flex-1 space-y-3">
-        <li :for={seg <- @segments} class="flex items-center justify-between gap-4 text-sm">
+        <li :for={seg <- @segments} class="flex items-center justify-between gap-3 text-sm">
           <span class="flex items-center gap-2 text-base-content/60">
             <span class={["size-2.5 shrink-0 rounded-full", dot_class(@palette, seg.tone)]} /> {seg.label}
           </span>

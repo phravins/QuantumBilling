@@ -181,7 +181,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
 
             <div class="dropdown dropdown-end">
@@ -318,9 +318,9 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </p>
         </.card>
 
-        <div class="space-y-4">
+        <div class="space-y-3">
           <.card>
-            <div class="mb-4 flex items-center justify-between">
+            <div class="mb-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold tracking-tight">Upcoming Due Dates</h2>
 
               <button
@@ -332,7 +332,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
               </button>
             </div>
 
-            <ul :if={@upcoming != []} class="space-y-4">
+            <ul :if={@upcoming != []} class="space-y-3">
               <.due_date_row :for={obligation <- @upcoming} obligation={obligation} />
             </ul>
 
@@ -349,7 +349,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </.card>
 
           <.card id="filing-calendar">
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
             <.month_calendar
               weeks={@weeks}

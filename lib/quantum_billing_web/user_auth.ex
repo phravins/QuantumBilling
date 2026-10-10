@@ -13,7 +13,7 @@ defmodule QuantumBillingWeb.UserAuth do
   @max_cookie_age_in_days 14
   @remember_me_cookie "_quantum_billing_web_user_remember_me"
   @remember_me_options [
-    sign: true,
+    encrypt: true,
     max_age: @max_cookie_age_in_days * 24 * 60 * 60,
     same_site: "Lax"
   ]
@@ -130,7 +130,7 @@ defmodule QuantumBillingWeb.UserAuth do
     if token = get_session(conn, :user_token) do
       {token, conn}
     else
-      conn = fetch_cookies(conn, signed: [@remember_me_cookie])
+      conn = fetch_cookies(conn, encrypted: [@remember_me_cookie])
 
       if token = conn.cookies[@remember_me_cookie] do
         {token, conn |> put_token_in_session(token) |> put_session(:user_remember_me, true)}
