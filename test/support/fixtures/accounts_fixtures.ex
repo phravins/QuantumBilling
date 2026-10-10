@@ -64,6 +64,47 @@ defmodule QuantumBilling.AccountsFixtures do
     user
   end
 
+  @doc """
+  A confirmed account that owns the installation.
+
+  Registration is invite-only and the owner-only areas — the credential
+  settings panels, Team, the full data export — are gated on this role, so a
+  test that exercises them needs it explicitly. `user_fixture/1` deliberately
+  stays staff: that is the weaker of the two, and the one a route test should
+  be written against by default.
+  """
+  def owner_fixture(attrs \\ %{}) do
+    user = user_fixture(attrs)
+    {:ok, owner} = Accounts.set_role(user, "owner")
+    owner
+  end
+
+  @doc """
+  Invites `email` and returns the raw invitation token.
+
+  Registration is invite-only, so anything that exercises the sign-up form
+  past the very first account has to come through here. The token is captured
+  from the URL builder because that is the only place it exists — the database
+  keeps only its hash.
+  """
+  def invitation_token_fixture(email, opts \\ []) do
+    owner = Keyword.get_lazy(opts, :invited_by, &owner_fixture/0)
+    role = Keyword.get(opts, :role, "staff")
+    test_pid = self()
+
+    {:ok, _invitation} =
+      Accounts.invite(email, role, owner, fn token ->
+        send(test_pid, {:invitation_token, token})
+        "http://localhost/users/register?token=#{token}"
+      end)
+
+    receive do
+      {:invitation_token, token} -> token
+    after
+      0 -> raise "invite/4 never built an invitation URL"
+    end
+  end
+
   def user_scope_fixture do
     user = user_fixture()
     user_scope_fixture(user)

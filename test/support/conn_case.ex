@@ -57,6 +57,29 @@ defmodule QuantumBillingWeb.ConnCase do
   end
 
   @doc """
+  Setup helper that registers and logs in an account that owns the
+  installation.
+
+      setup :register_and_log_in_owner
+
+  Use this for the owner-only areas: the credential settings panels, Team, and
+  the full data export. `register_and_log_in_user/1` logs in staff, which is
+  the right default — a page that only works for an owner should have to say
+  so.
+  """
+  def register_and_log_in_owner(%{conn: conn} = context) do
+    user = QuantumBilling.AccountsFixtures.owner_fixture()
+    scope = QuantumBilling.Accounts.Scope.for_user(user)
+
+    opts =
+      context
+      |> Map.take([:token_authenticated_at])
+      |> Enum.into([])
+
+    %{conn: log_in_user(conn, user, opts), user: user, scope: scope}
+  end
+
+  @doc """
   Logs the given `user` into the `conn`.
 
   It returns an updated `conn`.

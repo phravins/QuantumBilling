@@ -1,4 +1,18 @@
 defmodule QuantumBillingWeb.UserLive.Registration do
+  @moduledoc """
+  Creating an account — which is not open to the public.
+
+  Every account on this installation shares one dataset: there is no per-user
+  scoping on invoices or clients, because the application bills for one
+  business. So an account is full access to the books, and this page used to
+  hand one to anybody who found the URL. Confirming an email proves you own
+  that mailbox; it does not prove the business wants you in its ledger.
+
+  So the page has three states: it takes the very first account on a fresh
+  installation (which becomes the owner), it takes an invited address when
+  `?token=` carries a live invitation, and otherwise it explains that an
+  invitation is needed and shows no form at all.
+  """
   use QuantumBillingWeb, :live_view
 
   import QuantumBillingWeb.UserLive.AuthComponents
@@ -15,10 +29,39 @@ defmodule QuantumBillingWeb.UserLive.Registration do
       </:top_link>
 
       <Layouts.auth_heading
-        title="Create an account"
-        subtitle="Enter your details below to create your account"
+        title={if @open?, do: "Create an account", else: "Registration is by invitation"}
+        subtitle={
+          cond do
+            @bootstrap? ->
+              "This installation has no accounts yet. The first one you create owns it."
+
+            @open? ->
+              "You were invited as #{@invited_email}. Set a username and a password to finish."
+
+            true ->
+              "This installation does not accept public sign-ups."
+          end
+        }
       />
-      <div class="grid gap-6">
+
+      <div :if={not @open?} class="grid gap-4 text-sm text-base-content/70">
+        <p>
+          Accounts here share one set of books, so they are handed out rather than
+          claimed. Ask an owner to invite you — they can do it from
+          <span class="font-medium">Settings &rsaquo; Team</span>
+          — and you will get a
+          link by email.
+        </p>
+
+        <p>
+          Already have an account? <.link
+            navigate={~p"/users/log-in"}
+            class="font-medium hover:underline"
+          >Log in</.link>.
+        </p>
+      </div>
+
+      <div :if={@open?} class="grid gap-6">
         <.form
           for={@form}
           id="registration_form"
@@ -37,6 +80,12 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             class={input_class()}
             error_class="border-red-500"
           />
+          <%!--
+          Read-only when invited: the invitation is bound to one address, and
+          letting it be edited here would only burn the invitation on a
+          mismatch. The server re-checks it either way — a readonly attribute
+          is a courtesy, not a control.
+          --%>
           <.input
             field={@form[:email]}
             type="email"
@@ -44,6 +93,7 @@ defmodule QuantumBillingWeb.UserLive.Registration do
             autocomplete="email"
             spellcheck="false"
             required
+            readonly={not @bootstrap?}
             class={input_class()}
             error_class="border-red-500"
           />
@@ -85,15 +135,35 @@ defmodule QuantumBillingWeb.UserLive.Registration do
     {:ok, redirect(socket, to: QuantumBillingWeb.UserAuth.signed_in_path(socket))}
   end
 
-  def mount(_params, _session, socket) do
-    changeset = Accounts.change_user_registration(%User{})
+  def mount(params, _session, socket) do
+    token = params["token"]
+    bootstrap? = Accounts.bootstrap?()
+    invited_email = Accounts.invited_email(token)
 
-    {:ok, assign_form(socket, changeset)}
+    changeset =
+      Accounts.change_user_registration(%User{}, %{"email" => invited_email})
+
+    {:ok,
+     socket
+     |> assign(:invitation_token, token)
+     |> assign(:bootstrap?, bootstrap?)
+     |> assign(:invited_email, invited_email)
+     |> assign(:open?, bootstrap? or not is_nil(invited_email))
+     |> assign_form(changeset)}
   end
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
-    case Accounts.register_user_with_password(user_params) do
+    # The invitation decides the address, not the form. Even with the readonly
+    # attribute removed in the browser, what gets registered is what was
+    # invited.
+    user_params =
+      case socket.assigns.invited_email do
+        nil -> user_params
+        email -> Map.put(user_params, "email", email)
+      end
+
+    case Accounts.register_user_with_password(user_params, socket.assigns.invitation_token) do
       {:ok, user} ->
         # The account is already saved by this point, so a relay that will not
         # take the message must not take the page down with it. Matching

@@ -30,4 +30,14 @@ defmodule QuantumBilling.Accounts.Scope do
   end
 
   def for_user(nil), do: nil
+
+  @doc """
+  Whether the caller owns the installation.
+
+  Asked of the scope rather than reached through to the user, so an
+  authorization check reads the same wherever it appears and a nil scope — a
+  signed-out caller — answers `false` rather than raising.
+  """
+  def owner?(%__MODULE__{user: user}), do: User.owner?(user)
+  def owner?(_scope), do: false
 end

@@ -10,6 +10,12 @@ defmodule QuantumBilling.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
+    # What this account is allowed to do. Deliberately absent from every
+    # `cast/3` list below: a role is granted by an owner, never submitted from
+    # a form, and casting it would let anyone post `role=owner` alongside their
+    # display name. `Accounts.set_role/2` is the only way it changes.
+    field :role, :string, default: "staff"
+
     # Display details, shown on Account Settings and in the sidebar. None of
     # these is part of identity — that stays the email address.
     field :full_name, :string
@@ -25,6 +31,33 @@ defmodule QuantumBilling.Accounts.User do
     field :recovery_codes, {:array, :string}, default: [], redact: true
 
     timestamps(type: :utc_datetime)
+  end
+
+  @roles ~w(owner staff)
+
+  @doc "The roles an account can hold."
+  def roles, do: @roles
+
+  @doc """
+  Whether this account owns the installation.
+
+  Owners administer the application itself — they hold the other accounts, the
+  stored credentials for SMTP and the payment gateway, and the full database
+  export. Staff do the billing.
+  """
+  def owner?(%__MODULE__{role: "owner"}), do: true
+  def owner?(_user), do: false
+
+  @doc """
+  A changeset for an account's role.
+
+  Separate from every other changeset precisely so that granting a role is a
+  deliberate call and cannot ride along on a profile or email update.
+  """
+  def role_changeset(user, role) when is_binary(role) do
+    user
+    |> cast(%{role: role}, [:role])
+    |> validate_inclusion(:role, @roles)
   end
 
   @doc """
