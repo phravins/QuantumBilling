@@ -179,7 +179,7 @@ defmodule QuantumBillingWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
+        <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-3">
           <%!-- Live feed from NotificationsHook; capped and scrollable. --%>
           <div class="dropdown dropdown-end">
             <div
@@ -274,7 +274,7 @@ defmodule QuantumBillingWeb.Layouts do
         </header>
 
         <%!-- A flex column so a page can give a panel flex-1 to fill the remaining height. --%>
-        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3">
+        <main class="flex flex-1 flex-col overflow-y-auto px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5">
           {render_slot(@inner_block)}
         </main>
       </div>

@@ -439,7 +439,7 @@ defmodule QuantumBillingWeb.BinLive do
 
                 <th class="w-36">Deleted on</th>
 
-                <th class="w-56 text-right">Actions</th>
+                <th class="w-24">Actions</th>
               </tr>
             </thead>
 
@@ -461,26 +461,26 @@ defmodule QuantumBillingWeb.BinLive do
 
                 <td class="truncate text-base-content/60">{entry.details}</td>
 
-                <td class="text-base-content/60">
-                  <p>{format_date(DateTime.to_date(entry.deleted_at))}</p>
-
-                  <p class="text-xs text-base-content/45">{relative_time(entry.deleted_at)}</p>
+                <td
+                  class="whitespace-nowrap text-base-content/60"
+                  title={Calendar.strftime(entry.deleted_at, "%d %b %Y, %H:%M UTC")}
+                >
+                  {format_date(DateTime.to_date(entry.deleted_at))}
                 </td>
 
                 <td>
-                  <div class="flex items-center justify-end gap-1.5">
+                  <div class="flex items-center gap-1">
                     <button
                       type="button"
                       id={"bin-restore-#{entry.id}"}
                       phx-click="restore"
                       phx-value-type={entry.type}
                       phx-value-id={entry.record_id}
-                      class={[
-                        bin_action_class(),
-                        "text-base-content/70 hover:bg-base-200 hover:text-base-content"
-                      ]}
+                      title="Restore"
+                      aria-label={"Restore #{entry.title}"}
+                      class={row_action_class()}
                     >
-                      <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Restore
+                      <.icon name="hero-arrow-uturn-left" class="size-4" />
                     </button>
 
                     <button
@@ -493,21 +493,19 @@ defmodule QuantumBillingWeb.BinLive do
                       data-confirm={entry.purge_confirm}
                       title="Delete permanently"
                       aria-label={"Delete #{entry.title} permanently"}
-                      class={[
-                        bin_action_class(),
-                        "text-error hover:border-error/40 hover:bg-error/10"
-                      ]}
+                      class={row_delete_class()}
                     >
-                      <.icon name="hero-trash" class="size-3.5" /> Delete
+                      <.icon name="hero-trash" class="size-4" />
                     </button>
 
                     <span
                       :if={entry.locked}
                       id={"bin-locked-#{entry.id}"}
                       title={entry.locked}
-                      class={[bin_action_class(), "cursor-help border-dashed text-base-content/45"]}
+                      aria-label={"In use: #{entry.locked}"}
+                      class="flex size-7 cursor-help items-center justify-center text-base-content/30"
                     >
-                      <.icon name="hero-lock-closed" class="size-3.5" /> In use
+                      <.icon name="hero-lock-closed" class="size-4" />
                     </span>
                   </div>
                 </td>
@@ -518,11 +516,5 @@ defmodule QuantumBillingWeb.BinLive do
       </.card>
     </Layouts.app>
     """
-  end
-
-  # One fixed slot for Restore, Delete and "In use", so every row lines up.
-  defp bin_action_class do
-    "inline-flex h-8 w-24 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap " <>
-      "rounded-field border border-base-300 bg-base-100 px-2 text-xs transition-colors"
   end
 end

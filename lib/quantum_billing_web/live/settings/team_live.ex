@@ -153,7 +153,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
               <th>Email</th>
               <th class="w-32">Role</th>
               <th class="w-28">Status</th>
-              <th class="w-44 text-right">Change role</th>
+              <th class="w-44">Change role</th>
             </tr>
           </thead>
 
@@ -175,7 +175,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                 {if user.confirmed_at, do: "Confirmed", else: "Pending"}
               </td>
 
-              <td class="text-right">
+              <td>
                 <button
                   :if={not User.owner?(user)}
                   type="button"
@@ -228,7 +228,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
               <th>Email</th>
               <th class="w-24">Role</th>
               <th class="w-32">State</th>
-              <th class="w-28 text-right">Actions</th>
+              <th class="w-28">Actions</th>
             </tr>
           </thead>
 
@@ -249,7 +249,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                 end}
               </td>
 
-              <td class="text-right">
+              <td>
                 <button
                   :if={is_nil(invitation.accepted_at)}
                   type="button"

@@ -48,7 +48,8 @@ defmodule QuantumBillingWeb.SharedComponents do
   @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
                       "text-base-content/60 [&>th]:py-1.5"
 
-  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
+  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60 " <>
+                     "[&>td]:py-2.5"
 
   @doc "The solid, near-black call-to-action button used in page headers."
   def action_button_class, do: @action_button_class
@@ -254,7 +255,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   def status_badge(assigns) do
     ~H"""
     <span class={[
-      "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+      "inline-block max-w-full truncate rounded-full border px-2 py-0.5 align-middle text-xs font-medium whitespace-nowrap",
       status_badge_class(@status)
     ]}>{@status}</span>
     """

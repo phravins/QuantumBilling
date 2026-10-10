@@ -541,7 +541,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
                     <th class="w-24 pr-2 text-left">Tax (%)</th>
 
-                    <th class="w-32 pr-2 text-right">Amount (₹)</th>
+                    <th class="w-32 pr-2">Amount (₹)</th>
 
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
@@ -646,7 +646,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         </select>
                       </td>
 
-                      <td class="py-2 pr-2 text-right align-middle">
+                      <td class="py-2 pr-2 align-middle">
                         <.line_amount item={item_f.source} index={item_f.index} />
                       </td>
 

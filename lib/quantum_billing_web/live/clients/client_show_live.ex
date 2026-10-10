@@ -374,7 +374,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <th>Due</th>
                 <th>Amount</th>
                 <th>Status</th>
-                <th class="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
@@ -391,7 +391,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <td><.status_badge status={invoice.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       navigate={~p"/invoices/#{invoice.id}"}
                       class={row_action_class()}

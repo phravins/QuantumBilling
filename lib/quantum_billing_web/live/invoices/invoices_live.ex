@@ -254,11 +254,11 @@ defmodule QuantumBillingWeb.InvoicesLive do
                   />
                 </th>
 
-                <th class="w-36 text-right">Total Amount</th>
+                <th class="w-36">Total Amount</th>
 
-                <th class="w-28">Status</th>
+                <th class="w-44">Status</th>
 
-                <th class="w-24 text-right">Actions</th>
+                <th class="w-32">Actions</th>
               </tr>
             </thead>
 
@@ -283,14 +283,14 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
                 <td class="whitespace-nowrap text-base-content/60">{format_date(row.due_date)}</td>
 
-                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                <td class="whitespace-nowrap font-medium tabular-nums">
                   {rupees(row.amount)}
                 </td>
 
                 <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       navigate={~p"/invoices/#{row.id}"}
                       class={row_action_class()}

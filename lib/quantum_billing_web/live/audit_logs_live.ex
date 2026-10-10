@@ -132,7 +132,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
                 <th class="w-36">Resource ID</th>
                 <th class="w-40">User</th>
                 <th class="w-28">IP Address</th>
-                <th class="text-right w-20">Details</th>
+                <th class="w-20">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -151,7 +151,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
                 <td class="font-mono text-xs text-base-content/50">
                   {log.ip_address || "127.0.0.1"}
                 </td>
-                <td class="text-right">
+                <td>
                   <button
                     type="button"
                     phx-click="select_log"

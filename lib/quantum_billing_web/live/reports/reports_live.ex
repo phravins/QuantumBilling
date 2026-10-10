@@ -244,15 +244,15 @@ defmodule QuantumBillingWeb.ReportsLive do
                 <tr class={table_head_class()}>
                   <th class="pr-4 text-left">Tax Type</th>
 
-                  <th class="pr-4 text-right">Taxable Value (₹)</th>
+                  <th class="pr-4">Taxable Value (₹)</th>
 
-                  <th class="pr-4 text-right">CGST (₹)</th>
+                  <th class="pr-4">CGST (₹)</th>
 
-                  <th class="pr-4 text-right">SGST (₹)</th>
+                  <th class="pr-4">SGST (₹)</th>
 
-                  <th class="pr-4 text-right">IGST (₹)</th>
+                  <th class="pr-4">IGST (₹)</th>
 
-                  <th class="text-right">Total Tax (₹)</th>
+                  <th>Total Tax (₹)</th>
                 </tr>
               </thead>
 
@@ -263,15 +263,15 @@ defmodule QuantumBillingWeb.ReportsLive do
                 >
                   <td class="py-2.5 pr-4">{row.label}</td>
 
-                  <td class="py-2.5 pr-4 text-right">{rupees(row.taxable_value, decimals: 2)}</td>
+                  <td class="py-2.5 pr-4">{rupees(row.taxable_value, decimals: 2)}</td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.cgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.cgst} /></td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.sgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.sgst} /></td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.igst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.igst} /></td>
 
-                  <td class="py-2.5 text-right">{rupees(row.total_tax, decimals: 2)}</td>
+                  <td class="py-2.5">{rupees(row.total_tax, decimals: 2)}</td>
                 </tr>
 
                 <tr :if={@tax_rows == []}>

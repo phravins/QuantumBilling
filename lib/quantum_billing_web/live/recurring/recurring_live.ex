@@ -164,7 +164,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                 <th>Next Run Date</th>
                 <th>Auto-Email PDF</th>
                 <th>Status</th>
-                <th class="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +192,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                   </span>
                 </td>
                 <td>
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center gap-2">
                     <button
                       type="button"
                       phx-click="toggle_status"

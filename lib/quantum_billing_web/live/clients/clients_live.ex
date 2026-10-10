@@ -248,16 +248,16 @@ defmodule QuantumBillingWeb.ClientsLive do
 
                 <th class="w-36">Phone</th>
 
-                <th class="w-36 text-right">
+                <th class="w-36">
                   <.sortable_th
                     label="Outstanding"
                     field={:outstanding}
                   />
                 </th>
 
-                <th class="w-24">Status</th>
+                <th class="w-28">Status</th>
 
-                <th class="w-24 text-right">Actions</th>
+                <th class="w-32">Actions</th>
               </tr>
             </thead>
 
@@ -290,14 +290,14 @@ defmodule QuantumBillingWeb.ClientsLive do
                   {row.phone}
                 </td>
 
-                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                <td class="whitespace-nowrap font-medium tabular-nums">
                   {rupees(row.outstanding, decimals: 2, space: true)}
                 </td>
 
                 <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       id={"view-client-#{row.id}"}
                       navigate={~p"/clients/#{row.id}"}

@@ -305,16 +305,16 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
                 <th class="w-60">Route</th>
 
-                <th class="w-32 text-right">
+                <th class="w-32">
                   <.sortable_th
                     label="Value"
                     field={:value}
                   />
                 </th>
 
-                <th class="w-24">Status</th>
+                <th class="w-28">Status</th>
 
-                <th class="w-52 text-right">Actions</th>
+                <th class="w-52">Actions</th>
               </tr>
             </thead>
 
@@ -345,7 +345,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                   {place_name(row.from_place)} &rarr; {place_name(row.to_place)}
                 </td>
 
-                <td class="whitespace-nowrap text-right font-medium tabular-nums">
+                <td class="whitespace-nowrap font-medium tabular-nums">
                   {rupees(row.value, decimals: 2, space: true)}
                 </td>
 
@@ -353,7 +353,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
                 <td>
                   <%!-- Open the official EWB-01 rendered by the controller. --%>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       href={~p"/e-way-bills/#{row.id}/print"}
                       target="_blank"
