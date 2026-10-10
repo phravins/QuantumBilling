@@ -192,7 +192,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
               <ul
                 tabindex="0"
-                class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                class="dropdown-content menu z-30 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
               >
                 <li :for={status <- Compliance.statuses()}>
                   <a phx-click="filter_status" phx-value-status={status}>{status}</a>

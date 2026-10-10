@@ -65,6 +65,28 @@ defmodule QuantumBillingWeb.SharedComponentsTest do
     end
   end
 
+  describe "pagination" do
+    test "measures the screen only when asked to" do
+      fitted = render_component(&pagination/1, current_page: 1, total_pages: 2, fit_rows: true)
+      plain = render_component(&pagination/1, current_page: 1, total_pages: 2)
+
+      assert fitted =~ ~s(id="pagination")
+      assert fitted =~ "phx-hook"
+      refute plain =~ "phx-hook"
+    end
+  end
+
+  describe "fit_rows_per_page/1" do
+    test "clamps to 5..100 and refuses what isn't a whole number" do
+      assert fit_rows_per_page(15) == {:ok, 15}
+      assert fit_rows_per_page("15") == {:ok, 15}
+      assert fit_rows_per_page(0) == {:ok, 5}
+      assert fit_rows_per_page("9000") == {:ok, 100}
+      assert fit_rows_per_page("15px") == :error
+      assert fit_rows_per_page(nil) == :error
+    end
+  end
+
   defp count(html, needle) do
     html |> String.split(needle) |> length() |> Kernel.-(1)
   end

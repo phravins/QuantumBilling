@@ -36,7 +36,8 @@ defmodule QuantumBillingWeb.InvoicesLive do
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
      |> assign(:sort_dir, :desc)
-     |> assign(:page, 1)}
+     |> assign(:page, 1)
+     |> assign(:per_page, @per_page)}
   end
 
   # Applies a search or status from the URL before the first render.
@@ -93,6 +94,22 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("paginate", %{"page" => page_str}, socket) do
     case Integer.parse(page_str) do
       {page, ""} -> {:noreply, socket |> assign(:page, page) |> load_page()}
@@ -132,7 +149,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
@@ -348,7 +365,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         </div>
 
         <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
         </div>
       </.card>
     </Layouts.app>

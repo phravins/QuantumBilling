@@ -27,6 +27,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> assign(:section, :audit_logs)
      |> assign(:filter_action, "")
      |> assign(:page, 1)
+     |> assign(:per_page, @per_page)
      |> assign(:selected_log, nil)
      |> load_page()}
   end
@@ -46,6 +47,22 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> assign(:filter_action, action || "")
      |> assign(:page, 1)
      |> load_page()}
+  end
+
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
@@ -74,7 +91,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
       Audit.page(
         action: socket.assigns.filter_action,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
@@ -166,11 +183,11 @@ defmodule QuantumBillingWeb.AuditLogsLive do
           </table>
         </div>
 
-        <div :if={@total_pages > 1} class="mt-auto flex items-center justify-between gap-3 pt-4">
+        <div :if={@total > 0} class="mt-auto flex items-center justify-between gap-3 pt-4">
           <p class="text-xs text-base-content/45">
             {@total} recorded {if @total == 1, do: "event", else: "events"}
           </p>
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
         </div>
       </.card>
 

@@ -32,6 +32,7 @@ defmodule QuantumBillingWeb.ClientsLive do
      |> assign(:sort_field, nil)
      |> assign(:sort_dir, :asc)
      |> assign(:page, 1)
+     |> assign(:per_page, @per_page)
      |> load_page()}
   end
 
@@ -61,6 +62,22 @@ defmodule QuantumBillingWeb.ClientsLive do
          socket
          |> assign(sort_field: sort_field, sort_dir: sort_dir, page: 1)
          |> load_page()}
+    end
+  end
+
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
     end
   end
 
@@ -136,7 +153,7 @@ defmodule QuantumBillingWeb.ClientsLive do
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
@@ -388,7 +405,7 @@ defmodule QuantumBillingWeb.ClientsLive do
 
         <%!-- mt-auto pins the pager to the bottom of the card. --%>
         <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
         </div>
       </.card>
     </Layouts.app>

@@ -219,4 +219,54 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       assert kind in [:redirect, :live_redirect]
     end
   end
+
+  describe "rows that fit the screen" do
+    defp row_count(view) do
+      view |> render() |> LazyHTML.from_fragment() |> LazyHTML.query("tbody tr") |> Enum.count()
+    end
+
+    setup do
+      for _ <- 1..12, do: create_invoice()
+      :ok
+    end
+
+    test "the pager's measured fit replaces the default page size", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      assert row_count(view) == 10
+      refute has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 15})
+
+      assert row_count(view) == 12
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+    end
+
+    test "a short screen still gets a sensible page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 1})
+
+      assert row_count(view) == 5
+    end
+
+    test "keeps the row that was at the top of the page on screen", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+      render_click(view, "paginate", %{"page" => "2"})
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 5})
+
+      # Rows 11 and 12 were on page 2 of 10; at 5 a page they are on page 3.
+      assert has_element?(view, ~s(span[aria-current="page"]), "3")
+      assert row_count(view) == 2
+    end
+
+    test "ignores a value that isn't a number", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => "lots"})
+
+      assert row_count(view) == 10
+    end
+  end
 end
