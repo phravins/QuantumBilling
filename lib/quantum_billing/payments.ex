@@ -82,10 +82,7 @@ defmodule QuantumBilling.Payments do
 
   def process_razorpay_webhook(_other), do: {:ok, :ignored}
 
-  # Binned invoices included. A customer can pay from a link sent before the
-  # invoice was moved to the Bin, and the payment has happened whatever the
-  # invoice's state here — it has to be recorded against it, so that restoring
-  # the invoice shows it paid rather than quietly owed.
+  # Binned invoices included: a payment link may be paid after the invoice was binned.
   defp invoice_for_payment(invoice_number) do
     Invoices.get_invoice_by_number(invoice_number, include_binned: true)
   end
@@ -117,9 +114,7 @@ defmodule QuantumBilling.Payments do
           }
         )
 
-        # Queued, not sent: this runs inside a webhook request the payment
-        # provider is timing, and a slow mail relay must not turn a successful
-        # payment into a retried delivery.
+        # Queued: this runs inside a timed webhook request.
         if updated.client_email && updated.client_email != "" do
           InvoiceNotifier.deliver_invoice_pdf_async(updated.client_email, updated,
             kind: "payment_receipt"
@@ -128,11 +123,7 @@ defmodule QuantumBilling.Payments do
 
         Invoices.broadcast_change(updated)
 
-        # Money arriving is the one notification nobody would want switched off,
-        # so this one is not gated. Keyed on the provider's payment id, which is
-        # what makes a redelivered webhook add nothing: the invoice guard above
-        # already stops the second reconcile, and this stops the second line in
-        # the feed if it ever gets past it.
+        # Not gated. Keyed on the payment id so a redelivered webhook adds nothing.
         Notifications.notify(%{
           kind: "payment",
           severity: "success",

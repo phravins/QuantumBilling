@@ -15,9 +15,7 @@ defmodule QuantumBillingWeb.SharedComponentsTest do
   end
 
   describe "a field in error" do
-    # `field/1` wraps `input/1`, which prints the errors itself. `field/1`
-    # printed them a second time underneath, so every blank required field on
-    # every form in the application said "can't be blank" twice.
+    # `input/1` already prints the errors; `field/1` must not repeat them.
     test "says so once, not twice" do
       html =
         render_component(&field/1, field: invalid_field(:distance_km), label: "Approx. Distance")

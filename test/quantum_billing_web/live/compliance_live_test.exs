@@ -44,10 +44,7 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     end
   end
 
-  # The statutory calendar in `QuantumBilling.Compliance` is real and stays
-  # tested there. None of it belongs to a business that has not told us its
-  # GSTIN, so the panels say what is missing rather than showing the same
-  # obligations to everyone.
+  # Without a GSTIN the panels say what is missing.
   describe "with no GSTIN on file" do
     test "the table says what is missing, rather than blaming the filters", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/compliance")
@@ -116,17 +113,13 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     end
   end
 
-  # The grid used to mark the deadlines and then refuse to say anything about
-  # them, which is the "calendar does not work" that was reported.
   describe "clicking a day" do
     setup %{conn: conn} do
       {:ok, _organization} = register_gstin()
 
       today = Date.utc_today()
 
-      # A day the current month's grid actually carries a deadline on, taken
-      # from the schedule rather than assumed, so the test does not hinge on
-      # which statutory due day falls where.
+      # Taken from the schedule, so the test does not depend on the calendar.
       due =
         Date.utc_today()
         |> Compliance.tracked_obligations(%{gstin: @gstin})

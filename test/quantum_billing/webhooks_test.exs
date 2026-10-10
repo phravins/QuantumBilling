@@ -85,10 +85,8 @@ defmodule QuantumBilling.WebhooksTest do
 
   describe "the webhook endpoint a user is allowed to set" do
     test "refuses the addresses that make this server a weapon" do
-      # This is the one address in the application that a user supplies and the
-      # server then opens a connection to. Accepting any syntactically valid
-      # host meant accepting the cloud metadata service and everything else
-      # inside the deployment's own network.
+      # The one user-supplied address the server connects to, so private and
+      # metadata hosts are refused.
       refused = [
         "http://169.254.169.254/latest/meta-data/",
         "http://127.0.0.1:5432/",

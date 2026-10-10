@@ -14,9 +14,6 @@ defmodule QuantumBillingWeb.HsnFinderLiveTest do
       assert html =~ "Search by HSN / SAC Code"
     end
 
-    # There is no side rail any more: the standing guidance moved into the
-    # header popover, and Quick Links was removed outright so the search gets
-    # the full width of the page.
     test "keeps its guidance in the header popover, not a rail", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/hsn-finder")
 
@@ -82,9 +79,7 @@ defmodule QuantumBillingWeb.HsnFinderLiveTest do
     test "selecting one of several results shows its detail", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/hsn-finder")
 
-      # "tobacco" reaches both the cigarettes and pan masala entries — a
-      # genuine multi-result case, unlike "car" which turned out to also
-      # substring-match "carbonated" and "healthcare" via the keyword list.
+      # "tobacco" matches both the cigarettes and the pan masala entries.
       html = view |> form("#hsn-search", %{"q" => "tobacco"}) |> render_change()
       assert html =~ "2 Results Found"
       refute html =~ "Effective From"
@@ -110,9 +105,7 @@ defmodule QuantumBillingWeb.HsnFinderLiveTest do
         |> element("button[phx-click=switch_tab][phx-value-tab=code]")
         |> render_click()
 
-      # Not `refute html =~ "8471"` — the code tab's own placeholder reads
-      # "e.g., 8471", so that bare digit string is on screen either way. The
-      # actual result content is what must be gone.
+      # The code tab's placeholder contains "8471", so check the result text instead.
       refute html =~ "Automatic data processing machines"
       assert html =~ "Enter a search above"
     end

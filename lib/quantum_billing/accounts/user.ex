@@ -10,21 +10,14 @@ defmodule QuantumBilling.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
-    # What this account is allowed to do. Deliberately absent from every
-    # `cast/3` list below: a role is granted by an owner, never submitted from
-    # a form, and casting it would let anyone post `role=owner` alongside their
-    # display name. `Accounts.set_role/2` is the only way it changes.
+    # Never cast: only Accounts.set_role/2 changes it.
     field :role, :string, default: "staff"
 
-    # Display details, shown on Account Settings and in the sidebar. None of
-    # these is part of identity — that stays the email address.
     field :full_name, :string
     field :phone, :string
     field :designation, :string
 
-    # Two factor authentication. The secret is encrypted at rest; see
-    # `QuantumBilling.Encrypted.Binary` for why that matters more here than it
-    # would for a password.
+    # The secret is encrypted at rest.
     field :totp_secret, QuantumBilling.Encrypted.Binary, redact: true
     field :totp_confirmed_at, :utc_datetime
     field :totp_last_used_at, :utc_datetime
@@ -195,10 +188,6 @@ defmodule QuantumBilling.Accounts.User do
     changeset
     |> validate_required([:password])
     |> validate_length(:password, min: 8, max: 72)
-    # Examples of additional password validation:
-    # |> validate_format(:password, ~r/[a-z]/, message: "at least one lower case character")
-    # |> validate_format(:password, ~r/[A-Z]/, message: "at least one upper case character")
-    # |> validate_format(:password, ~r/[!?@#$%^&*_0-9]/, message: "at least one digit or punctuation character")
     |> maybe_hash_password(opts)
   end
 

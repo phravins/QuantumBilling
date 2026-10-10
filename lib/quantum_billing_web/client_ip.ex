@@ -156,10 +156,7 @@ defmodule QuantumBillingWeb.ClientIP do
 
   defp parse(_address), do: nil
 
-  # A dual-stack listener reports IPv4 peers as IPv4-mapped IPv6 addresses
-  # (`::ffff:127.0.0.1`). Left as they are, they would never match a plain
-  # `127.0.0.1` in an allowlist, and the allowlist would appear simply not to
-  # work on exactly the deployments that use one.
+  # Dual-stack listeners report IPv4 peers as ::ffff:a.b.c.d; unwrap so allowlists match.
   defp normalize({0, 0, 0, 0, 0, 0xFFFF, ab, cd}) do
     {bsr(ab, 8), band(ab, 0xFF), bsr(cd, 8), band(cd, 0xFF)}
   end

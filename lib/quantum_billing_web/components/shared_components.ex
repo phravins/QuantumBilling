@@ -16,9 +16,6 @@ defmodule QuantumBillingWeb.SharedComponents do
                             "border-base-300 bg-base-100 px-3 text-sm text-base-content/60 " <>
                             "transition-colors hover:bg-base-200 hover:text-base-content"
 
-  # The toolbar controls run a size below the page-header buttons: they sit
-  # above every list and repeat on every page, so the height they take is
-  # height the list itself does not get.
   @filter_input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 pl-8 pr-3 " <>
                         "text-xs placeholder:text-base-content/45 focus:outline-none " <>
                         "focus:ring-2 focus:ring-base-content/10"
@@ -47,13 +44,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
 
-  # `[&>th]:py-1.5` sets the header's height from here rather than cell by cell.
-  # daisyUI's own `.table` padding is 0.75rem top and bottom, which on a row of
-  # 10px uppercase labels is most of the row's height; the arbitrary variant
-  # outranks it because daisyUI wraps its rules in zero-specificity `:where()`.
-  # Horizontal padding is left alone — only the height was too generous.
-  # `font-semibold` and a darker tint than the rows beneath: at this size the
-  # labels were reading as the same weight as the data they head.
+  # The arbitrary variant outranks daisyUI's zero-specificity .table padding.
   @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
                       "text-base-content/60 [&>th]:py-1.5"
 
@@ -283,7 +274,6 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Inactive"), do: @pending
   defp status_badge_class("Blocked"), do: @negative
   defp status_badge_class("Expired"), do: @pending
-  # GST compliance obligations.
   defp status_badge_class("Filed"), do: @positive
   defp status_badge_class("Pending"), do: @pending
   defp status_badge_class("Overdue"), do: @negative
@@ -313,8 +303,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :required, :boolean, default: false
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
-  # `autocomplete` and `spellcheck` matter on the auth forms: without them
-  # password managers do not offer to fill or save credentials.
+  # autocomplete and spellcheck let password managers fill auth forms.
   attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
                 autocomplete spellcheck)
 
@@ -344,8 +333,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp control_class("textarea"), do: form_textarea_class()
   defp control_class(_type), do: form_input_class()
 
-  # `input/1` only renders errors for fields the user has touched; mirror that
-  # rule here so the border and the hint agree with the message it prints.
+  # Same rule as input/1: errors only for touched fields.
   defp field_errors(%Phoenix.HTML.FormField{} = field) do
     if Phoenix.Component.used_input?(field) do
       Enum.map(field.errors, &translate_field_error/1)
@@ -430,9 +418,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :caption_class, :string, default: "mt-2 text-2xs text-base-content/60"
 
   def upi_qr(assigns) do
-    # The organisation is read once and handed to both calls: this component
-    # renders inside a modal that can be opened per row, and three settings
-    # queries per open adds up for something that never changes between them.
+    # Read once for both calls; this renders per row.
     organization = QuantumBilling.Settings.get_organization()
 
     assigns =

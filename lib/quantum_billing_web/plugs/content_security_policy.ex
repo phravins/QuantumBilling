@@ -44,27 +44,18 @@ defmodule QuantumBillingWeb.Plugs.ContentSecurityPolicy do
 
   defp policy(nonce) do
     [
-      # Everything comes from this application. No CDN, no font host: the
-      # stylesheet and the bundle are built into priv/static.
       "default-src 'self'",
       "script-src 'self' 'nonce-#{nonce}'",
       "style-src 'self' 'unsafe-inline'",
-      # `data:` because the invoice document inlines the logo as a data URI, so
-      # the printed and emailed copies carry it rather than linking back to a
-      # server the reader may not be able to reach.
+      # data: for the inlined logo.
       "img-src 'self' data:",
       "font-src 'self' data:",
-      # The LiveView socket. A different scheme to the page, so `'self'` does
-      # not cover it.
+      # The LiveView socket; 'self' does not cover ws:.
       "connect-src 'self' ws: wss:",
-      # Nothing here belongs in somebody else's frame, and nothing here needs
-      # to frame anything.
       "frame-ancestors 'none'",
       "frame-src 'none'",
       "object-src 'none'",
       "base-uri 'self'",
-      # Forms post back here. Razorpay is reached by redirecting the whole
-      # page, which this does not govern.
       "form-action 'self'"
     ]
     |> Enum.join("; ")

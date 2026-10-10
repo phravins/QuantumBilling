@@ -44,9 +44,7 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
     bill
   end
 
-  # Expiry is derived from the clock, so the only way to have an expired bill
-  # is to have one whose validity has passed. The portal sets that at
-  # generation, so it is moved here rather than asked for.
+  # Expiry comes from the clock, so the validity is moved into the past.
   defp expire(bill) do
     bill
     |> Ecto.Changeset.change(valid_until: ~N[2020-01-01 00:00:00])
@@ -82,10 +80,6 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
   end
 
   test "renders a real bill", %{conn: conn} do
-    # This is the regression this page most needed: every column was written
-    # against field names no schema has — `ewb_no`, `to_party`, `value` — so
-    # rendering a single genuine e-way bill raised a KeyError and the page was
-    # reachable only while it had nothing to show.
     bill = bill(%{client_name: "Northwind Traders"})
 
     {:ok, _view, html} = live(conn, ~p"/e-way-bills")
@@ -153,9 +147,7 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
     {:ok, view, html} = live(conn, ~p"/e-way-bills")
 
-    # Ten rows to a page, so the twelve above need two. Newest first, and the
-    # id breaks the tie between bills issued on the same day, so the last two
-    # created are the ones that fall onto page two.
+    # Ten to a page, newest first, with the id as tie-breaker.
     assert html =~ "Consignee 12"
     refute html =~ "Consignee 01"
 
@@ -170,8 +162,7 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
-    # A stale link or a hand-edited event used to reach
-    # `String.to_existing_atom/1` and take the page down with it.
+    # An unknown sort field must not crash the page.
     assert render_click(view, "sort", %{"field" => "not_a_column"}) =~ "Northwind Traders"
     assert render_click(view, "sort", %{"field" => "value"}) =~ "Northwind Traders"
   end
@@ -181,8 +172,7 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
-    # The Export button used to point at the reports endpoint, which ignored
-    # the report type it was given and downloaded a GST tax summary instead.
+    # The export carries the current filter.
     html = view |> form("#ewb-search", %{"q" => "Northwind"}) |> render_change()
 
     assert html =~ ~s(href="/e-way-bills/export?q=Northwind&amp;status=All+Status")
@@ -194,9 +184,7 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
-      # Asserted before it is cancelled as well as after, so the refute below
-      # is known to be testing the filter rather than a selector that never
-      # matched anything.
+      # Asserted before cancelling too, so the refute below is meaningful.
       assert has_element?(view, "#ewb-#{bill.ewb_number}")
 
       render_click(view, "open_action", %{"action" => "cancel", "id" => to_string(bill.id)})
@@ -215,18 +203,12 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
       assert cancelled.cancellation_reason == "Order Cancelled"
       assert cancelled.cancelled_at
 
-      # The row, not the document. The notification bell in the layout lists
-      # what other writes broadcast, and those notifications name their client
-      # too — so a bare match on the name would be satisfied by the bell while
-      # the Active list still held the cancelled bill, which is exactly what
-      # this line exists to rule out.
+      # Scoped to the row: the notification bell also names the client.
       render_click(view, "filter_status", %{"status" => "Active"})
       refute has_element?(view, "#ewb-#{bill.ewb_number}")
     end
 
-    # Rule 138(9) allows twenty-four hours and no more. After that the number
-    # stays spent at the portal, so recording a cancellation here would make
-    # this table disagree with the government's.
+    # Rule 138(9): twenty-four hours to cancel.
     test "refuses a bill whose twenty-four hours have passed", %{conn: conn} do
       bill = bill(%{client_name: "Northwind Traders"})
 

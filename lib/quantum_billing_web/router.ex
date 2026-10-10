@@ -19,8 +19,7 @@ defmodule QuantumBillingWeb.Router do
     plug :accepts, ["json"]
   end
 
-  # Public legal documents — must stay reachable while signed out, since the
-  # sign-in and sign-up screens link to them.
+  # Public legal pages, linked from sign-in and sign-up.
   scope "/", QuantumBillingWeb do
     pipe_through :browser
 
@@ -31,19 +30,11 @@ defmodule QuantumBillingWeb.Router do
       live "/pay/:token", PublicInvoiceLive, :show
     end
 
-    # Outside the live_session above, which takes only `live` routes. The
-    # customer's copy of the document, addressed by the same token.
+    # Outside the live_session, which takes only live routes.
     get "/pay/:token/pdf", InvoicePdfController, :public
   end
 
-  # Owner-only. These are the things that administer the installation rather
-  # than use it: the accounts, and the full database export.
-  #
-  # Every account on this installation shares one dataset — there is no
-  # per-user scoping on invoices or clients, by design, because the
-  # application bills for one business. So an account is access to the books,
-  # and handing out accounts, plus taking a copy of everything, belongs to
-  # whoever owns the business rather than to everyone who can sign in.
+  # Owner-only: account administration and the full export.
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user, :require_owner]
 
@@ -58,16 +49,11 @@ defmodule QuantumBillingWeb.Router do
     get "/settings/backup/download", BackupController, :download
   end
 
-  # Declared before the scope below: Phoenix matches in definition order, and
-  # "/settings/:section" there would otherwise swallow "/settings/team".
+  # Before "/settings/:section", which would otherwise match "/settings/team".
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    # `NotificationsHook` after `:require_authenticated`, and never before:
-    # it reads the feed out of the database, and an unauthenticated visitor must
-    # be halted at the first hook rather than have a query run for them. It is
-    # on the `live_session` rather than on the individual pages because the bell
-    # is drawn by `Layouts.app`, which every page in this block uses.
+    # NotificationsHook must run after :require_authenticated.
     live_session :app,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
@@ -91,43 +77,25 @@ defmodule QuantumBillingWeb.Router do
       live "/reports", ReportsLive, :index
       live "/compliance", ComplianceLive, :index
       live "/recurring", RecurringLive, :index
-      # In this live_session because the Bin lists business records and can
-      # destroy them for good: it needs the login check, and `Layouts.app`
-      # needs the scope and the notification feed the hooks above assign.
       live "/bin", BinLive, :index
       live "/settings/audit-logs", AuditLogsLive, :index
       live "/settings", SettingsLive, :index
-      # The open section lives in the URL so a panel can be linked to directly
-      # and survives a reload.
       live "/settings/:section", SettingsLive, :section
-      # The design pad is reached from Settings > Customization but is its own
-      # page: it needs three columns and autosaves per interaction, neither of
-      # which fits the settings shell's single form and header Save button.
       live "/invoice-templates/:id", InvoiceTemplateDesignLive, :design
     end
 
-    # Outside the live_session above: that block takes only `live` routes.
+    # Outside the live_session: it takes only live routes.
     get "/reports/export", ReportsController, :export
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/pdf/download", InvoicePdfController, :download
-    # The official e-way bill, Form GST EWB-01. Same scope and the same
-    # `:require_authenticated_user` pipeline as the other document routes, and
-    # outside `live_session :app` because that block takes only `live` routes.
-    # The list page's Export button. Same scope and pipeline as the reports
-    # export above, and above the `:id` routes only for readability — the paths
-    # differ in segment count, so they cannot collide.
     get "/e-way-bills/export", EWayBillExportController, :export
     get "/e-way-bills/:id/print", EWayBillPdfController, :show
     get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
   end
 
-  # Deliberately on `:api` and not `:browser`: a container probe must not need
-  # a session, a CSRF token or the security-policy plug, and above all must not
-  # have to load the current scope out of the database it is checking. It also
-  # has to sit above the catch-all at the bottom of this file, which would
-  # otherwise answer /health with the branded 404 page.
+  # On :api, not :browser: a probe needs no session. Must stay above the catch-all.
   scope "/", QuantumBillingWeb do
     pipe_through :api
 
@@ -156,10 +124,7 @@ defmodule QuantumBillingWeb.Router do
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    # The same pair as `live_session :app` above, for the same reason: the
-    # account settings screen draws `Layouts.app`, so it draws the bell, and a
-    # page that renders the bell without the feed assigned would fall back to an
-    # empty one on a screen where the rest of the application has it filled.
+    # Same hooks as live_session :app: this page draws the notification bell.
     live_session :require_authenticated_user,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
@@ -180,13 +145,9 @@ defmodule QuantumBillingWeb.Router do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new
-      # Reaching these while signed out is the whole point, so they belong in
-      # `:current_user` rather than `:require_authenticated_user`: someone who
-      # has forgotten their password cannot be asked to sign in first.
       live "/users/forgot-password", UserLive.ForgotPassword, :new
       live "/users/reset-password/:token", UserLive.ResetPassword, :edit
-      # The second step of signing in. Reachable only with a pending attempt in
-      # the session, which the LiveView checks on mount.
+      # Requires a pending sign-in in the session.
       live "/users/two-factor", UserLive.TwoFactorChallenge, :new
     end
 
@@ -196,14 +157,7 @@ defmodule QuantumBillingWeb.Router do
     delete "/users/log-out", UserSessionController, :delete
   end
 
-  # Must stay the last scope in this file. Phoenix matches routes in definition
-  # order, so anything declared below this would be unreachable.
-  #
-  # Catching unknown paths here means they render the branded 404 instead of
-  # raising Phoenix.Router.NoRouteError. That matters in development, where the
-  # debug error page answers an unrecognised URL with a table of every route in
-  # the application. Genuine exceptions still reach the debug page with their
-  # stacktrace, so this costs nothing while debugging.
+  # Must stay last: renders the branded 404 for unknown paths.
   scope "/", QuantumBillingWeb do
     pipe_through :browser
 

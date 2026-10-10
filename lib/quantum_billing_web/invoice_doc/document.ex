@@ -36,11 +36,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
         }
   @type t :: %__MODULE__{version: integer(), page: page(), blocks: [Block.t()]}
 
-  # `Layout.page_attrs/0` is where the page setup is declared; this mirrors its
-  # defaults rather than reading them, because a struct's defaults are fixed at
-  # compile time and Layout builds `%Document{}` — asking it would be a cycle.
-  # A setting added there and forgotten here is a KeyError the first time a
-  # control reads it, which `LayoutTest` catches by comparing the two.
+  # Mirrors Layout.page_attrs/0 (reading it would be a cycle); LayoutTest checks they agree.
   defstruct version: 1,
             page: %{
               size: "A4",

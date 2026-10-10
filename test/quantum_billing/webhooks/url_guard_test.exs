@@ -119,11 +119,7 @@ defmodule QuantumBilling.Webhooks.UrlGuardTest do
     end
 
     test "allows a name it cannot resolve" do
-      # Not evidence of anything private, and refusing it would block a
-      # legitimate endpoint whose DNS is not up yet while protecting nothing:
-      # an unresolvable name cannot be connected to either. The worker checks
-      # again against live DNS right before it connects, which is what catches
-      # a name that only starts resolving somewhere private later.
+      # Unresolvable names pass here; the worker re-checks live DNS before connecting.
       assert :ok = UrlGuard.check("https://hooks.example.test/incoming")
     end
   end

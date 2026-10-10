@@ -7,9 +7,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLiveTest do
   another tab must not be able to resurrect a removed block or drop one by
   sending a short list.
   """
-  # Not async: these seed a default design, and the partial unique index over
-  # `invoice_templates.is_default` makes two transactions inserting one block
-  # each other until the first ends — which in a sandbox is the whole test.
+  # Not async: concurrent default-template seeders deadlock in the sandbox.
   use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest

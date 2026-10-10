@@ -14,8 +14,7 @@ defmodule QuantumBilling.MailTest do
     end
 
     test "falls back to the application mailer when a username has no password" do
-      # gen_smtp would answer `no_credentials` to every send with this config,
-      # which took sign-up confirmations and password resets down with it.
+      # gen_smtp answers `no_credentials` to every send with this config.
       config =
         Mail.smtp_config(%Organization{
           smtp_host: "smtp.example.com",
@@ -72,6 +71,18 @@ defmodule QuantumBilling.MailTest do
       assert config[:sockopts][:verify] == :verify_peer
     end
 
+    # Both are needed for relays with a current Let's Encrypt certificate under
+    # OTP 27 — see `verify_cert/3` and the comment above it in `Mail`.
+    test "carries the certificate check and the TLS 1.3 allowance on 587 and 465" do
+      for port <- [587, 465] do
+        config = Mail.smtp_config(%Organization{smtp_host: "smtp.example.com", smtp_port: port})
+        options = if port == 465, do: config[:sockopts], else: config[:tls_options]
+
+        assert options[:verify_fun] == {&Mail.verify_cert/3, nil}
+        assert options[:middlebox_comp_mode] == false
+      end
+    end
+
     test "does not authenticate when no username is configured" do
       config = Mail.smtp_config(%Organization{smtp_host: "relay.internal", smtp_port: 25})
 
@@ -84,6 +95,41 @@ defmodule QuantumBilling.MailTest do
 
       assert Mail.smtp_config(%Organization{smtp_host: " smtp.example.com "})[:relay] ==
                "smtp.example.com"
+    end
+  end
+
+  describe "verify_cert/3" do
+    # The shape OTP 27.2 reports for Let's Encrypt's "ISRG Root YR".
+    @ca_mismatch {:bad_cert,
+                  {:key_usage_mismatch,
+                   {{:Extension, {2, 5, 29, 15}, true, [:keyCertSign, :cRLSign]},
+                    {:Extension, {2, 5, 29, 37}, false, [{1, 3, 6, 1, 5, 5, 7, 3, 1}]}}}}
+
+    test "excuses a CA certificate whose key usage OTP misreads" do
+      assert Mail.verify_cert(:cert, @ca_mismatch, :state) == {:valid, :state}
+    end
+
+    test "does not excuse the same mismatch on a certificate that cannot sign others" do
+      leaf =
+        {:bad_cert,
+         {:key_usage_mismatch,
+          {{:Extension, {2, 5, 29, 15}, true, [:digitalSignature]},
+           {:Extension, {2, 5, 29, 37}, false, [{1, 3, 6, 1, 5, 5, 7, 3, 2}]}}}}
+
+      assert {:fail, ^leaf} = Mail.verify_cert(:cert, leaf, :state)
+    end
+
+    test "still fails everything else" do
+      for reason <- [:hostname_check_failed, :unknown_ca, :cert_expired, :selfsigned_peer] do
+        assert {:fail, {:bad_cert, ^reason}} =
+                 Mail.verify_cert(:cert, {:bad_cert, reason}, :state)
+      end
+    end
+
+    test "passes valid certificates and leaves unknown extensions to OTP" do
+      assert Mail.verify_cert(:cert, :valid, :state) == {:valid, :state}
+      assert Mail.verify_cert(:cert, :valid_peer, :state) == {:valid, :state}
+      assert Mail.verify_cert(:cert, {:extension, :ext}, :state) == {:unknown, :state}
     end
   end
 

@@ -171,9 +171,7 @@ defmodule QuantumBilling.EWayBillNotifier do
   defp valid_until(%EWayBill{valid_until: valid_until}),
     do: Calendar.strftime(valid_until, "%d/%m/%Y %H:%M")
 
-  # The values are ours, not a customer's, but the consignee name reaches this
-  # through the invoice — so it is escaped like any other interpolation into
-  # HTML.
+  # The consignee name comes from the invoice, so escape it.
   defp escape(nil), do: ""
 
   defp escape(value),

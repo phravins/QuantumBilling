@@ -1,7 +1,5 @@
 defmodule QuantumBillingWeb.SettingsLiveTest do
-  # Not async: these seed a default design, and the partial unique index over
-  # `invoice_templates.is_default` makes two transactions inserting one block
-  # each other until the first ends — which in a sandbox is the whole test.
+  # Not async: concurrent default-template seeders deadlock in the sandbox.
   use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
@@ -12,10 +10,8 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
   setup :register_and_log_in_owner
 
-  # A one-pixel PNG, so an upload test moves real image bytes, with unique
-  # trailing bytes per call. Stored files are named by content hash, so two
-  # tests uploading identical bytes would share one file — and race each other
-  # deleting it on the way out.
+  # Unique bytes per call: files are named by content hash, so identical uploads
+  # would share one file and race to delete it.
   defp png do
     Base.decode64!(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -23,8 +19,6 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   end
 
   describe "page" do
-    # The sections live in the app sidebar now, which shows each one's short
-    # title — the sidebar already says "Settings" above them.
     test "opens on General with every section in the sidebar", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/settings")
 
@@ -36,8 +30,6 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    # The open section names the page; there is no standing "Settings" title
-    # and no subtitle repeating what the sidebar already says.
     test "the open section titles the page", %{conn: conn} do
       for section <- QuantumBillingWeb.SettingsComponents.sections() do
         {:ok, view, html} = live(conn, ~p"/settings/#{section.key}")
@@ -47,18 +39,13 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    # Save belongs to the page, like every other form screen in the app, and
-    # only exists where there is something to save.
     test "Save Changes sits in the page header, not the panel", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/tax")
 
       assert has_element?(view, ~s(header button[type="submit"][form="settings-form"]))
     end
 
-    # Open wherever a settings panel is on screen. Each section is a full
-    # navigation, which rebuilds the sidebar from scratch — so a list that only
-    # the chevron could open slammed shut the moment you picked something out
-    # of it, and picking a second section meant opening it again first.
+    # Each section is a full navigation, so the list renders unfolded.
     test "the sections stay unfolded across the settings panels", %{conn: conn} do
       for path <- [~p"/settings", ~p"/settings/tax", ~p"/settings/customization"] do
         {:ok, view, _html} = live(conn, path)
@@ -68,10 +55,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    # Account Settings is not one of these panels — it is the user's own
-    # account — but it marks the same sidebar item active. Driving this off the
-    # nav item rather than the open section unfolded the whole list there, and
-    # on every page that does not touch settings at all.
+    # Driven off the open section, not the nav item.
     test "and stay folded everywhere else", %{conn: conn} do
       for path <- [~p"/users/settings", ~p"/invoices"] do
         {:ok, view, _html} = live(conn, path)
@@ -86,9 +70,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     test "the chevron opens them without a round trip", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/invoices")
 
-      # A plain label driving a checkbox, animated in CSS: no phx-click, so
-      # unfolding the list costs nothing and following the Settings link cannot
-      # double as opening it.
+      # A label driving a checkbox: no phx-click.
       assert has_element?(view, ~s(label[for="settings-sections-toggle"]))
       refute has_element?(view, ~s(a[href="/settings"][phx-click]))
     end
@@ -133,8 +115,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       end
     end
 
-    # The sidebar renders on every page, so these links navigate rather than
-    # patch — a patch would be invalid from any LiveView other than this one.
+    # Navigate, not patch: the sidebar renders on every LiveView.
     test "clicking the sidebar moves to that section and updates the URL", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
@@ -259,10 +240,8 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     test "the rate select offers only the statutory slabs", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/tax")
 
-      # The control cannot produce an invalid rate in the first place —
-      # LiveViewTest rejects a value the select does not offer. The changeset
-      # remains the backstop for non-form callers and is covered in
-      # QuantumBilling.SettingsTest.
+      # LiveViewTest rejects a value the select does not offer; the changeset is
+      # covered in QuantumBilling.SettingsTest.
       assert_raise ArgumentError, ~r/must be one of \["0", "5", "12", "18", "28"\]/, fn ->
         view
         |> form("#settings-form", %{"organization" => %{"default_gst_rate" => "7"}})
@@ -398,9 +377,6 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   end
 
   describe "customization" do
-    # The panel used to be a form of toggles over one fixed layout. It is now a
-    # list of designs, each edited in the pad — so what it owns is the logo and
-    # the list, and the rules about a design itself live with `Templates`.
     test "seeds a default design and lists it", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/settings/customization")
 
@@ -410,11 +386,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert Templates.default_template().name == "Classic"
     end
 
-    # The toolbar writes the document, not a settings column — so the check is
-    # that a control's value comes back out of the stored layout.
-    #
-    # It also belongs to one design rather than to the panel: each card carries
-    # its own, and posts which design it is setting.
+    # Each design's toolbar writes that design's stored layout.
     test "each design has its own text tools", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
       first = Templates.default_template()
@@ -467,10 +439,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert page.margin == "18mm"
     end
 
-    # The advanced half of the toolbar: heading typeface and size, letter
-    # spacing, block spacing, table density, figures and the label colour are
-    # all real document settings, so each one has to survive the round trip
-    # through the stored XML the same way the basic ones do.
+    # Each advanced setting must survive the XML round trip.
     test "the advanced controls save too", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
       template = Templates.default_template()
@@ -523,9 +492,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert page_of(first).font == "sans"
     end
 
-    # A colour field is interpolated into the document's stylesheet, so this is
-    # the one control where a rejected value matters beyond a wrong-looking
-    # invoice.
+    # Colours are interpolated into the stylesheet, so invalid ones are refused.
     test "the text tools refuse a colour that is not one", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
       template = Templates.default_template()

@@ -9,11 +9,7 @@ alias QuantumBilling.Invoices
 alias QuantumBilling.Settings
 alias QuantumBilling.Settings.Organization
 
-# 1. Default sign-in account
-#
-# Everything below this is invisible without an account to sign in with, so the
-# seeds create one. Both halves are overridable in the environment: a published
-# default password is only safe on a machine nobody else can reach.
+# 1. Default sign-in account. Both values can be overridden from the environment.
 admin_email = System.get_env("SEED_ADMIN_EMAIL", "phravin@osworks.in")
 admin_password = System.get_env("SEED_ADMIN_PASSWORD", "OSworks@26")
 admin_username = System.get_env("SEED_ADMIN_USERNAME", "phravin")
@@ -28,9 +24,7 @@ case Accounts.get_user_by_email(admin_email) do
         password_confirmation: admin_password
       })
 
-    # Confirmed here rather than by email. The confirmation link exists to
-    # prove an address belongs to whoever typed it — nobody typed this one,
-    # and an unconfirmed account is refused at login.
+    # Confirmed directly: an unconfirmed account is refused at login.
     {:ok, _confirmed} = user |> User.confirm_changeset() |> Repo.update()
 
     IO.puts("\u2713 Default account created: #{admin_email} / #{admin_password}")
@@ -60,9 +54,7 @@ org_attrs = %{
 org = Settings.ensure_organization()
 Organization.changeset(org, org_attrs, :general) |> Repo.update()
 
-# The invoice counter is only seeded on a fresh row. Writing it on every run
-# reset the series to 1001 while INV-1001 upward already existed, so the next
-# invoice created collided with the unique index and could not be saved.
+# Seed the invoice counter only on a fresh row, or new numbers collide.
 org =
   if Repo.aggregate(QuantumBilling.Invoices.Invoice, :count) == 0 do
     {:ok, org} = Organization.changeset(org, org_attrs, :invoice) |> Repo.update()
@@ -152,10 +144,7 @@ clients_data = [
   }
 ]
 
-# Looked up by name before creating. Creating first and falling back on error
-# only worked for clients with a GSTIN, where the unique index refuses the
-# second copy; an unregistered client has nothing unique about it, so every
-# run of this file added another one.
+# Looked up by name first, so a rerun does not duplicate clients.
 created_clients =
   Enum.map(clients_data, fn attrs ->
     case Clients.get_client_by_name(attrs.name) do
@@ -170,12 +159,8 @@ created_clients =
 
 IO.puts("✓ Sample clients seeded (#{length(created_clients)} clients).")
 
-# 4. Demo Invoices
-#
-# Dated relative to today, not to fixed calendar days. The dashboard and the
-# reports both window on "the last six months", so invoices pinned to a literal
-# date scroll out of that window as time passes and leave every panel reading
-# zero — which looks like a broken dashboard rather than stale sample data.
+# 4. Demo Invoices, dated relative to today so the dashboard's six-month
+# window always has data.
 c1 = Enum.find(created_clients, &(&1.name == "Infosys Technologies Ltd"))
 c2 = Enum.find(created_clients, &(&1.name == "Reliance Retail Ltd"))
 c3 = Enum.find(created_clients, &(&1.name == "Tata Consultancy Services"))
@@ -183,9 +168,7 @@ c4 = Enum.find(created_clients, &(&1.name == "Apex Retail Solutions"))
 
 today = Date.utc_today()
 
-# `Date.add` in days rather than month arithmetic: it cannot land on the 31st
-# of a 30-day month, and the exact day does not matter here — only the month
-# the invoice falls into.
+# Days rather than months: cannot land on the 31st of a 30-day month.
 months_ago = fn count -> Date.add(today, -30 * count) end
 
 client_address = fn client ->
@@ -194,10 +177,7 @@ client_address = fn client ->
   |> Enum.join(", ")
 end
 
-# The organisation is registered in Maharashtra, so a Maharashtra place of
-# supply splits into CGST + SGST and everything else raises IGST. Both kinds
-# are seeded on purpose: the dashboard's trend chart plots them as separate
-# series, and with only one the second series is a flat line along the axis.
+# Both intra- and inter-state supplies, so both chart series have data.
 sample_invoices =
   [
     {c1, 5, "E-Invoice Generated", "Enterprise Software License", "998314", 1, "Pcs", 150_000},
@@ -245,9 +225,7 @@ sample_invoices =
     }
   end)
 
-# Seeded once. Invoice numbers come from a counter on the settings row, so a
-# second run would not collide — it would simply mint a fresh set and double
-# every figure on the dashboard.
+# Seeded once, or every rerun doubles the dashboard figures.
 if Repo.aggregate(QuantumBilling.Invoices.Invoice, :count) == 0 do
   Enum.each(sample_invoices, fn inv_attrs ->
     case Invoices.create_invoice(inv_attrs) do
@@ -293,17 +271,9 @@ if c1 do
   end
 end
 
-# 6. Seed Credit Notes
-#
-# Guarded. Credit notes net off receivables, and an ungated seed run added one
-# more full-value note each time: after three runs the notes outweighed the
-# invoices and the dashboard reported zero outstanding against six figures of
-# unpaid bills.
+# 6. Seed Credit Notes, once: reruns would outweigh the invoices.
 if QuantumBilling.Repo.aggregate(QuantumBilling.CreditNotes.CreditNote, :count) == 0 do
-  # Against an unpaid invoice, so the note has something to reduce. Picking
-  # `List.first/1` blindly could land on one already marked Paid, where the
-  # adjustment is excluded from receivables and the note looks like it did
-  # nothing.
+  # Against an unpaid invoice, so the note reduces receivables.
   unpaid =
     Invoices.list_invoices()
     |> Enum.find(&(&1.status not in ["Paid", "Cancelled"]))

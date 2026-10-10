@@ -44,8 +44,7 @@ defmodule QuantumBillingWeb.ClientsLive do
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    # Matched against the context's allowlist rather than converted to an atom:
-    # this is user input heading for an ORDER BY.
+    # Allowlisted: the sort field comes from the browser.
     case Enum.find(Clients.sortable_fields(), &(to_string(&1) == field_str)) do
       nil ->
         {:noreply, socket}
@@ -72,8 +71,7 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
-  # Checked against the schema's own list rather than trusted, because the status arrives from a click; and read fresh by id
-  # rather than taken from the rendered row, which may be a page old.
+  # Allowlisted status, and read fresh by id.
   def handle_event("set_status", %{"id" => id, "status" => status}, socket) do
     with true <- status in Clients.statuses(),
          %{} = client <- Clients.get_client(id),
@@ -99,8 +97,6 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
-  # Moves the client to the Bin rather than removing it: see
-  # `Clients.delete_client/2`. Read fresh by id for the same reason as above.
   def handle_event("delete", %{"id" => id}, socket) do
     case Clients.get_client(id) do
       nil ->
@@ -120,9 +116,7 @@ defmodule QuantumBillingWeb.ClientsLive do
     end
   end
 
-  # A client added, edited, binned or restored in another window. The page is
-  # re-read rather than the row spliced in: the active search, filter and sort
-  # all have to agree with where — or whether — it belongs on this screen.
+  # Re-read so search, filter and sort still apply.
   def handle_info({event, _client}, socket)
       when event in [
              :client_created,
@@ -219,10 +213,6 @@ defmodule QuantumBillingWeb.ClientsLive do
         </div>
       </div>
 
-      <%!-- No `mt-4`: the toolbar's `mb-4` used to collapse into it, and inside
-      a flex column the two would stack into a double gap instead. Stretches
-      whether or not there are rows — a short table floating above a band of
-      empty page reads just as unfinished as an empty one did. --%>
       <.card class="flex flex-1 flex-col">
         <.empty_state
           :if={@total == 0}
@@ -297,11 +287,6 @@ defmodule QuantumBillingWeb.ClientsLive do
 
                 <td>
                   <div class="flex justify-end gap-1">
-                    <%!-- The client, not that client's invoices. The eye on a
-                    directory row means "open this record" — it does on the
-                    Invoices list — and pointing it at a filtered invoice
-                    search both broke that and duplicated the "View invoices"
-                    item in the menu beside it. --%>
                     <.link
                       id={"view-client-#{row.id}"}
                       navigate={~p"/clients/#{row.id}"}
@@ -311,9 +296,7 @@ defmodule QuantumBillingWeb.ClientsLive do
                       <.icon name="hero-eye" class="size-4" />
                     </.link>
 
-                    <%!-- `dropdown-top` from halfway down the page, so the menu
-                    opens upward on the last rows instead of off the bottom of
-                    a card that does not scroll. --%>
+                    <%!-- Opens upward on the lower rows so the menu stays inside the card. --%>
                     <div class={[
                       "dropdown dropdown-end",
                       index >= div(length(@rows), 2) && "dropdown-top"
@@ -392,9 +375,7 @@ defmodule QuantumBillingWeb.ClientsLive do
           </table>
         </div>
 
-        <%!-- `mt-auto` rather than a fixed margin: the card stretches to the
-        page, so this pins the pager to the bottom of it instead of leaving it
-        floating under the last row. --%>
+        <%!-- mt-auto pins the pager to the bottom of the card. --%>
         <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
           <.pagination current_page={@page} total_pages={@total_pages} />
         </div>

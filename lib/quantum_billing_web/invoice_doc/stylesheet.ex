@@ -184,9 +184,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     """
   end
 
-  # `margin: 0` on the page leaves the browser nowhere to draw its own header
-  # and footer, which is what was stamping the date, the page title and the
-  # localhost URL onto saved PDFs. The margin moves onto the body instead.
+  # Margin on the body, not the page, so the browser draws no header or footer.
   defp mode_rules(:print, page) do
     """
     @page { size: #{page.size}; margin: 0; }
@@ -216,10 +214,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     ~s|ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif|
   end
 
-  # Each of these reads one page setting and falls back to the stock value, so
-  # a document stored before the setting existed prints exactly as it did.
-  # Every branch returns a literal: nothing a user typed reaches the stylesheet
-  # except the colour, and that one is a validated six-digit hex.
+  # Every branch returns a literal; only the validated colour comes from the user.
   defp line_height(%{line_height: "tight"}), do: "1.3"
   defp line_height(%{line_height: "relaxed"}), do: "1.7"
   defp line_height(_page), do: "1.45"
@@ -231,8 +226,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   defp label_case(%{label_case: "normal"}), do: "none"
   defp label_case(_page), do: "uppercase"
 
-  # Letterspacing is there to open up capitals. Set normal case and it reads as
-  # a gap between letters instead, so it comes off with the capitals.
   defp label_tracking(%{label_case: "normal"}), do: "0"
   defp label_tracking(_page), do: "0.08em"
 
@@ -245,15 +238,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   defp muted_color(%{muted_color: "#" <> _ = color}), do: color
   defp muted_color(_page), do: "#52525b"
 
-  # Body letterspacing. Kept small in both directions: past a hundredth of an em
-  # either way a column of figures stops lining up with its heading.
   defp body_tracking(%{letter_spacing: "tight"}), do: "-0.01em"
   defp body_tracking(%{letter_spacing: "wide"}), do: "0.02em"
   defp body_tracking(_page), do: "normal"
 
-  # Tabular figures are what make a column of amounts line up on the decimal
-  # point. Off by default, because a document stored before the setting existed
-  # printed with whatever figures the typeface leads with.
+  # Off by default to keep stored documents unchanged.
   defp numerals(%{numerals: "tabular"}), do: "tabular-nums"
   defp numerals(_page), do: "normal"
 
@@ -269,8 +258,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   defp cell_padding(%{table_density: "relaxed"}), do: "11px 8px 11px 0"
   defp cell_padding(_page), do: "7px 8px 7px 0"
 
-  # The three heading sizes move together, so a design can be scaled up without
-  # the small headings overtaking the large ones.
   defp heading_size(%{heading_scale: "small"}, step) do
     case step do
       :sm -> "12px"
@@ -295,8 +282,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     end
   end
 
-  # "Match" is the body face, which is what every document printed with before
-  # headings could carry one of their own.
   defp heading_stack(%{heading_font: face}) when face in ~w(sans serif mono),
     do: font_stack(face)
 

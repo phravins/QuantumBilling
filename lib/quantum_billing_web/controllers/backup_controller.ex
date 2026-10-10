@@ -25,8 +25,7 @@ defmodule QuantumBillingWeb.BackupController do
         fn data, conn ->
           case chunk(conn, IO.iodata_to_binary(data)) do
             {:ok, conn} -> conn
-            # The browser went away mid-download. Stop reading rather than
-            # stream a file nobody is receiving.
+            # The browser went away mid-download.
             {:error, :closed} -> throw({:closed, conn})
           end
         end,

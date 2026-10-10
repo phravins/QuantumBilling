@@ -20,8 +20,7 @@ defmodule QuantumBillingWeb.PageControllerTest do
   test "the compliance calendar lists real statutory deadlines", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
 
-    # GST return dates are statutory rather than tenant data, so they exist on
-    # day one — the panel used to be hardcoded empty.
+    # GST return dates are statutory, so they exist on day one.
     assert html =~ "GSTR-3B" or html =~ "GSTR-1" or html =~ "GSTR-9"
     assert html =~ "Due in" or html =~ "Due today" or html =~ "Overdue by"
   end

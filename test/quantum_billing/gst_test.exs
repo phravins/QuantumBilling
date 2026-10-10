@@ -19,7 +19,6 @@ defmodule QuantumBilling.GSTTest do
     end
 
     test "rejects a sixteen-character GSTIN" do
-      # This exact string was a malformed fixture found earlier in the project.
       refute GST.valid_gstin?("27AAACPJ8542D1ZS")
     end
 

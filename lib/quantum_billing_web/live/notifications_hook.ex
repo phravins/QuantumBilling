@@ -70,9 +70,7 @@ defmodule QuantumBillingWeb.NotificationsHook do
     {:cont, socket}
   end
 
-  # Patched in place rather than re-read: see the note on the module. The badge
-  # is incremented rather than recounted because the row that just arrived is
-  # unread by construction — nothing has had the chance to open it yet.
+  # Patched in place; a new row is unread by construction.
   defp handle_feed_info({:notification_created, %Notification{} = notification}, socket) do
     feed = Enum.take([notification | socket.assigns.notifications], Notifications.feed_limit())
 
@@ -88,10 +86,7 @@ defmodule QuantumBillingWeb.NotificationsHook do
 
   defp handle_feed_info(_message, socket), do: {:cont, socket}
 
-  # Marked read on the server and navigated from the server, rather than
-  # letting the link carry both: a `<.link navigate>` with a `phx-click` on it
-  # races its own navigation, and the notification you clicked is exactly the
-  # one that would sometimes stay unread.
+  # Marked read and navigated server-side; a link with phx-click races its navigation.
   defp handle_feed_event("open_notification", %{"id" => id}, socket) do
     notification = Notifications.get_notification(id)
     _ = Notifications.mark_read(id)

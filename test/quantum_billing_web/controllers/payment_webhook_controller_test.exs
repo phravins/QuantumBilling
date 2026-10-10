@@ -109,8 +109,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
     conn = post_signed(conn, body)
 
-    # The old behaviour was to accept unverified deliveries when no secret was
-    # set, which let anyone mark any invoice paid.
+    # Without a secret, unverified deliveries are refused.
     assert json_response(conn, 503)
     assert Repo.get(Invoice, invoice.id).status == "Draft"
   end

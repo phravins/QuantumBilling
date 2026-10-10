@@ -39,10 +39,8 @@ defmodule QuantumBilling.Repo.Migrations.CreateInvoiceTemplates do
 
     create unique_index(:invoice_templates, [:name], where: "archived_at IS NULL")
 
-    # A real constraint rather than an application convention: with two default
-    # rows, "which template does a new invoice get" would be answered by row
-    # order. Note this index is not deferrable, so `Templates.set_default/1` has
-    # to clear the old default and set the new one inside one transaction.
+    # One default template. Not deferrable, so Templates.set_default/1 swaps the
+    # default inside one transaction.
     create unique_index(:invoice_templates, [:is_default],
              where: "is_default",
              name: :invoice_templates_one_default_index

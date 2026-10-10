@@ -73,9 +73,7 @@ defmodule QuantumBilling.Recurring do
 
     rows =
       query
-      # `next_run_date` can repeat across profiles, and without the id as a
-      # tie-breaker two of them can swap places between pages — showing one
-      # twice and hiding another.
+      # The id breaks ties so paging is stable.
       |> order_by([p], asc: p.next_run_date, asc: p.id)
       |> limit(^per_page)
       |> offset(^((page - 1) * per_page))
@@ -115,8 +113,6 @@ defmodule QuantumBilling.Recurring do
     )
   end
 
-  # The id can arrive from a click, so anything that is not a whole number is
-  # "no such profile" rather than a cast error.
   defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do
       {int_id, ""} ->
@@ -242,9 +238,7 @@ defmodule QuantumBilling.Recurring do
     |> due_profiles()
     |> Enum.reduce(0, fn profile, queued ->
       case %{"profile_id" => profile.id} |> RecurringInvoiceWorker.new() |> Oban.insert() do
-        # A profile already queued by an earlier sweep comes back as a
-        # conflict, which is the uniqueness rule doing its job rather than a
-        # failure.
+        # Already queued by an earlier sweep.
         {:ok, %Oban.Job{conflict?: true}} ->
           queued
 
@@ -280,8 +274,7 @@ defmodule QuantumBilling.Recurring do
   """
   def process_profile(profile, today \\ Date.utc_today())
 
-  # Binned between the sweep queueing its job and the job running. The sweep
-  # would not have picked it, and the job must not bill it either.
+  # Binned after the sweep queued it.
   def process_profile(%RecurringProfile{deleted_at: %DateTime{}}, _today) do
     {:skip, :deleted}
   end
@@ -298,14 +291,11 @@ defmodule QuantumBilling.Recurring do
         {:skip, :no_schedule}
 
       Date.compare(profile.next_run_date, today) == :gt ->
-        # Already billed for this cycle — most likely by a job that ran while
-        # this one was queued behind it.
         {:skip, :not_due}
 
       is_nil(profile.client) ->
         {:skip, :client_missing}
 
-      # Binned between the sweep queueing this job and the job running.
       not is_nil(profile.client.deleted_at) ->
         {:skip, :client_deleted}
 
@@ -321,9 +311,7 @@ defmodule QuantumBilling.Recurring do
     |> Multi.run(:invoice, fn _repo, _changes ->
       Invoices.create_invoice(invoice_attrs(profile, client, today))
     end)
-    # In the same transaction as the invoice: if the schedule does not move,
-    # the next sweep bills the same profile again, and the customer has two
-    # invoices for one month.
+    # Same transaction as the invoice, so a profile is never billed twice for one cycle.
     |> Multi.update(:profile, fn _changes ->
       RecurringProfile.changeset(profile, %{
         next_run_date: advance_date(profile.next_run_date || today, profile.frequency)
@@ -340,8 +328,7 @@ defmodule QuantumBilling.Recurring do
     end
   end
 
-  # Queued rather than sent: an invoice that is issued but whose mail server is
-  # down is a delivery problem, not a reason to roll back the billing.
+  # Queued, not sent: a mail failure must not roll back the billing.
   defp maybe_queue_email(%RecurringProfile{auto_send_email: true}, client, invoice) do
     if is_binary(client.email) and String.trim(client.email) != "" do
       case InvoiceNotifier.deliver_invoice_pdf_async(client.email, invoice) do
@@ -388,9 +375,7 @@ defmodule QuantumBilling.Recurring do
     end)
   end
 
-  # The stored lines, or a single line standing for the profile itself when it
-  # has none. A profile with no items is still a bill for something — its
-  # title — and refusing to issue anything would silently stop the billing.
+  # A profile with no items bills a single line for its title.
   defp items(%RecurringProfile{items_json: json, title: title}) do
     case Jason.decode(json || "[]") do
       {:ok, [_ | _] = parsed} ->

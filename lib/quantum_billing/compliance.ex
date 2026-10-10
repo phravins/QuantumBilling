@@ -89,8 +89,6 @@ defmodule QuantumBilling.Compliance do
         subtitle: subtitle,
         category: category,
         period_label: Calendar.strftime(period, "%b %Y"),
-        # The return period in the form the GSTN tools use, so a download link
-        # can name the month it is actually for.
         period_key: period_key(period),
         due_date: due_on(shift_months(period, 1), due_day)
       }
@@ -151,8 +149,7 @@ defmodule QuantumBilling.Compliance do
     Map.merge(obligation, %{status: status, filed_on: filed_on})
   end
 
-  # No filing records exist yet, so nothing is ever filed. When the schema
-  # lands this looks the obligation up in `filings/0`.
+  # No filing records exist yet.
   defp filed_on(_obligation), do: nil
 
   @doc """
@@ -212,8 +209,6 @@ defmodule QuantumBilling.Compliance do
   defp composition_scheme?(registration),
     do: registration_field(registration, :composition_scheme) == true
 
-  # Takes the organisation struct as readily as a bare map, so a test can pass
-  # `%{gstin: "..."}` without building one.
   defp registration_field(nil, _key), do: nil
   defp registration_field(registration, key), do: Map.get(registration, key)
 
@@ -306,8 +301,7 @@ defmodule QuantumBilling.Compliance do
 
     by_date = Enum.group_by(obligations, & &1.due_date)
 
-    # Date.day_of_week/2 with :sunday gives 1 for Sunday, so subtracting one
-    # lands the grid on the Sunday at or before the first of the month.
+    # Back to the Sunday on or before the first of the month.
     grid_start = Date.add(first, -(Date.day_of_week(first, :sunday) - 1))
     grid_end = Date.add(last, 7 - Date.day_of_week(last, :sunday))
 

@@ -118,9 +118,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
       enrolled?(user) ->
         conn
 
-      # The places a user has to be able to reach in order to comply, or to
-      # leave. Without these the policy locks everybody out of the page that
-      # would let them satisfy it.
+      # Pages needed to comply or sign out.
       exempt_path?(conn.request_path) ->
         conn
 

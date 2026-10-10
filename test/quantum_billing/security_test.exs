@@ -19,8 +19,7 @@ defmodule QuantumBilling.SecurityTest do
 
       for token <- tokens do
         assert String.starts_with?(token, "inv_")
-        # 24 bytes, base64url: 192 bits of entropy, versus the 24 decimal
-        # digits from a predictable generator that this replaced.
+        # 24 bytes, base64url: 192 bits of entropy.
         assert String.length(token) >= 32
       end
     end
@@ -69,9 +68,7 @@ defmodule QuantumBilling.SecurityTest do
     end
 
     test "a two-factor secret cannot be read as an integration credential" do
-      # Different additional authenticated data, so a value moved between
-      # columns fails its tag check rather than being decrypted by the wrong
-      # type.
+      # Per-column AAD: a value moved between columns fails its tag check.
       {:ok, totp} = QuantumBilling.Encrypted.Binary.dump("totp-secret")
 
       assert Secret.load(totp) == :error
@@ -127,9 +124,7 @@ defmodule QuantumBilling.SecurityTest do
     end
 
     test "counts every attempt, including simultaneous ones" do
-      # The old read-then-write let parallel attempts read the same count and
-      # write the same increment, so a burst counted as one — which is exactly
-      # the shape of a credential-stuffing script.
+      # An atomic increment, so parallel attempts all count.
       key = {:login, "burst@example.com"}
 
       results =

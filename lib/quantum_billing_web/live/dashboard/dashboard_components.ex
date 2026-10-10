@@ -52,8 +52,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  # Spelled out rather than interpolated — Tailwind scans source text, so a
-  # class assembled at runtime is never emitted and the badge renders bare.
+  # Literal class strings so Tailwind emits them.
   defp tone_class(:info), do: "bg-blue-500/10 text-blue-600 dark:text-blue-400"
   defp tone_class(:success), do: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
   defp tone_class(:warning), do: "bg-amber-500/10 text-amber-600 dark:text-amber-400"
@@ -132,9 +131,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
       |> Enum.map(fn {label, i} ->
         %{
           label: label,
-          # Both where the label sits under the plot and, as it happens, where
-          # the point falls inside its own equal-width hover band — for n
-          # points edge to edge across n bands the two fractions are the same.
           x: x_at(i, count),
           anchor: anchor(i, count),
           readings:
@@ -157,8 +153,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
         <div class="flex min-h-0 flex-1 flex-col justify-between">
           <span :for={label <- @axis_labels}>{label}</span>
         </div>
-        <%!-- Matches the x-label row below, so the y labels stay level with
-        the gridlines they name rather than with the whole column. --%>
+        <%!-- Matches the x-label row so the y labels align with their gridlines. --%>
         <div class="mt-2 h-4" aria-hidden="true"></div>
       </div>
 
@@ -180,9 +175,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
                 <stop offset="100%" class={gradient_bottom_class(s.tone)} />
               </linearGradient>
 
-              <%!-- The draw-in. The rect is wider and taller than the plot so
-              that scaling it cannot shave the stroke off the top or bottom
-              edge; only its left-to-right growth is visible. --%>
+              <%!-- Oversized so scaling cannot clip the stroke. --%>
               <clipPath id={"#{@id}-sweep"} clipPathUnits="userSpaceOnUse">
                 <rect class="qb-chart-sweep" x="-4" y="-20" width="108" height="140" />
               </clipPath>
@@ -218,9 +211,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
             style={"left: #{fmt(dot.x)}%; top: #{fmt(dot.y)}%"}
           />
 
-          <%!-- One hover target per month, spanning the full height, so the
-          reading is reachable anywhere in the column rather than only on the
-          2.5px marker itself. --%>
+          <%!-- Full-height hover target per month. --%>
           <div class="absolute inset-0 flex">
             <div :for={column <- @columns} class="group/col relative flex-1">
               <div
@@ -257,10 +248,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
           </div>
         </div>
 
-        <%!-- Absolute rather than a row of equal cells: the points sit on the
-        frame at both ends, so a cell centre is no longer under a reading.
-        The first and last labels hang off their own edge instead of straddling
-        it, which would put them half outside the card. --%>
+        <%!-- Absolutely positioned so labels sit under their points; the end labels hang inward. --%>
         <div class="relative mt-2 h-4">
           <span
             :for={column <- @columns}
@@ -275,21 +263,12 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  # Edge to edge across the plot. A single reading sits in the middle rather
-  # than dividing by zero.
+  # A single reading sits in the middle.
   defp x_at(i, count) when count > 1, do: i / (count - 1) * 100
   defp x_at(_i, _count), do: 50.0
 
-  # A monotone cubic (Fritsch-Carlson) through the points, emitted as cubic
-  # beziers. A polyline between six monthly readings reads as a sawtooth; the
-  # curve is what makes it look like a trend rather than a list of numbers.
-  #
-  # Monotone rather than Catmull-Rom because a smooth curve through real
-  # billing data has to stay truthful: Catmull-Rom overshoots around a spike,
-  # so the line dipped below the axis between two positive months and bulged
-  # over the top gridline after a quiet one, drawing revenue that was never
-  # invoiced. This interpolation cannot leave the range of the two readings it
-  # joins, so every point on the curve is a value that could have happened.
+  # Monotone cubic (Fritsch-Carlson) as beziers. Unlike Catmull-Rom it never
+  # overshoots, so the curve never shows revenue that was not invoiced.
   defp curve([]), do: ""
   defp curve([{x, y}]), do: "M #{fmt(x)} #{fmt(y)}"
 
@@ -308,9 +287,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
     "M #{fmt(x0)} #{fmt(y0)} " <> body
   end
 
-  # The slope the curve leaves each point with. Endpoints follow their one
-  # neighbour; interior points average the two secants around them, and the
-  # Fritsch-Carlson limiter then shortens any tangent long enough to overshoot.
   defp tangents(points) do
     secants =
       points
@@ -325,14 +301,10 @@ defmodule QuantumBillingWeb.DashboardComponents do
     limit([hd(secants)] ++ interior ++ [List.last(secants)], secants)
   end
 
-  # Flat at a turning point: a peak stays a peak instead of rounding past the
-  # reading that made it.
   defp interior_slope(before, aftr) when before * aftr <= 0, do: 0.0
   defp interior_slope(before, aftr), do: (before + aftr) / 2
 
-  # Fritsch-Carlson: where a segment's two tangents fall outside the circle of
-  # radius 3, scale both back onto it. That is the condition for the cubic to
-  # stay monotone across the segment.
+  # Fritsch-Carlson: scale tangents back onto the radius-3 circle to stay monotone.
   defp limit(raw, secants) do
     raw
     |> Enum.with_index()
@@ -366,7 +338,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
     end
   end
 
-  # The line, dropped to the axis at both ends and closed.
   defp area([]), do: ""
 
   defp area(points) do
@@ -401,8 +372,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
     |> String.replace_suffix(".0", "")
   end
 
-  # `stop-color` through a class so the gradient follows the daisyUI theme
-  # rather than pinning a hex that only suits the light one.
   defp gradient_top_class(:blue), do: "[stop-color:var(--color-blue-500)] [stop-opacity:0.28]"
   defp gradient_top_class(:violet), do: "[stop-color:var(--color-violet-400)] [stop-opacity:0.28]"
 
@@ -415,8 +384,6 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp gradient_bottom_class(:emerald),
     do: "[stop-color:var(--color-emerald-500)] [stop-opacity:0]"
 
-  # Which edge of a label or tooltip is pinned to its point. The ends pin
-  # their own outer edge so nothing overhangs the plot.
   defp anchor(0, count) when count > 1, do: :start
   defp anchor(i, count) when i == count - 1 and count > 1, do: :end
   defp anchor(_i, _count), do: :middle
@@ -498,8 +465,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  # Written out in full rather than interpolated: Tailwind scans source text, so
-  # a class built as "stroke-#{tone}" is never emitted and the ring renders blank.
+  # Literal class strings so Tailwind emits them.
   defp stroke_class(:mono, :strong), do: "stroke-base-content"
   defp stroke_class(:mono, :medium), do: "stroke-base-content/60"
   defp stroke_class(:mono, :positive), do: "stroke-base-content/45"

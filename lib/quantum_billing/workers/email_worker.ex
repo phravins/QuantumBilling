@@ -30,8 +30,6 @@ defmodule QuantumBilling.Workers.EmailWorker do
   def perform(%Oban.Job{args: %{"delivery_id" => delivery_id}} = job) do
     case Mail.get_delivery(delivery_id) do
       nil ->
-        # The ledger row is the job's whole subject. If it is gone, the job is
-        # about nothing and retrying cannot change that.
         Logger.warning("[EmailWorker] delivery #{delivery_id} no longer exists")
         :discard
 
@@ -54,10 +52,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
             record_failure(delivery, job, message)
         end
 
-      # Every way of failing to build a message is permanent: a missing
-      # invoice and a job with nothing to render do not become possible on
-      # the next attempt. Only delivery itself is worth retrying, which the
-      # clause above handles.
+      # Build failures are permanent; only delivery is retried.
       {:error, :permanent, message} ->
         _ = Mail.mark_failed(delivery, message, true)
         Logger.error("[EmailWorker] delivery #{delivery.id} discarded: #{message}")
@@ -65,9 +60,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
     end
   end
 
-  # Oban decides whether another attempt is coming; the ledger follows that
-  # decision rather than guessing, so "failed" in the UI means Oban has given
-  # up too.
+  # "failed" in the ledger only once Oban has given up too.
   defp record_failure(delivery, %Oban.Job{attempt: attempt, max_attempts: max}, message) do
     final? = attempt >= max
     _ = Mail.mark_failed(delivery, message, final?)
@@ -79,9 +72,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
     {:error, message}
   end
 
-  # Matched before the invoice clause: an e-way bill notice carries an
-  # `invoice_id` too, because the ledger row files it under the document it
-  # belongs to — but what gets rendered is the bill.
+  # Before the invoice clause: an e-way bill notice carries an invoice_id too.
   defp build(delivery, %{"e_way_bill_id" => bill_id}) when not is_nil(bill_id) do
     case EWayBills.get_e_way_bill(bill_id) do
       nil -> {:error, :permanent, "e-way bill #{bill_id} no longer exists"}
@@ -95,10 +86,6 @@ defmodule QuantumBilling.Workers.EmailWorker do
         {:error, :permanent, "invoice #{invoice_id} no longer exists"}
 
       invoice ->
-        # Returned as it comes back. `build_email/2` has no failure case — a
-        # document it cannot print as a PDF is attached as HTML instead — so
-        # matching an `{:error, _}` out of it only added a clause that could
-        # never run.
         InvoiceNotifier.build_email(delivery.to_email, invoice)
     end
   end

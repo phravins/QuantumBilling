@@ -17,9 +17,7 @@ defmodule QuantumBillingWeb.RawBodyReader do
 
   @capture_prefixes ["/api/webhooks"]
 
-  # A webhook payload is a few kilobytes. Anything past this is not one, and
-  # buffering it whole — which is what capturing means — would let a stranger
-  # decide how much memory this process uses.
+  # Caps memory spent buffering; webhooks are a few kilobytes.
   @max_capture_bytes 1_000_000
 
   @doc """
@@ -44,10 +42,7 @@ defmodule QuantumBillingWeb.RawBodyReader do
         {:ok, body, Plug.Conn.put_private(conn, :raw_body, body)}
 
       {:more, chunk, conn} when size + byte_size(chunk) > @max_capture_bytes ->
-        # Over the cap: hand the read back to the parser, which applies its own
-        # limit. Nothing is stashed, so the request has no verifiable body and
-        # the webhook handler rejects it — which is the right answer for
-        # something this far outside the shape of a webhook.
+        # Over the cap: nothing is stashed, so the webhook is rejected.
         {:more, chunk, conn}
 
       {:more, chunk, conn} ->

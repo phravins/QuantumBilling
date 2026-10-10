@@ -23,12 +23,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   alias QuantumBillingWeb.InvoiceDoc.Block
   alias QuantumBillingWeb.InvoiceDoc.Document
 
-  # Blocks the user may not remove: without them the pad could produce a
-  # document that is not an invoice — no line items, no figures, no number.
+  # Without these the document would not be an invoice.
   @required ~w(items totals invoice_meta)a
 
-  # Blocks that make no sense twice. Everything not listed may repeat, which
-  # today means only `divider`.
+  # Everything else (today only divider) may repeat.
   @singleton ~w(logo heading company client invoice_meta items totals
                 amount_in_words remarks terms signature footer)a
 
@@ -38,9 +36,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   @meta_fields ~w(invoice_number invoice_type invoice_date due_date payment_terms
                   place_of_supply status)
 
-  # Element name in the XML <-> block type. Declared both ways rather than
-  # derived by string munging, so `invoice-meta` and `amount-in-words` are not
-  # special cases handled by a regex.
   @elements [
     {"logo", :logo},
     {"heading", :heading},
@@ -151,9 +146,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     {"when", :when, {:enum, ~w(always present non-zero)}, "always"}
   ]
 
-  # Item column presentation. The design pad may relabel a column, but these
-  # are what a fresh one starts as, and they are what the legacy bridge
-  # reproduces so the rewrite changes nothing on screen.
   @item_defaults %{
     "serial" => %{label: "#", align: "left", format: "text", width: "auto"},
     "description" => %{label: "Item / Description", align: "left", format: "text", width: "grow"},
@@ -274,9 +266,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   defp default_children(:totals), do: Enum.map(@total_fields, &new_child(:totals, &1))
 
   defp default_children(:invoice_meta) do
-    # Not every meta field: type and status belong on the screen chrome, not on
-    # the printed document, so a fresh block starts with what an invoice head
-    # conventionally carries.
+    # Type and status are screen chrome, not printed.
     ~w(invoice_number invoice_date due_date payment_terms place_of_supply)
     |> Enum.map(&new_child(:invoice_meta, &1))
   end
@@ -335,9 +325,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
 
   def cast_value(value, :string) when is_binary(value), do: {:ok, value}
 
-  # Six hex digits and nothing else. This value is interpolated straight into
-  # the document's stylesheet, so the pattern is what keeps a colour field from
-  # being a way to write CSS.
+  # Interpolated into the stylesheet, so six hex digits only.
   def cast_value(value, :color) when is_binary(value) do
     value = value |> String.trim() |> String.downcase()
 
@@ -372,15 +360,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def dump_value(value, _kind) when is_binary(value), do: value
   def dump_value(value, _kind), do: to_string(value)
 
-  # The stock document, in order. Two consecutive halves pack into a row, so
-  # this reads as: logo beside the heading, the From block beside the invoice
-  # meta, then full-width content down the page.
-  #
-  # There is deliberately no signature block. This list is what the application
-  # printed before layouts became editable, and it has to keep printing exactly
-  # that — a signature line nobody asked for would appear on every existing
-  # customer's invoices the day this shipped. It is in the palette instead, for
-  # anyone who wants one.
+  # The stock document. Consecutive halves pack into a row.
+  # No signature block, so existing invoices print unchanged.
   @classic ~w(logo heading company invoice_meta divider client items totals
               amount_in_words remarks terms footer)a
 

@@ -305,9 +305,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           <div class="ewb-actions">
             <a class="ewb-btn" href={~p"/e-way-bills"}>Back to e-way bills</a>
             <a class="ewb-btn" href={~p"/e-way-bills/#{@bill.id}/print/download"}>Download PDF</a>
-            <%!-- A raw handler rather than a colocated hook: this document is
-            rendered by a controller, outside the LiveSocket, so there is no
-            hook to colocate onto. --%>
+            <%!-- Raw handler: controller-rendered, outside the LiveSocket. --%>
             <button type="button" class="ewb-btn ewb-btn--primary" onclick="window.print()">
               Print
             </button>
@@ -372,9 +370,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             </div>
           </dl>
 
-          <%!-- No heading, and plain serial numbers rather than A.1 to A.10:
-          the rows are read top to bottom as one list, and the statutory
-          lettering meant nothing to the driver the page is handed to. --%>
           <section class="ewb-part">
             <table class="ewb-rows">
               <tbody>
@@ -460,10 +455,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
               </thead>
 
               <tbody>
-                <%!-- Every leg the consignment has travelled, oldest first.
-                The first row is the vehicle the bill was filed with; each later
-                row is a vehicle change recorded before it happened, which is
-                what Rule 138 requires and what the portal prints. --%>
+                <%!-- Every vehicle leg, oldest first, as Rule 138 requires. --%>
                 <tr :for={entry <- @part_b}>
                   <td>{blank(entry.mode_of_transport)}</td>
                   <td><strong>{blank(entry.vehicle_number)}</strong></td>
@@ -604,12 +596,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
   defp qr_svg(_no_bill_yet), do: ""
 
-  # Every leg the consignment has travelled, oldest first.
-  #
-  # Once a vehicle has ever changed, the history holds the whole journey —
-  # including the vehicle the bill was raised with, which the context writes
-  # down before overwriting it. A bill that has never changed vehicle has no
-  # history at all, and its one leg is the bill itself.
+  # Every leg, oldest first. With no vehicle change, the bill itself is the one leg.
   defp part_b_entries(%EWayBill{} = bill) do
     case bill.part_b_updates do
       [_ | _] = legs ->
@@ -627,9 +614,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # Sorted through `DateTime.compare/2` rather than by term: two `%DateTime{}`
-  # structs compared as maps sort by day before month, which reorders a journey
-  # that crosses a month boundary. The id breaks a tie within the same second.
+  # DateTime.compare/2, not term order; the id breaks ties.
   defp leg_before?(a, b) do
     case DateTime.compare(a.updated_on, b.updated_on) do
       :lt -> true
@@ -638,8 +623,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # An e-way bill printed off an invoice whose items were never loaded would
-  # otherwise raise on the goods table — the one table an officer reads.
   defp items(%Invoice{items: items}) when is_list(items), do: items
   defp items(_not_loaded), do: []
 
@@ -702,8 +685,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # An unregistered recipient is not a blank on an e-way bill, it is "URP" —
-  # the portal's own marker, and what an officer expects to read.
+  # "URP" is the portal's marker for an unregistered recipient.
   defp recipient_gstin(%Invoice{client_gstin: gstin}) when is_binary(gstin) and gstin != "",
     do: gstin
 
@@ -765,9 +747,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
   defp transport_reason(_domestic), do: "Supply"
 
-  # The rate an officer reads off the goods table is the split, not the total:
-  # an inter-state consignment carries all of it as IGST, an intra-state one
-  # halves it between the centre and the state.
   defp tax_split(%Invoice{igst_amount: igst}, item) when is_integer(igst) and igst > 0 do
     rate = item.tax_rate || 0
     "0.00 + 0.00 + #{decimal(rate)} + 0.00"

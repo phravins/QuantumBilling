@@ -120,11 +120,8 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
       [policy] = get_resp_header(conn, "content-security-policy")
       [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, policy)
 
-      # This page renders with the layout switched off, so it does not inherit
-      # the root layout's nonced tag. Without its own nonce the policy blocks
-      # the script — and that fails silently: the invoice renders perfectly and
-      # simply never opens the print dialog, which nobody notices until a
-      # customer is waiting for a PDF.
+      # The layout is off on this page, so it needs its own nonce or the CSP silently
+      # blocks the print script.
       assert html =~ ~s(nonce="#{nonce}")
       assert html =~ "window.print()"
     end
@@ -135,9 +132,7 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
 
       [policy] = get_resp_header(conn, "content-security-policy")
 
-      # The document builds its stylesheet as an inline <style> tag on purpose
-      # — see InvoiceDoc.Renderer. A policy without 'unsafe-inline' for styles
-      # would send customers an unstyled invoice.
+      # The document uses an inline <style>; see InvoiceDoc.Renderer.
       assert policy =~ "style-src 'self' 'unsafe-inline'"
       assert html =~ "<style"
     end
