@@ -54,6 +54,17 @@ defmodule QuantumBilling.Audit do
   end
 
   @doc """
+  The newest `limit` actions taken by one user, for their profile page.
+  """
+  def recent_for_user(user_id, limit \\ 8) do
+    AuditLog
+    |> where([l], l.user_id == ^user_id)
+    |> order_by([l], desc: l.inserted_at, desc: l.id)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
   One page of the audit trail, filtered and counted by the database.
 
   Returns `%{rows:, total:, page:, per_page:, total_pages:}`.

@@ -41,7 +41,8 @@ defmodule QuantumBillingWeb.Router do
     live_session :owner,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
-        {QuantumBillingWeb.UserAuth, :require_owner}
+        {QuantumBillingWeb.UserAuth, :require_owner},
+        {QuantumBillingWeb.NotificationsHook, :default}
       ] do
       live "/settings/team", SettingsLive.Team, :index
     end
@@ -130,6 +131,7 @@ defmodule QuantumBillingWeb.Router do
         {QuantumBillingWeb.UserAuth, :require_authenticated},
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
+      live "/users/profile", UserLive.Profile, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end

@@ -106,7 +106,14 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_nav={@active_nav}
+      active_sub={:team}
+      notifications={@notifications}
+      unread_count={@unread_count}
+    >
       <.header>
         Team
         <:subtitle>

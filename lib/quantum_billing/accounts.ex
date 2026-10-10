@@ -424,6 +424,24 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc """
+  Gives the user's profile banner a new generated scene.
+
+  Broadcasts like a profile edit, so open pages keep `current_scope` in step.
+  """
+  def shuffle_banner(%User{} = user) do
+    result =
+      user
+      |> User.banner_changeset(%{banner_seed: :rand.uniform(2_147_483_647)})
+      |> Repo.update()
+
+    with {:ok, saved} <- result do
+      Events.broadcast(Events.user_topic(saved.id), {:profile_updated, saved})
+    end
+
+    result
+  end
+
+  @doc """
   Subscribes the caller to changes to `user`'s own account.
   """
   def subscribe_user(%User{id: id}), do: Events.subscribe(Events.user_topic(id))

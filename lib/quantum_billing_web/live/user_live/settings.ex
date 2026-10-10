@@ -283,6 +283,11 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <.header>
         Account Settings
         <:subtitle>Manage your personal information and sign-in security</:subtitle>
+        <:actions>
+          <.link id="view-profile" navigate={~p"/users/profile"} class={secondary_button_class()}>
+            <.icon name="hero-user-circle" class="size-4" /> View profile
+          </.link>
+        </:actions>
       </.header>
 
       <.card padding="p-0" class="flex flex-1 flex-col">

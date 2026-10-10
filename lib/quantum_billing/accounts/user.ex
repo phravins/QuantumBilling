@@ -16,6 +16,8 @@ defmodule QuantumBilling.Accounts.User do
     field :full_name, :string
     field :phone, :string
     field :designation, :string
+    # Seeds the profile page's generated landscape; nil falls back to the id.
+    field :banner_seed, :integer
 
     # The secret is encrypted at rest.
     field :totp_secret, QuantumBilling.Encrypted.Binary, redact: true
@@ -69,6 +71,16 @@ defmodule QuantumBilling.Accounts.User do
     |> validate_format(:phone, ~r/^[\d\s+()-]*$/,
       message: "may only contain digits, spaces and + ( ) -"
     )
+  end
+
+  @doc """
+  A changeset for the profile banner's scene seed, and nothing else.
+  """
+  def banner_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:banner_seed])
+    |> validate_required([:banner_seed])
+    |> validate_number(:banner_seed, greater_than: 0)
   end
 
   @doc """

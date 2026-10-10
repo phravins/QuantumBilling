@@ -168,6 +168,7 @@ defmodule QuantumBillingWeb.Layouts do
               tabindex="0"
               class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
+              <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
               <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
 
               <li>

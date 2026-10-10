@@ -16,6 +16,14 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
 
   setup :register_and_log_in_owner
 
+  describe "the sidebar" do
+    test "keeps the Settings sections open on the Team page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/team")
+
+      assert has_element?(view, "#settings-sections-toggle[checked]")
+    end
+  end
+
   describe "inviting" do
     test "sends an invitation and lists it", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/team")
