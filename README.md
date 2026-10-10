@@ -91,6 +91,7 @@ For technical documentation, local environment setup, and deployment guides, ple
 - **[Local Running & Setup Guide (RUN.md)](file:///d:/QUANTUM_BILLING/QuantumBilling/RUN.md)** — Step-by-step instructions for running via **Docker Compose** or native **Elixir & PostgreSQL**.
 
 ### Quick Start with Docker
+Set `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` (see RUN.md), then:
 ```bash
 docker compose up --build
 ```

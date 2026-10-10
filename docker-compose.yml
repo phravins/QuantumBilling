@@ -1,39 +1,74 @@
-version: '3.8'
+# Values come from the shell or from .env; see the Docker Compose section of .env.example.
+
+x-app-env: &app-env
+  MIX_ENV: prod
+  DATABASE_URL: ecto://${DATABASE_USER:-elixir_vibe}:${DATABASE_PASSWORD:?set DATABASE_PASSWORD}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
+  POOL_SIZE: ${POOL_SIZE:-10}
+  PHX_HOST: ${PHX_HOST:-localhost}
+  PORT: "4000"
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}
+  TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:?set SECRETS_ENCRYPTION_KEY}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_SSL: ${SMTP_SSL:-}
+  SMTP_TLS_VERIFY: ${SMTP_TLS_VERIFY:-true}
+  MAILER_FROM_EMAIL: ${MAILER_FROM_EMAIL:-}
+  RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+  RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+  RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  SLOW_QUERY_MS: ${SLOW_QUERY_MS:-500}
 
 services:
   db:
     image: postgres:16-alpine
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DATABASE_USER:-elixir_vibe}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-Vibe@26}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME:-quantum_billing_prod}
-    ports:
-      - "5432:5432"
+    # No published port: only the app reaches it, and 5432 stays free for a local Postgres.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: always
+  migrate:
+    build: .
+    image: quantum_billing:latest
+    command: ["bin/migrate"]
+    restart: "no"
+    environment: *app-env
     depends_on:
       db:
         condition: service_healthy
+
+  app:
+    build: .
+    image: quantum_billing:latest
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "4000:4000"
-    environment:
-      MIX_ENV: prod
-      PHX_SERVER: "true"
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-bK8yHn0/GZ79lPqS2w1vX6mU4tR9oD3e8a7bC5dE1fG3hI5jK7lM9nO1pQ3rS5tU}
-      DATABASE_URL: ecto://${DATABASE_USER:-elixir_vibe}:${DATABASE_PASSWORD:-Vibe@26}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
-      PORT: "4000"
+    volumes:
+      # The path carries the release version: update it when mix.exs's version changes.
+      - uploads:/app/lib/quantum_billing-0.1.0/priv/static/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
 volumes:
   postgres_data:
+  uploads:

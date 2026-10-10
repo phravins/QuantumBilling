@@ -6,7 +6,7 @@ This guide covers running **QuantumBilling** on your local machine, either using
 
 ## Option 1: Running with Docker Compose (Recommended)
 
-Docker Compose sets up both the PostgreSQL 17 database and the QuantumBilling Phoenix application with a single command.
+Docker Compose sets up the PostgreSQL 16 database, runs migrations once, then starts the QuantumBilling Phoenix application.
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
@@ -19,16 +19,26 @@ Docker Compose sets up both the PostgreSQL 17 database and the QuantumBilling Ph
    cd QuantumBilling
    ```
 
-2. **Start the application and database**:
+2. **Set the required secrets** in `.env` (Compose reads it automatically):
+   ```bash
+   cp .env.example .env   # if you don't have one yet
+   ```
+   Fill in `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY` and
+   `SECRETS_ENCRYPTION_KEY`. Generate each secret with `openssl rand -base64 48`
+   (or `mix phx.gen.secret`). Compose refuses to start until all four are set.
+   Use URL-safe characters in `DATABASE_PASSWORD`, or percent-encode them.
+
+3. **Start the application and database**:
    ```bash
    docker compose up --build
    ```
 
-3. **Access the Application**:
+4. **Access the Application**:
    - Open your browser at: [http://localhost:4000](http://localhost:4000)
-   - Database migrations will execute automatically on container startup.
+   - The `migrate` service applies pending migrations before the app starts.
+   - Uploaded logos are kept in the `uploads` volume across rebuilds.
 
-4. **Stop the containers**:
+5. **Stop the containers**:
    ```bash
    docker compose down
    ```
