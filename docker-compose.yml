@@ -3,7 +3,7 @@
 x-app-env: &app-env
   MIX_ENV: prod
   DATABASE_URL: ecto://${DATABASE_USER:-elixir_vibe}:${DATABASE_PASSWORD:?set DATABASE_PASSWORD}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
-  POOL_SIZE: ${POOL_SIZE:-10}
+  POOL_SIZE: ${POOL_SIZE:-20}
   PHX_HOST: ${PHX_HOST:-localhost}
   PORT: "4000"
   SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}

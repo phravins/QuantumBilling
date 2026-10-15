@@ -72,7 +72,7 @@ defmodule QuantumBilling.EWayBillBinTest do
       gone = binned(bill_fixture())
 
       assert Enum.map(EWayBills.list_e_way_bills(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [row]} = EWayBills.page()
+      assert %{rows: [row]} = EWayBills.page()
       assert row.id == kept.id
       assert Enum.map(EWayBills.export_rows(), & &1.id) == [kept.id]
 

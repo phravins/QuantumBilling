@@ -33,6 +33,7 @@ defmodule QuantumBilling.EWayBills do
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Notifications
+  alias QuantumBilling.Paging
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
@@ -330,11 +331,10 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  One page of e-way bills, searched, filtered, sorted and counted by the
-  database.
+  One page of e-way bills, searched, filtered and sorted by the database.
 
-  Returns `%{rows:, total:, page:, per_page:, total_pages:}`, the same shape the
-  invoice list uses, so both pages paginate identically.
+  Returns `%{rows:, page:, per_page:, has_next?:}`, the same shape the invoice
+  list uses, so both pages paginate identically — see `QuantumBilling.Paging`.
 
   ## Options
 
@@ -346,24 +346,19 @@ defmodule QuantumBilling.EWayBills do
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
-    query =
+    sort_field = Keyword.get(opts, :sort_field, :issued_on)
+    sort_dir = Keyword.get(opts, :sort_dir, :desc)
+
+    result =
       base_query()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
+      |> Paging.page(&order(&1, sort_field, sort_dir),
+        page: Keyword.get(opts, :page, 1),
+        per_page: per_page
+      )
 
-    total = Repo.aggregate(query, :count, :id)
-    total_pages = max(ceil(total / per_page), 1)
-    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
-
-    rows =
-      query
-      |> order(Keyword.get(opts, :sort_field, :issued_on), Keyword.get(opts, :sort_dir, :desc))
-      |> limit(^per_page)
-      |> offset(^((page - 1) * per_page))
-      |> Repo.all()
-      |> Enum.map(&to_row/1)
-
-    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+    %{result | rows: Enum.map(result.rows, &to_row/1)}
   end
 
   @doc """

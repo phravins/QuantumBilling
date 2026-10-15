@@ -152,6 +152,21 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       assert has_element?(view, "#invoice-#{invoice.id}")
     end
 
+    # A burst of writes, like the recurring sweep, must not reload the list once per write.
+    test "changes during the refresh window wait for it to close", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      first = create_invoice()
+      assert has_element?(view, "#invoice-#{first.id}")
+
+      second = create_invoice(%{"client_name" => "Insta Capital"})
+      refute has_element?(view, "#invoice-#{second.id}")
+
+      send(view.pid, :live_refresh_window_closed)
+
+      assert has_element?(view, "#invoice-#{second.id}")
+    end
+
     # The Clients page links here with `?q=<client>`.
     test "a search carried in the URL is applied on the first render", %{conn: conn} do
       first = create_invoice()
@@ -258,6 +273,25 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
       # Rows 11 and 12 were on page 2 of 10; at 5 a page they are on page 3.
       assert has_element?(view, ~s(span[aria-current="page"]), "3")
+      assert row_count(view) == 2
+    end
+
+    test "Next stops on the last page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+      refute has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+
+      render_click(view, "paginate", %{"page" => "2"})
+
+      assert row_count(view) == 2
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+    end
+
+    test "a forged page number lands on the last real page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      render_click(view, "paginate", %{"page" => "10000000"})
+
+      assert has_element?(view, ~s(span[aria-current="page"]), "2")
       assert row_count(view) == 2
     end
 

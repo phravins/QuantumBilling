@@ -100,9 +100,9 @@ defmodule QuantumBilling.ClientBinTest do
       gone = binned(client_fixture())
 
       assert Enum.map(Clients.list_clients(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [%Client{id: id}]} = Clients.page()
+      assert %{rows: [%Client{id: id}]} = Clients.page()
       assert id == kept.id
-      assert %{total: 0} = Clients.page(search: "Acme")
+      assert length(Clients.page(search: "Acme").rows) == 0
 
       assert Clients.get_client(gone.id) == nil
       assert Clients.get_client(to_string(gone.id)) == nil

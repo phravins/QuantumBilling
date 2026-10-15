@@ -204,7 +204,10 @@ if config_env() == :prod do
 
   config :quantum_billing, QuantumBilling.Repo,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # Web requests and Oban jobs share this pool, and the queues in config.exs
+    # can run 32 jobs at once. Postgres must allow POOL_SIZE × app servers
+    # connections (its default max_connections is 100).
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "20"),
     socket_options: maybe_ipv6,
     # Fail fast when the pool is overloaded rather than queueing for ever.
     queue_target: String.to_integer(System.get_env("DB_QUEUE_TARGET_MS") || "150"),

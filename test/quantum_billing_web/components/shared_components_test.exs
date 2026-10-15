@@ -67,12 +67,36 @@ defmodule QuantumBillingWeb.SharedComponentsTest do
 
   describe "pagination" do
     test "measures the screen only when asked to" do
-      fitted = render_component(&pagination/1, current_page: 1, total_pages: 2, fit_rows: true)
-      plain = render_component(&pagination/1, current_page: 1, total_pages: 2)
+      fitted = render_component(&pagination/1, current_page: 1, has_next: true, fit_rows: true)
+      plain = render_component(&pagination/1, current_page: 1, has_next: true)
 
       assert fitted =~ ~s(id="pagination")
       assert fitted =~ "phx-hook"
       refute plain =~ "phx-hook"
+    end
+  end
+
+  describe "pagination without a count" do
+    test "names the page alone and follows has_next for Next" do
+      more = render_component(&pagination/1, current_page: 4, has_next: true)
+      last = render_component(&pagination/1, current_page: 4, has_next: false)
+
+      assert more =~ ~s(aria-label="Page 4")
+      refute next_disabled?(more)
+      assert next_disabled?(last)
+    end
+
+    defp next_disabled?(html) do
+      html
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query(~s(button[aria-label="Next page"][disabled]))
+      |> Enum.any?()
+    end
+
+    test "names the total when it is known" do
+      html = render_component(&pagination/1, current_page: 2, total_pages: 5, has_next: true)
+
+      assert html =~ ~s(aria-label="Page 2 of 5")
     end
   end
 

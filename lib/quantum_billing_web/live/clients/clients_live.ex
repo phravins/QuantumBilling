@@ -158,8 +158,8 @@ defmodule QuantumBillingWeb.ClientsLive do
 
     socket
     |> assign(:rows, result.rows)
-    |> assign(:total, result.total)
-    |> assign(:total_pages, result.total_pages)
+    |> assign(:empty?, result.rows == [])
+    |> assign(:has_next, result.has_next?)
     |> assign(:page, result.page)
     |> assign(:row_offset, (result.page - 1) * result.per_page)
   end
@@ -232,7 +232,7 @@ defmodule QuantumBillingWeb.ClientsLive do
 
       <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
-          :if={@total == 0}
+          :if={@empty?}
           class="flex-1 justify-center"
           icon="hero-users"
           title={
@@ -246,7 +246,7 @@ defmodule QuantumBillingWeb.ClientsLive do
               else: "Try a different search term or status."
           }
         />
-        <div :if={@total > 0}>
+        <div :if={not @empty?}>
           <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
@@ -404,8 +404,8 @@ defmodule QuantumBillingWeb.ClientsLive do
         </div>
 
         <%!-- mt-auto pins the pager to the bottom of the card. --%>
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
     </Layouts.app>

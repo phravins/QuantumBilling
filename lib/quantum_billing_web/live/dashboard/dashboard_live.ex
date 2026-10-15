@@ -20,6 +20,7 @@ defmodule QuantumBillingWeb.DashboardLive do
   alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments.QRCode
+  alias QuantumBillingWeb.LiveRefresh
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Invoices.subscribe()
@@ -36,8 +37,13 @@ defmodule QuantumBillingWeb.DashboardLive do
     {:noreply, assign(socket, :qr_modal_invoice, nil)}
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, assign_dashboard(socket)}
+    {:noreply, LiveRefresh.changed(socket, &assign_dashboard/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &assign_dashboard/1)}
   end
 
   defp assign_dashboard(socket) do

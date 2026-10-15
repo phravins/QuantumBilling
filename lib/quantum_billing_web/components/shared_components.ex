@@ -502,7 +502,12 @@ defmodule QuantumBillingWeb.SharedComponents do
   second page. The LiveView handles it with `fit_rows_per_page/1`.
   """
   attr :current_page, :integer, required: true
-  attr :total_pages, :integer, required: true
+  attr :has_next, :boolean, required: true
+
+  attr :total_pages, :integer,
+    default: nil,
+    doc: "only where the list is counted anyway; the label says \"of N\" with it"
+
   attr :fit_rows, :boolean, default: false
   attr :id, :string, default: "pagination"
 
@@ -526,7 +531,12 @@ defmodule QuantumBillingWeb.SharedComponents do
 
       <span
         aria-current="page"
-        aria-label={"Page #{@current_page} of #{@total_pages}"}
+        aria-label={
+          if(@total_pages,
+            do: "Page #{@current_page} of #{@total_pages}",
+            else: "Page #{@current_page}"
+          )
+        }
         class={[
           "inline-flex size-7 shrink-0 items-center justify-center rounded-full",
           "border border-base-content/70 text-xs font-medium text-base-content"
@@ -539,7 +549,7 @@ defmodule QuantumBillingWeb.SharedComponents do
         type="button"
         aria-label="Next page"
         class={@page_button_class}
-        disabled={@current_page == @total_pages}
+        disabled={not @has_next}
         phx-click="paginate"
         phx-value-page={@current_page + 1}
       >

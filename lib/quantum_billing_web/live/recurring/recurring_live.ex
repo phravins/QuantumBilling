@@ -30,14 +30,14 @@ defmodule QuantumBillingWeb.RecurringLive do
   end
 
   defp load_profiles(socket) do
-    %{rows: rows, total: total, page: page, total_pages: total_pages} =
+    %{rows: rows, page: page, has_next?: has_next} =
       Recurring.page(page: socket.assigns.page, per_page: socket.assigns.per_page)
 
     socket
     |> assign(:profiles, rows)
-    |> assign(:total, total)
+    |> assign(:empty?, rows == [])
     |> assign(:page, page)
-    |> assign(:total_pages, total_pages)
+    |> assign(:has_next, has_next)
   end
 
   defp assign_clients(socket) do
@@ -238,8 +238,8 @@ defmodule QuantumBillingWeb.RecurringLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
 

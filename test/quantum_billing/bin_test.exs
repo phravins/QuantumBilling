@@ -97,7 +97,7 @@ defmodule QuantumBilling.BinTest do
       gone = binned(invoice_fixture())
 
       assert Enum.map(Invoices.list_invoices(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [%{id: id}]} = Invoices.page()
+      assert %{rows: [%{id: id}]} = Invoices.page()
       assert id == kept.id
       assert Enum.map(Invoices.recent_invoices(), & &1.id) == [kept.id]
 
@@ -220,7 +220,7 @@ defmodule QuantumBilling.BinTest do
 
       binned(gone)
 
-      assert %{total: 1, rows: [row]} = EWayBills.page()
+      assert %{rows: [row]} = EWayBills.page()
       assert row.id == kept_bill.id
       assert length(EWayBills.export_rows()) == 1
 

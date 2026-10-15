@@ -34,7 +34,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   end
 
   defp load_page(socket) do
-    %{rows: rows, total: total, page: page, total_pages: total_pages} =
+    %{rows: rows, page: page, has_next?: has_next} =
       EWayBills.page(
         search: socket.assigns.search,
         status: socket.assigns.status_filter,
@@ -46,9 +46,9 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
     socket
     |> assign(:rows, rows)
-    |> assign(:total, total)
+    |> assign(:empty?, rows == [])
     |> assign(:page, page)
-    |> assign(:total_pages, total_pages)
+    |> assign(:has_next, has_next)
     |> assign(:row_offset, (page - 1) * socket.assigns.per_page)
   end
 
@@ -282,7 +282,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
       <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
-          :if={@total == 0}
+          :if={@empty?}
           class="flex-1 justify-center"
           icon="hero-truck"
           title={
@@ -296,7 +296,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
               else: "Try a different search term or status."
           }
         />
-        <div :if={@total > 0}>
+        <div :if={not @empty?}>
           <table id="e-way-bills" class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
@@ -441,8 +441,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
 

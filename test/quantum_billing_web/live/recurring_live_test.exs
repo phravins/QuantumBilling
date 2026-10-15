@@ -182,15 +182,15 @@ defmodule QuantumBillingWeb.RecurringLiveTest do
   end
 
   describe "Recurring.page/1" do
-    test "counts and clamps like the other list pages" do
+    test "pages and clamps like the other list pages" do
       client = client()
       for index <- 1..25, do: profile(client, %{"title" => "Retainer #{index}"})
 
-      assert %{total: 25, total_pages: 3, page: 1, rows: rows} = Recurring.page(per_page: 10)
+      assert %{has_next?: true, page: 1, rows: rows} = Recurring.page(per_page: 10)
       assert length(rows) == 10
 
       # Past the end clamps rather than returning nothing.
-      assert %{page: 3, rows: last} = Recurring.page(page: 99, per_page: 10)
+      assert %{page: 3, rows: last, has_next?: false} = Recurring.page(page: 99, per_page: 10)
       assert length(last) == 5
 
       assert Recurring.page(per_page: 100_000).per_page == 200
@@ -218,10 +218,10 @@ defmodule QuantumBillingWeb.RecurringLiveTest do
       paused = profile(client, %{"title" => "Paused one"})
       {:ok, _} = Recurring.update_profile(paused, %{"status" => "Paused"})
 
-      assert %{total: 1, rows: [row]} = Recurring.page(status: "Active")
+      assert %{rows: [row]} = Recurring.page(status: "Active")
       assert row.id == active.id
 
-      assert %{total: 2} = Recurring.page(status: "All Status")
+      assert length(Recurring.page(status: "All Status").rows) == 2
     end
   end
 end

@@ -183,7 +183,7 @@ defmodule QuantumBilling.RecurringBillingTest do
       assert %DateTime{} = binned.deleted_at
 
       assert Enum.map(Recurring.list_profiles(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [row]} = Recurring.page()
+      assert %{rows: [row]} = Recurring.page()
       assert row.id == kept.id
 
       assert Recurring.get_profile(gone.id) == nil

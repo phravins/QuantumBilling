@@ -212,6 +212,9 @@ defmodule QuantumBillingWeb.ClientShowLiveTest do
       invoice_for(client)
       invoice_for(client)
 
+      # The second write lands inside the refresh window; close it rather than wait.
+      send(view.pid, :live_refresh_window_closed)
+
       assert has_element?(view, "#client-invoice-count", "2")
       refute has_element?(view, "#client-invoice-count", "0")
     end

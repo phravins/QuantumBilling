@@ -36,7 +36,6 @@ defmodule QuantumBilling.Reports do
 
   import Ecto.Query, warn: false
 
-  alias QuantumBilling.Clients.Client
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
@@ -708,23 +707,46 @@ defmodule QuantumBilling.Reports do
   strings and eleven megabytes of process memory, on every load of the Reports
   page, to arrive at two thousand distinct names. It grew with the age of the
   business, and every one of those names was also rendered as an `<option>`.
+
+  ## Why the invoice names are a skip scan
+
+  A plain `UNION` still had to sort every invoice's client name to dedupe
+  them: on a million invoices, a 44 MB on-disk sort and two seconds per
+  Reports load. The invoice side therefore walks `invoices_client_name_index`
+  one distinct name at a time — "the first name after the last one" — so the
+  cost is one index probe per name returned, however many invoices share it.
+  Only the first `client_name_limit/0` names of each side can make the final
+  list, so each side stops there before the two are merged.
   """
   def client_names do
-    from_clients = from(c in Client.kept(), select: %{name: c.name}, where: not is_nil(c.name))
-
-    from_invoices =
-      from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))
-
-    names =
-      from(n in subquery(union(from_clients, ^from_invoices)),
-        where: n.name != "",
-        order_by: n.name,
-        limit: @client_name_limit,
-        select: n.name
+    %{rows: rows} =
+      Repo.query!(
+        """
+        WITH RECURSIVE invoice_names(name, n) AS (
+          (SELECT client_name, 1 FROM invoices
+           WHERE deleted_at IS NULL AND client_name > ''
+           ORDER BY client_name LIMIT 1)
+          UNION ALL
+          SELECT (SELECT i.client_name FROM invoices i
+                  WHERE i.deleted_at IS NULL AND i.client_name > p.name
+                  ORDER BY i.client_name LIMIT 1),
+                 p.n + 1
+          FROM invoice_names p
+          WHERE p.name IS NOT NULL AND p.n < $1
+        )
+        SELECT name FROM (
+          SELECT name FROM invoice_names WHERE name IS NOT NULL
+          UNION
+          (SELECT name FROM clients WHERE deleted_at IS NULL AND name > ''
+           ORDER BY name LIMIT $1)
+        ) names
+        ORDER BY name
+        LIMIT $1
+        """,
+        [@client_name_limit]
       )
-      |> Repo.all()
 
-    ["All Clients" | names]
+    ["All Clients" | List.flatten(rows)]
   end
 
   @doc "How many names the client filter offers before it stops listing them."

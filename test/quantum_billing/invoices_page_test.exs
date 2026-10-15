@@ -32,6 +32,8 @@ defmodule QuantumBilling.InvoicesPageTest do
   end
 
   describe "page/1" do
+    defp matches(opts), do: length(Invoices.page([per_page: 100] ++ opts).rows)
+
     setup do
       for n <- 1..25 do
         insert_invoice(%{
@@ -47,13 +49,35 @@ defmodule QuantumBilling.InvoicesPageTest do
       :ok
     end
 
-    test "reads one page and counts the rest" do
+    test "reads one page and looks one row ahead" do
       result = Invoices.page(page: 1, per_page: 10)
 
       assert length(result.rows) == 10
+      assert result.has_next?
+      assert result.page == 1
+      refute Map.has_key?(result, :total)
+    end
+
+    test "has a next page only while a row is left over" do
+      assert Invoices.page(page: 1, per_page: 24).has_next?
+      refute Invoices.page(page: 1, per_page: 25).has_next?
+      refute Invoices.page(page: 3, per_page: 10).has_next?
+    end
+
+    test "counts only when asked to" do
+      result = Invoices.page(page: 1, per_page: 10, count: true)
+
       assert result.total == 25
       assert result.total_pages == 3
-      assert result.page == 1
+      assert result.has_next?
+    end
+
+    test "a forged page number lands on the last real page" do
+      result = Invoices.page(page: 10_000_000, per_page: 10)
+
+      assert result.page == 3
+      assert length(result.rows) == 5
+      refute result.has_next?
     end
 
     test "clamps a page beyond the end rather than returning nothing" do
@@ -61,19 +85,20 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       assert result.page == 3
       assert length(result.rows) == 5
+      refute result.has_next?
     end
 
     test "searches the number, the client and the GSTIN" do
-      assert Invoices.page(search: "INV-0007").total == 1
-      assert Invoices.page(search: "globex").total == 13
-      assert Invoices.page(search: "27AAACA1234A1Z5").total == 12
-      assert Invoices.page(search: "nothing matches this").total == 0
+      assert matches(search: "INV-0007") == 1
+      assert matches(search: "globex") == 13
+      assert matches(search: "27AAACA1234A1Z5") == 12
+      assert matches(search: "nothing matches this") == 0
     end
 
     test "filters by status, and 'All Status' means no filter" do
-      assert Invoices.page(status: "Paid").total == 5
-      assert Invoices.page(status: "All Status").total == 25
-      assert Invoices.page(status: nil).total == 25
+      assert matches(status: "Paid") == 5
+      assert matches(status: "All Status") == 25
+      assert matches(status: nil) == 25
     end
 
     test "sorts on the allowlisted columns in both directions" do

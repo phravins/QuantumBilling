@@ -431,14 +431,14 @@ defmodule QuantumBilling.InvoicesTest do
         Invoices.create_invoice(attrs(%{"client_id" => other.id, "client_name" => acme.name}))
 
       assert Invoices.page(client: acme).rows == []
-      assert Invoices.page(client: acme).total == 0
+      refute Invoices.page(client: acme).has_next?
     end
 
     test "counts and pages over the narrowed set", %{acme: acme, other: other} do
       for _ <- 1..3, do: Invoices.create_invoice(attrs(%{"client_id" => acme.id}))
       for _ <- 1..5, do: Invoices.create_invoice(attrs(%{"client_id" => other.id}))
 
-      page = Invoices.page(client: acme, per_page: 2)
+      page = Invoices.page(client: acme, per_page: 2, count: true)
 
       assert page.total == 3
       assert page.total_pages == 2

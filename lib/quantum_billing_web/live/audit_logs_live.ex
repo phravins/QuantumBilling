@@ -187,7 +187,12 @@ defmodule QuantumBillingWeb.AuditLogsLive do
           <p class="text-xs text-base-content/45">
             {@total} recorded {if @total == 1, do: "event", else: "events"}
           </p>
-          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
+          <.pagination
+            current_page={@page}
+            total_pages={@total_pages}
+            has_next={@page < @total_pages}
+            fit_rows
+          />
         </div>
       </.card>
 

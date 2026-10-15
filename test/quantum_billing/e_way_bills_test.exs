@@ -242,7 +242,7 @@ defmodule QuantumBilling.EWayBillsTest do
     test "returns the same shape the invoice list paginates with" do
       for _ <- 1..3, do: bill_fixture()
 
-      assert %{rows: rows, total: 3, page: 1, per_page: 2, total_pages: 2} =
+      assert %{rows: rows, page: 1, per_page: 2, has_next?: true} =
                EWayBills.page(page: 1, per_page: 2)
 
       assert length(rows) == 2
@@ -252,12 +252,12 @@ defmodule QuantumBilling.EWayBillsTest do
       northwind = bill_fixture(invoice_fixture(%{client_name: "Northwind Traders"}))
       _contoso = bill_fixture(invoice_fixture(%{client_name: "Contoso Logistics"}))
 
-      assert %{total: 1, rows: [row]} = EWayBills.page(search: "Northwind")
+      assert %{rows: [row]} = EWayBills.page(search: "Northwind")
       assert row.to_party == "Northwind Traders"
 
-      assert %{total: 1} = EWayBills.page(search: northwind.ewb_number)
-      assert %{total: 1} = EWayBills.page(search: northwind.invoice.invoice_number)
-      assert %{total: 0} = EWayBills.page(search: "nothing here")
+      assert length(EWayBills.page(search: northwind.ewb_number).rows) == 1
+      assert length(EWayBills.page(search: northwind.invoice.invoice_number).rows) == 1
+      assert length(EWayBills.page(search: "nothing here").rows) == 0
     end
 
     test "filters on the derived status" do
@@ -271,16 +271,16 @@ defmodule QuantumBilling.EWayBillsTest do
       {:ok, _cancelled} =
         EWayBills.cancel_e_way_bill(bill_fixture(), %{"cancellation_reason" => "Duplicate"})
 
-      assert %{total: 3} = EWayBills.page(status: "All Status")
-      assert %{total: 1} = EWayBills.page(status: "Active")
-      assert %{total: 1} = EWayBills.page(status: "Expired")
-      assert %{total: 1} = EWayBills.page(status: "Cancelled")
+      assert length(EWayBills.page(status: "All Status").rows) == 3
+      assert length(EWayBills.page(status: "Active").rows) == 1
+      assert length(EWayBills.page(status: "Expired").rows) == 1
+      assert length(EWayBills.page(status: "Cancelled").rows) == 1
     end
 
     test "ignores a sort field it does not recognise" do
       bill_fixture()
 
-      assert %{total: 1} = EWayBills.page(sort_field: :not_a_column)
+      assert length(EWayBills.page(sort_field: :not_a_column).rows) == 1
     end
   end
 
@@ -288,7 +288,7 @@ defmodule QuantumBilling.EWayBillsTest do
     test "takes the filters but not the pagination" do
       for _ <- 1..12, do: bill_fixture()
 
-      assert %{rows: rows, total: 12} = EWayBills.page(per_page: 10)
+      assert %{rows: rows, has_next?: true} = EWayBills.page(per_page: 10)
       assert length(rows) == 10
 
       assert length(EWayBills.export_rows([])) == 12

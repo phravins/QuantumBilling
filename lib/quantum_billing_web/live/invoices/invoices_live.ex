@@ -13,6 +13,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Invoices
+  alias QuantumBillingWeb.LiveRefresh
 
   @per_page 10
 
@@ -136,8 +137,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, load_page(socket)}
+    {:noreply, LiveRefresh.changed(socket, &load_page/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &load_page/1)}
   end
 
   # The context clamps the page number, so deleting the last row stays on a real page.
@@ -154,8 +160,8 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
     socket
     |> assign(:rows, result.rows)
-    |> assign(:total, result.total)
-    |> assign(:total_pages, result.total_pages)
+    |> assign(:empty?, result.rows == [])
+    |> assign(:has_next, result.has_next?)
     |> assign(:page, result.page)
     |> assign(:row_offset, (result.page - 1) * result.per_page)
   end
@@ -228,7 +234,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
       <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
-          :if={@total == 0}
+          :if={@empty?}
           class="flex-1 justify-center"
           icon="hero-document-text"
           title={
@@ -242,7 +248,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
               else: "Try a different search term or status."
           }
         />
-        <div :if={@total > 0}>
+        <div :if={not @empty?}>
           <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
@@ -364,8 +370,8 @@ defmodule QuantumBillingWeb.InvoicesLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} fit_rows />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
     </Layouts.app>

@@ -42,6 +42,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   alias QuantumBilling.Clients
   alias QuantumBilling.Invoices
+  alias QuantumBillingWeb.LiveRefresh
 
   @per_page 10
 
@@ -141,8 +142,13 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, load_invoices(socket)}
+    {:noreply, LiveRefresh.changed(socket, &load_invoices/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &load_invoices/1)}
   end
 
   defp load_invoices(socket) do
@@ -150,10 +156,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
       Invoices.page(
         client: socket.assigns.client,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: @per_page,
+        count: true
       )
 
     socket
+    |> assign(:outstanding, Clients.outstanding(socket.assigns.client))
     |> assign(:invoices, result.rows)
     |> assign(:invoice_count, result.total)
     |> assign(:total_pages, result.total_pages)
@@ -252,7 +260,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         <.summary_tile
           id="client-outstanding"
           label="Outstanding"
-          value={rupees(@client.outstanding, decimals: 2, space: true)}
+          value={rupees(@outstanding, decimals: 2, space: true)}
           hint="Unpaid balance carried on this account"
         />
 
@@ -427,7 +435,11 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {@invoice_count} invoices
           </p>
 
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination
+            current_page={@page}
+            total_pages={@total_pages}
+            has_next={@page < @total_pages}
+          />
         </div>
       </.card>
     </Layouts.app>
