@@ -140,7 +140,8 @@ defmodule QuantumBilling.RecurringBillingTest do
       invoice = Repo.preload(invoice, :items)
       assert [item] = invoice.items
       assert item.description == "Support hours"
-      assert item.amount == 10_000
+      # Stored rates are rupees, read through the same cast as the form: 4 × ₹2,500.
+      assert item.amount == 1_000_000
     end
   end
 

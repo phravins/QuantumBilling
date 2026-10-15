@@ -33,7 +33,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
       place_of_supply: "Maharashtra",
       company_state: "Maharashtra",
       client_name: "Acme Corp",
-      grand_total: 11_800,
+      grand_total: 1_180_000,
       status: "Draft"
     })
   end

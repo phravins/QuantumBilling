@@ -76,8 +76,8 @@ defmodule QuantumBilling.Payments.RazorpayClient do
 
   defp payload(%Invoice{} = invoice) do
     %{
-      # Razorpay counts in paise.
-      "amount" => (invoice.grand_total || 0) * 100,
+      # Razorpay counts in paise, as the invoice does.
+      "amount" => invoice.grand_total || 0,
       "currency" => invoice.currency || "INR",
       "accept_partial" => false,
       "reference_id" => invoice.invoice_number,

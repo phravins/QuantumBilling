@@ -13,6 +13,7 @@ defmodule QuantumBilling.Settings.Organization do
   alias QuantumBilling.Encrypted
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
+  alias QuantumBilling.Money.Paise
 
   @gst_rates [0, 5, 12, 18, 28]
 
@@ -58,7 +59,7 @@ defmodule QuantumBilling.Settings.Organization do
 
     field :ewb_transport_mode, :string, default: "Road"
     field :ewb_transporter_id, :string
-    field :ewb_threshold_value, :integer, default: 50_000
+    field :ewb_threshold_value, Paise, default: 5_000_000
     field :ewb_auto_generate, :boolean, default: false
 
     field :default_gst_rate, :integer, default: 18

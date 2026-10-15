@@ -108,7 +108,7 @@ defmodule QuantumBilling.Payments do
   defp verify_payment(%Invoice{status: "Paid"}, _received, _payment_id), do: :ok
 
   defp verify_payment(%Invoice{} = invoice, received, payment_id) do
-    expected_amount = (invoice.grand_total || 0) * 100
+    expected_amount = invoice.grand_total || 0
     expected_currency = invoice.currency || "INR"
 
     cond do
@@ -133,7 +133,7 @@ defmodule QuantumBilling.Payments do
       details: %{
         reason: reason,
         payment_id: payment_id,
-        expected_amount: (invoice.grand_total || 0) * 100,
+        expected_amount: invoice.grand_total || 0,
         expected_currency: invoice.currency || "INR",
         received_amount: received.amount,
         received_currency: received.currency,
@@ -223,7 +223,8 @@ defmodule QuantumBilling.Payments do
         Audit.log_event(:payment_received, "Invoice", updated.id,
           details: %{
             payment_id: payment_id,
-            amount: updated.grand_total
+            # Whole rupees, as older entries in the log hold.
+            amount: div(updated.grand_total || 0, 100)
           }
         )
 
@@ -249,7 +250,8 @@ defmodule QuantumBilling.Payments do
         Webhooks.dispatch("invoice.paid", %{
           invoice_number: updated.invoice_number,
           invoice_id: updated.id,
-          amount: updated.grand_total,
+          # Whole rupees, as integrations have always received it.
+          amount: div(updated.grand_total || 0, 100),
           payment_id: payment_id,
           client_name: updated.client_name
         })

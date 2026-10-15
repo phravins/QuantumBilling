@@ -20,10 +20,10 @@ defmodule QuantumBilling.InvoicesPageTest do
           place_of_supply: "Maharashtra",
           company_state: "Maharashtra",
           client_name: "Acme Corp",
-          taxable_value: 10_000,
-          cgst_amount: 900,
-          sgst_amount: 900,
-          grand_total: 11_800,
+          taxable_value: 1_000_000,
+          cgst_amount: 90_000,
+          sgst_amount: 90_000,
+          grand_total: 1_180_000,
           status: "Draft"
         },
         attrs
@@ -42,7 +42,7 @@ defmodule QuantumBilling.InvoicesPageTest do
           client_name: if(rem(n, 2) == 0, do: "Acme Corp", else: "Globex Ltd"),
           client_gstin: if(rem(n, 2) == 0, do: "27AAACA1234A1Z5", else: "29AAACG5678B1Z2"),
           status: if(rem(n, 5) == 0, do: "Paid", else: "Draft"),
-          grand_total: n * 1_000
+          grand_total: n * 100_000
         })
       end
 
@@ -109,7 +109,7 @@ defmodule QuantumBilling.InvoicesPageTest do
       assert hd(oldest.rows).number == "INV-0001"
 
       largest = Invoices.page(sort_field: :amount, sort_dir: :desc, per_page: 1)
-      assert hd(largest.rows).amount == 25_000
+      assert hd(largest.rows).amount == 2_500_000
     end
 
     test "an unknown sort field falls back rather than reaching the query" do
@@ -143,18 +143,18 @@ defmodule QuantumBilling.InvoicesPageTest do
 
   describe "totals/0 and status_counts/0" do
     test "are computed by the database, not by loading every row" do
-      insert_invoice(%{invoice_number: "INV-A", grand_total: 1_000, status: "Draft"})
-      insert_invoice(%{invoice_number: "INV-B", grand_total: 2_000, status: "Paid"})
-      insert_invoice(%{invoice_number: "INV-C", grand_total: 4_000, status: "Cancelled"})
+      insert_invoice(%{invoice_number: "INV-A", grand_total: 100_000, status: "Draft"})
+      insert_invoice(%{invoice_number: "INV-B", grand_total: 200_000, status: "Paid"})
+      insert_invoice(%{invoice_number: "INV-C", grand_total: 400_000, status: "Cancelled"})
 
       totals = Invoices.totals()
 
       assert totals.count == 3
-      assert totals.revenue == 7_000
+      assert totals.revenue == 700_000
       assert totals.paid_count == 1
       # Paid and cancelled invoices are not owed.
-      assert totals.outstanding == 1_000
-      assert totals.tax == 3 * 1_800
+      assert totals.outstanding == 100_000
+      assert totals.tax == 3 * 180_000
 
       assert %{"Draft" => 1, "Paid" => 1, "Cancelled" => 1} = Invoices.status_counts()
     end
@@ -168,10 +168,10 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-CN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
-      assert Invoices.totals().outstanding == 10_000
+      assert Invoices.totals().outstanding == 1_000_000
 
       {:ok, _note} =
         CreditNotes.create_credit_note_for_invoice(invoice, %{
@@ -180,7 +180,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         })
 
       # A partly credited invoice is partly owed.
-      assert Invoices.totals().outstanding == 6_000
+      assert Invoices.totals().outstanding == 600_000
     end
 
     test "adds debit notes to what is owed" do
@@ -188,7 +188,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-DN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
       {:ok, _note} =
@@ -197,7 +197,7 @@ defmodule QuantumBilling.InvoicesPageTest do
           "grand_total" => Decimal.new("2500")
         })
 
-      assert Invoices.totals().outstanding == 12_500
+      assert Invoices.totals().outstanding == 1_250_000
     end
 
     test "ignores notes against invoices that are no longer owed" do
@@ -205,11 +205,11 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-PAID",
-          grand_total: 10_000,
+          grand_total: 1_000_000,
           status: "Paid"
         })
 
-      owed = insert_invoice(%{invoice_number: "INV-OWED", grand_total: 3_000})
+      owed = insert_invoice(%{invoice_number: "INV-OWED", grand_total: 300_000})
 
       {:ok, _note} =
         CreditNotes.create_credit_note_for_invoice(paid, %{
@@ -219,8 +219,8 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       # Crediting a settled invoice is a refund, not a reduction in
       # receivables, and must not eat into what other customers still owe.
-      assert Invoices.totals().outstanding == 3_000
-      assert owed.grand_total == 3_000
+      assert Invoices.totals().outstanding == 300_000
+      assert owed.grand_total == 300_000
     end
 
     test "never reports a negative receivable" do
@@ -228,7 +228,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-OVER",
-          grand_total: 5_000
+          grand_total: 500_000
         })
 
       {:ok, _note} =
@@ -245,7 +245,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-VOIDCN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
       {:ok, note} =
@@ -256,7 +256,7 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       Repo.update!(Ecto.Changeset.change(note, status: "Cancelled"))
 
-      assert Invoices.totals().outstanding == 10_000
+      assert Invoices.totals().outstanding == 1_000_000
     end
   end
 

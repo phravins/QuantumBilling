@@ -52,15 +52,25 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money.Paise
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  @version "2.1"
+  @version "3.0"
 
-  # 2.0 files are still restored; upgrade/1 converts their e-way bill columns.
-  @readable_versions ["2.0", @version]
+  # Older files are still restored; upgrade/1 brings them to the current shape.
+  @readable_versions ["2.0", "2.1", @version]
+
+  # Before 3.0 these held whole rupees (credit notes, two-place decimals); now paise.
+  @rupee_fields %{
+    "invoices" =>
+      ~w(taxable_value cgst_amount sgst_amount igst_amount cess_amount round_off grand_total),
+    "invoice_items" => ~w(rate amount),
+    "clients" => ~w(credit_limit opening_balance outstanding),
+    "credit_notes" => ~w(subtotal tax_total grand_total)
+  }
 
   # Credentials are excluded: encrypted columns decrypt on load.
   @organization_fields ~w(company_name trade_name address city pincode phone email gstin pan
@@ -280,7 +290,7 @@ defmodule QuantumBilling.Backup do
 
   defp check_version(_data), do: {:error, "That file is not a QuantumBilling backup."}
 
-  # Brings a 2.0 file, where the e-way bill was columns on the invoice, up to the current shape.
+  # A 2.0 file kept the e-way bill as columns on the invoice.
   defp upgrade(%{"version" => "2.0"} = data) do
     bills =
       data
@@ -292,10 +302,58 @@ defmodule QuantumBilling.Backup do
     data
     |> Map.put("e_way_bills", bills)
     |> Map.put("e_way_bill_part_b_updates", [])
+    |> Map.put("version", "2.1")
+    |> upgrade()
+  end
+
+  # A 2.1 file holds rupees where 3.0 holds paise.
+  defp upgrade(%{"version" => "2.1"} = data) do
+    data =
+      Enum.reduce(@rupee_fields, data, fn {section, fields}, acc ->
+        Map.update(acc, section, [], fn
+          rows when is_list(rows) -> Enum.map(rows, &rupees_to_paise(&1, fields))
+          other -> other
+        end)
+      end)
+
+    data
+    |> Map.update("organization", nil, &rupees_to_paise(&1, ~w(ewb_threshold_value)))
     |> Map.put("version", @version)
   end
 
   defp upgrade(data), do: data
+
+  defp rupees_to_paise(row, fields) when is_map(row) do
+    Enum.reduce(fields, row, fn field, acc ->
+      case Map.fetch(acc, field) do
+        {:ok, rupees} when is_integer(rupees) ->
+          Map.put(acc, field, rupees * 100)
+
+        {:ok, rupees} when is_binary(rupees) or is_float(rupees) ->
+          Map.put(acc, field, paise(rupees))
+
+        _absent_or_nil ->
+          acc
+      end
+    end)
+  end
+
+  defp rupees_to_paise(other, _fields), do: other
+
+  # Leaves an unreadable value for cast_row/3 to reject by name.
+  defp paise(rupees) do
+    decimal = if is_float(rupees), do: Decimal.from_float(rupees), else: Decimal.parse(rupees)
+
+    case decimal do
+      %Decimal{} = decimal -> paise_of(decimal)
+      {%Decimal{} = decimal, ""} -> paise_of(decimal)
+      _not_a_number -> rupees
+    end
+  end
+
+  defp paise_of(decimal) do
+    decimal |> Decimal.mult(100) |> Decimal.round(0, :half_up) |> Decimal.to_integer()
+  end
 
   defp issued?(%{"ewb_number" => number}) when is_binary(number), do: String.trim(number) != ""
   defp issued?(_invoice), do: false
@@ -376,15 +434,23 @@ defmodule QuantumBilling.Backup do
     for field <- fields, into: %{} do
       value = Map.get(row, Atom.to_string(field), Map.get(row, field))
 
-      case Ecto.Type.cast(schema.__schema__(:type, field), value) do
+      case Ecto.Type.cast(stored_type(schema, field), value) do
         {:ok, cast} -> {field, cast}
-        :error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
+        _error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
       end
     end
   end
 
   defp cast_row(other, schema, _fields) do
     Repo.rollback("#{schema} expected an object per row, got #{inspect(other)}.")
+  end
+
+  # The file holds paise; casting through Paise would read them as rupees.
+  defp stored_type(schema, field) do
+    case schema.__schema__(:type, field) do
+      Paise -> :integer
+      type -> type
+    end
   end
 
   defp restore_organization!(nil), do: :ok
@@ -399,9 +465,9 @@ defmodule QuantumBilling.Backup do
           into: %{} do
         value = Map.get(attrs, Atom.to_string(field))
 
-        case Ecto.Type.cast(Organization.__schema__(:type, field), value) do
+        case Ecto.Type.cast(stored_type(Organization, field), value) do
           {:ok, cast} -> {field, cast}
-          :error -> Repo.rollback("organization.#{field} could not read #{inspect(value)}.")
+          _error -> Repo.rollback("organization.#{field} could not read #{inspect(value)}.")
         end
       end
 

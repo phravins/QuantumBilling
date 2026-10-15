@@ -51,11 +51,11 @@ defmodule QuantumBilling.EWayBills.NICClient do
       "toAddr1" => invoice.client_billing_address,
       "toPlace" => invoice.client_state || "Pune",
       "toPincode" => 411_001,
-      "totalValue" => invoice.taxable_value,
-      "cgstValue" => invoice.cgst_amount,
-      "sgstValue" => invoice.sgst_amount,
-      "igstValue" => invoice.igst_amount,
-      "totInvValue" => invoice.grand_total,
+      "totalValue" => rupees(invoice.taxable_value),
+      "cgstValue" => rupees(invoice.cgst_amount),
+      "sgstValue" => rupees(invoice.sgst_amount),
+      "igstValue" => rupees(invoice.igst_amount),
+      "totInvValue" => rupees(invoice.grand_total),
       "transporterId" => transporter_id,
       "transporterName" => transporter_name,
       "transDistance" => distance,
@@ -149,6 +149,10 @@ defmodule QuantumBilling.EWayBills.NICClient do
       :sandbox
     end
   end
+
+  # The portal takes rupees as JSON numbers; two decimals survive a float.
+  defp rupees(nil), do: 0
+  defp rupees(paise) when is_integer(paise), do: paise / 100
 
   defp put_issue(attrs, ewb_number, distance) do
     attrs

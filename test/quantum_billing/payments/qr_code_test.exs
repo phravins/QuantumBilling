@@ -14,7 +14,7 @@ defmodule QuantumBilling.Payments.QRCodeTest do
         invoice_date: ~D[2026-03-01],
         client_name: "Acme Corp",
         company_name: "Quantum Billing Tech",
-        grand_total: 11_800,
+        grand_total: 1_180_000,
         currency: "INR"
       },
       attrs

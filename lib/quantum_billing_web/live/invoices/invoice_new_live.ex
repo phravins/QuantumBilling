@@ -595,10 +595,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       <td class="py-2 pr-2 align-top">
                         <input
                           type="number"
-                          min="1"
+                          min="0.001"
+                          step="0.001"
                           id={item_f[:quantity].id}
                           name={item_f[:quantity].name}
-                          value={item_f[:quantity].value}
+                          value={quantity(item_f[:quantity].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -623,9 +624,10 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         <input
                           type="number"
                           min="0"
+                          step="0.01"
                           id={item_f[:rate].id}
                           name={item_f[:rate].name}
-                          value={item_f[:rate].value}
+                          value={money_input(item_f[:rate].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -754,6 +756,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
             <hr class="my-4 border-base-300" />
             <.summary_line
+              id="invoice-summary-round-off"
               label="Round Off"
               value={rupees(@summary.round_off, decimals: 2, space: true)}
             />
@@ -818,6 +821,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
+  attr :id, :string, default: nil
   attr :label, :string, required: true
   attr :value, :any, required: true
 
@@ -825,7 +829,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     ~H"""
     <div class="flex items-start justify-between gap-3">
       <span class="text-xs text-base-content/60">{@label}</span>
-      <span class="text-right text-xs font-medium">{@value}</span>
+      <span id={@id} class="text-right text-xs font-medium">{@value}</span>
     </div>
     """
   end

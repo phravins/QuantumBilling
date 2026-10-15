@@ -27,6 +27,7 @@ defmodule QuantumBilling.InvoiceNotifier do
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Workers.EmailWorker
+  alias QuantumBillingWeb.Format
   alias QuantumBillingWeb.InvoicePdfGenerator
 
   @doc """
@@ -149,7 +150,7 @@ defmodule QuantumBilling.InvoiceNotifier do
       <p style="color: #4b5563; font-size: 15px;">
         Please find attached your #{escape(invoice.invoice_type || "Tax Invoice")}
         <strong>#{escape(invoice.invoice_number)}</strong> for
-        <strong>&#8377;#{invoice.grand_total}</strong> issued on
+        <strong>&#8377;#{Format.figure(invoice.grand_total)}</strong> issued on
         <strong>#{invoice.invoice_date}</strong>.
       </p>
       <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
@@ -160,7 +161,7 @@ defmodule QuantumBilling.InvoiceNotifier do
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #6b7280;">Grand Total:</td>
-            <td style="padding: 4px 0; font-weight: bold; color: #059669;">&#8377;#{invoice.grand_total}</td>
+            <td style="padding: 4px 0; font-weight: bold; color: #059669;">&#8377;#{Format.figure(invoice.grand_total)}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #6b7280;">Due Date:</td>
@@ -193,10 +194,10 @@ defmodule QuantumBilling.InvoiceNotifier do
     Dear #{invoice.client_name || "Customer"},
 
     Please find attached your #{invoice.invoice_type || "Tax Invoice"} #{invoice.invoice_number}
-    for Rs. #{invoice.grand_total}, issued on #{invoice.invoice_date}.
+    for Rs. #{Format.figure(invoice.grand_total)}, issued on #{invoice.invoice_date}.
 
     Invoice number: #{invoice.invoice_number}
-    Grand total:    Rs. #{invoice.grand_total}
+    Grand total:    Rs. #{Format.figure(invoice.grand_total)}
     Due date:       #{invoice.due_date || invoice.invoice_date}
     #{if invoice.irn, do: "IRN:            #{invoice.irn}\n", else: ""}
     Thank you for your business.

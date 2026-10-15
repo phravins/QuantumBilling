@@ -92,7 +92,7 @@ defmodule QuantumBillingWeb.RecurringLiveTest do
     client("Northwind Traders")
     client("Contoso Logistics")
 
-    {:ok, view, html} = live(conn, ~p"/recurring")
+    {:ok, view, _html} = live(conn, ~p"/recurring")
 
     html = render_click(view, "toggle_modal", %{})
     assert html =~ "Northwind Traders"

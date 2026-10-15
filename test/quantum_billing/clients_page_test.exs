@@ -35,8 +35,8 @@ defmodule QuantumBilling.ClientsPageTest do
           company_state: "Maharashtra",
           client_id: client.id,
           client_name: client.name,
-          taxable_value: 10_000,
-          grand_total: 10_000,
+          taxable_value: 1_000_000,
+          grand_total: 1_000_000,
           status: "Draft"
         },
         attrs
@@ -63,7 +63,7 @@ defmodule QuantumBilling.ClientsPageTest do
         gstin: "27AAACP8542D1ZS"
       })
 
-    invoice_fixture(initech, %{grand_total: 5_000})
+    invoice_fixture(initech, %{grand_total: 500_000})
 
     %{initech: initech}
   end
@@ -99,11 +99,11 @@ defmodule QuantumBilling.ClientsPageTest do
     test "is what each client still owes, net of its notes", %{initech: initech} do
       acme = Clients.get_client_by_name("Acme Corp")
 
-      credited = invoice_fixture(acme, %{grand_total: 8_000})
-      debited = invoice_fixture(acme, %{grand_total: 2_000})
-      invoice_fixture(acme, %{grand_total: 50_000, status: "Paid"})
-      invoice_fixture(acme, %{grand_total: 60_000, status: "Cancelled"})
-      invoice_fixture(acme, %{grand_total: 70_000, deleted_at: ~U[2026-03-02 00:00:00Z]})
+      credited = invoice_fixture(acme, %{grand_total: 800_000})
+      debited = invoice_fixture(acme, %{grand_total: 200_000})
+      invoice_fixture(acme, %{grand_total: 5_000_000, status: "Paid"})
+      invoice_fixture(acme, %{grand_total: 6_000_000, status: "Cancelled"})
+      invoice_fixture(acme, %{grand_total: 7_000_000, deleted_at: ~U[2026-03-02 00:00:00Z]})
 
       {:ok, _} =
         CreditNotes.create_credit_note_for_invoice(credited, %{
@@ -117,17 +117,17 @@ defmodule QuantumBilling.ClientsPageTest do
           "grand_total" => Decimal.new("500.40")
         })
 
-      # 8,000 - 3,000 + 2,000 + 500 (rounded); paid, cancelled and binned invoices owe nothing.
-      assert %{"Acme Corp" => 7_500, "Globex Ltd" => 0, "Initech" => 5_000} =
+      # 8,000 - 3,000 + 2,000 + 500.40, to the paisa; paid, cancelled and binned invoices owe nothing.
+      assert %{"Acme Corp" => 750_040, "Globex Ltd" => 0, "Initech" => 500_000} =
                outstanding_by_name(Clients.page().rows)
 
-      assert Clients.outstanding(acme) == 7_500
-      assert Clients.outstanding(initech) == 5_000
+      assert Clients.outstanding(acme) == 750_040
+      assert Clients.outstanding(initech) == 500_000
     end
 
     test "is never negative" do
       globex = Clients.get_client_by_name("Globex Ltd")
-      invoice = invoice_fixture(globex, %{grand_total: 1_000})
+      invoice = invoice_fixture(globex, %{grand_total: 100_000})
 
       {:ok, _} =
         CreditNotes.create_credit_note_for_invoice(invoice, %{
@@ -141,7 +141,7 @@ defmodule QuantumBilling.ClientsPageTest do
 
     test "sorts the whole directory, not just the page" do
       acme = Clients.get_client_by_name("Acme Corp")
-      invoice_fixture(acme, %{grand_total: 900})
+      invoice_fixture(acme, %{grand_total: 90_000})
 
       assert ["Initech", "Acme Corp", "Globex Ltd"] =
                Clients.page(sort_field: :outstanding, sort_dir: :desc)

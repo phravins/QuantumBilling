@@ -24,6 +24,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.EWayBills.Validity
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
 
   @defaults %{
@@ -186,11 +187,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       to_party: invoice.client_name,
       to_gstin: invoice.client_gstin,
       to_state: known_state(invoice.client_state || invoice.place_of_supply),
-      total_goods_value: invoice.taxable_value,
-      cgst_value: invoice.cgst_amount,
-      sgst_value: invoice.sgst_amount,
-      igst_value: invoice.igst_amount,
-      other_amount: invoice.cess_amount,
+      # The form reads rupees, as typed.
+      total_goods_value: Money.to_input(invoice.taxable_value),
+      cgst_value: Money.to_input(invoice.cgst_amount),
+      sgst_value: Money.to_input(invoice.sgst_amount),
+      igst_value: Money.to_input(invoice.igst_amount),
+      other_amount: Money.to_input(invoice.cess_amount),
       # Transport details come from the organisation's saved defaults.
       transport_mode: organization_field(organization, :ewb_transport_mode) || "Road",
       transporter_name: nil,
@@ -387,14 +389,30 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                 <.field
                   field={f[:total_goods_value]}
                   label="Total Value of Goods"
-                  type="number"
+                  type="money"
                   required
-                  min="0"
                   placeholder="60000"
-                /> <.field field={f[:cgst_value]} label="Total CGST Value" type="number" min="0" />
-                <.field field={f[:sgst_value]} label="Total SGST Value" type="number" min="0" />
-                <.field field={f[:igst_value]} label="Total IGST Value" type="number" min="0" />
-                <.field field={f[:other_amount]} label="Other Amount (+)" type="number" min="0" />
+                />
+                <.field
+                  field={f[:cgst_value]}
+                  label="Total CGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:sgst_value]}
+                  label="Total SGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:igst_value]}
+                  label="Total IGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:other_amount]}
+                  label="Other Amount (+)"
+                  type="money"
+                />
                 <div class="sm:col-span-2">
                   <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                     Total Invoice Value

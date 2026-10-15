@@ -238,8 +238,10 @@ defmodule QuantumBillingWeb.DashboardLive do
               <h3 class="text-base font-bold">UPI Payment QR Code</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@qr_modal_invoice.invoice_number} &bull; Total:
-                <strong class="text-emerald-600">₹{@qr_modal_invoice.grand_total ||
-                  @qr_modal_invoice.amount}</strong>
+                <strong class="text-emerald-600">{rupees(
+                  @qr_modal_invoice.grand_total ||
+                    @qr_modal_invoice.amount
+                )}</strong>
               </p>
             </div>
             <button

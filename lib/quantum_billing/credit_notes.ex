@@ -6,6 +6,7 @@ defmodule QuantumBilling.CreditNotes do
   alias QuantumBilling.Repo
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
 
   # Notes on binned invoices are left out; a left join keeps notes with no invoice.
   def list_credit_notes do
@@ -23,6 +24,12 @@ defmodule QuantumBilling.CreditNotes do
     |> Repo.preload([:invoice, :client])
   end
 
+  @doc """
+  Raises a note against `invoice`.
+
+  Amounts in `attrs` are rupees, as typed into the note form; any left out
+  default to the invoice's own figures.
+  """
   def create_credit_note_for_invoice(%Invoice{} = invoice, attrs \\ %{}) do
     note_type = Map.get(attrs, "note_type") || Map.get(attrs, :note_type, "Credit")
     prefix = if note_type == "Credit", do: "CN", else: "DN"
@@ -30,21 +37,21 @@ defmodule QuantumBilling.CreditNotes do
 
     subtotal =
       Map.get(attrs, "subtotal") ||
-        Map.get(attrs, :subtotal, Decimal.new(invoice.taxable_value || 0))
+        Map.get(attrs, :subtotal, Money.to_rupees_decimal(invoice.taxable_value))
 
     tax_total =
       Map.get(attrs, "tax_total") ||
         Map.get(
           attrs,
           :tax_total,
-          Decimal.new(
+          Money.to_rupees_decimal(
             (invoice.cgst_amount || 0) + (invoice.sgst_amount || 0) + (invoice.igst_amount || 0)
           )
         )
 
     grand_total =
       Map.get(attrs, "grand_total") ||
-        Map.get(attrs, :grand_total, Decimal.new(invoice.grand_total || 0))
+        Map.get(attrs, :grand_total, Money.to_rupees_decimal(invoice.grand_total))
 
     reason = Map.get(attrs, "reason") || Map.get(attrs, :reason, "Order modification / refund")
 

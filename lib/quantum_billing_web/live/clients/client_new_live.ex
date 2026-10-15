@@ -323,8 +323,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 <.field
                   field={f[:credit_limit]}
                   label="Credit Limit (₹)"
-                  type="number"
-                  min="0"
+                  type="money"
                 />
                 <.field
                   field={f[:payment_terms_days]}
@@ -335,8 +334,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 <.field
                   field={f[:opening_balance]}
                   label="Opening Balance (₹)"
-                  type="number"
-                  min="0"
+                  type="money"
                 />
               </div>
 

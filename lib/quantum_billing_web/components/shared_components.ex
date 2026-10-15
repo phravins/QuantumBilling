@@ -297,6 +297,11 @@ defmodule QuantumBillingWeb.SharedComponents do
   ## Examples
 
       <.field field={f[:gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
+
+  `type="money"` is a rupee amount: a number input in steps of a paisa that
+  shows a stored paise value as rupees, and passes back whatever was typed.
+
+      <.field field={f[:credit_limit]} label="Credit Limit (₹)" type="money" />
   """
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
@@ -307,6 +312,17 @@ defmodule QuantumBillingWeb.SharedComponents do
   # autocomplete and spellcheck let password managers fill auth forms.
   attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
                 autocomplete spellcheck)
+
+  def field(%{type: "money"} = assigns) do
+    rest =
+      %{min: "0", step: "0.01"}
+      |> Map.merge(assigns.rest)
+      |> Map.put(:value, QuantumBillingWeb.Format.money_input(assigns.field.value))
+
+    assigns
+    |> assign(type: "number", rest: rest)
+    |> field()
+  end
 
   def field(assigns) do
     assigns = assign(assigns, :errors, field_errors(assigns.field))

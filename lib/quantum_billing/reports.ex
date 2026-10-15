@@ -171,14 +171,17 @@ defmodule QuantumBilling.Reports do
     |> query()
     |> select([i], %{
       count: count(i.id),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
       tax_amount:
-        coalesce(
-          sum(
-            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+        type(
+          coalesce(
+            sum(
+              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            ),
+            0
           ),
-          0
+          :integer
         )
     })
     |> Repo.one()
@@ -204,14 +207,17 @@ defmodule QuantumBilling.Reports do
       |> select([i], %{
         month: fragment("date_trunc('month', ?)", i.invoice_date),
         count: count(i.id),
-        taxable_value: coalesce(sum(i.taxable_value), 0),
+        taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
         tax_amount:
-          coalesce(
-            sum(
-              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           )
       })
       |> Repo.all()
@@ -338,11 +344,11 @@ defmodule QuantumBilling.Reports do
     |> group_by([i], fragment(@tax_type_sql))
     |> select([i], %{
       tax_type: fragment(@tax_type_sql),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
-      cgst: coalesce(sum(i.cgst_amount), 0),
-      sgst: coalesce(sum(i.sgst_amount), 0),
-      igst: coalesce(sum(i.igst_amount), 0),
-      cess: coalesce(sum(i.cess_amount), 0)
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
+      cgst: type(coalesce(sum(i.cgst_amount), 0), :integer),
+      sgst: type(coalesce(sum(i.sgst_amount), 0), :integer),
+      igst: type(coalesce(sum(i.igst_amount), 0), :integer),
+      cess: type(coalesce(sum(i.cess_amount), 0), :integer)
     })
     |> Repo.all()
     |> Map.new(&{&1.tax_type, &1})
@@ -382,13 +388,16 @@ defmodule QuantumBilling.Reports do
       client: i.client_name,
       value:
         selected_as(
-          coalesce(
-            sum(
-              coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
-                coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
-                coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
+                  coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
+                  coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           ),
           :value
         )
@@ -433,7 +442,8 @@ defmodule QuantumBilling.Reports do
       cgst: invoice.cgst_amount || 0,
       sgst: invoice.sgst_amount || 0,
       igst: invoice.igst_amount || 0,
-      cess: invoice.cess_amount || 0
+      cess: invoice.cess_amount || 0,
+      round_off: invoice.round_off || 0
     }
   end
 

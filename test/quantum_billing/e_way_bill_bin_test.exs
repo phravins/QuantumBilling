@@ -21,8 +21,8 @@ defmodule QuantumBilling.EWayBillBinTest do
       client_state: "Karnataka",
       client_name: "Acme India Pvt Ltd",
       client_gstin: "27AAAAA0000A1Z5",
-      taxable_value: 100_000,
-      grand_total: 118_000
+      taxable_value: 10_000_000,
+      grand_total: 11_800_000
     }
 
     Repo.insert!(struct(%Invoice{}, Map.merge(defaults, attrs)))

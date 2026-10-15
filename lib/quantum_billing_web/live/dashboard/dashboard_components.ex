@@ -353,18 +353,25 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp plain_number(value), do: format_number(value)
 
   @doc """
-  Formats a rupee amount for a chart axis or tooltip, in Indian units.
+  Formats an amount held in paise for a chart axis or tooltip, in Indian
+  units.
 
   Public because the Reports chart labels its axis the same way, and two
   copies of this would drift into labelling the same number differently on
   two pages.
-  """
-  def money_axis_label(value) when value >= 10_000_000,
-    do: "₹" <> short(value / 10_000_000) <> "Cr"
 
-  def money_axis_label(value) when value >= 100_000, do: "₹" <> short(value / 100_000) <> "L"
-  def money_axis_label(value) when value >= 1_000, do: "₹" <> short(value / 1_000) <> "K"
-  def money_axis_label(value), do: "₹#{round(value)}"
+  ## Examples
+
+      iex> QuantumBillingWeb.DashboardComponents.money_axis_label(250_000_000)
+      "₹25L"
+
+  """
+  def money_axis_label(paise), do: axis_label(paise / 100)
+
+  defp axis_label(rupees) when rupees >= 10_000_000, do: "₹" <> short(rupees / 10_000_000) <> "Cr"
+  defp axis_label(rupees) when rupees >= 100_000, do: "₹" <> short(rupees / 100_000) <> "L"
+  defp axis_label(rupees) when rupees >= 1_000, do: "₹" <> short(rupees / 1_000) <> "K"
+  defp axis_label(rupees), do: "₹#{round(rupees)}"
 
   defp short(number) do
     number

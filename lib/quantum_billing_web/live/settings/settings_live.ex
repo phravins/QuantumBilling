@@ -584,8 +584,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         <.field
           field={f[:ewb_threshold_value]}
           label="Threshold Value (₹)"
-          type="number"
-          min="0"
+          type="money"
           hint="An e-way bill is required above this consignment value."
         />
       </div>

@@ -12,7 +12,7 @@ defmodule QuantumBilling.PaymentsTest do
       place_of_supply: "Maharashtra",
       company_state: "Maharashtra",
       client_name: "Beta Corp",
-      grand_total: 25000
+      grand_total: 2_500_000
     }
 
     invoice = Repo.insert!(invoice)
@@ -30,7 +30,7 @@ defmodule QuantumBilling.PaymentsTest do
       place_of_supply: "Maharashtra",
       company_state: "Maharashtra",
       client_name: "Gamma Tech",
-      grand_total: 45000,
+      grand_total: 4_500_000,
       status: "Draft"
     }
 
@@ -69,7 +69,7 @@ defmodule QuantumBilling.PaymentsTest do
           place_of_supply: "Maharashtra",
           company_state: "Maharashtra",
           client_name: "Delta Ltd",
-          grand_total: 10_000,
+          grand_total: 1_000_000,
           status: "Draft",
           razorpay_payment_link_id: "plink_issued"
         })

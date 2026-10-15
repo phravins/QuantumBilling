@@ -81,7 +81,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
               Issued on {@invoice.invoice_date} | Total Due:
-              <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
+              <strong class="text-emerald-600">{rupees(@invoice.grand_total)}</strong>
             </p>
           </div>
 
@@ -117,7 +117,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 font-medium flex items-center gap-2"
         >
           <.icon name="hero-check-badge" class="size-5 shrink-0" />
-          <span>Payment of ₹{@invoice.grand_total} was successfully received. Transaction Ref:
+          <span>Payment of {rupees(@invoice.grand_total)} was successfully received. Transaction Ref:
           <strong class="font-mono">{@invoice.razorpay_payment_id || "Direct Receipt"}</strong></span>
         </div>
 
@@ -129,7 +129,9 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 font-bold text-xs">
               <.icon name="hero-qr-code" class="size-4" /> Instant UPI Payment
             </div>
-            <h2 class="text-lg font-bold text-base-content">Scan & Pay ₹{@invoice.grand_total}</h2>
+            <h2 class="text-lg font-bold text-base-content">
+              Scan & Pay {rupees(@invoice.grand_total)}
+            </h2>
             <p class="text-xs text-base-content/70">
               Open Google Pay, PhonePe, Paytm, BHIM, or any banking app on your phone and scan this QR code to complete payment instantly.
             </p>

@@ -331,7 +331,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h3 class="text-base font-bold">QR Codes & Payments</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@invoice.invoice_number} &bull; Total Due:
-                <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
+                <strong class="text-emerald-600">{rupees(@invoice.grand_total)}</strong>
               </p>
             </div>
             <button
@@ -350,7 +350,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.upi_qr
               invoice={@invoice}
               size_class="w-48 h-48"
-              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay ₹#{@invoice.grand_total}"}
+              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay #{rupees(@invoice.grand_total)}"}
               caption_class="mt-2 text-xs text-center font-medium text-base-content/80"
             />
           </div>
@@ -490,7 +490,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <input
                 type="number"
                 name="grand_total"
-                value={@invoice.grand_total}
+                min="0"
+                step="0.01"
+                value={money_input(@invoice.grand_total)}
                 class="input input-bordered w-full text-xs"
                 required
               />

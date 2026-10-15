@@ -485,7 +485,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 <tr :for={item <- @items}>
                   <td>{blank(item.hsn_sac)}</td>
                   <td>{blank(item.description)}</td>
-                  <td>{item.quantity || 0} {item.unit || "Nos"}</td>
+                  <td>{quantity(item.quantity || 0)} {item.unit || "Nos"}</td>
                   <td class="ewb-num">{rupees(item.amount || 0, decimals: 2, space: true)}</td>
                   <td class="ewb-num">{tax_split(@invoice, item)}</td>
                 </tr>
@@ -498,7 +498,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
               <tfoot>
                 <tr>
                   <td colspan="2">Total</td>
-                  <td>{@invoice.total_quantity || 0}</td>
+                  <td>{quantity(@invoice.total_quantity || 0)}</td>
                   <td class="ewb-num">
                     {rupees(@invoice.taxable_value || 0, decimals: 2, space: true)}
                   </td>
