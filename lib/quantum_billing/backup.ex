@@ -72,7 +72,8 @@ defmodule QuantumBilling.Backup do
     "credit_notes" => ~w(subtotal tax_total grand_total)
   }
 
-  # Credentials are excluded: encrypted columns decrypt on load.
+  # Credentials are excluded: encrypted columns decrypt on load. So are the
+  # sign-in rules, which belong to the installation rather than this business.
   @organization_fields ~w(company_name trade_name address city pincode phone email gstin pan
                           state currency financial_year timezone date_format invoice_prefix
                           invoice_next_number invoice_number_padding invoice_due_days
@@ -81,8 +82,7 @@ defmodule QuantumBilling.Backup do
                           tds_enabled notify_invoice_created notify_ewb_generated
                           notify_filing_reminders reminder_lead_days language rows_per_page
                           upi_vpa upi_payee_name razorpay_key_id irp_username irp_client_id
-                          webhook_url allowed_ips session_timeout_minutes enforce_2fa
-                          audit_retention_days doc_logo_path)a
+                          webhook_url audit_retention_days doc_logo_path)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city
@@ -486,16 +486,19 @@ defmodule QuantumBilling.Backup do
   defp restore_organization!(_other),
     do: Repo.rollback("Settings in the backup are not an object.")
 
+  # Raw SQL skips Ecto's prefix, so the table is named with its schema.
   defp resync_sequence(table) do
+    qualified = ~s("#{Repo.business_schema!()}".#{table})
+
     Repo.query!(
       """
       SELECT setval(
         pg_get_serial_sequence($1, 'id'),
-        COALESCE((SELECT MAX(id) FROM #{table}), 0) + 1,
+        COALESCE((SELECT MAX(id) FROM #{qualified}), 0) + 1,
         false
       )
       """,
-      [table]
+      [qualified]
     )
   end
 end

@@ -5,13 +5,27 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
-  def mount(%{"token" => token}, _session, socket) do
-    case Invoices.get_invoice_by_token(token) do
+  @doc """
+  The customer's link to `invoice`. Named with the current business's slug, so
+  the page knows whose books to open.
+  """
+  def path(invoice) do
+    ~p"/p/#{QuantumBilling.Repo.business().slug}/#{invoice.public_token || "tok_123"}"
+  end
+
+  def mount(%{"token" => token} = params, _session, socket) do
+    # Visitors have no session business: the link names it. Set for the life
+    # of this LiveView process, so payment events and updates use it too.
+    business = Businesses.from_link(params["slug"])
+    QuantumBilling.Repo.put_business(business)
+
+    case business && Invoices.get_invoice_by_token(token) do
       nil ->
         {:ok,
          socket
@@ -29,6 +43,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
          socket
          |> assign(:page_title, "Tax Invoice #{invoice.invoice_number}")
          |> assign(:invoice, invoice)
+         |> assign(:business, business)
          |> assign(:doc, doc)
          |> assign(:accent, accent)
          |> assign(:logo, logo)}
@@ -103,7 +118,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </button>
 
             <.link
-              href={~p"/pay/#{@invoice.public_token}/pdf"}
+              href={~p"/p/#{@business.slug}/#{@invoice.public_token}/pdf"}
               target="_blank"
               class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-base-300 hover:bg-base-200 text-xs font-semibold"
             >

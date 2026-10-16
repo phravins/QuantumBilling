@@ -2,6 +2,7 @@ defmodule QuantumBilling.AccountsTest do
   use QuantumBilling.DataCase
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.Businesses
 
   import QuantumBilling.AccountsFixtures
   alias QuantumBilling.Accounts.{User, UserToken}
@@ -168,7 +169,7 @@ defmodule QuantumBilling.AccountsTest do
       assert Accounts.bootstrap?()
 
       first = registered_user_fixture()
-      assert first.role == "owner"
+      assert role(first) == "owner"
 
       refute Accounts.bootstrap?()
       refute Accounts.registration_open?()
@@ -194,7 +195,7 @@ defmodule QuantumBilling.AccountsTest do
                  token
                )
 
-      assert user.role == "staff"
+      assert role(user) == "staff"
 
       # Spent, not reusable.
       refute Accounts.registration_open?(token)
@@ -217,10 +218,16 @@ defmodule QuantumBilling.AccountsTest do
       )
 
       assert {:error, {:delivery_failed, message}} =
-               Accounts.invite("invited@example.com", "staff", owner, &"http://localhost/#{&1}")
+               Accounts.invite(
+                 Businesses.default!(),
+                 "invited@example.com",
+                 "staff",
+                 owner,
+                 &"http://localhost/#{&1}"
+               )
 
       assert message =~ "127.0.0.1"
-      assert Accounts.list_invitations() == []
+      assert Accounts.list_invitations(Businesses.default!()) == []
 
       assert [%{kind: "account", status: "failed"}] = deliveries_to("invited@example.com")
     end
@@ -266,23 +273,44 @@ defmodule QuantumBilling.AccountsTest do
                )
 
       # `role` is never cast; the invitation decides it.
-      assert user.role == "staff"
+      assert role(user) == "staff"
     end
 
     test "the last owner cannot be demoted" do
+      business = Businesses.default!()
       owner = registered_user_fixture()
-      assert owner.role == "owner"
+      assert role(owner) == "owner"
 
-      assert {:error, :last_owner} = Accounts.set_role(owner, "staff")
-      assert Accounts.count_owners() == 1
+      assert {:error, :last_owner} = Accounts.set_role(business, owner, "staff")
+      assert {:error, :last_owner} = Accounts.remove_member(business, owner)
+      assert Accounts.count_owners(business) == 1
 
       # With a second owner in place it is allowed.
       second = user_fixture()
-      {:ok, _} = Accounts.set_role(second, "owner")
+      {:ok, _} = Accounts.set_role(business, second, "owner")
 
-      assert {:ok, demoted} = Accounts.set_role(owner, "staff")
+      assert {:ok, demoted} = Accounts.set_role(business, owner, "staff")
       assert demoted.role == "staff"
-      assert Accounts.count_owners() == 1
+      assert Accounts.count_owners(business) == 1
+    end
+
+    test "an invitation to an existing account adds the membership at once" do
+      business = Businesses.default!()
+      owner = owner_fixture()
+      user = user_fixture()
+      {:ok, _} = Accounts.remove_member(business, user)
+
+      assert {:ok, {:added, membership}} =
+               Accounts.invite(business, user.email, "staff", owner, fn _ ->
+                 flunk("no invitation email for an existing account")
+               end)
+
+      assert membership.user_id == user.id
+
+      assert {:error, :already_member} =
+               Accounts.invite(business, user.email, "staff", owner, & &1)
+
+      assert Accounts.list_invitations(business) == []
     end
 
     test "a token that is not a token is refused without reaching the database" do

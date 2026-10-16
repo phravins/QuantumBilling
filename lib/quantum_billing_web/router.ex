@@ -12,6 +12,7 @@ defmodule QuantumBillingWeb.Router do
     plug :put_secure_browser_headers
     plug QuantumBillingWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_scope_for_user
+    plug :fetch_current_business
     plug QuantumBillingWeb.Plugs.EnforceSecurityPolicies
   end
 
@@ -27,20 +28,25 @@ defmodule QuantumBillingWeb.Router do
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
       live "/terms", TermsLive, :index
       live "/privacy", PrivacyLive, :index
+      # The slug names the business the invoice belongs to. `/pay/:token`
+      # links were handed out before there were several, and lead to the first.
+      live "/p/:slug/:token", PublicInvoiceLive, :show
       live "/pay/:token", PublicInvoiceLive, :show
     end
 
     # Outside the live_session, which takes only live routes.
+    get "/p/:slug/:token/pdf", InvoicePdfController, :public
     get "/pay/:token/pdf", InvoicePdfController, :public
   end
 
   # Owner-only: account administration and the full export.
   scope "/", QuantumBillingWeb do
-    pipe_through [:browser, :require_authenticated_user, :require_owner]
+    pipe_through [:browser, :require_authenticated_user, :require_business, :require_owner]
 
     live_session :owner,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.UserAuth, :require_owner},
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
@@ -52,12 +58,13 @@ defmodule QuantumBillingWeb.Router do
 
   # Before "/settings/:section", which would otherwise match "/settings/team".
   scope "/", QuantumBillingWeb do
-    pipe_through [:browser, :require_authenticated_user]
+    pipe_through [:browser, :require_authenticated_user, :require_business]
 
-    # NotificationsHook must run after :require_authenticated.
+    # NotificationsHook must run after :require_business: the feed is the business's.
     live_session :app,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
       live "/", DashboardLive, :index
@@ -106,6 +113,9 @@ defmodule QuantumBillingWeb.Router do
   scope "/api", QuantumBillingWeb do
     pipe_through :api
 
+    # The slug names the business the payment belongs to; the bare path, which
+    # Razorpay dashboards were set up with before, delivers to the first.
+    post "/webhooks/razorpay/:slug", PaymentWebhookController, :handle_razorpay
     post "/webhooks/razorpay", PaymentWebhookController, :handle_razorpay
   end
 
@@ -134,9 +144,14 @@ defmodule QuantumBillingWeb.Router do
       live "/users/profile", UserLive.Profile, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+      # Choosing or creating a business needs a signed-in user but no business yet.
+      live "/businesses", BusinessPickerLive, :index
+      live "/businesses/new", BusinessNewLive, :new
     end
 
     post "/users/update-password", UserSessionController, :update_password
+    # A controller, not an event: only an HTTP response can write the session.
+    post "/businesses/:id/switch", BusinessController, :switch
   end
 
   scope "/", QuantumBillingWeb do

@@ -6,22 +6,9 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPoliciesTest do
   alias QuantumBilling.Settings
   alias QuantumBillingWeb.Plugs.EnforceSecurityPolicies
 
+  # The sandbox rolls the saved rules back after each test.
   setup do
-    org = Settings.ensure_organization()
-
-    on_exit(fn ->
-      Settings.update_section(
-        org,
-        %{
-          allowed_ips: nil,
-          session_timeout_minutes: 60,
-          enforce_2fa: false
-        },
-        :security
-      )
-    end)
-
-    {:ok, org: org}
+    {:ok, org: Settings.ensure_organization()}
   end
 
   describe "IP Whitelisting" do
@@ -85,7 +72,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPoliciesTest do
       Settings.update_section(org, %{allowed_ips: "10.0.0.5"}, :security)
       # Written straight to the column, as an older row or a console edit could
       # leave it — the changeset now rejects this on the way in.
-      QuantumBilling.Repo.update_all(QuantumBilling.Settings.Organization,
+      QuantumBilling.Repo.update_all(QuantumBilling.InstallationSettings,
         set: [allowed_ips: "not-an-ip"]
       )
 
@@ -112,6 +99,38 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPoliciesTest do
                  %{allowed_ips: "127.0.0.1, 10.0.0.0/8, ::1, 2001:db8::/32"},
                  :security
                )
+    end
+  end
+
+  describe "the rules belong to the installation" do
+    test "saved from one business, they guard the sign-in with no business chosen",
+         %{conn: conn, org: org} do
+      {:ok, _organization} = Settings.update_section(org, %{allowed_ips: "10.0.0.5"}, :security)
+
+      assert QuantumBilling.InstallationSettings.get().allowed_ips == "10.0.0.5"
+
+      conn =
+        QuantumBilling.Repo.with_business(nil, fn ->
+          %{conn | remote_ip: {192, 168, 1, 99}} |> EnforceSecurityPolicies.call([])
+        end)
+
+      assert conn.halted
+      assert conn.status == 403
+    end
+
+    test "the business's own audit retention is saved with them", %{org: org} do
+      {:ok, _organization} =
+        Settings.update_section(
+          org,
+          %{session_timeout_minutes: 30, audit_retention_days: 90},
+          :security
+        )
+
+      assert QuantumBilling.InstallationSettings.get().session_timeout_minutes == 30
+      assert Settings.get_organization().audit_retention_days == 90
+
+      assert Settings.with_installation_rules(Settings.get_organization()).session_timeout_minutes ==
+               30
     end
   end
 

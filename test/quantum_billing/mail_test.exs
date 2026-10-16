@@ -266,7 +266,7 @@ defmodule QuantumBilling.MailTest do
 
       # Read around Ecto, as a database dump or a replica would.
       %{rows: [[stored]]} =
-        Repo.query!("SELECT smtp_password FROM organization_settings LIMIT 1", [])
+        Repo.query!("SELECT smtp_password FROM biz_1.organization_settings LIMIT 1", [])
 
       assert is_binary(stored)
       refute stored =~ "plaintext-would-be-bad"

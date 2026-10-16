@@ -9,7 +9,8 @@ defmodule QuantumBilling.Workers.RecurringInvoiceWorker do
       rest from billing;
     * with `%{"profile_id" => id}` it bills that one profile.
 
-  The sweep is what the Cron plugin runs. Cron jobs are inserted by the Oban
+  The sweep is what the Cron plugin runs, once for each business (see
+  `QuantumBilling.Worker`); a profile job is not a sweep. Cron jobs are inserted by the Oban
   leader, one node at a time, which is the thing a plain `GenServer` timer
   could not do: on two nodes it ran twice and every customer was invoiced
   twice.
@@ -18,7 +19,8 @@ defmodule QuantumBilling.Workers.RecurringInvoiceWorker do
   manual run and the scheduled run cannot between them bill the same profile
   three times in a morning.
   """
-  use Oban.Worker,
+  use QuantumBilling.Worker,
+    sweep: true,
     queue: :recurring,
     max_attempts: 3,
     unique: [
@@ -31,8 +33,11 @@ defmodule QuantumBilling.Workers.RecurringInvoiceWorker do
 
   alias QuantumBilling.Recurring
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"profile_id" => profile_id}}) do
+  @impl QuantumBilling.Worker
+  def sweep?(args), do: not Map.has_key?(args, "profile_id")
+
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: %{"profile_id" => profile_id}}) do
     case Recurring.get_profile(profile_id) do
       nil ->
         Logger.warning("[RecurringInvoiceWorker] profile #{profile_id} no longer exists")
@@ -47,7 +52,7 @@ defmodule QuantumBilling.Workers.RecurringInvoiceWorker do
     end
   end
 
-  def perform(%Oban.Job{}) do
+  def process(%Oban.Job{}) do
     queued = Recurring.enqueue_due_profiles()
 
     if queued > 0 do

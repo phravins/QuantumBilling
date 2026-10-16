@@ -209,7 +209,7 @@ defmodule QuantumBilling.NotificationsTest do
 
   describe "the topic" do
     test "is the one Events publishes on" do
-      assert Events.notifications_topic() == "notifications"
+      assert Events.notifications_topic() == "notifications:biz_1"
     end
   end
 

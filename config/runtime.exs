@@ -54,8 +54,30 @@ if File.exists?(env_file) do
   end)
 end
 
-# Database connection, shared by dev and test. Defaults keep a fresh clone and
-# CI working with no .env at all; set the variables to point somewhere else.
+required_env! = fn name ->
+  case System.get_env(name) do
+    value when is_binary(value) ->
+      if String.trim(value) == "" do
+        raise "environment variable #{name} is empty. Set it in your environment or .env."
+      end
+
+      value
+
+    nil ->
+      raise "environment variable #{name} is missing. Set it in your environment or .env."
+  end
+end
+
+# Required in every environment; never fall back to keys shared by every install.
+config :quantum_billing, QuantumBillingWeb.Endpoint,
+  secret_key_base: required_env!.("SECRET_KEY_BASE")
+
+# Keep these stable: changing them makes existing encrypted values unreadable.
+config :quantum_billing,
+  totp_encryption_key: required_env!.("TOTP_ENCRYPTION_KEY"),
+  secrets_encryption_key: required_env!.("SECRETS_ENCRYPTION_KEY")
+
+# Database connection, shared by dev and test. Credentials must be configured.
 if config_env() in [:dev, :test] do
   database =
     case config_env() do
@@ -69,36 +91,11 @@ if config_env() in [:dev, :test] do
     end
 
   config :quantum_billing, QuantumBilling.Repo,
-    username: System.get_env("DB_USERNAME", "postgres"),
-    password: System.get_env("DB_PASSWORD", "postgres"),
+    username: required_env!.("DB_USERNAME"),
+    password: required_env!.("DB_PASSWORD"),
     hostname: System.get_env("DB_HOSTNAME", "localhost"),
     port: String.to_integer(System.get_env("DB_PORT", "5432")),
     database: database
-
-  # A local-only default so the app boots; override with SECRET_KEY_BASE
-  # (`mix phx.gen.secret`).
-  config :quantum_billing, QuantumBillingWeb.Endpoint,
-    secret_key_base:
-      System.get_env(
-        "SECRET_KEY_BASE",
-        "kR2vQ8xLmNfW5tYcJ7bPdA3hZgE6sU9nX1oI4jT0aVwK8yBrC5eM2pD7lF3qGnHu"
-      )
-
-  # Encrypts TOTP secrets at rest; override with TOTP_ENCRYPTION_KEY. Changing it
-  # invalidates every 2FA enrolment.
-  config :quantum_billing,
-    totp_encryption_key:
-      System.get_env(
-        "TOTP_ENCRYPTION_KEY",
-        "dev-only-totp-key-Xq7Pm2Lw9Rt4Yv6Bn8Kc3Fh5Jd1Sa0Zg"
-      ),
-    # Encrypts stored credentials (SMTP, Razorpay, IRP, webhook). Separate from the
-    # TOTP key so rotating one leaves 2FA alone.
-    secrets_encryption_key:
-      System.get_env(
-        "SECRETS_ENCRYPTION_KEY",
-        "dev-only-secrets-key-Bv4Nz8Qr1Tm6Wk3Hy7Lc5Pd2Jf9Xs0A"
-      )
 end
 
 # See QuantumBilling.SlowQueryLogger.
@@ -193,12 +190,7 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+  database_url = required_env!.("DATABASE_URL")
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
@@ -219,49 +211,6 @@ if config_env() == :prod do
     # notices before a request does.
     idle_interval: 15_000
 
-  # The secret key base is used to sign/encrypt cookies and other secrets.
-  # A default value is used in config/dev.exs and config/test.exs but you
-  # want to use a different value for prod and you most likely don't want
-  # to check this value into version control, so we use an environment
-  # variable instead.
-  secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
-
-  # Required at boot: without it every stored TOTP secret is undecryptable.
-  totp_encryption_key =
-    System.get_env("TOTP_ENCRYPTION_KEY") ||
-      raise """
-      environment variable TOTP_ENCRYPTION_KEY is missing.
-
-      It encrypts two-factor secrets at rest. Generate one by calling:
-      mix phx.gen.secret
-
-      Changing it later invalidates every existing 2FA enrolment.
-      """
-
-  config :quantum_billing, totp_encryption_key: totp_encryption_key
-
-  # Required at boot: the stored credentials are encrypted with it.
-  secrets_encryption_key =
-    System.get_env("SECRETS_ENCRYPTION_KEY") ||
-      raise """
-      environment variable SECRETS_ENCRYPTION_KEY is missing.
-
-      It encrypts stored integration credentials (SMTP password, Razorpay key
-      secret, IRP password, webhook secret) at rest. Generate one by calling:
-
-      mix phx.gen.secret
-
-      Changing it later makes the stored credentials unreadable and they have
-      to be entered again.
-      """
-
-  config :quantum_billing, secrets_encryption_key: secrets_encryption_key
-
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :quantum_billing, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
@@ -274,6 +223,5 @@ if config_env() == :prod do
       # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
-    secret_key_base: secret_key_base
+    ]
 end

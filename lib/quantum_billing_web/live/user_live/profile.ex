@@ -16,13 +16,23 @@ defmodule QuantumBillingWeb.UserLive.Profile do
   alias QuantumBilling.Accounts
   alias QuantumBilling.Audit
   alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
 
   @activity_limit 8
 
   @impl true
   def mount(_params, _session, socket) do
-    user = socket.assigns.current_scope.user
-    organization = Settings.get_organization()
+    scope = socket.assigns.current_scope
+    user = scope.user
+
+    # Company and activity are the current business's; with none chosen yet
+    # the page shows the person alone.
+    {organization, activity} =
+      if scope.business do
+        {Settings.get_organization(), Audit.recent_for_user(user.id, @activity_limit)}
+      else
+        {%Organization{}, []}
+      end
 
     {:ok,
      socket
@@ -30,7 +40,7 @@ defmodule QuantumBillingWeb.UserLive.Profile do
      |> assign(:active_nav, nil)
      |> assign(:organization, organization)
      |> assign(:location, location(organization))
-     |> assign(:activity, Audit.recent_for_user(user.id, @activity_limit))}
+     |> assign(:activity, activity)}
   end
 
   @impl true
@@ -106,9 +116,9 @@ defmodule QuantumBillingWeb.UserLive.Profile do
                 >
                   <.icon name="hero-building-office-2" class="size-3.5" /> {@organization.company_name}
                 </span>
-                <span class="inline-flex items-center gap-1">
+                <span :if={@current_scope.membership} class="inline-flex items-center gap-1">
                   <.icon name="hero-identification" class="size-3.5" />
-                  {role_label(@current_scope.user.role)}
+                  {role_label(@current_scope.membership)}
                 </span>
               </div>
             </div>
@@ -208,7 +218,7 @@ defmodule QuantumBillingWeb.UserLive.Profile do
             <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <.about_item label="Full name" value={@current_scope.user.full_name} />
               <.about_item label="Designation" value={@current_scope.user.designation} />
-              <.about_item label="Role" value={role_label(@current_scope.user.role)} />
+              <.about_item label="Role" value={role_label(@current_scope.membership)} />
               <.about_item label="Company" value={@organization.company_name} />
               <.about_item label="GSTIN" value={@organization.gstin} />
               <.about_item label="Location" value={@location} />
@@ -317,8 +327,9 @@ defmodule QuantumBillingWeb.UserLive.Profile do
     Enum.find([user.full_name, user.username, user.email], &present?/1)
   end
 
-  defp role_label("owner"), do: "Owner"
-  defp role_label(_role), do: "Staff"
+  defp role_label(%{role: "owner"}), do: "Owner"
+  defp role_label(%{role: _staff}), do: "Staff"
+  defp role_label(nil), do: nil
 
   defp activity_icon("Invoice"), do: "hero-document-text"
   defp activity_icon("EWayBill"), do: "hero-truck"

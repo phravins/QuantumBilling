@@ -386,6 +386,15 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert org.razorpay_key_id == "rzp_test_999"
       assert org.webhook_secret == "whsec_abc123"
     end
+
+    test "shows the Razorpay webhook URL that names this business", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      slug = QuantumBilling.Businesses.default!().slug
+
+      assert view |> element("#razorpay-webhook-url") |> render() =~
+               "/api/webhooks/razorpay/#{slug}"
+    end
   end
 
   defp tools_id(template), do: "text-tools-#{template.id}"
@@ -698,10 +707,11 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       })
       |> render_submit()
 
-      org = Settings.get_organization()
-      assert org.allowed_ips == "192.168.1.0/24"
-      assert org.session_timeout_minutes == 30
-      assert org.audit_retention_days == 90
+      # The sign-in rules are the installation's; the retention is this business's.
+      rules = QuantumBilling.InstallationSettings.get()
+      assert rules.allowed_ips == "192.168.1.0/24"
+      assert rules.session_timeout_minutes == 30
+      assert Settings.get_organization().audit_retention_days == 90
     end
   end
 

@@ -2,6 +2,7 @@ defmodule QuantumBilling.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @schema_prefix "public"
   schema "users" do
     field :username, :string
     field :email, :string
@@ -9,9 +10,6 @@ defmodule QuantumBilling.Accounts.User do
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
-
-    # Never cast: only Accounts.set_role/2 changes it.
-    field :role, :string, default: "staff"
 
     field :full_name, :string
     field :phone, :string
@@ -26,33 +24,6 @@ defmodule QuantumBilling.Accounts.User do
     field :recovery_codes, {:array, :string}, default: [], redact: true
 
     timestamps(type: :utc_datetime)
-  end
-
-  @roles ~w(owner staff)
-
-  @doc "The roles an account can hold."
-  def roles, do: @roles
-
-  @doc """
-  Whether this account owns the installation.
-
-  Owners administer the application itself — they hold the other accounts, the
-  stored credentials for SMTP and the payment gateway, and the full database
-  export. Staff do the billing.
-  """
-  def owner?(%__MODULE__{role: "owner"}), do: true
-  def owner?(_user), do: false
-
-  @doc """
-  A changeset for an account's role.
-
-  Separate from every other changeset precisely so that granting a role is a
-  deliberate call and cannot ride along on a profile or email update.
-  """
-  def role_changeset(user, role) when is_binary(role) do
-    user
-    |> cast(%{role: role}, [:role])
-    |> validate_inclusion(:role, @roles)
   end
 
   @doc """

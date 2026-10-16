@@ -5,12 +5,48 @@ defmodule QuantumBilling.Release do
   """
   @app :quantum_billing
 
+  @doc """
+  Migrates `public`, then every business's schema.
+
+  The order matters: a new public migration can be the one that creates a
+  business table's home, and the businesses are read from `public`.
+  """
   def migrate do
     load_app()
 
     for repo <- repos() do
-      {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
+      {:ok, _, _} =
+        Ecto.Migrator.with_repo(repo, fn repo ->
+          Ecto.Migrator.run(repo, :up, all: true)
+          migrate_businesses(repo)
+        end)
     end
+  end
+
+  @doc """
+  Runs the tenant migrations in every business's schema, archived ones
+  included: an archived business is still read, so its tables must match.
+  """
+  def migrate_businesses(repo, opts \\ []) do
+    for schema <- business_schemas(repo) do
+      Ecto.Migrator.run(
+        repo,
+        tenant_migrations_path(),
+        :up,
+        Keyword.merge([all: true, prefix: schema], opts)
+      )
+    end
+  end
+
+  @doc "Where the migrations that run in each business's schema live."
+  def tenant_migrations_path do
+    Application.app_dir(@app, "priv/repo/tenant_migrations")
+  end
+
+  defp business_schemas(repo) do
+    import Ecto.Query, only: [from: 2]
+
+    repo.all(from(b in "businesses", select: b.schema, order_by: b.id), prefix: "public")
   end
 
   def rollback(repo, version) do

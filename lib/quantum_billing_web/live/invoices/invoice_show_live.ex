@@ -606,7 +606,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             label="Public Portal Link"
             hint="Opens the client's view in a new tab"
             trailing="hero-arrow-top-right-on-square"
-            href={~p"/pay/#{@invoice.public_token || "tok_123"}"}
+            href={QuantumBillingWeb.PublicInvoiceLive.path(@invoice)}
             target="_blank"
           />
           <.drawer_item

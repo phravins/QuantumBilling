@@ -164,7 +164,9 @@ defmodule QuantumBilling.RecurringBillingTest do
       client = client_fixture()
       profile_fixture(client, %{title: "Due now"})
 
-      assert {:ok, %{processed_count: count}} = RecurringInvoiceWorker.perform(%Oban.Job{})
+      assert {:ok, %{processed_count: count}} =
+               RecurringInvoiceWorker.perform(%Oban.Job{args: %{"business_id" => 1}})
+
       assert is_integer(count)
     end
 

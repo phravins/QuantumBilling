@@ -94,7 +94,7 @@ defmodule QuantumBilling.SecurityTest do
           """
           SELECT razorpay_key_id, razorpay_key_secret, irp_username, irp_password,
                  webhook_url, webhook_secret
-          FROM organization_settings LIMIT 1
+          FROM biz_1.organization_settings LIMIT 1
           """,
           []
         )

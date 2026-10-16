@@ -273,7 +273,7 @@ defmodule QuantumBillingWeb.DashboardLive do
 
           <div class="flex items-center justify-between gap-2 pt-2 border-t border-base-200">
             <.link
-              href={~p"/pay/#{@qr_modal_invoice.public_token || "tok_123"}"}
+              href={QuantumBillingWeb.PublicInvoiceLive.path(@qr_modal_invoice)}
               target="_blank"
               class="btn btn-sm btn-outline btn-primary text-xs"
             >

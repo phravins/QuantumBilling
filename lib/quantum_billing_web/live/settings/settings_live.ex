@@ -116,7 +116,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   # The specimen invoice is built from the organisation, so it moves with it.
   defp assign_organization(socket, organization) do
     socket
-    |> assign(:organization, organization)
+    |> assign(:organization, Settings.with_installation_rules(organization))
     |> assign(:sample, InvoiceDocument.sample(organization))
   end
 
@@ -748,9 +748,15 @@ defmodule QuantumBillingWeb.SettingsLive do
 
         <.toggle
           field={f[:enforce_2fa]}
-          label="Enforce 2FA for all organization users"
+          label="Enforce 2FA for everyone"
           hint="Requires two-factor authentication on every login."
         />
+
+        <p id="installation-rules-note" class="flex items-start gap-1.5 text-xs text-base-content/55">
+          <.icon name="hero-information-circle" class="mt-px size-3.5 shrink-0" />
+          The IP ranges, session timeout and 2FA rule apply to every business on this
+          installation. Audit log retention is this business's own.
+        </p>
       </.form>
 
       <hr class="border-base-300" />
@@ -1105,6 +1111,20 @@ defmodule QuantumBillingWeb.SettingsLive do
             type="password"
             placeholder="••••••••••••"
           />
+        </div>
+
+        <div id="razorpay-webhook" class="mt-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+          <p class="text-xs font-medium text-base-content/70">Webhook URL for this business</p>
+          <code
+            id="razorpay-webhook-url"
+            class="mt-1 block select-all break-all font-mono text-xs text-base-content"
+          >
+            {url(~p"/api/webhooks/razorpay/#{@current_scope.business.slug}")}
+          </code>
+          <p class="mt-1 text-xs text-base-content/60">
+            Paste this into the Razorpay dashboard for {@current_scope.business.name}. Each business has its own,
+            so a payment is recorded against the right firm.
+          </p>
         </div>
       </div>
 

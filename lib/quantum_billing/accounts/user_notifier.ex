@@ -2,10 +2,23 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   import Swoosh.Email
 
   alias QuantumBilling.Accounts.User
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Mail
+  alias QuantumBilling.Repo
 
   # Sent now (the person is waiting for the link) but recorded in the delivery ledger.
+  #
+  # Account mail can go out before anyone has chosen a business — signing up,
+  # resetting a password — so it uses the current business's relay and ledger
+  # when there is one, and otherwise the first business's, which is the relay
+  # the installation always used.
   defp deliver(recipient, subject, body) do
+    Repo.with_business(Repo.business() || Businesses.default!(), fn ->
+      send_now(recipient, subject, body)
+    end)
+  end
+
+  defp send_now(recipient, subject, body) do
     email =
       new()
       |> to(recipient)

@@ -729,15 +729,18 @@ defmodule QuantumBilling.Reports do
   list, so each side stops there before the two are merged.
   """
   def client_names do
+    # Raw SQL skips Ecto's prefix, so the business's schema is named here.
+    schema = Repo.business_schema!()
+
     %{rows: rows} =
       Repo.query!(
         """
         WITH RECURSIVE invoice_names(name, n) AS (
-          (SELECT client_name, 1 FROM invoices
+          (SELECT client_name, 1 FROM "#{schema}".invoices
            WHERE deleted_at IS NULL AND client_name > ''
            ORDER BY client_name LIMIT 1)
           UNION ALL
-          SELECT (SELECT i.client_name FROM invoices i
+          SELECT (SELECT i.client_name FROM "#{schema}".invoices i
                   WHERE i.deleted_at IS NULL AND i.client_name > p.name
                   ORDER BY i.client_name LIMIT 1),
                  p.n + 1
@@ -747,7 +750,7 @@ defmodule QuantumBilling.Reports do
         SELECT name FROM (
           SELECT name FROM invoice_names WHERE name IS NOT NULL
           UNION
-          (SELECT name FROM clients WHERE deleted_at IS NULL AND name > ''
+          (SELECT name FROM "#{schema}".clients WHERE deleted_at IS NULL AND name > ''
            ORDER BY name LIMIT $1)
         ) names
         ORDER BY name

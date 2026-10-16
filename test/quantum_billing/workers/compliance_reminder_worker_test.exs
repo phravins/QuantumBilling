@@ -128,7 +128,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
     end
 
     defp perform_job(args) do
-      ComplianceReminderWorker.perform(%Oban.Job{args: args})
+      ComplianceReminderWorker.perform(%Oban.Job{args: Map.put(args, "business_id", 1)})
     end
   end
 end

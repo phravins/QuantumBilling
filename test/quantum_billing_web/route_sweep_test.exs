@@ -157,7 +157,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "every settings section an owner can open renders", %{conn: conn, user: user} do
-      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       for section <- ~w(general invoice tax e-way-bill smtp integrations security notifications) do
         assert {:ok, _view, _html} = live(conn, ~p"/settings/#{section}"),
@@ -275,7 +275,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "the backup download answers for an owner", %{conn: conn, user: user} do
-      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
@@ -337,8 +337,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
   describe "the owner-only pages, as an owner" do
     setup %{user: user} do
-      {:ok, owner} = QuantumBilling.Accounts.set_role(user, "owner")
-      %{owner: owner}
+      {:ok, _membership} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
+      %{owner: user}
     end
 
     test "the team page renders", %{conn: conn} do
@@ -376,4 +376,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert message =~ "Invalid or expired"
     end
   end
+
+  defp default_business, do: QuantumBilling.Businesses.default!()
 end

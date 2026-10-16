@@ -6,6 +6,10 @@ defmodule QuantumBillingWeb.UserAuth do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Businesses
+  alias QuantumBilling.Events
+  alias QuantumBilling.InstallationSettings
+  alias QuantumBilling.Repo
 
   @owner_only_message "That area is limited to account owners."
 
@@ -126,6 +130,89 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  @doc """
+  Chooses the business this request works in.
+
+  The one named by `"business_id"` in the session, if the user is still a
+  member and it is not archived; otherwise, when they belong to exactly one,
+  that one, written back to the session so the next request need not guess.
+  With several and no valid choice, none is chosen and `require_business/2`
+  sends them to the picker.
+
+  The choice goes on the scope and into `QuantumBilling.Repo`, which is what
+  points every query in the request at the business's own schema.
+  """
+  def fetch_current_business(conn, _opts) do
+    case conn.assigns[:current_scope] do
+      %Scope{user: %Accounts.User{}} = scope ->
+        scope = choose_business(scope, get_session(conn, :business_id))
+        Repo.put_business(scope.business)
+
+        conn
+        |> assign(:current_scope, scope)
+        |> remember_business(scope.business)
+
+      _signed_out ->
+        conn
+    end
+  end
+
+  defp remember_business(conn, nil), do: conn
+
+  defp remember_business(conn, %{id: id}) do
+    if get_session(conn, :business_id) == id, do: conn, else: put_session(conn, :business_id, id)
+  end
+
+  # One query: the user's businesses, from which the chosen one is picked.
+  defp choose_business(%Scope{user: user} = scope, business_id) do
+    pairs = Businesses.list_for_user(user)
+    scope = %{scope | businesses: Enum.map(pairs, &elem(&1, 0))}
+
+    case Enum.find(pairs, fn {business, _} -> business.id == business_id end) || only(pairs) do
+      {business, membership} -> Scope.put_membership(scope, %{membership | business: business})
+      nil -> scope
+    end
+  end
+
+  defp only([pair]), do: pair
+  defp only(_none_or_several), do: nil
+
+  @doc """
+  Plug for routes that work inside a business: sends a user who has not chosen
+  one to the picker.
+  """
+  def require_business(conn, _opts) do
+    if conn.assigns.current_scope.business do
+      conn
+    else
+      conn
+      |> redirect(to: ~p"/businesses")
+      |> halt()
+    end
+  end
+
+  @doc """
+  The PubSub topic for one signed-in browser.
+
+  Keyed by a hash of the session token rather than the token itself: topic
+  names show up in logs and the LiveDashboard, and the token is a credential.
+  """
+  def browser_topic(token) when is_binary(token) do
+    "browser:" <> Base.url_encode64(:crypto.hash(:sha256, token), padding: false)
+  end
+
+  @doc """
+  Tells this browser's other tabs that it now works in `business_id`; each
+  reloads. See `on_mount(:require_business, ...)`.
+  """
+  def broadcast_business_switch(conn, business_id) do
+    if token = get_session(conn, :user_token) do
+      Events.broadcast(browser_topic(token), {:business_switched, business_id})
+    end
+
+    conn
+  end
+
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
       {token, conn}
@@ -223,6 +310,9 @@ defmodule QuantumBillingWeb.UserAuth do
       on user_token.
       Redirects to login page if there's no logged user.
 
+    * `:require_business` - Redirects to the business picker when none is
+      chosen; otherwise follows a switch made in another tab of this browser.
+
   ## Examples
 
   Use the `on_mount` lifecycle macro in LiveViews to mount or authenticate
@@ -290,6 +380,18 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_business, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    case socket.assigns.current_scope do
+      %Scope{business: %{id: business_id}} ->
+        {:cont, follow_business_switches(socket, session["user_token"], business_id)}
+
+      _no_business ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/businesses")}
+    end
+  end
+
   def on_mount(:require_owner, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
@@ -309,10 +411,32 @@ defmodule QuantumBillingWeb.UserAuth do
   defp session_expired?(session) do
     with last_activity when is_integer(last_activity) <- session["last_activity_at"],
          minutes when is_integer(minutes) and minutes > 0 <-
-           QuantumBilling.Settings.get_organization().session_timeout_minutes do
+           InstallationSettings.get().session_timeout_minutes do
       System.system_time(:second) - last_activity > minutes * 60
     else
       _no_stamp_or_setting -> false
+    end
+  end
+
+  # A switch in another tab reloads this one into the new business. A full
+  # redirect, not a navigation: the business this socket works in was fixed
+  # from the session when it mounted, and only a page load reads it again.
+  defp follow_business_switches(socket, token, business_id) do
+    if Phoenix.LiveView.connected?(socket) and is_binary(token) do
+      Events.subscribe(browser_topic(token))
+
+      Phoenix.LiveView.attach_hook(socket, :business_switched, :handle_info, fn
+        {:business_switched, ^business_id}, socket ->
+          {:halt, socket}
+
+        {:business_switched, _other}, socket ->
+          {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/")}
+
+        _message, socket ->
+          {:cont, socket}
+      end)
+    else
+      socket
     end
   end
 
@@ -324,7 +448,8 @@ defmodule QuantumBillingWeb.UserAuth do
       Phoenix.LiveView.attach_hook(socket, :profile_updated, :handle_info, fn
         {:profile_updated, %{id: id} = updated}, socket ->
           if socket.assigns.current_scope.user.id == id do
-            {:halt, Phoenix.Component.assign(socket, :current_scope, Scope.for_user(updated))}
+            scope = %{socket.assigns.current_scope | user: updated}
+            {:halt, Phoenix.Component.assign(socket, :current_scope, scope)}
           else
             {:cont, socket}
           end
@@ -337,15 +462,28 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  # Also points this process's queries at the scope's business: a LiveView is
+  # a process of its own, and the plug only set it for the HTTP request.
   defp mount_current_scope(socket, session) do
-    Phoenix.Component.assign_new(socket, :current_scope, fn ->
-      {user, _} =
-        if user_token = session["user_token"] do
-          Accounts.get_user_by_session_token(user_token)
-        end || {nil, nil}
+    socket =
+      Phoenix.Component.assign_new(socket, :current_scope, fn ->
+        {user, _} =
+          if user_token = session["user_token"] do
+            Accounts.get_user_by_session_token(user_token)
+          end || {nil, nil}
 
-      Scope.for_user(user)
-    end)
+        case Scope.for_user(user) do
+          nil -> nil
+          scope -> choose_business(scope, session["business_id"])
+        end
+      end)
+
+    case socket.assigns.current_scope do
+      %Scope{business: business} -> Repo.put_business(business)
+      nil -> Repo.put_business(nil)
+    end
+
+    socket
   end
 
   @doc "Returns the path to redirect to after log in."

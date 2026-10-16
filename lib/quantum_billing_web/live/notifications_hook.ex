@@ -17,6 +17,14 @@ defmodule QuantumBillingWeb.NotificationsHook do
   from here. The hooks halt only on the messages and events that are theirs;
   everything else continues to the page, untouched.
 
+  ## Which business
+
+  Notifications belong to a business, and so does the topic the bell listens
+  on. A page reached before one is chosen — the picker, the profile — gets an
+  empty bell that subscribes to nothing. The router runs this hook after
+  `UserAuth`'s `:require_business` on the business pages, so there the business
+  is already current.
+
   ## What it assigns
 
     * `@notifications` — the newest few, newest first
@@ -42,8 +50,9 @@ defmodule QuantumBillingWeb.NotificationsHook do
   inside the Ecto sandbox: PubSub is global, so in an `async: true` test a
   notification written by a *different* test running at the same moment is
   delivered here and drawn into this socket's panel. It cannot leak between
-  users in production — there is one organisation and every notification is
-  addressed to all of it — but it does mean a LiveView assertion of the form
+  businesses in production — each one's notifications go out on a topic named
+  for its schema, and every notification is addressed to all of that business —
+  but it does mean a LiveView assertion of the form
   `refute render(view) =~ "Some Client"` is no longer sound, because another
   test's invoice for a client of that name will put the string on the page.
 
@@ -58,7 +67,17 @@ defmodule QuantumBillingWeb.NotificationsHook do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Notifications.Notification
 
+  # The feed is a business's. Pages reachable before one is chosen — the
+  # picker, the profile — get an empty bell, which the layout does not draw.
   def on_mount(:default, _params, _session, socket) do
+    if QuantumBilling.Repo.business() do
+      mount_feed(socket)
+    else
+      {:cont, assign(socket, notifications: [], unread_count: 0)}
+    end
+  end
+
+  defp mount_feed(socket) do
     if connected?(socket), do: Notifications.subscribe()
 
     socket =
