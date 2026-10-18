@@ -75,6 +75,22 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert is_map(json["hsn"])
     end
 
+    # A demo IRN was never registered; the government has no record of it.
+    test "leaves a demo IRN out and keeps one the IRP registered" do
+      demo = invoice(%{irn: String.duplicate("d", 64), irn_mode: "demo"})
+      item(demo, %{})
+      live = invoice(%{irn: String.duplicate("e", 64), irn_mode: "live"})
+      item(live, %{})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      entries = json["b2b"] |> Enum.flat_map(& &1["inv"])
+      by_number = Map.new(entries, &{&1["inum"], &1})
+
+      refute Map.has_key?(by_number[demo.invoice_number], "irn")
+      assert by_number[live.invoice_number]["irn"] == live.irn
+    end
+
     test "refuses a period it cannot parse" do
       assert {:error, message} = GSTNExporter.generate_gstr1_json("nonsense")
       assert message =~ "MMYYYY"

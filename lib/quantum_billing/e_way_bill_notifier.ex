@@ -93,7 +93,26 @@ defmodule QuantumBilling.EWayBillNotifier do
 
   @doc "The subject line, used by both the ledger and the mail."
   def subject_for(%EWayBill{} = bill) do
-    "E-Way Bill #{bill.ewb_number} generated"
+    if EWayBill.demo?(bill),
+      do: "[DEMO] E-Way Bill #{bill.ewb_number} created – not filed with the government",
+      else: "E-Way Bill #{bill.ewb_number} generated"
+  end
+
+  @demo_notice "This is a demo e-way bill. It was generated locally in demo mode, was not " <>
+                 "filed with the government and is not valid for moving goods."
+
+  defp demo_html(%EWayBill{} = bill) do
+    if EWayBill.demo?(bill) do
+      ~s(<p style="background-color: #fffbeb; border: 1px solid #d97706; color: #92400e; ) <>
+        ~s(padding: 10px 12px; border-radius: 6px; font-size: 14px;"><strong>Demo:</strong> ) <>
+        "#{@demo_notice}</p>"
+    else
+      ""
+    end
+  end
+
+  defp demo_text(%EWayBill{} = bill) do
+    if EWayBill.demo?(bill), do: "DEMO: #{@demo_notice}\n\n", else: ""
   end
 
   defp recipient(%{email: email}) when is_binary(email) do
@@ -108,6 +127,7 @@ defmodule QuantumBilling.EWayBillNotifier do
     """
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
       <h2 style="color: #1f2937; margin-top: 0;">E-Way Bill Generated</h2>
+      #{demo_html(bill)}
       <p style="color: #4b5563; font-size: 15px;">
         Form GST EWB-01 <strong>#{escape(bill.ewb_number)}</strong> has been raised against
         #{escape(document_number(bill))}.
@@ -147,7 +167,7 @@ defmodule QuantumBilling.EWayBillNotifier do
     """
     E-Way Bill Generated
 
-    Form GST EWB-01 #{bill.ewb_number} has been raised against #{document_number(bill)}.
+    #{demo_text(bill)}Form GST EWB-01 #{bill.ewb_number} has been raised against #{document_number(bill)}.
 
     EWB Number:  #{bill.ewb_number}
     Valid Until: #{valid_until(bill)}

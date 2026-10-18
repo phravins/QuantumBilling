@@ -12,6 +12,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
+  alias QuantumBilling.EWayBills.NICClient
 
   @per_page 10
 
@@ -199,7 +200,11 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   end
 
   defp cancel_error(%Ecto.Changeset{}), do: "Enter a reason for the cancellation."
-  defp cancel_error(reason), do: "The portal refused the cancellation: #{inspect(reason)}"
+
+  defp cancel_error(reason) do
+    NICClient.error_message(reason) ||
+      "The portal refused the cancellation: #{inspect(reason)}"
+  end
 
   defp part_b_error(:gone), do: "That e-way bill no longer exists."
   defp part_b_error(:already_cancelled), do: "A cancelled e-way bill cannot be updated."
@@ -208,7 +213,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     do: "This e-way bill has expired. The vehicle can only be updated while it is valid."
 
   defp part_b_error(%Ecto.Changeset{}), do: "Enter the new vehicle number."
-  defp part_b_error(reason), do: "The portal refused the update: #{inspect(reason)}"
+
+  defp part_b_error(reason) do
+    NICClient.error_message(reason) || "The portal refused the update: #{inspect(reason)}"
+  end
 
   def render(assigns) do
     assigns = assign(assigns, :status_options, EWayBills.status_options())
@@ -345,7 +353,15 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                   {@row_offset + index + 1}
                 </td>
 
-                <td class="truncate whitespace-nowrap font-medium tabular-nums">{row.ewb_no}</td>
+                <td class="truncate whitespace-nowrap font-medium tabular-nums">
+                  {row.ewb_no}
+                  <.portal_mode_badge
+                    :if={row.portal_mode != "live"}
+                    id={"ewb-mode-#{row.id}"}
+                    mode={row.portal_mode}
+                    compact
+                  />
+                </td>
 
                 <td class="truncate whitespace-nowrap text-base-content/60" title={row.document_no}>
                   {row.document_no}

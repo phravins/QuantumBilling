@@ -316,6 +316,41 @@ defmodule QuantumBilling.BackupTest do
       assert bill.status == "Active"
       assert bill.invoice_id == invoice.id
       assert bill.valid_until == ~N[2026-03-03 00:00:00]
+      # Nothing in a 2.0 file says how the bill was issued.
+      assert bill.portal_mode == "demo"
+    end
+
+    test "keeps the portal mode, and infers it for files written before it was recorded" do
+      client = client_fixture()
+      invoice = invoice_fixture(client)
+      {:ok, _bill} = QuantumBilling.EWayBills.generate_e_way_bill(invoice, %{})
+
+      Repo.update!(
+        Ecto.Changeset.change(invoice,
+          irn: String.duplicate("a", 64),
+          signed_invoice: "MOCK_SIGNED_JWT_x",
+          irn_mode: "demo"
+        )
+      )
+
+      # Round trip.
+      assert {:ok, _counts} = Backup.restore_json(Backup.export_json())
+      assert Repo.get!(Invoice, invoice.id).irn_mode == "demo"
+      assert [%{portal_mode: "demo"}] = Repo.all(QuantumBilling.EWayBills.EWayBill)
+
+      # An older 3.0 file, without either field.
+      older =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> update_in(["invoices"], fn rows -> Enum.map(rows, &Map.delete(&1, "irn_mode")) end)
+        |> update_in(["e_way_bills"], fn rows ->
+          Enum.map(rows, &Map.delete(&1, "portal_mode"))
+        end)
+        |> Jason.encode!()
+
+      assert {:ok, _counts} = Backup.restore_json(older)
+      assert Repo.get!(Invoice, invoice.id).irn_mode == "demo"
+      assert [%{portal_mode: "demo"}] = Repo.all(QuantumBilling.EWayBills.EWayBill)
     end
 
     test "restores a 2.1 file, reading its whole-rupee amounts as paise" do

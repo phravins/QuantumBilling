@@ -88,7 +88,11 @@ defmodule QuantumBilling.EWayBills do
           if Settings.get_organization().notify_ewb_generated != false do
             Notifications.notify(%{
               kind: "e_way_bill",
-              title: "E-Way Bill #{bill.ewb_number} generated",
+              title:
+                if(EWayBill.demo?(bill),
+                  do: "Demo e-way bill #{bill.ewb_number} created (not filed)",
+                  else: "E-Way Bill #{bill.ewb_number} generated"
+                ),
               body: "#{invoice.invoice_number} · #{bill.vehicle_number || "no vehicle recorded"}",
               path: "/invoices/#{invoice.id}",
               dedupe_key: "ewb_generated:#{bill.id}"
@@ -542,6 +546,7 @@ defmodule QuantumBilling.EWayBills do
       id: bill.id,
       invoice_id: invoice.id,
       ewb_no: bill.ewb_number,
+      portal_mode: bill.portal_mode,
       document_no: invoice.invoice_number,
       issued_on: bill.ewb_date,
       valid_until: bill.valid_until,

@@ -21,7 +21,9 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   import QuantumBillingWeb.EWayBillsComponents
 
   alias QuantumBilling.EWayBills
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.EWayBills.NICClient
   alias QuantumBilling.EWayBills.Validity
   alias QuantumBilling.Invoices
   alias QuantumBilling.Money
@@ -111,17 +113,27 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       {:ok, bill} ->
         {:noreply,
          socket
-         |> put_flash(
-           :info,
-           "E-Way Bill #{bill.ewb_number} generated for #{bill.invoice.invoice_number}."
-         )
+         |> put_flash(:info, generated_message(bill))
          |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")}
 
       {:error, reason} ->
+        message =
+          NICClient.error_message(reason) ||
+            "Could not generate the e-way bill: #{inspect(reason)}"
+
         {:noreply,
          socket
-         |> put_flash(:error, "Could not generate the e-way bill: #{inspect(reason)}")
+         |> put_flash(:error, message)
          |> assign_form(changeset)}
+    end
+  end
+
+  defp generated_message(bill) do
+    if EWayBill.demo?(bill) do
+      "Demo e-way bill #{bill.ewb_number} created for #{bill.invoice.invoice_number}. " <>
+        "It was not filed with the government."
+    else
+      "E-Way Bill #{bill.ewb_number} generated for #{bill.invoice.invoice_number}."
     end
   end
 

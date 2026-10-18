@@ -727,17 +727,33 @@ defmodule QuantumBilling.Invoices do
   defp submit_einvoice(%Invoice{} = invoice) do
     case QuantumBilling.EInvoice.IRPClient.generate_irn(invoice) do
       {:ok,
-       %{irn: irn, ack_no: ack_no, ack_date: ack_date, signed_qr_code: qr, signed_invoice: jwt}} ->
-        update_attrs = %{
+       %{
+         irn: irn,
+         ack_no: ack_no,
+         ack_date: ack_date,
+         signed_qr_code: qr,
+         signed_invoice: jwt,
+         mode: mode
+       }} ->
+        invoice
+        |> Invoice.einvoice_changeset(%{
           irn: irn,
           ack_number: ack_no,
           ack_date: ack_date,
           signed_qr_code: qr,
           signed_invoice: jwt,
+          irn_mode: mode,
           status: "E-Invoice Generated"
-        }
+        })
+        |> Repo.update()
+        |> case do
+          {:ok, invoice} ->
+            broadcast_change(invoice, :invoice_changed)
+            {:ok, Repo.preload(invoice, :items, force: true)}
 
-        update_invoice(invoice, update_attrs)
+          {:error, changeset} ->
+            {:error, changeset}
+        end
 
       {:error, reason} ->
         _ = update_invoice(invoice, %{status: "E-Invoice Failed"})

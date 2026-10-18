@@ -7,9 +7,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
@@ -49,9 +52,16 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
     case Invoices.queue_einvoice(invoice) do
       {:ok, :queued} ->
+        message =
+          if IRPClient.live?(),
+            do: "Registering #{invoice.invoice_number} with the IRP…",
+            else:
+              "Creating a demo IRN for #{invoice.invoice_number}. " <>
+                "Demo mode: it will not be registered with the IRP."
+
         {:noreply,
          socket
-         |> put_flash(:info, "Registering #{invoice.invoice_number} with the IRP…")
+         |> put_flash(:info, message)
          |> refresh_invoice()}
 
       {:ok, :already_registered} ->
@@ -211,15 +221,17 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       <div class="mb-6 space-y-3">
         <div
-          :if={@invoice.irn}
+          :if={@invoice.irn && !Invoice.demo_irn?(@invoice)}
+          id="irn-panel"
           class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="space-y-1">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
                   <.icon name="hero-check-badge" class="size-3.5" /> E-Invoice Verified (IRP)
                 </span>
+                <.portal_mode_badge id="irn-mode-badge" mode="live" />
                 <span class="text-xs text-base-content/60">
                   Ack No: <strong class="text-base-content">{@invoice.ack_number}</strong>
                 </span>
@@ -240,16 +252,54 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </div>
         </div>
 
+        <%!-- A demo IRN looks exactly like a real one; this panel must not. --%>
+        <div
+          :if={Invoice.demo_irn?(@invoice)}
+          id="demo-irn-panel"
+          class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
+                  <.icon name="hero-beaker" class="size-3.5" /> Demo IRN – not registered with the IRP
+                </span>
+                <.portal_mode_badge id="irn-mode-badge" mode="demo" />
+              </div>
+              <p class="text-xs text-base-content/70">
+                Generated locally in demo mode. This invoice has not been reported to the
+                government; configure live IRP access to register it.
+              </p>
+              <p class="font-mono text-xs text-base-content/50 break-all">
+                Demo IRN: {@invoice.irn}
+              </p>
+            </div>
+
+            <button
+              :if={@invoice.signed_qr_code}
+              type="button"
+              phx-click="toggle_qr_modal"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 text-xs font-medium hover:bg-amber-500/20"
+            >
+              <.icon name="hero-qr-code" class="size-4" /> View Demo QR Code
+            </button>
+          </div>
+        </div>
+
         <div
           :if={@e_way_bill}
           class="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="space-y-1">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 rounded-md bg-cyan-600 px-2 py-0.5 text-xs font-bold text-white">
-                  <.icon name="hero-truck" class="size-3.5" /> E-Way Bill Generated
+                  <.icon name="hero-truck" class="size-3.5" />
+                  {if EWayBill.demo?(@e_way_bill),
+                    do: "Demo E-Way Bill",
+                    else: "E-Way Bill Generated"}
                 </span>
+                <.portal_mode_badge id="ewb-mode-badge" mode={@e_way_bill.portal_mode} />
                 <span class="text-xs text-base-content/60">
                   Vehicle:
                   <strong class="text-base-content">{@e_way_bill.vehicle_number || "—"}</strong>
@@ -356,7 +406,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </div>
 
           <div
-            :if={@invoice.signed_qr_code}
+            :if={@invoice.signed_qr_code && !Invoice.demo_irn?(@invoice)}
             class="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3"
           >
             <div class="flex items-center justify-between">
@@ -366,6 +416,28 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
             </div>
             <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-emerald-500/20 shadow-sm">
+              {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
+            </div>
+            <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
+              {@invoice.signed_qr_code}
+            </div>
+          </div>
+
+          <div
+            :if={@invoice.signed_qr_code && Invoice.demo_irn?(@invoice)}
+            id="demo-qr-panel"
+            class="p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-700">
+                Demo QR – not verifiable
+              </h4>
+              <.portal_mode_badge mode="demo" compact />
+            </div>
+            <p class="text-2xs text-base-content/70">
+              Simulated in demo mode. Government apps will not verify this code.
+            </p>
+            <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-amber-500/30 shadow-sm">
               {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
             </div>
             <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">

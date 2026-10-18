@@ -144,7 +144,7 @@ Uploads currently live on local disk. Multiple app nodes need consistent persist
 - Configure SMTP and sender identity for confirmations, resets, invitations, and documents; production has no development mailbox.
 - Configure Razorpay credentials plus the inbound signing secret and test signature/amount/currency/idempotency behavior.
 - IRP defaults to simulation; its live branch defaults to a sandbox endpoint unless configured otherwise.
-- NIC e-way-bill handling can fall back to simulation on unexpected live failures. A successful application result alone does not prove portal acceptance.
+- NIC e-way bills are demo until `NIC_EWB_API_URL` is set; after that, portal failures are errors, never demo numbers. Check Settings → Integrations to confirm both portals show Live before relying on results.
 - Outgoing webhook destinations pass URL/SSRF validation and can use HMAC signatures; review delivery history for retries/failures.
 
 The [Business guide](Business.md) records product/integration limits, while [configuration](configuration.md) lists the actual switches.

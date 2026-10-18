@@ -105,6 +105,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :ack_date, :utc_datetime
     field :signed_qr_code, :string
     field :signed_invoice, :string
+    # "live" when the IRP registered the IRN; "demo" when it was simulated.
+    field :irn_mode, :string
 
     has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
@@ -199,6 +201,24 @@ defmodule QuantumBilling.Invoices.Invoice do
 
   @doc "Takes an invoice back out of the Bin."
   def restore_changeset(invoice), do: change(invoice, deleted_at: nil)
+
+  @doc "True when the invoice carries an IRN that was simulated, not registered with the IRP."
+  def demo_irn?(%__MODULE__{irn: irn, irn_mode: mode}), do: is_binary(irn) and mode != "live"
+
+  @doc """
+  Records the IRP's answer on the invoice.
+
+  Not part of `changeset/2`: `irn_mode` is set from the IRP client, never from
+  form input.
+  """
+  def einvoice_changeset(invoice, attrs) do
+    invoice
+    |> change(
+      Map.take(attrs, [:irn, :ack_number, :ack_date, :signed_qr_code, :signed_invoice, :status])
+    )
+    |> put_change(:irn_mode, Map.fetch!(attrs, :irn_mode))
+    |> validate_inclusion(:irn_mode, ["demo", "live"])
+  end
 
   defp validate_due_date(changeset) do
     invoice_date = get_field(changeset, :invoice_date)

@@ -203,7 +203,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "pos" => state_code(invoice.place_of_supply),
         "rchrg" => "N",
         "inv_typ" => "R",
-        "irn" => invoice.irn,
+        # A demo IRN was never registered; filing it would report a number the
+        # government has no record of.
+        "irn" => if(Invoice.demo_irn?(invoice), do: nil, else: invoice.irn),
         "itms" => rate_lines(invoice)
       }
       |> drop_nils()

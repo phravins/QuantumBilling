@@ -20,7 +20,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   Generates an IRN for the given invoice by posting to the IRP API or sandbox emulator.
   """
   def generate_irn(%Invoice{} = invoice, opts \\ []) do
-    if sandbox_mode?() or Keyword.get(opts, :force_sandbox, false) do
+    if not live?() or Keyword.get(opts, :force_sandbox, false) do
       simulate_irp_response(invoice)
     else
       do_live_generate_irn(invoice)
@@ -54,7 +54,8 @@ defmodule QuantumBilling.EInvoice.IRPClient do
            ack_no: to_string(data["AckNo"]),
            ack_date: parse_ack_date(data["AckDt"]),
            signed_qr_code: data["SignedQRCode"],
-           signed_invoice: data["SignedInvoice"]
+           signed_invoice: data["SignedInvoice"],
+           mode: "live"
          }}
 
       {:ok, %{status: 200, body: %{"error" => errors}}} ->
@@ -98,7 +99,8 @@ defmodule QuantumBilling.EInvoice.IRPClient do
        ack_no: ack_no,
        ack_date: now,
        signed_qr_code: qr_data,
-       signed_invoice: "MOCK_SIGNED_JWT_#{irn}"
+       signed_invoice: "MOCK_SIGNED_JWT_#{irn}",
+       mode: "demo"
      }}
   end
 
@@ -106,12 +108,16 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   defp main_hsn_code(%Invoice{items: [%{hsn_sac: hsn} | _rest]}) when is_binary(hsn), do: hsn
   defp main_hsn_code(_invoice), do: nil
 
-  defp sandbox_mode? do
+  @doc """
+  True when IRN requests go to the IRP: credentials are set and `IRP_SANDBOX`
+  is off. Otherwise IRNs are simulated and recorded as `"demo"`.
+  """
+  def live? do
     client_id = System.get_env("IRP_CLIENT_ID")
     client_secret = System.get_env("IRP_CLIENT_SECRET")
     force_sandbox = System.get_env("IRP_SANDBOX", "true") in ["true", "1"]
 
-    force_sandbox or is_nil(client_id) or is_nil(client_secret)
+    not (force_sandbox or is_nil(client_id) or is_nil(client_secret))
   end
 
   defp parse_ack_date(nil), do: DateTime.utc_now() |> DateTime.truncate(:second)

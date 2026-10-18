@@ -96,7 +96,7 @@ defmodule QuantumBilling.Backup do
                      company_name company_address company_gstin company_state remarks terms
                      total_items total_quantity taxable_value cgst_amount sgst_amount igst_amount
                      cess_amount round_off grand_total status irn ack_number ack_date
-                     signed_qr_code signed_invoice currency
+                     signed_qr_code signed_invoice irn_mode currency
                      exchange_rate export_type lut_number razorpay_payment_link_id
                      razorpay_payment_url razorpay_payment_id public_token template_id
                      layout_xml deleted_at)a
@@ -105,7 +105,7 @@ defmodule QuantumBilling.Backup do
 
   @e_way_bill_fields ~w(id invoice_id ewb_number ewb_date valid_until status distance_km
                         mode_of_transport vehicle_number transporter_id transporter_name
-                        cancelled_at cancellation_reason deleted_at)a
+                        cancelled_at cancellation_reason deleted_at portal_mode)a
 
   @part_b_fields ~w(id e_way_bill_id vehicle_number mode_of_transport place reason updated_on)a
 
@@ -431,19 +431,34 @@ defmodule QuantumBilling.Backup do
   defp maybe_put(map, true, key, value), do: Map.put(map, key, value)
 
   defp cast_row(row, schema, fields) when is_map(row) do
-    for field <- fields, into: %{} do
-      value = Map.get(row, Atom.to_string(field), Map.get(row, field))
+    cast =
+      for field <- fields, into: %{} do
+        value = Map.get(row, Atom.to_string(field), Map.get(row, field))
 
-      case Ecto.Type.cast(stored_type(schema, field), value) do
-        {:ok, cast} -> {field, cast}
-        _error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
+        case Ecto.Type.cast(stored_type(schema, field), value) do
+          {:ok, cast} -> {field, cast}
+          _error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
+        end
       end
-    end
+
+    fill_portal_mode(schema, cast)
   end
 
   defp cast_row(other, schema, _fields) do
     Repo.rollback("#{schema} expected an object per row, got #{inspect(other)}.")
   end
+
+  # Backups written before the portal mode was recorded: the same rule as the
+  # migration that added it. Bills become demo; a simulated IRN is signed
+  # MOCK_SIGNED_JWT_.
+  defp fill_portal_mode(EWayBill, %{portal_mode: nil} = row), do: %{row | portal_mode: "demo"}
+
+  defp fill_portal_mode(Invoice, %{irn_mode: nil, irn: irn} = row) when is_binary(irn) do
+    mock? = String.starts_with?(row[:signed_invoice] || "", "MOCK_SIGNED_JWT_")
+    %{row | irn_mode: if(mock?, do: "demo", else: "live")}
+  end
+
+  defp fill_portal_mode(_schema, row), do: row
 
   # The file holds paise; casting through Paise would read them as rupees.
   defp stored_type(schema, field) do

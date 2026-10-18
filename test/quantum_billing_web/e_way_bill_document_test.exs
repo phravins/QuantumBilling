@@ -129,7 +129,33 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
       body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
 
       assert body =~ "<svg"
+      # Generated without a portal configured, so the bill is a demo.
+      assert body =~ "Demo – not verifiable"
+    end
+  end
+
+  # A demo number looks exactly like a filed one; the document must not.
+  describe "demo and live bills" do
+    test "a demo bill is watermarked and says it was not filed", %{conn: conn} do
+      bill = invoice_with_bill()
+      assert bill.portal_mode == "demo"
+
+      body = conn |> get(~p"/e-way-bills/#{bill.id}/print") |> response(200)
+
+      assert body =~ "DEMO – NOT FILED"
+      assert body =~ ~s(id="ewb-demo-banner")
+      refute body =~ "Scan to verify"
+    end
+
+    test "a bill the portal issued carries no demo marking", %{conn: conn} do
+      bill = invoice_with_bill()
+      {:ok, live} = QuantumBilling.Repo.update(Ecto.Changeset.change(bill, portal_mode: "live"))
+
+      body = conn |> get(~p"/e-way-bills/#{live.id}/print") |> response(200)
+
       assert body =~ "Scan to verify"
+      refute body =~ "DEMO – NOT FILED"
+      refute body =~ ~s(id="ewb-demo-banner")
     end
 
     # The toolbar's Print button always calls window.print(); only `?print=1`

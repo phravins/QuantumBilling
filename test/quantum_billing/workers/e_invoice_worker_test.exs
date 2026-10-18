@@ -96,6 +96,9 @@ defmodule QuantumBilling.Workers.EInvoiceWorkerTest do
       assert is_binary(registered.irn) and registered.irn != ""
       assert registered.ack_number
       assert registered.signed_qr_code
+      # No IRP credentials in tests: the IRN is simulated and must say so.
+      assert registered.irn_mode == "demo"
+      assert Invoice.demo_irn?(registered)
     end
 
     test "does nothing for an invoice that already carries an IRN" do

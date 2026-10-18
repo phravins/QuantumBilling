@@ -32,7 +32,8 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     "Mode",
     "Vehicle",
     "Transporter",
-    "Status"
+    "Status",
+    "Portal"
   ]
 
   def export(conn, params) do
@@ -70,9 +71,14 @@ defmodule QuantumBillingWeb.EWayBillExportController do
       to_string(row.mode_of_transport || ""),
       to_string(row.vehicle_number || ""),
       to_string(row.transporter_name || ""),
-      to_string(row.status)
+      to_string(row.status),
+      portal(row.portal_mode)
     ]
   end
+
+  # A demo number in a spreadsheet looks like a filed one; say which it is.
+  defp portal("live"), do: "Filed"
+  defp portal(_demo), do: "Demo (not filed)"
 
   defp valid_until(nil), do: ""
 

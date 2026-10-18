@@ -185,7 +185,7 @@ Successful reconciliation saves the payment reference, updates open screens, rec
 
 Requesting an e-invoice queues an Oban job and immediately shows Pending E-Invoice. The worker is designed to validate the invoice and then request an IRN. Success stores the IRN, acknowledgement number/date, signed QR payload, and signed invoice data; failure records E-Invoice Failed and is eligible for worker retry. The job carries the invoice's business, so it reads that business's IRP credentials and updates the invoice in its own books.
 
-The IRP client defaults to sandbox mode (`IRP_SANDBOX=true`) and also simulates a response when required environment credentials are absent. Simulated IRNs and signed payload strings are local test artifacts. An E-Invoice Generated status produced in this mode is not evidence of registration with a government portal. The live client uses environment credentials; saving IRP-related settings alone does not fully configure that live path.
+The IRP client defaults to sandbox mode (`IRP_SANDBOX=true`) and also simulates a response when required environment credentials are absent. Simulated IRNs and signed payload strings are local test artifacts. Each invoice records which mode produced its IRN (`irn_mode`): a demo IRN is shown in an amber "Demo IRN – not registered with the IRP" panel instead of the verified one, its QR is captioned as not verifiable, and the GSTR-1 export leaves it out. The live client uses environment credentials; saving IRP-related settings alone does not fully configure that live path.
 
 The XML download is a separate operation. It exports invoice data using e-invoice vocabulary after validation; it does not issue an IRN, sign a QR code, or change the invoice status. Its validation can reject an invoice accepted by the ordinary editor, including unsupported document types or missing required seller, buyer, or item details.
 
@@ -205,7 +205,7 @@ The application prevents a second kept, non-cancelled bill against the same invo
 
 The organization threshold controls the dashboard count of invoices above that value without a live bill. It does not hide lower-value invoices from the generation picker, and does not prove the selected consignment legally requires a bill.
 
-The NIC client uses a local sandbox response when the URL is missing, and also on unexpected portal/network responses. It contains sample address, GSTIN, and transport fallback values. Review provider configuration and payload completeness before using this path for live transport operations. Local generation, cancellation, or Part-B success must not be treated as proof that the portal recorded the action.
+The NIC client generates demo bills locally when `NIC_EWB_API_URL` is not set. When a portal is configured, a portal that times out, fails or answers unexpectedly is shown as an error and nothing is recorded; it never falls back to a demo number. Each bill records the mode that issued it (`portal_mode`); demo bills carry a badge on screen, a "DEMO – NOT FILED" watermark and banner on the printed/emailed document, a "[DEMO]" email subject, and "Demo (not filed)" in the CSV export. Cancel and Part-B follow the bill's own mode. The payload still contains sample address, GSTIN, and transport fallback values; review payload completeness before live transport operations.
 
 Moving an e-way bill to the Bin only changes this application's records. It does not call the cancellation API. Use the cancellation action when the external bill needs cancellation.
 
@@ -303,7 +303,7 @@ The backup download route requires an owner. The current restore handler is on t
 The main boundaries to account for during acceptance testing are:
 
 - Business schemas, membership-based roles, authenticated business selection/switching, team screens, business-scoped PubSub, public slug routes, payment callbacks, business-aware background jobs and sweeps, and installation security settings are implemented. Deleting a business (as opposed to archiving it) is not.
-- IRP sandbox responses and NIC fallback responses can look successful locally without a government registration or transport update.
+- Demo IRNs and e-way bills are generated locally and are not filed. They are labelled as demo wherever they appear; Settings → Integrations shows the current mode of each portal.
 - Compliance dates and HSN rates are static application rules, filing records are absent, and exports are files rather than submission workflows.
 - Cess/TDS, complete multi-currency/export accounting, purchase ITC, bank reconciliation, inventory, and a general ledger are not implemented as complete business systems.
 - Recurring profiles substitute a fixed default line for absent/invalid items; profiles need explicit review before use with real customers.

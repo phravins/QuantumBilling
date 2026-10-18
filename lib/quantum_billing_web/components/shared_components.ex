@@ -281,6 +281,49 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class(_other), do: @neutral
 
   @doc """
+  Says whether a government-portal result was filed or only simulated.
+
+  A demo e-way bill number or IRN looks exactly like a real one, so every place
+  that shows one says which it is. `compact` gives the short form for tables.
+  """
+  attr :mode, :string, required: true, doc: ~s("demo" or "live")
+  attr :id, :string, default: nil
+  attr :compact, :boolean, default: false
+
+  def portal_mode_badge(assigns) do
+    ~H"""
+    <span
+      id={@id}
+      data-mode={@mode}
+      title={
+        if(@mode == "live",
+          do: "Accepted by the government portal",
+          else: "Generated locally in demo mode; not filed with the government"
+        )
+      }
+      class={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 align-middle text-xs font-medium whitespace-nowrap",
+        portal_mode_class(@mode)
+      ]}
+    >
+      <.icon
+        name={if(@mode == "live", do: "hero-check-badge", else: "hero-beaker")}
+        class="size-3.5"
+      />
+      {portal_mode_label(@mode, @compact)}
+    </span>
+    """
+  end
+
+  defp portal_mode_class("live"), do: @positive
+  defp portal_mode_class(_demo), do: @pending
+
+  defp portal_mode_label("live", true), do: "Filed"
+  defp portal_mode_label("live", false), do: "Filed on portal"
+  defp portal_mode_label(_demo, true), do: "Demo"
+  defp portal_mode_label(_demo, false), do: "Demo – not filed with the government"
+
+  @doc """
   Renders a labelled form control with its validation errors.
 
   Anything not consumed here is forwarded to `CoreComponents.input/1`, so

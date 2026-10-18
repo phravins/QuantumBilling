@@ -53,6 +53,9 @@ defmodule QuantumBilling.EWayBillsTest do
                })
 
       assert bill.ewb_number =~ ~r/^\d{12}$/
+      # No portal configured in tests: recorded as a demo, not a filed bill.
+      assert bill.portal_mode == "demo"
+      assert EWayBill.demo?(bill)
       assert bill.distance_km == 180
       assert bill.vehicle_number == "MH04CD5678"
       assert bill.status == "Active"

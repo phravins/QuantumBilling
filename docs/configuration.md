@@ -95,7 +95,7 @@ UPI VPA and payee name are business settings and are printed on invoice/payment 
 
 `IRP_API_URL` and `IRP_GSTIN` are read by the client even though they are not listed in the starter template. The current IRP client reads its credentials from the environment; similarly named organization fields are not a complete credential-selection integration.
 
-The NIC client uses local simulation when no suitable URL is set and on several unexpected/error responses. Successful UI generation alone therefore does not prove government submission. See [Business](Business.md) for data defaults and limitations.
+The NIC client generates demo bills when no suitable URL is set. With a URL set, a portal that does not answer properly is an error and nothing is recorded. Every IRN and e-way bill records whether it was demo or live and is labelled accordingly; Settings → Integrations shows the mode each portal is currently in. See [Business](Business.md) for data defaults and limitations.
 ## PDF and unused placeholders
 
 | Variable | Behavior |

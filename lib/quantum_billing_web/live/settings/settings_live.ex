@@ -25,7 +25,9 @@ defmodule QuantumBillingWeb.SettingsLive do
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.EWayBills.NICClient
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
@@ -1063,7 +1065,47 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :integrations} = assigns) do
+    # Read from the environment, which is what the portal clients act on.
+    assigns =
+      assign(assigns,
+        portal_modes: [
+          {"irp-mode", "E-invoicing (IRP)", mode(IRPClient.live?()),
+           "IRP_CLIENT_ID, IRP_CLIENT_SECRET and IRP_SANDBOX=false"},
+          {"nic-mode", "E-way bills (NIC)", mode(NICClient.live?()),
+           "NIC_EWB_API_URL and NIC_EWB_API_KEY"}
+        ]
+      )
+
     ~H"""
+    <section id="government-portals" class="mb-4 rounded-xl border border-base-300 p-4">
+      <h3 class="text-sm font-semibold tracking-tight">Government portals</h3>
+      <p class="mt-1 text-xs text-base-content/60">
+        Whether IRNs and e-way bills are filed with the government or generated locally for
+        demonstration. Every result is labelled with the mode that produced it.
+      </p>
+
+      <ul class="mt-3 divide-y divide-base-200">
+        <li
+          :for={{id, label, mode, env} <- @portal_modes}
+          class="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p class="text-sm font-medium">{label}</p>
+            <p class="text-xs text-base-content/60">
+              <%= if mode == "live" do %>
+                Requests go to the portal; if it does not answer, you see an error and nothing is
+                recorded.
+              <% else %>
+                Numbers are generated locally and are not filed. To go live, set {env} on the
+                server.
+              <% end %>
+            </p>
+          </div>
+          <.portal_mode_badge id={id} mode={mode} />
+        </li>
+      </ul>
+    </section>
+
     <.form
       :let={f}
       for={@form}
@@ -1207,4 +1249,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp presence(value), do: value
+
+  defp mode(true), do: "live"
+  defp mode(false), do: "demo"
 end

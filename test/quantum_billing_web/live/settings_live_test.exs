@@ -370,6 +370,14 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
   end
 
   describe "integrations" do
+    test "says whether each government portal is in demo or live mode", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      # Tests configure neither portal.
+      assert has_element?(view, ~s(#irp-mode[data-mode="demo"]))
+      assert has_element?(view, ~s(#nic-mode[data-mode="demo"]))
+    end
+
     test "renders and updates API & payment integrations", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/integrations")
 

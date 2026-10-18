@@ -287,10 +287,48 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           .ewb-sign { text-align: center; font-size: 9.5px; color: var(--ewb-muted); }
           .ewb-sign span { display: block; width: 190px; margin-bottom: 3px; padding-top: 26px; border-bottom: 1px solid var(--ewb-line); }
 
+          /* Demo bills: a number minted locally must not pass for a filed one,
+             on screen, on paper or in the emailed PDF. */
+          .ewb-sheet { position: relative; }
+
+          .ewb-demo-watermark {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 1;
+          }
+
+          .ewb-demo-watermark span {
+            transform: rotate(-30deg);
+            font-size: 64px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: rgba(217, 119, 6, 0.16);
+            white-space: nowrap;
+          }
+
+          .ewb-demo-banner {
+            margin-top: 10px;
+            padding: 7px 10px;
+            border: 1.5px solid #d97706;
+            background: #fffbeb;
+            color: #92400e;
+            font-size: 11px;
+            font-weight: 600;
+          }
+
+          .ewb-demo-banner small { display: block; font-weight: 400; font-size: 10px; }
+
           @media print {
             body { padding: 0; background: #ffffff; }
             .ewb-screen-only { display: none !important; }
             .ewb-sheet { max-width: none; border: none; box-shadow: none; padding: 0; }
+            /* Fixed repeats it on every printed page. */
+            .ewb-demo-watermark { position: fixed; }
           }
         </style>
       </head>
@@ -298,7 +336,11 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
       <body>
         <div :if={@toolbar} class="ewb-screen-only">
           <div>
-            <h1>E-Way Bill {grouped(@bill.ewb_number)}</h1>
+            <h1>
+              {if EWayBill.demo?(@bill), do: "Demo e-way bill", else: "E-Way Bill"} {grouped(
+                @bill.ewb_number
+              )}
+            </h1>
             <p>Form GST EWB-01 &middot; {status_line(@bill)}</p>
           </div>
 
@@ -313,6 +355,10 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
         </div>
 
         <main class="ewb-sheet">
+          <div :if={EWayBill.demo?(@bill)} class="ewb-demo-watermark" aria-hidden="true">
+            <span>DEMO – NOT FILED</span>
+          </div>
+
           <header class="ewb-head">
             <div>
               <h1 class="ewb-title">e-Way Bill</h1>
@@ -324,9 +370,19 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
             <figure class="ewb-qr">
               {raw(qr_svg(@bill))}
-              <figcaption>Scan to verify</figcaption>
+              <figcaption>
+                {if EWayBill.demo?(@bill), do: "Demo – not verifiable", else: "Scan to verify"}
+              </figcaption>
             </figure>
           </header>
+
+          <div :if={EWayBill.demo?(@bill)} id="ewb-demo-banner" class="ewb-demo-banner">
+            Demo e-way bill – not filed with the government
+            <small>
+              This number was generated locally in demo mode. It is not valid for moving goods
+              and will not verify at a checkpost.
+            </small>
+          </div>
 
           <dl class="ewb-band">
             <div>

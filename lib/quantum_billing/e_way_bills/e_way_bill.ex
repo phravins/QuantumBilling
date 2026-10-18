@@ -39,10 +39,11 @@ defmodule QuantumBilling.EWayBills.EWayBill do
 
   @statuses ["Active", "Cancelled"]
   @transport_modes ["Road", "Rail", "Air", "Ship"]
+  @portal_modes ["demo", "live"]
 
   @castable ~w(ewb_number ewb_date valid_until status distance_km mode_of_transport
                vehicle_number transporter_id transporter_name cancelled_at
-               cancellation_reason invoice_id)a
+               cancellation_reason invoice_id portal_mode)a
 
   schema "e_way_bills" do
     field :ewb_number, :string
@@ -57,6 +58,8 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     field :cancelled_at, :utc_datetime
     field :cancellation_reason, :string
     field :deleted_at, :utc_datetime
+    # "live" when the NIC portal issued the number; "demo" when it was minted locally.
+    field :portal_mode, :string, default: "demo"
 
     belongs_to :invoice, Invoice
     has_many :part_b_updates, PartBUpdate, foreign_key: :e_way_bill_id
@@ -70,11 +73,15 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   @doc "The modes of transport Part-A and Part-B accept."
   def transport_modes, do: @transport_modes
 
+  @doc "True when the bill was generated locally and never filed with the portal."
+  def demo?(%__MODULE__{portal_mode: "live"}), do: false
+  def demo?(%__MODULE__{}), do: true
+
   @doc """
   Builds a changeset for creating or updating a bill.
 
-  `invoice_id` is castable here because the context sets it from a loaded
-  invoice, never from user input.
+  `invoice_id` and `portal_mode` are castable here because the context sets
+  them from a loaded invoice and the portal client, never from user input.
   """
   def changeset(e_way_bill, attrs) do
     e_way_bill
@@ -82,6 +89,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     |> validate_required([:ewb_number, :ewb_date, :valid_until, :distance_km, :invoice_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:mode_of_transport, @transport_modes)
+    |> validate_inclusion(:portal_mode, @portal_modes)
     |> validate_number(:distance_km, greater_than_or_equal_to: 0, less_than_or_equal_to: 4_000)
     |> foreign_key_constraint(:invoice_id)
     |> unique_constraint(:ewb_number)

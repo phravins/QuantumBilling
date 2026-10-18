@@ -2,11 +2,15 @@ defmodule QuantumBilling.EWayBills.NICClient do
   @moduledoc """
   HTTP client for the Government NIC E-Way Bill portal, using `Req`.
 
-  Falls back to a sandbox response when `NIC_EWB_API_URL` is unset or the
-  portal does not answer, so the whole flow — generate, cancel, update Part-B —
-  is exercisable without credentials. The sandbox mints plausible numbers and
-  applies the same Rule 138(10) validity the live path does, which is what
-  keeps the two from disagreeing.
+  Runs in demo mode when `NIC_EWB_API_URL` is unset, so the whole flow —
+  generate, cancel, update Part-B — is exercisable without credentials. Demo
+  mode mints plausible numbers and applies the same Rule 138(10) validity the
+  live path does, and every bill records which mode issued it (`portal_mode`).
+
+  When a portal is configured, a portal that does not answer is an error, never
+  a demo number: a failed request must not be recorded as a filed bill. Cancel
+  and Part-B follow the bill's own mode, since a demo bill does not exist on
+  the portal.
   """
 
   alias QuantumBilling.EWayBills.EWayBill
@@ -71,15 +75,43 @@ defmodule QuantumBilling.EWayBills.NICClient do
       transporter_name: transporter_name
     }
 
-    case post(@generate_path, ewb_payload) do
-      {:ok, body} ->
+    if live?() do
+      with {:ok, body} <- post(@generate_path, ewb_payload) do
+        attrs = Map.put(attrs, :portal_mode, "live")
         {:ok, put_issue(attrs, to_string(body["ewbNo"]), distance)}
+      end
+    else
+      attrs = Map.put(attrs, :portal_mode, "demo")
+      {:ok, put_issue(attrs, sandbox_number(), distance)}
+    end
+  end
 
-      {:error, reason} ->
-        {:error, reason}
+  @doc """
+  A sentence for the user about why the portal did not do what was asked, or
+  `nil` when `reason` is not a portal failure. Nothing is recorded in any of
+  these cases.
+  """
+  def error_message(:portal_unavailable),
+    do: "The e-way bill portal is not responding. Nothing was filed; try again shortly."
 
-      :sandbox ->
-        {:ok, put_issue(attrs, sandbox_number(), distance)}
+  def error_message(:unexpected_response),
+    do: "The e-way bill portal sent an answer this app does not understand. Nothing was filed."
+
+  def error_message(:portal_not_configured),
+    do:
+      "This bill was filed on the portal, but no portal is configured now (NIC_EWB_API_URL). " <>
+        "Nothing was changed."
+
+  def error_message(_reason), do: nil
+
+  @doc """
+  True when `NIC_EWB_API_URL` points at a portal. Otherwise bills are minted
+  locally and recorded as `"demo"`.
+  """
+  def live? do
+    case System.get_env("NIC_EWB_API_URL") do
+      "http" <> _rest -> true
+      _other -> false
     end
   end
 
@@ -100,10 +132,11 @@ defmodule QuantumBilling.EWayBills.NICClient do
       "cancelRmrk" => Map.get(params, "cancellation_reason")
     }
 
-    case post(@cancel_path, payload) do
-      {:ok, body} -> {:ok, body}
-      {:error, reason} -> {:error, reason}
-      :sandbox -> {:ok, %{"ewbNo" => bill.ewb_number, "cancelDate" => now_string()}}
+    # A demo bill was never on the portal, so there is nothing there to cancel.
+    if EWayBill.demo?(bill) do
+      {:ok, %{"ewbNo" => bill.ewb_number, "cancelDate" => now_string()}}
+    else
+      post(@cancel_path, payload)
     end
   end
 
@@ -122,18 +155,18 @@ defmodule QuantumBilling.EWayBills.NICClient do
       "transMode" => transport_code(Map.get(params, "mode_of_transport") || "Road")
     }
 
-    case post(@part_b_path, payload) do
-      {:ok, body} -> {:ok, body}
-      {:error, reason} -> {:error, reason}
-      :sandbox -> {:ok, %{"ewbNo" => bill.ewb_number, "vehUpdDate" => now_string()}}
+    if EWayBill.demo?(bill) do
+      {:ok, %{"ewbNo" => bill.ewb_number, "vehUpdDate" => now_string()}}
+    else
+      post(@part_b_path, payload)
     end
   end
 
-  # Falls back to the sandbox: an unreachable portal must not block recording a consignment.
+  # No fallback to a made-up answer: a portal that does not answer is an error,
+  # so a failed request can never be recorded as a filed bill.
   defp post(path, payload) do
-    base_url = System.get_env("NIC_EWB_API_URL")
-
-    if base_url && String.starts_with?(base_url, "http") do
+    if live?() do
+      base_url = System.get_env("NIC_EWB_API_URL")
       api_key = System.get_env("NIC_EWB_API_KEY", "")
 
       case Req.post(base_url <> path,
@@ -143,10 +176,13 @@ defmodule QuantumBilling.EWayBills.NICClient do
            ) do
         {:ok, %{status: 200, body: %{"status" => "1"} = body}} -> {:ok, body}
         {:ok, %{body: %{"error" => error}}} -> {:error, error}
-        _other -> :sandbox
+        {:ok, %{status: 200}} -> {:error, :unexpected_response}
+        {:ok, _not_200} -> {:error, :portal_unavailable}
+        {:error, _exception} -> {:error, :portal_unavailable}
       end
     else
-      :sandbox
+      # A live bill, but the portal is no longer configured.
+      {:error, :portal_not_configured}
     end
   end
 

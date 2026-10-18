@@ -19,6 +19,7 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
   alias QuantumBillingWeb.LiveRefresh
 
@@ -263,8 +264,15 @@ defmodule QuantumBillingWeb.DashboardLive do
           </div>
 
           <div :if={@qr_modal_invoice.signed_qr_code} class="border-t border-base-200 pt-3">
-            <p class="text-xs font-bold mb-1 text-center">
+            <p :if={!Invoice.demo_irn?(@qr_modal_invoice)} class="text-xs font-bold mb-1 text-center">
               Government E-Invoice Verified (Signed QR)
+            </p>
+            <p
+              :if={Invoice.demo_irn?(@qr_modal_invoice)}
+              id="dashboard-demo-qr-label"
+              class="text-xs font-bold mb-1 text-center text-amber-700"
+            >
+              Demo QR – not verifiable (not registered with the IRP)
             </p>
             <div class="w-32 h-32 mx-auto bg-white p-2 rounded-lg border border-base-200">
               {raw(QRCode.generate_svg(@qr_modal_invoice.signed_qr_code))}
