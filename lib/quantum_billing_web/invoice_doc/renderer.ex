@@ -406,7 +406,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp item_value(%{field: "serial"}, _item, index), do: index
   defp item_value(%{field: "description"}, item, _index), do: item.description
   defp item_value(%{field: "hsn_sac"}, item, _index), do: item.hsn_sac || "—"
-  defp item_value(%{field: "quantity"}, item, _index), do: item.quantity
+  defp item_value(%{field: "quantity"}, item, _index), do: Format.quantity(item.quantity)
   defp item_value(%{field: "unit"}, item, _index), do: item.unit
   defp item_value(%{field: "rate"}, item, _index), do: money(item.rate)
   defp item_value(%{field: "tax_rate"}, item, _index), do: "#{item.tax_rate}%"

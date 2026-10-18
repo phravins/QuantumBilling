@@ -332,17 +332,17 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.form
           :let={f}
           for={@form}
           id="invoice-form"
           phx-change="validate"
           phx-submit="save"
-          class="space-y-4 lg:col-span-2"
+          class="space-y-3 lg:col-span-2"
         >
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 1
               </span>
@@ -350,7 +350,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Invoice Details</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field
                 field={f[:invoice_type]}
                 label="Invoice Type"
@@ -404,8 +404,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 2
               </span>
@@ -413,7 +413,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Client Details</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label
                   for={f[:client_id].id}
@@ -505,15 +505,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 type="textarea"
                 rows="4"
               />
-              <div class="space-y-4">
+              <div class="space-y-3">
                 <.field field={f[:client_pan]} label="PAN" placeholder="AABCA1234A" />
                 <.field field={f[:client_email]} label="Email" type="email" />
               </div>
             </div>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 3
               </span>
@@ -541,7 +541,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
                     <th class="w-24 pr-2 text-left">Tax (%)</th>
 
-                    <th class="w-32 pr-2 text-right">Amount (₹)</th>
+                    <th class="w-32 pr-2">Amount (₹)</th>
 
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
@@ -595,10 +595,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       <td class="py-2 pr-2 align-top">
                         <input
                           type="number"
-                          min="1"
+                          min="0.001"
+                          step="0.001"
                           id={item_f[:quantity].id}
                           name={item_f[:quantity].name}
-                          value={item_f[:quantity].value}
+                          value={quantity(item_f[:quantity].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -623,9 +624,10 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         <input
                           type="number"
                           min="0"
+                          step="0.01"
                           id={item_f[:rate].id}
                           name={item_f[:rate].name}
-                          value={item_f[:rate].value}
+                          value={money_input(item_f[:rate].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -646,7 +648,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         </select>
                       </td>
 
-                      <td class="py-2 pr-2 text-right align-middle">
+                      <td class="py-2 pr-2 align-middle">
                         <.line_amount item={item_f.source} index={item_f.index} />
                       </td>
 
@@ -683,8 +685,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </label>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 4
               </span>
@@ -692,7 +694,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Additional Information</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field
                 field={f[:remarks]}
                 label="Remarks"
@@ -721,9 +723,9 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           </.card>
         </.form>
 
-        <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <div class="space-y-3 lg:sticky lg:top-16 lg:self-start">
           <.card>
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoice Summary</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoice Summary</h2>
 
             <div class="space-y-2.5">
               <.summary_line label="Total Items" value={@summary.total_items} />
@@ -754,10 +756,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
             <hr class="my-4 border-base-300" />
             <.summary_line
+              id="invoice-summary-round-off"
               label="Round Off"
               value={rupees(@summary.round_off, decimals: 2, space: true)}
             />
-            <div class="mt-4 flex items-start justify-between gap-4 rounded-field bg-base-200 px-3 py-2.5">
+            <div class="mt-4 flex items-start justify-between gap-3 rounded-field bg-base-200 px-3 py-2.5">
               <span class="text-sm font-semibold">Grand Total</span>
               <span id="invoice-summary-grand-total" class="text-sm font-semibold tracking-tight">
                 {rupees(@summary.grand_total, decimals: 2, space: true)}
@@ -780,7 +783,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           </.card>
 
           <.card>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-3">
               <h2 class="text-sm font-semibold tracking-tight">From (Your Company)</h2>
 
               <.link
@@ -818,14 +821,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
+  attr :id, :string, default: nil
   attr :label, :string, required: true
   attr :value, :any, required: true
 
   defp summary_line(assigns) do
     ~H"""
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex items-start justify-between gap-3">
       <span class="text-xs text-base-content/60">{@label}</span>
-      <span class="text-right text-xs font-medium">{@value}</span>
+      <span id={@id} class="text-right text-xs font-medium">{@value}</span>
     </div>
     """
   end

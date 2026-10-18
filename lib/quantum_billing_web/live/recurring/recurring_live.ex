@@ -22,6 +22,7 @@ defmodule QuantumBillingWeb.RecurringLive do
      |> assign(:active_nav, :recurring)
      |> assign(:client_search, "")
      |> assign(:page, 1)
+     |> assign(:per_page, @per_page)
      |> assign_clients()
      |> assign(:form, to_form(Recurring.change_profile()))
      |> assign(:show_modal, false)
@@ -29,14 +30,14 @@ defmodule QuantumBillingWeb.RecurringLive do
   end
 
   defp load_profiles(socket) do
-    %{rows: rows, total: total, page: page, total_pages: total_pages} =
-      Recurring.page(page: socket.assigns.page, per_page: @per_page)
+    %{rows: rows, page: page, has_next?: has_next} =
+      Recurring.page(page: socket.assigns.page, per_page: socket.assigns.per_page)
 
     socket
     |> assign(:profiles, rows)
-    |> assign(:total, total)
+    |> assign(:empty?, rows == [])
     |> assign(:page, page)
-    |> assign(:total_pages, total_pages)
+    |> assign(:has_next, has_next)
   end
 
   defp assign_clients(socket) do
@@ -45,6 +46,22 @@ defmodule QuantumBillingWeb.RecurringLive do
 
   def handle_event("search_clients", %{"value" => search}, socket) do
     {:noreply, socket |> assign(:client_search, search) |> assign_clients()}
+  end
+
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_profiles()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("paginate", %{"page" => page}, socket) do
@@ -145,7 +162,7 @@ defmodule QuantumBillingWeb.RecurringLive do
         </:actions>
       </.header>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@profiles == []}
           class="flex-1 justify-center"
@@ -164,7 +181,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                 <th>Next Run Date</th>
                 <th>Auto-Email PDF</th>
                 <th>Status</th>
-                <th class="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +209,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                   </span>
                 </td>
                 <td>
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center gap-2">
                     <button
                       type="button"
                       phx-click="toggle_status"
@@ -221,8 +238,8 @@ defmodule QuantumBillingWeb.RecurringLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
 
@@ -230,7 +247,7 @@ defmodule QuantumBillingWeb.RecurringLive do
         :if={@show_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-3">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">New Recurring Billing Profile</h3>
             <button
@@ -242,7 +259,7 @@ defmodule QuantumBillingWeb.RecurringLive do
             </button>
           </div>
 
-          <.form for={@form} id="recurring-profile-form" phx-submit="save" class="space-y-4">
+          <.form for={@form} id="recurring-profile-form" phx-submit="save" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Profile Title</label>
               <.input
@@ -276,7 +293,7 @@ defmodule QuantumBillingWeb.RecurringLive do
               </p>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-xs font-semibold mb-1">Frequency</label>
                 <select name={@form[:frequency].name} class="select select-bordered w-full text-xs">

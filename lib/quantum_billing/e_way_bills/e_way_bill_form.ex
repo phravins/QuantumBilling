@@ -16,6 +16,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   import Ecto.Changeset
 
   alias QuantumBilling.GST
+  alias QuantumBilling.Money.Paise
 
   @supply_types ["Outward Supply", "Inward Supply"]
 
@@ -114,12 +115,12 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     field :to_gstin, :string
     field :to_state, :string
 
-    # 3. Item details (whole rupees)
-    field :total_goods_value, :integer
-    field :cgst_value, :integer, default: 0
-    field :sgst_value, :integer, default: 0
-    field :igst_value, :integer, default: 0
-    field :other_amount, :integer, default: 0
+    # 3. Item details (typed in rupees, held in paise)
+    field :total_goods_value, Paise
+    field :cgst_value, Paise, default: 0
+    field :sgst_value, Paise, default: 0
+    field :igst_value, Paise, default: 0
+    field :other_amount, Paise, default: 0
 
     # 4. Transport details
     field :transport_mode, :string

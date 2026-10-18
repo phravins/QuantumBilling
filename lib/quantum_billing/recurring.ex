@@ -35,6 +35,7 @@ defmodule QuantumBilling.Recurring do
   alias QuantumBilling.Audit
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Paging
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Repo
   alias QuantumBilling.Workers.RecurringInvoiceWorker
@@ -54,10 +55,10 @@ defmodule QuantumBilling.Recurring do
   end
 
   @doc """
-  One page of profiles, soonest first, counted by the database.
+  One page of profiles, soonest first.
 
-  Returns `%{rows:, total:, page:, per_page:, total_pages:}`, the shape the
-  invoice and client lists use. The page used to load every profile, with its
+  Returns `%{rows:, page:, per_page:, has_next?:}`, the shape the invoice and
+  client lists use — see `QuantumBilling.Paging`. The page used to load every profile, with its
   client preloaded, on mount and again after every status toggle, delete and
   manual run — a subscription business with a few thousand arrangements
   reloaded all of them to change one.
@@ -65,22 +66,16 @@ defmodule QuantumBilling.Recurring do
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
-    query = status_where(RecurringProfile.kept(), Keyword.get(opts, :status))
-
-    total = Repo.aggregate(query, :count, :id)
-    total_pages = max(ceil(total / per_page), 1)
-    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
-
-    rows =
-      query
+    result =
+      RecurringProfile.kept()
+      |> status_where(Keyword.get(opts, :status))
       # The id breaks ties so paging is stable.
-      |> order_by([p], asc: p.next_run_date, asc: p.id)
-      |> limit(^per_page)
-      |> offset(^((page - 1) * per_page))
-      |> preload(:client)
-      |> Repo.all()
+      |> Paging.page(&order_by(&1, [p], asc: p.next_run_date, asc: p.id),
+        page: Keyword.get(opts, :page, 1),
+        per_page: per_page
+      )
 
-    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+    %{result | rows: Repo.preload(result.rows, :client)}
   end
 
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query

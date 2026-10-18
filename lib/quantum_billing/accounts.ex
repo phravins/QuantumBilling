@@ -11,6 +11,8 @@ defmodule QuantumBilling.Accounts do
   alias QuantumBilling.Repo
 
   alias QuantumBilling.Accounts.{Invitation, User, UserToken, UserNotifier}
+  alias QuantumBilling.Businesses
+  alias QuantumBilling.Businesses.{Business, Membership}
 
   ## Database getters
 
@@ -115,31 +117,39 @@ defmodule QuantumBilling.Accounts do
   Registers a user with a username, an email and a password, if the
   installation will accept one.
 
-  Registration is not open. This application bills for one business and shares
-  one dataset between its accounts — there is no per-user scoping on invoices
-  or clients, by design — so an account is full access to the books. Letting
-  anyone create one meant a stranger could confirm their own email address and
-  then read every invoice and client, export the whole database, and change the
-  stored SMTP and payment credentials.
+  Registration is not open. Everyone in a business shares its books — there is
+  no per-user scoping on invoices or clients, by design — so membership is full
+  access to them. Letting anyone create an account meant a stranger could
+  confirm their own email address and then read every invoice and client,
+  export the whole database, and change the stored SMTP and payment
+  credentials.
 
   Two ways in, and only two:
 
     * **the first account.** An empty `users` table accepts one registration,
-      which becomes the owner. This is how a fresh install is set up, with no
-      seeding step.
+      which becomes the owner of the first business. This is how a fresh
+      install is set up, with no seeding step.
 
-    * **an invitation.** Afterwards an owner invites an address, and only that
-      address can register, once, before the invitation expires.
+    * **an invitation.** Afterwards an owner invites an address into their
+      business, and only that address can register, once, before the
+      invitation expires. It joins that business with the invited role, and
+      any other business that has a pending invitation for the same address.
 
   The invitation is claimed in the same transaction that inserts the user, so
   two simultaneous submissions of one token cannot both succeed.
   """
   def register_user_with_password(attrs, invitation_token) do
     if bootstrap?() do
-      %User{}
-      |> User.registration_changeset(attrs)
-      |> Ecto.Changeset.put_change(:role, "owner")
-      |> Repo.insert()
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(:user, User.registration_changeset(%User{}, attrs))
+      |> Ecto.Multi.run(:membership, fn _repo, %{user: user} ->
+        Businesses.put_membership(user, Businesses.default!(), "owner")
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{user: user}} -> {:ok, user}
+        {:error, :user, changeset, _changes} -> {:error, changeset}
+      end
     else
       register_invited_user(attrs, invitation_token)
     end
@@ -169,16 +179,42 @@ defmodule QuantumBilling.Accounts do
         {0, _} -> {:error, :already_accepted}
       end
     end)
-    |> Ecto.Multi.insert(:user, fn _changes ->
-      %User{}
-      |> User.registration_changeset(attrs)
-      |> Ecto.Changeset.put_change(:role, invitation.role)
+    |> Ecto.Multi.insert(:user, User.registration_changeset(%User{}, attrs))
+    |> Ecto.Multi.run(:memberships, fn repo, %{user: user} ->
+      {:ok, join_invited_businesses(repo, user, invitation)}
     end)
     |> Repo.transaction()
     |> case do
       {:ok, %{user: user}} -> {:ok, user}
       {:error, :user, changeset, _changes} -> {:error, changeset}
       {:error, :claim, reason, _changes} -> {:error, invitation_error(attrs, reason)}
+    end
+  end
+
+  # The invitation used, and every other business's pending invitation for the
+  # same address: those cannot be used once the account exists, and the person
+  # was wanted there too.
+  defp join_invited_businesses(repo, user, invitation) do
+    now = DateTime.utc_now(:second)
+
+    others =
+      repo.all(
+        from i in Invitation,
+          where: i.email == ^user.email and i.id != ^invitation.id,
+          where: is_nil(i.accepted_at) and i.expires_at > ^now
+      )
+
+    repo.update_all(from(i in Invitation, where: i.id in ^Enum.map(others, & &1.id)),
+      set: [accepted_at: now]
+    )
+
+    for %Invitation{business_id: business_id, role: role} <- [invitation | others] do
+      {:ok, membership} =
+        %Membership{user_id: user.id, business_id: business_id}
+        |> Membership.changeset(role)
+        |> repo.insert(on_conflict: :nothing, conflict_target: [:user_id, :business_id])
+
+      membership
     end
   end
 
@@ -248,83 +284,143 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  ## Accounts and invitations — owner administration
+  ## Members and invitations — owner administration
 
-  @doc "Every account, oldest first, for the owner's user list."
-  def list_users do
-    Repo.all(from u in User, order_by: [asc: u.inserted_at, asc: u.id])
+  @doc "Everyone in `business`, oldest account first, as memberships with their user."
+  def list_members(%Business{id: business_id}) do
+    Repo.all(
+      from m in Membership,
+        join: u in assoc(m, :user),
+        where: m.business_id == ^business_id,
+        order_by: [asc: u.inserted_at, asc: u.id],
+        preload: [user: u]
+    )
   end
 
-  @doc "How many owners the installation has."
-  def count_owners do
-    Repo.aggregate(from(u in User, where: u.role == "owner"), :count, :id)
+  @doc "How many owners `business` has."
+  def count_owners(%Business{id: business_id}) do
+    Repo.aggregate(
+      from(m in Membership, where: m.business_id == ^business_id and m.role == "owner"),
+      :count,
+      :id
+    )
   end
 
   @doc """
-  Grants `role` to `user`.
+  Gives `user` the role `role` in `business`.
 
-  Refuses to demote the last owner: an installation with no owner has nobody
-  who can invite, administer credentials or export the data, and no way back
-  short of a console.
+  Refuses to demote the last owner: a business with no owner has nobody who can
+  invite, administer credentials or export the data, and no way back short of
+  a console.
   """
-  def set_role(%User{} = user, role) when is_binary(role) do
-    cond do
-      user.role == role ->
-        {:ok, user}
+  def set_role(%Business{} = business, %User{} = user, role) when is_binary(role) do
+    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+      nil ->
+        {:error, :not_a_member}
 
-      user.role == "owner" and role != "owner" and count_owners() <= 1 ->
-        {:error, :last_owner}
+      %Membership{role: ^role} = membership ->
+        {:ok, membership}
 
-      true ->
-        user
-        |> User.role_changeset(role)
-        |> Repo.update()
+      %Membership{role: "owner"} = membership ->
+        if count_owners(business) <= 1,
+          do: {:error, :last_owner},
+          else: change_role(membership, role)
+
+      membership ->
+        change_role(membership, role)
     end
   end
 
-  @doc "Pending and recent invitations, newest first."
-  def list_invitations do
+  defp change_role(membership, role) do
+    membership
+    |> Membership.changeset(role)
+    |> Repo.update()
+  end
+
+  @doc """
+  Takes `user` out of `business`. Their account, and their other businesses,
+  are untouched. Refuses to remove the last owner.
+  """
+  def remove_member(%Business{} = business, %User{} = user) do
+    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+      nil ->
+        {:error, :not_a_member}
+
+      %Membership{role: "owner"} = membership ->
+        if count_owners(business) <= 1,
+          do: {:error, :last_owner},
+          else: Repo.delete(membership)
+
+      membership ->
+        Repo.delete(membership)
+    end
+  end
+
+  @doc "`business`'s pending and recent invitations, newest first."
+  def list_invitations(%Business{id: business_id}) do
     Repo.all(
       from i in Invitation,
+        where: i.business_id == ^business_id,
         order_by: [desc: i.inserted_at, desc: i.id],
         preload: [:invited_by]
     )
   end
 
   @doc """
-  Invites `email` to create an account, and emails them the link.
+  Brings `email` into `business` as `role`.
 
-  Re-inviting an address replaces its pending invitation rather than leaving
-  two live tokens for one mailbox — the partial unique index enforces that, and
-  this deletes the old one first so re-sending is not an error.
+  An address that already has an account is added straight away and
+  `{:ok, {:added, membership}}` comes back: there is nothing for them to
+  accept, and the business appears in their switcher.
 
-  Returns `{:ok, invitation}`; the raw token only ever exists inside this
-  function and the email it sends. When the relay refuses the email, returns
+  Any other address is emailed an invitation to register, and
+  `{:ok, {:invited, invitation}}` comes back; the raw token only ever exists
+  inside this function and the email it sends. Re-inviting an address replaces
+  its pending invitation to this business rather than leaving two live tokens
+  for one mailbox. When the relay refuses the email, returns
   `{:error, {:delivery_failed, message}}` and no invitation is left pending.
   """
-  def invite(email, role, %User{} = invited_by, url_fun) when is_function(url_fun, 1) do
+  def invite(%Business{} = business, email, role, %User{} = invited_by, url_fun)
+      when is_function(url_fun, 1) do
     normalized = email |> to_string() |> String.trim() |> String.downcase()
 
     cond do
       normalized == "" ->
         {:error, :invalid_email}
 
-      get_user_by_email(normalized) ->
-        {:error, :already_registered}
+      user = get_user_by_email(normalized) ->
+        add_existing_user(business, user, role)
 
       true ->
-        {token, changeset} = Invitation.build(normalized, role, invited_by)
+        {token, changeset} = Invitation.build(normalized, role, invited_by, business)
 
-        with {:ok, invitation} <- replace_pending_invitation(normalized, changeset) do
-          send_invitation(invitation, url_fun.(token))
+        with {:ok, invitation} <- replace_pending_invitation(business, normalized, changeset),
+             {:ok, invitation} <- send_invitation(invitation, url_fun.(token)) do
+          {:ok, {:invited, invitation}}
         end
     end
   end
 
-  defp replace_pending_invitation(email, changeset) do
+  defp add_existing_user(business, user, role) do
+    if Businesses.get_membership(user, business.id) do
+      {:error, :already_member}
+    else
+      %Membership{user_id: user.id, business_id: business.id}
+      |> Membership.changeset(role)
+      |> Repo.insert()
+      |> case do
+        {:ok, membership} -> {:ok, {:added, %{membership | user: user}}}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+  end
+
+  defp replace_pending_invitation(business, email, changeset) do
     Repo.transaction(fn ->
       Repo.delete_all(
-        from i in Invitation, where: i.email == ^email, where: is_nil(i.accepted_at)
+        from i in Invitation,
+          where: i.business_id == ^business.id and i.email == ^email,
+          where: is_nil(i.accepted_at)
       )
 
       case Repo.insert(changeset) do
@@ -350,8 +446,9 @@ defmodule QuantumBilling.Accounts do
   @doc "Withdraws a pending invitation."
   def revoke_invitation(%Invitation{} = invitation), do: Repo.delete(invitation)
 
-  @doc "Fetches an invitation by id, or `nil`."
-  def get_invitation(id), do: Repo.get(Invitation, id)
+  @doc "`business`'s invitation with `id`, or `nil`."
+  def get_invitation(%Business{id: business_id}, id),
+    do: Repo.get_by(Invitation, id: id, business_id: business_id)
 
   @doc """
   Returns an `%Ecto.Changeset{}` for tracking the registration form.
@@ -414,6 +511,24 @@ defmodule QuantumBilling.Accounts do
     result =
       user
       |> User.profile_changeset(attrs)
+      |> Repo.update()
+
+    with {:ok, saved} <- result do
+      Events.broadcast(Events.user_topic(saved.id), {:profile_updated, saved})
+    end
+
+    result
+  end
+
+  @doc """
+  Gives the user's profile banner a new generated scene.
+
+  Broadcasts like a profile edit, so open pages keep `current_scope` in step.
+  """
+  def shuffle_banner(%User{} = user) do
+    result =
+      user
+      |> User.banner_changeset(%{banner_seed: :rand.uniform(2_147_483_647)})
       |> Repo.update()
 
     with {:ok, saved} <- result do

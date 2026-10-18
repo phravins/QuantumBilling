@@ -23,7 +23,7 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
   and retrying for ever is how a queue fills up with a single broken
   integration.
   """
-  use Oban.Worker, queue: :webhooks, max_attempts: 6
+  use QuantumBilling.Worker, queue: :webhooks, max_attempts: 6
 
   require Logger
 
@@ -33,8 +33,8 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
 
   @request_timeout_ms 10_000
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"event" => event} = args}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: %{"event" => event} = args}) do
     organization = Settings.get_organization()
     url = organization.webhook_url
 
@@ -54,7 +54,7 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
     end
   end
 
-  def perform(%Oban.Job{}), do: :discard
+  def process(%Oban.Job{}), do: :discard
 
   defp post(url, body, secret, event) do
     headers =

@@ -92,6 +92,7 @@ defmodule QuantumBillingWeb.ConnCase do
     conn
     |> Phoenix.ConnTest.init_test_session(%{})
     |> Plug.Conn.put_session(:user_token, token)
+    |> Plug.Conn.put_session(:business_id, opts[:business_id] || 1)
   end
 
   defp maybe_set_token_authenticated_at(_token, nil), do: nil

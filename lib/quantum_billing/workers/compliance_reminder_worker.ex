@@ -31,7 +31,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   rather than hiding it: the reminder is honest about being a deadline, not a
   status, and it stops being a nuisance the moment filing records land.
   """
-  use Oban.Worker, queue: :maintenance, max_attempts: 3
+  use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
   require Logger
 
@@ -39,8 +39,8 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Settings
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: args}) do
     organization = Settings.get_organization()
 
     if organization.notify_filing_reminders == false do

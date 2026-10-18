@@ -22,6 +22,7 @@ defmodule QuantumBilling.Payments.QRCode do
   require Logger
 
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
@@ -136,10 +137,10 @@ defmodule QuantumBilling.Payments.QRCode do
       presence(organization.company_name) || presence(invoice.company_name) || "QuantumBilling"
   end
 
-  # Whole rupees in, two decimals out.
+  # Paise in, rupees with two decimals out.
   defp amount(nil), do: nil
-  defp amount(rupees) when is_integer(rupees) and rupees > 0, do: "#{rupees}.00"
-  defp amount(_rupees), do: nil
+  defp amount(paise) when is_integer(paise) and paise > 0, do: Money.to_input(paise)
+  defp amount(_paise), do: nil
 
   defp note(%Invoice{invoice_number: number}) when is_binary(number),
     do: String.slice("Invoice " <> number, 0, 50)

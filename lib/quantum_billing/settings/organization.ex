@@ -13,6 +13,7 @@ defmodule QuantumBilling.Settings.Organization do
   alias QuantumBilling.Encrypted
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
+  alias QuantumBilling.Money.Paise
 
   @gst_rates [0, 5, 12, 18, 28]
 
@@ -58,7 +59,7 @@ defmodule QuantumBilling.Settings.Organization do
 
     field :ewb_transport_mode, :string, default: "Road"
     field :ewb_transporter_id, :string
-    field :ewb_threshold_value, :integer, default: 50_000
+    field :ewb_threshold_value, Paise, default: 5_000_000
     field :ewb_auto_generate, :boolean, default: false
 
     field :default_gst_rate, :integer, default: 18
@@ -97,9 +98,13 @@ defmodule QuantumBilling.Settings.Organization do
     field :webhook_secret, Encrypted.Secret
 
     # Security Settings
-    field :allowed_ips, :string
-    field :session_timeout_minutes, :integer, default: 60
-    field :enforce_2fa, :boolean, default: false
+    # The sign-in rules are the installation's, kept in
+    # `QuantumBilling.InstallationSettings`. They stay here, unstored, so the
+    # Security section's one form edits them beside the audit retention, which
+    # is this business's own. `QuantumBilling.Settings` loads and saves them.
+    field :allowed_ips, :string, virtual: true
+    field :session_timeout_minutes, :integer, default: 60, virtual: true
+    field :enforce_2fa, :boolean, default: false, virtual: true
     field :audit_retention_days, :integer, default: 90
 
     field :doc_logo_path, :string
@@ -342,7 +347,8 @@ defmodule QuantumBilling.Settings.Organization do
     end
   end
 
-  defp validate_allowed_ips(changeset) do
+  @doc false
+  def validate_allowed_ips(changeset) do
     case get_field(changeset, :allowed_ips) do
       blank when blank in [nil, ""] ->
         changeset

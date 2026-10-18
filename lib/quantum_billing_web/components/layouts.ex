@@ -168,6 +168,7 @@ defmodule QuantumBillingWeb.Layouts do
               tabindex="0"
               class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
+              <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
               <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
 
               <li>
@@ -179,9 +180,11 @@ defmodule QuantumBillingWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
-          <%!-- Live feed from NotificationsHook; capped and scrollable. --%>
-          <div class="dropdown dropdown-end">
+        <header class="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3">
+          <.business_switcher scope={@current_scope} />
+
+          <%!-- Live feed from NotificationsHook; capped and scrollable. Absent outside a business. --%>
+          <div :if={business_chosen?(@current_scope)} class="dropdown dropdown-end">
             <div
               tabindex="0"
               role="button"
@@ -274,7 +277,7 @@ defmodule QuantumBillingWeb.Layouts do
         </header>
 
         <%!-- A flex column so a page can give a panel flex-1 to fill the remaining height. --%>
-        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3">
+        <main class="flex flex-1 flex-col overflow-y-auto px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5">
           {render_slot(@inner_block)}
         </main>
       </div>
@@ -322,6 +325,88 @@ defmodule QuantumBillingWeb.Layouts do
     </script>
     """
   end
+
+  attr :scope, :any, required: true
+
+  # Each entry posts to the switch action: only an HTTP response can write the
+  # session, and the session is what every tab of this browser follows.
+  defp business_switcher(assigns) do
+    ~H"""
+    <div :if={@scope && @scope.user} class="dropdown">
+      <div
+        tabindex="0"
+        role="button"
+        id="business-switcher"
+        class={[
+          "flex max-w-64 items-center gap-2 rounded-field px-2 py-1 text-sm",
+          "transition-colors hover:bg-base-200"
+        ]}
+      >
+        <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-base-200 text-base-content/60">
+          <.icon name="hero-building-office-2" class="size-3.5" />
+        </span>
+        <span class="truncate font-medium">
+          {if @scope.business, do: @scope.business.name, else: "Choose a business"}
+        </span>
+        <.icon name="hero-chevron-up-down" class="size-4 shrink-0 text-base-content/45" />
+      </div>
+
+      <div
+        tabindex="0"
+        id="business-switcher-menu"
+        class="dropdown-content z-20 mt-2 w-72 overflow-hidden rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+      >
+        <p class={["px-2.5 pb-1.5 pt-1", micro_label_class()]}>Businesses</p>
+        <ul class="max-h-80 space-y-0.5 overflow-y-auto">
+          <li :for={business <- @scope.businesses}>
+            <.link
+              href={~p"/businesses/#{business.id}/switch"}
+              method="post"
+              id={"switch-business-#{business.id}"}
+              class={[
+                "flex items-center gap-2 rounded-field px-2.5 py-2 text-sm transition-colors",
+                if(current_business?(@scope, business),
+                  do: "bg-base-200 font-medium",
+                  else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                )
+              ]}
+            >
+              <span class="min-w-0 flex-1 truncate">{business.name}</span>
+              <.icon
+                :if={current_business?(@scope, business)}
+                name="hero-check"
+                class="size-4 shrink-0 text-primary"
+              />
+            </.link>
+          </li>
+        </ul>
+
+        <div class="mt-1.5 space-y-0.5 border-t border-base-300 pt-1.5">
+          <.link
+            navigate={~p"/businesses"}
+            class="flex items-center gap-2 rounded-field px-2.5 py-2 text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-squares-2x2" class="size-4" /> All businesses
+          </.link>
+          <.link
+            :if={QuantumBilling.Accounts.Scope.owner?(@scope)}
+            navigate={~p"/businesses/new"}
+            id="new-business-link"
+            class="flex items-center gap-2 rounded-field px-2.5 py-2 text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-plus" class="size-4" /> New business
+          </.link>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp business_chosen?(%{business: %{}}), do: true
+  defp business_chosen?(_scope), do: false
+
+  defp current_business?(%{business: %{id: id}}, %{id: id}), do: true
+  defp current_business?(_scope, _business), do: false
 
   # Tolerates a nil scope. Hiding panels is a courtesy; the real check is on the server.
   defp visible_settings_sections(scope) do

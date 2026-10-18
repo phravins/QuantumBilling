@@ -26,6 +26,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   alias QuantumBilling.GST
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings.Organization
 
   @version "1.1"
@@ -149,12 +150,12 @@ defmodule QuantumBilling.EInvoice.Payload do
        # SAC codes (services) begin with 99.
        element("IsServc", if(service?(item.hsn_sac), do: "Y", else: "N")),
        element("HsnCd", item.hsn_sac),
-       element("Qty", Integer.to_string(item.quantity || 0)),
+       element("Qty", quantity(item.quantity)),
        element("Unit", unit_code(item.unit)),
        element("UnitPrice", decimal(item.rate)),
        element("TotAmt", decimal(amount)),
        element("AssAmt", decimal(amount)),
-       element("GstRt", decimal(item.tax_rate)),
+       element("GstRt", percent(item.tax_rate)),
        element("CgstAmt", decimal(cgst)),
        element("SgstAmt", decimal(sgst)),
        element("IgstAmt", decimal(igst)),
@@ -198,11 +199,20 @@ defmodule QuantumBilling.EInvoice.Payload do
   defp date(%Date{} = date), do: Calendar.strftime(date, "%d/%m/%Y")
   defp date(_other), do: ""
 
-  # Whole rupees in, two decimals out.
+  # Paise in, rupees with two decimals out.
   defp decimal(nil), do: "0.00"
+  defp decimal(paise) when is_integer(paise), do: Money.to_input(paise)
 
-  defp decimal(amount) when is_integer(amount),
-    do: :erlang.float_to_binary(amount * 1.0, decimals: 2)
+  # A GST rate is a plain percentage, not money.
+  defp percent(nil), do: "0.00"
+  defp percent(rate) when is_integer(rate), do: :erlang.float_to_binary(rate * 1.0, decimals: 2)
+
+  # Three places, as INV-01 allows.
+  defp quantity(quantity) do
+    (Money.quantity(quantity) || Decimal.new(0))
+    |> Decimal.round(3)
+    |> Decimal.to_string(:normal)
+  end
 
   defp first_line(nil), do: ""
 

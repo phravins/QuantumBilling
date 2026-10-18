@@ -128,6 +128,32 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     end
   end
 
+  describe "the actions drawer" do
+    test "holds the status and every action, behind one header button", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#invoice-actions-toggle")
+      assert has_element?(view, "#invoice-actions-drawer #invoice-actions-status", "Draft")
+
+      for id <- ~w(drawer-generate-irn drawer-generate-ewb drawer-payment-link drawer-credit-note
+                   drawer-public-link drawer-send-email drawer-download-pdf drawer-back) do
+        assert has_element?(view, "#invoice-actions-drawer ##{id}"), "missing ##{id}"
+      end
+    end
+
+    test "an action in the drawer still reaches the server", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      html = view |> element("#drawer-send-email") |> render_click()
+
+      assert html =~ "queued for delivery to billing@v2v.in"
+    end
+  end
+
   describe "tax presentation" do
     test "an intra-state invoice shows CGST and SGST, not IGST", %{conn: conn} do
       invoice = create_invoice()

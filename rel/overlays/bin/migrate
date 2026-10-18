@@ -1,9 +1,5 @@
 #!/bin/sh
-# Runs pending migrations against the configured database and exits.
-#
-# The compose stack runs this as a one-shot `migrate` service that the app
-# waits on, so migrations happen exactly once per deploy rather than once per
-# replica racing the others for the schema_migrations lock.
+# Runs pending migrations and exits. Compose runs it once, before the app starts.
 set -eu
 cd -P -- "$(dirname -- "$0")"
 exec ./quantum_billing eval QuantumBilling.Release.migrate

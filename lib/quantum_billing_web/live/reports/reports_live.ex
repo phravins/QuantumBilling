@@ -170,7 +170,7 @@ defmodule QuantumBillingWeb.ReportsLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="flex flex-col lg:col-span-5">
-          <div class="mb-4 flex items-center justify-between gap-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold tracking-tight">Invoice Value Trend</h2>
             <span class="text-xs text-base-content/45">{@filters.date_range}</span>
           </div>
@@ -178,7 +178,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-4">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoices by Status</h2>
 
           <.donut_chart
             :if={@breakdown != []}
@@ -193,7 +193,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-3">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Filters</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Filters</h2>
 
           <form
             id="reports-filters"
@@ -236,7 +236,7 @@ defmodule QuantumBillingWeb.ReportsLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <.card class="lg:col-span-8">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
 
           <div class="overflow-x-auto">
             <table class="w-full">
@@ -244,15 +244,15 @@ defmodule QuantumBillingWeb.ReportsLive do
                 <tr class={table_head_class()}>
                   <th class="pr-4 text-left">Tax Type</th>
 
-                  <th class="pr-4 text-right">Taxable Value (₹)</th>
+                  <th class="pr-4">Taxable Value (₹)</th>
 
-                  <th class="pr-4 text-right">CGST (₹)</th>
+                  <th class="pr-4">CGST (₹)</th>
 
-                  <th class="pr-4 text-right">SGST (₹)</th>
+                  <th class="pr-4">SGST (₹)</th>
 
-                  <th class="pr-4 text-right">IGST (₹)</th>
+                  <th class="pr-4">IGST (₹)</th>
 
-                  <th class="text-right">Total Tax (₹)</th>
+                  <th>Total Tax (₹)</th>
                 </tr>
               </thead>
 
@@ -263,15 +263,15 @@ defmodule QuantumBillingWeb.ReportsLive do
                 >
                   <td class="py-2.5 pr-4">{row.label}</td>
 
-                  <td class="py-2.5 pr-4 text-right">{rupees(row.taxable_value, decimals: 2)}</td>
+                  <td class="py-2.5 pr-4">{rupees(row.taxable_value, decimals: 2)}</td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.cgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.cgst} /></td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.sgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.sgst} /></td>
 
-                  <td class="py-2.5 pr-4 text-right"><.tax_cell amount={row.igst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.igst} /></td>
 
-                  <td class="py-2.5 text-right">{rupees(row.total_tax, decimals: 2)}</td>
+                  <td class="py-2.5">{rupees(row.total_tax, decimals: 2)}</td>
                 </tr>
 
                 <tr :if={@tax_rows == []}>
@@ -285,7 +285,7 @@ defmodule QuantumBillingWeb.ReportsLive do
         </.card>
 
         <.card class="lg:col-span-4">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Top Clients by Invoice Value</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Top Clients by Invoice Value</h2>
 
           <ul class="space-y-3.5">
             <.top_client_row

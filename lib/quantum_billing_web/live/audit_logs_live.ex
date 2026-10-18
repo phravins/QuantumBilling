@@ -27,6 +27,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> assign(:section, :audit_logs)
      |> assign(:filter_action, "")
      |> assign(:page, 1)
+     |> assign(:per_page, @per_page)
      |> assign(:selected_log, nil)
      |> load_page()}
   end
@@ -46,6 +47,22 @@ defmodule QuantumBillingWeb.AuditLogsLive do
      |> assign(:filter_action, action || "")
      |> assign(:page, 1)
      |> load_page()}
+  end
+
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("paginate", %{"page" => page_str}, socket) do
@@ -74,7 +91,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
       Audit.page(
         action: socket.assigns.filter_action,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
@@ -113,7 +130,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
         </:actions>
       </.header>
 
-      <.card class="flex flex-1 flex-col p-4">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
           :if={@logs == []}
           class="flex-1 justify-center"
@@ -132,7 +149,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
                 <th class="w-36">Resource ID</th>
                 <th class="w-40">User</th>
                 <th class="w-28">IP Address</th>
-                <th class="text-right w-20">Details</th>
+                <th class="w-20">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -151,7 +168,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
                 <td class="font-mono text-xs text-base-content/50">
                   {log.ip_address || "127.0.0.1"}
                 </td>
-                <td class="text-right">
+                <td>
                   <button
                     type="button"
                     phx-click="select_log"
@@ -166,11 +183,16 @@ defmodule QuantumBillingWeb.AuditLogsLive do
           </table>
         </div>
 
-        <div :if={@total_pages > 1} class="mt-auto flex items-center justify-between gap-4 pt-4">
+        <div :if={@total > 0} class="mt-auto flex items-center justify-between gap-3 pt-4">
           <p class="text-xs text-base-content/45">
             {@total} recorded {if @total == 1, do: "event", else: "events"}
           </p>
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination
+            current_page={@page}
+            total_pages={@total_pages}
+            has_next={@page < @total_pages}
+            fit_rows
+          />
         </div>
       </.card>
 
@@ -178,7 +200,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
         :if={@selected_log}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-lg rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-3">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">Audit Event Detail</h3>
             <button

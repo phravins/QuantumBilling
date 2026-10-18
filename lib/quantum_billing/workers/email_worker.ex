@@ -15,7 +15,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
   invoice that no longer exists — are **not** retried: they return `:discard`,
   so a permanent problem is not disguised as a slow one.
   """
-  use Oban.Worker, queue: :mailers, max_attempts: 5
+  use QuantumBilling.Worker, queue: :mailers, max_attempts: 5
 
   require Logger
 
@@ -26,8 +26,8 @@ defmodule QuantumBilling.Workers.EmailWorker do
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"delivery_id" => delivery_id}} = job) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: %{"delivery_id" => delivery_id}} = job) do
     case Mail.get_delivery(delivery_id) do
       nil ->
         Logger.warning("[EmailWorker] delivery #{delivery_id} no longer exists")
@@ -38,7 +38,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
     end
   end
 
-  def perform(%Oban.Job{}), do: :discard
+  def process(%Oban.Job{}), do: :discard
 
   defp deliver(delivery, job) do
     case build(delivery, job.args) do

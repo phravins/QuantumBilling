@@ -71,12 +71,13 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       assert result =~ "does not match password"
     end
 
-    test "refuses to invite an address that already has an account" do
+    test "inviting an address that already has an account sends no sign-up link" do
       user = user_fixture(%{email: "test@email.com"})
+      business = QuantumBilling.Businesses.default!()
 
-      # A duplicate email is caught when inviting.
-      assert {:error, :already_registered} =
-               Accounts.invite(user.email, "staff", owner_fixture(), & &1)
+      # A member already: nothing to do. Otherwise added at once, not invited.
+      assert {:error, :already_member} =
+               Accounts.invite(business, user.email, "staff", owner_fixture(), & &1)
     end
 
     test "renders errors for duplicated email", %{conn: conn} do
@@ -151,7 +152,7 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
 
     test "the first account owns the installation, invited ones do not", %{conn: conn} do
       first = registered_user_fixture()
-      assert first.role == "owner"
+      assert role(first) == "owner"
 
       token = invitation_token_fixture("invited@email.com")
       {:ok, lv, _html} = live(conn, ~p"/users/register?#{[token: token]}")
@@ -162,7 +163,7 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       )
       |> render_submit()
 
-      assert Accounts.get_user_by_email("invited@email.com").role == "staff"
+      assert role(Accounts.get_user_by_email("invited@email.com")) == "staff"
     end
 
     test "an invitation registers the address it was sent to, not another", %{conn: conn} do

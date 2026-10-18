@@ -32,11 +32,12 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
-  # Above this (whole rupees), an inter-state B2C sale is reported as B2CL, not B2CS.
-  @b2cl_threshold 250_000
+  # Above ₹2,50,000 (held in paise), an inter-state B2C sale is reported as B2CL, not B2CS.
+  @b2cl_threshold 25_000_000
 
   @stream_rows 500
 
@@ -113,14 +114,17 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         |> in_period(from, to)
         |> select([i], %{
           count: count(i.id),
-          value: coalesce(sum(i.grand_total), 0),
+          value: type(coalesce(sum(i.grand_total), 0), :integer),
           tax:
-            coalesce(
-              sum(
-                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            type(
+              coalesce(
+                sum(
+                  coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                    coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+                ),
+                0
               ),
-              0
+              :integer
             )
         })
         |> Repo.one()
@@ -195,7 +199,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
       %{
         "inum" => invoice.invoice_number,
         "idt" => format_date(invoice.invoice_date),
-        "val" => invoice.grand_total,
+        "val" => rupees(invoice.grand_total),
         "pos" => state_code(invoice.place_of_supply),
         "rchrg" => "N",
         "inv_typ" => "R",
@@ -211,7 +215,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     entry = %{
       "inum" => invoice.invoice_number,
       "idt" => format_date(invoice.invoice_date),
-      "val" => invoice.grand_total,
+      "val" => rupees(invoice.grand_total),
       "itms" => rate_lines(invoice)
     }
 
@@ -242,7 +246,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
       line = %{
         taxable: InvoiceItem.amount(item),
         tax: InvoiceItem.tax(item),
-        quantity: item.quantity || 0,
+        quantity: Money.quantity(item.quantity) || Decimal.new(0),
         description: item.description,
         uqc: uqc(item)
       }
@@ -252,7 +256,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
           held
           | taxable: held.taxable + line.taxable,
             tax: held.tax + line.tax,
-            quantity: held.quantity + line.quantity
+            quantity: Decimal.add(held.quantity, line.quantity)
         }
       end)
     end)
@@ -299,10 +303,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "pos" => pos,
         "typ" => "OE",
         "rt" => rate / 1,
-        "txval" => totals.taxable,
-        "iamt" => igst,
-        "camt" => cgst,
-        "samt" => sgst,
+        "txval" => rupees(totals.taxable),
+        "iamt" => rupees(igst),
+        "camt" => rupees(cgst),
+        "samt" => rupees(sgst),
         "csamt" => 0
       }
     end)
@@ -326,7 +330,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
               "p_gst_flag" => "N",
               "inum" => note.invoice.invoice_number,
               "idt" => format_date(note.invoice.invoice_date),
-              "val" => decimal_to_number(note.grand_total),
+              "val" => rupees(note.grand_total),
               "rsn" => note.reason || "Adjustment"
             }
           end)
@@ -345,10 +349,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "hsn_sc" => hsn,
         "desc" => totals.description || "Goods or services",
         "uqc" => totals.uqc,
-        "qty" => totals.quantity,
+        "qty" => Decimal.to_float(totals.quantity),
         "rt" => rate / 1,
-        "txval" => totals.taxable,
-        "val" => totals.taxable + totals.tax,
+        "txval" => rupees(totals.taxable),
+        "val" => rupees(totals.taxable + totals.tax),
         "iamt" => 0,
         "camt" => 0,
         "samt" => 0,
@@ -373,10 +377,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "num" => index,
         "itm_det" => %{
           "rt" => rate / 1,
-          "txval" => totals.taxable,
-          "iamt" => igst,
-          "camt" => cgst,
-          "samt" => sgst,
+          "txval" => rupees(totals.taxable),
+          "iamt" => rupees(igst),
+          "camt" => rupees(cgst),
+          "samt" => rupees(sgst),
           "csamt" => 0
         }
       }
@@ -446,9 +450,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp uqc(_item), do: "OTH"
 
-  defp decimal_to_number(%Decimal{} = decimal), do: Decimal.to_float(decimal)
-  defp decimal_to_number(number) when is_number(number), do: number
-  defp decimal_to_number(_other), do: 0
+  # The portal schema takes rupees as JSON numbers; two decimals survive a float.
+  defp rupees(nil), do: 0
+  defp rupees(paise) when is_integer(paise), do: paise / 100
 
   defp drop_nils(map), do: Map.reject(map, fn {_key, value} -> is_nil(value) end)
 

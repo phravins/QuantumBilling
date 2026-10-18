@@ -36,7 +36,6 @@ defmodule QuantumBilling.Reports do
 
   import Ecto.Query, warn: false
 
-  alias QuantumBilling.Clients.Client
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
@@ -172,14 +171,17 @@ defmodule QuantumBilling.Reports do
     |> query()
     |> select([i], %{
       count: count(i.id),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
       tax_amount:
-        coalesce(
-          sum(
-            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+        type(
+          coalesce(
+            sum(
+              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            ),
+            0
           ),
-          0
+          :integer
         )
     })
     |> Repo.one()
@@ -205,14 +207,17 @@ defmodule QuantumBilling.Reports do
       |> select([i], %{
         month: fragment("date_trunc('month', ?)", i.invoice_date),
         count: count(i.id),
-        taxable_value: coalesce(sum(i.taxable_value), 0),
+        taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
         tax_amount:
-          coalesce(
-            sum(
-              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           )
       })
       |> Repo.all()
@@ -339,11 +344,11 @@ defmodule QuantumBilling.Reports do
     |> group_by([i], fragment(@tax_type_sql))
     |> select([i], %{
       tax_type: fragment(@tax_type_sql),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
-      cgst: coalesce(sum(i.cgst_amount), 0),
-      sgst: coalesce(sum(i.sgst_amount), 0),
-      igst: coalesce(sum(i.igst_amount), 0),
-      cess: coalesce(sum(i.cess_amount), 0)
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
+      cgst: type(coalesce(sum(i.cgst_amount), 0), :integer),
+      sgst: type(coalesce(sum(i.sgst_amount), 0), :integer),
+      igst: type(coalesce(sum(i.igst_amount), 0), :integer),
+      cess: type(coalesce(sum(i.cess_amount), 0), :integer)
     })
     |> Repo.all()
     |> Map.new(&{&1.tax_type, &1})
@@ -383,13 +388,16 @@ defmodule QuantumBilling.Reports do
       client: i.client_name,
       value:
         selected_as(
-          coalesce(
-            sum(
-              coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
-                coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
-                coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
+                  coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
+                  coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           ),
           :value
         )
@@ -434,7 +442,8 @@ defmodule QuantumBilling.Reports do
       cgst: invoice.cgst_amount || 0,
       sgst: invoice.sgst_amount || 0,
       igst: invoice.igst_amount || 0,
-      cess: invoice.cess_amount || 0
+      cess: invoice.cess_amount || 0,
+      round_off: invoice.round_off || 0
     }
   end
 
@@ -708,23 +717,49 @@ defmodule QuantumBilling.Reports do
   strings and eleven megabytes of process memory, on every load of the Reports
   page, to arrive at two thousand distinct names. It grew with the age of the
   business, and every one of those names was also rendered as an `<option>`.
+
+  ## Why the invoice names are a skip scan
+
+  A plain `UNION` still had to sort every invoice's client name to dedupe
+  them: on a million invoices, a 44 MB on-disk sort and two seconds per
+  Reports load. The invoice side therefore walks `invoices_client_name_index`
+  one distinct name at a time — "the first name after the last one" — so the
+  cost is one index probe per name returned, however many invoices share it.
+  Only the first `client_name_limit/0` names of each side can make the final
+  list, so each side stops there before the two are merged.
   """
   def client_names do
-    from_clients = from(c in Client.kept(), select: %{name: c.name}, where: not is_nil(c.name))
+    # Raw SQL skips Ecto's prefix, so the business's schema is named here.
+    schema = Repo.business_schema!()
 
-    from_invoices =
-      from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))
-
-    names =
-      from(n in subquery(union(from_clients, ^from_invoices)),
-        where: n.name != "",
-        order_by: n.name,
-        limit: @client_name_limit,
-        select: n.name
+    %{rows: rows} =
+      Repo.query!(
+        """
+        WITH RECURSIVE invoice_names(name, n) AS (
+          (SELECT client_name, 1 FROM "#{schema}".invoices
+           WHERE deleted_at IS NULL AND client_name > ''
+           ORDER BY client_name LIMIT 1)
+          UNION ALL
+          SELECT (SELECT i.client_name FROM "#{schema}".invoices i
+                  WHERE i.deleted_at IS NULL AND i.client_name > p.name
+                  ORDER BY i.client_name LIMIT 1),
+                 p.n + 1
+          FROM invoice_names p
+          WHERE p.name IS NOT NULL AND p.n < $1
+        )
+        SELECT name FROM (
+          SELECT name FROM invoice_names WHERE name IS NOT NULL
+          UNION
+          (SELECT name FROM "#{schema}".clients WHERE deleted_at IS NULL AND name > ''
+           ORDER BY name LIMIT $1)
+        ) names
+        ORDER BY name
+        LIMIT $1
+        """,
+        [@client_name_limit]
       )
-      |> Repo.all()
 
-    ["All Clients" | names]
+    ["All Clients" | List.flatten(rows)]
   end
 
   @doc "How many names the client filter offers before it stops listing them."

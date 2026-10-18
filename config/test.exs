@@ -34,6 +34,11 @@ config :logger, level: :warning
 # a missing or rejected key is an error, not a fake link.
 config :quantum_billing, razorpay_sandbox: true
 
+# Ecto.Migrator takes an advisory lock on a connection of its own, which the
+# sandbox's single shared connection can never grant: creating a business in a
+# test would wait on itself.
+config :quantum_billing, :tenant_migration_lock, false
+
 # Configure Oban for inline testing
 config :quantum_billing, Oban, testing: :inline
 

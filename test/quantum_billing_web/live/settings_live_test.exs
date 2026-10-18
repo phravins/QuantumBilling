@@ -256,6 +256,32 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
   end
 
+  describe "smtp delivery log" do
+    test "a delivery can be removed from Recent Deliveries", %{conn: conn} do
+      {:ok, delivery} = QuantumBilling.Mail.record_queued(%{to_email: "log@example.com"})
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+      assert has_element?(view, "#delivery-#{delivery.id}")
+
+      view |> element("#delivery-delete-#{delivery.id}") |> render_click()
+
+      refute has_element?(view, "#delivery-#{delivery.id}")
+      assert QuantumBilling.Mail.get_delivery(delivery.id) == nil
+    end
+
+    test "a non-owner cannot remove a delivery", %{conn: conn} do
+      {:ok, delivery} = QuantumBilling.Mail.record_queued(%{to_email: "keep@example.com"})
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      conn = log_in_user(conn, staff)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
+      render_hook(view, "delete_delivery", %{"id" => to_string(delivery.id)})
+
+      assert QuantumBilling.Mail.get_delivery(delivery.id)
+    end
+  end
+
   describe "smtp" do
     test "renders and saves custom SMTP configuration", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/smtp")
@@ -359,6 +385,15 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       org = Settings.get_organization()
       assert org.razorpay_key_id == "rzp_test_999"
       assert org.webhook_secret == "whsec_abc123"
+    end
+
+    test "shows the Razorpay webhook URL that names this business", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      slug = QuantumBilling.Businesses.default!().slug
+
+      assert view |> element("#razorpay-webhook-url") |> render() =~
+               "/api/webhooks/razorpay/#{slug}"
     end
   end
 
@@ -672,10 +707,11 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       })
       |> render_submit()
 
-      org = Settings.get_organization()
-      assert org.allowed_ips == "192.168.1.0/24"
-      assert org.session_timeout_minutes == 30
-      assert org.audit_retention_days == 90
+      # The sign-in rules are the installation's; the retention is this business's.
+      rules = QuantumBilling.InstallationSettings.get()
+      assert rules.allowed_ips == "192.168.1.0/24"
+      assert rules.session_timeout_minutes == 30
+      assert Settings.get_organization().audit_retention_days == 90
     end
   end
 

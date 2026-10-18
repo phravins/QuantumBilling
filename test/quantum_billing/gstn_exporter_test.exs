@@ -13,10 +13,10 @@ defmodule QuantumBilling.GSTNExporterTest do
       company_state: "Maharashtra (27)",
       client_name: "Delta Retailers",
       client_gstin: "27CCCDE1234F1Z5",
-      taxable_value: 50_000,
-      cgst_amount: 4_500,
-      sgst_amount: 4_500,
-      grand_total: 59_000
+      taxable_value: 5_000_000,
+      cgst_amount: 450_000,
+      sgst_amount: 450_000,
+      grand_total: 5_900_000
     }
 
     Repo.insert!(struct(%Invoice{}, Map.merge(defaults, attrs)))
@@ -29,9 +29,9 @@ defmodule QuantumBilling.GSTNExporterTest do
       hsn_sac: "998313",
       quantity: 1,
       unit: "Nos",
-      rate: 10_000,
+      rate: 1_000_000,
       tax_rate: 18,
-      amount: 10_000,
+      amount: 1_000_000,
       position: 0
     }
 
@@ -110,10 +110,10 @@ defmodule QuantumBilling.GSTNExporterTest do
       invoice =
         invoice(%{
           invoice_number: "MIXED-RATES",
-          taxable_value: 20_000,
-          cgst_amount: 1_150,
-          sgst_amount: 1_150,
-          grand_total: 22_300
+          taxable_value: 2_000_000,
+          cgst_amount: 115_000,
+          sgst_amount: 115_000,
+          grand_total: 2_230_000
         })
 
       item(invoice, %{description: "Goods", hsn_sac: "1001", tax_rate: 5, position: 0})
@@ -147,11 +147,11 @@ defmodule QuantumBilling.GSTNExporterTest do
         client_gstin: nil,
         place_of_supply: "Karnataka (29)",
         company_state: "Maharashtra (27)",
-        taxable_value: 300_000,
+        taxable_value: 30_000_000,
         cgst_amount: 0,
         sgst_amount: 0,
-        igst_amount: 54_000,
-        grand_total: 354_000
+        igst_amount: 5_400_000,
+        grand_total: 35_400_000
       })
 
       assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
@@ -164,15 +164,15 @@ defmodule QuantumBilling.GSTNExporterTest do
       invoice(%{
         invoice_number: "SMALL-B2C",
         client_gstin: nil,
-        taxable_value: 1_000,
-        cgst_amount: 90,
-        sgst_amount: 90,
-        grand_total: 1_180
+        taxable_value: 100_000,
+        cgst_amount: 9_000,
+        sgst_amount: 9_000,
+        grand_total: 118_000
       })
 
       assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
 
-      assert [%{"typ" => "OE", "pos" => "27", "txval" => 1_000}] = json["b2cs"]
+      assert [%{"typ" => "OE", "pos" => "27", "txval" => 1_000.0}] = json["b2cs"]
       assert json["b2cl"] == []
     end
 
@@ -199,8 +199,8 @@ defmodule QuantumBilling.GSTNExporterTest do
 
       # The cancelled one is not a supply, and April is not this period.
       assert summary.count == 1
-      assert summary.value == 59_000
-      assert summary.tax == 9_000
+      assert summary.value == 5_900_000
+      assert summary.tax == 900_000
     end
 
     test "refuses a period it cannot parse" do

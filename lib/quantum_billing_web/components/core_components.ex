@@ -354,7 +354,7 @@ defmodule QuantumBillingWeb.CoreComponents do
 
   def header(assigns) do
     ~H"""
-    <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-3"]}>
+    <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-2"]}>
       <div>
         <h1 class="text-xl font-semibold tracking-tight">
           {render_slot(@inner_block)}

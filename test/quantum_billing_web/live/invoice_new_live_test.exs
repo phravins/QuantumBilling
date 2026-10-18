@@ -290,10 +290,12 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
       assert has_element?(view, "#invoice-item-amount-0", "₹42,480.00")
       assert has_element?(view, "#invoice-item-tax-0", "₹6,480.00")
 
-      assert has_element?(view, "#invoice-item-amount-1", "₹814.00")
-      assert has_element?(view, "#invoice-item-tax-1", "₹124.00")
+      # 18% of ₹690 is ₹124.20, kept to the paisa.
+      assert has_element?(view, "#invoice-item-amount-1", "₹814.20")
+      assert has_element?(view, "#invoice-item-tax-1", "₹124.20")
 
-      # 42,480 + 814: what the rows show is what the invoice comes to.
+      # 42,480 + 814.20, rounded to the rupee: what the rows show is what the invoice comes to.
+      assert has_element?(view, "#invoice-summary-round-off", "₹ -0.20")
       assert has_element?(view, "#invoice-summary-grand-total", "₹ 43,294.00")
     end
 
@@ -412,7 +414,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
         |> render_change()
 
       assert rows(twice) == 2
-      assert has_element?(view, item_input(0, "rate", "1500"))
+      assert has_element?(view, item_input(0, "rate", "1500.00"))
       assert has_element?(view, item_input(1, "description", "Second"))
     end
 
@@ -784,7 +786,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
       assert path == "/invoices/#{invoice.id}"
       assert invoice.number == "INV-0001"
       assert invoice.status == "Draft"
-      assert invoice.amount == 59_000
+      assert invoice.amount == 5_900_000
     end
 
     test "stores the company snapshot", %{conn: conn} do

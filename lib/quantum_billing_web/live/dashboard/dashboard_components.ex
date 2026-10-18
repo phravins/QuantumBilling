@@ -353,18 +353,25 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp plain_number(value), do: format_number(value)
 
   @doc """
-  Formats a rupee amount for a chart axis or tooltip, in Indian units.
+  Formats an amount held in paise for a chart axis or tooltip, in Indian
+  units.
 
   Public because the Reports chart labels its axis the same way, and two
   copies of this would drift into labelling the same number differently on
   two pages.
-  """
-  def money_axis_label(value) when value >= 10_000_000,
-    do: "₹" <> short(value / 10_000_000) <> "Cr"
 
-  def money_axis_label(value) when value >= 100_000, do: "₹" <> short(value / 100_000) <> "L"
-  def money_axis_label(value) when value >= 1_000, do: "₹" <> short(value / 1_000) <> "K"
-  def money_axis_label(value), do: "₹#{round(value)}"
+  ## Examples
+
+      iex> QuantumBillingWeb.DashboardComponents.money_axis_label(250_000_000)
+      "₹25L"
+
+  """
+  def money_axis_label(paise), do: axis_label(paise / 100)
+
+  defp axis_label(rupees) when rupees >= 10_000_000, do: "₹" <> short(rupees / 10_000_000) <> "Cr"
+  defp axis_label(rupees) when rupees >= 100_000, do: "₹" <> short(rupees / 100_000) <> "L"
+  defp axis_label(rupees) when rupees >= 1_000, do: "₹" <> short(rupees / 1_000) <> "K"
+  defp axis_label(rupees), do: "₹#{round(rupees)}"
 
   defp short(number) do
     number
@@ -425,7 +432,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
     assigns = assign(assigns, :segments, donut_geometry(assigns.segments))
 
     ~H"""
-    <div class="flex items-center gap-6">
+    <div class="flex items-center gap-4">
       <div class="relative size-40 shrink-0">
         <svg viewBox="0 0 42 42" class="size-40 -rotate-90">
           <circle
@@ -448,7 +455,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
       </div>
 
       <ul class="flex-1 space-y-3">
-        <li :for={seg <- @segments} class="flex items-center justify-between gap-4 text-sm">
+        <li :for={seg <- @segments} class="flex items-center justify-between gap-3 text-sm">
           <span class="flex items-center gap-2 text-base-content/60">
             <span class={["size-2.5 shrink-0 rounded-full", dot_class(@palette, seg.tone)]} /> {seg.label}
           </span>

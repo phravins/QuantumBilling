@@ -7,6 +7,7 @@ defmodule QuantumBillingWeb.ReportsController do
   """
   use QuantumBillingWeb, :controller
 
+  alias QuantumBilling.Money
   alias QuantumBilling.Reports
 
   @headers ["Tax Type", "Taxable Value", "CGST", "SGST", "IGST", "Total Tax"]
@@ -115,7 +116,8 @@ defmodule QuantumBillingWeb.ReportsController do
 
   defp sales_register_row(row) do
     total_tax = row.cgst + row.sgst + row.igst + row.cess
-    grand_total = row.taxable_value + total_tax
+    # Round off included, so the column matches the invoice's own total.
+    grand_total = row.taxable_value + total_tax + Map.get(row, :round_off, 0)
 
     [
       QuantumBillingWeb.Format.format_date(row.date),
@@ -134,9 +136,9 @@ defmodule QuantumBillingWeb.ReportsController do
     ]
   end
 
-  # Plain numbers so a spreadsheet can sum them.
+  # Plain rupee numbers, from paise, so a spreadsheet can sum them.
   defp amount(nil), do: ""
-  defp amount(rupees), do: :erlang.float_to_binary(rupees * 1.0, decimals: 2)
+  defp amount(paise), do: Money.to_input(paise)
 
   defp filename(prefix, filters) do
     slug =

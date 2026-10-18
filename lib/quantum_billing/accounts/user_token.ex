@@ -17,6 +17,7 @@ defmodule QuantumBilling.Accounts.UserToken do
   # later owns the account.
   @reset_password_validity_in_hours 4
 
+  @schema_prefix "public"
   schema "users_tokens" do
     field :token, :binary
     field :context, :string

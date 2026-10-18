@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.Endpoint do
     store: :cookie,
     key: "_quantum_billing_key",
     signing_salt: "QEN7M6qy",
+    # Encrypted as well as signed, so the cookie's contents are not readable.
+    encryption_salt: "B3jws6iS",
     same_site: "Lax"
   ]
 
@@ -46,5 +48,25 @@ defmodule QuantumBillingWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug :forget_business
   plug QuantumBillingWeb.Router
+
+  # Bandit serves every request on a keep-alive connection from one process, so
+  # the business chosen for the last request would otherwise still be set for
+  # this one — a webhook arriving after a page load would run in that page's
+  # business. Each request starts with none; the router chooses again.
+  #
+  # Whatever was set before is put back once the response is sent. In
+  # production that is only the previous request's choice, cleared again by the
+  # next one; in a test, which calls the endpoint in its own process, it is the
+  # test's business, which the test goes on querying in.
+  defp forget_business(conn, _opts) do
+    previous = QuantumBilling.Repo.business()
+    QuantumBilling.Repo.put_business(nil)
+
+    register_before_send(conn, fn conn ->
+      QuantumBilling.Repo.put_business(previous)
+      conn
+    end)
+  end
 end

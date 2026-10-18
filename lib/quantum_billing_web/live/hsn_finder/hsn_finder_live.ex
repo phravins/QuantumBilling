@@ -112,9 +112,9 @@ defmodule QuantumBillingWeb.HsnFinderLive do
         <:subtitle>Search and find the correct HSN / SAC code and applicable GST rate.</:subtitle>
       </.header>
 
-      <div class="flex flex-1 flex-col gap-4">
-        <.card padding="p-5">
-          <div class="-mb-px flex items-center gap-6 border-b border-base-300">
+      <div class="flex flex-1 flex-col gap-3">
+        <.card padding="p-4">
+          <div class="-mb-px flex items-center gap-4 border-b border-base-300">
             <button
               :for={{key, label} <- @tabs}
               type="button"
@@ -167,8 +167,8 @@ defmodule QuantumBillingWeb.HsnFinderLive do
           </p>
         </.card>
 
-        <.card padding="p-5" class="flex flex-1 flex-col">
-          <div class="mb-4 flex items-center justify-between">
+        <.card padding="p-4" class="flex flex-1 flex-col">
+          <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Search Results</h2>
 
             <span :if={@query != ""} class="text-sm font-medium text-base-content/60">
@@ -197,7 +197,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
                 phx-click="select"
                 phx-value-code={entry.code}
                 class={[
-                  "flex w-full items-start justify-between gap-4 rounded-field border p-4 text-left transition-colors",
+                  "flex w-full items-start justify-between gap-3 rounded-field border p-4 text-left transition-colors",
                   if(@selected && @selected.code == entry.code,
                     do: "border-base-content/30 bg-base-200/60",
                     else: "border-base-300 hover:bg-base-200/60"
@@ -259,7 +259,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
 
   defp detail_row(assigns) do
     ~H"""
-    <div class="flex items-start justify-between gap-4 py-1.5 text-sm">
+    <div class="flex items-start justify-between gap-3 py-1.5 text-sm">
       <span class="text-base-content/60">{@label}</span>
       <span class="text-right font-medium">{@value}</span>
     </div>

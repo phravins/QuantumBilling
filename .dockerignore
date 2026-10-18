@@ -8,8 +8,7 @@ assets/node_modules
 *.log
 docker-compose*.yml
 
-# Build output and local uploads: `COPY priv priv` would otherwise bake a dev
-# machine's compiled assets and any logo uploaded locally into the image.
+# Keeps local build output and uploads out of `COPY priv priv`.
 priv/static/assets
 priv/static/cache_manifest.json
 priv/static/uploads

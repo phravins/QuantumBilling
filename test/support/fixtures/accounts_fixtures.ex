@@ -8,6 +8,7 @@ defmodule QuantumBilling.AccountsFixtures do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Businesses
 
   def unique_user_email, do: "user#{System.unique_integer()}@example.com"
   def unique_username, do: "user#{System.unique_integer([:positive])}"
@@ -41,12 +42,16 @@ defmodule QuantumBilling.AccountsFixtures do
     user
   end
 
+  @doc """
+  An account awaiting confirmation, on the staff of business 1.
+  """
   def unconfirmed_user_fixture(attrs \\ %{}) do
     {:ok, user} =
       attrs
       |> valid_user_attributes()
       |> Accounts.register_user()
 
+    {:ok, _membership} = Businesses.put_membership(user, Businesses.default!(), "staff")
     user
   end
 
@@ -65,7 +70,7 @@ defmodule QuantumBilling.AccountsFixtures do
   end
 
   @doc """
-  A confirmed account that owns the installation.
+  A confirmed account that owns business 1.
 
   Registration is invite-only and the owner-only areas — the credential
   settings panels, Team, the full data export — are gated on this role, so a
@@ -75,12 +80,21 @@ defmodule QuantumBilling.AccountsFixtures do
   """
   def owner_fixture(attrs \\ %{}) do
     user = user_fixture(attrs)
-    {:ok, owner} = Accounts.set_role(user, "owner")
-    owner
+    {:ok, _membership} = Accounts.set_role(Businesses.default!(), user, "owner")
+    user
+  end
+
+  @doc "`user`'s role in business 1 (or `business`), or `nil` when not a member."
+  def role(user, business \\ Businesses.default!()) do
+    case Businesses.get_membership(user, business.id) do
+      nil -> nil
+      membership -> membership.role
+    end
   end
 
   @doc """
-  Invites `email` and returns the raw invitation token.
+  Invites `email` into business 1 (or `:business`) and returns the raw
+  invitation token.
 
   Registration is invite-only, so anything that exercises the sign-up form
   past the very first account has to come through here. The token is captured
@@ -89,11 +103,12 @@ defmodule QuantumBilling.AccountsFixtures do
   """
   def invitation_token_fixture(email, opts \\ []) do
     owner = Keyword.get_lazy(opts, :invited_by, &owner_fixture/0)
+    business = Keyword.get_lazy(opts, :business, &Businesses.default!/0)
     role = Keyword.get(opts, :role, "staff")
     test_pid = self()
 
-    {:ok, _invitation} =
-      Accounts.invite(email, role, owner, fn token ->
+    {:ok, {:invited, _invitation}} =
+      Accounts.invite(business, email, role, owner, fn token ->
         send(test_pid, {:invitation_token, token})
         "http://localhost/users/register?token=#{token}"
       end)
@@ -101,7 +116,7 @@ defmodule QuantumBilling.AccountsFixtures do
     receive do
       {:invitation_token, token} -> token
     after
-      0 -> raise "invite/4 never built an invitation URL"
+      0 -> raise "invite/5 never built an invitation URL"
     end
   end
 

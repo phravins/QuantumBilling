@@ -39,6 +39,7 @@ defmodule QuantumBilling.EInvoice do
   alias QuantumBilling.EInvoice.Payload
   alias QuantumBilling.GST
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
@@ -104,24 +105,35 @@ defmodule QuantumBilling.EInvoice do
             "SlNo" => to_string(item.position || 1),
             "PrdDesc" => item.description,
             "HsnCd" => item.hsn_sac,
-            "Qty" => item.quantity,
+            "Qty" => quantity(item.quantity),
             "Unit" => item.unit,
-            "UnitPrice" => item.rate,
-            "TotAmt" => item.amount,
+            "UnitPrice" => rupees(item.rate),
+            "TotAmt" => rupees(item.amount),
             "GstRt" => item.tax_rate,
-            "TotItemVal" => item.amount
+            "TotItemVal" => rupees(item.amount)
           }
         end),
       "ValDetails" => %{
-        "AssVal" => invoice.taxable_value,
-        "CgstVal" => invoice.cgst_amount,
-        "SgstVal" => invoice.sgst_amount,
-        "IgstVal" => invoice.igst_amount,
-        "CesVal" => invoice.cess_amount,
-        "RndOffAmt" => invoice.round_off,
-        "TotInvVal" => invoice.grand_total
+        "AssVal" => rupees(invoice.taxable_value),
+        "CgstVal" => rupees(invoice.cgst_amount),
+        "SgstVal" => rupees(invoice.sgst_amount),
+        "IgstVal" => rupees(invoice.igst_amount),
+        "CesVal" => rupees(invoice.cess_amount),
+        "RndOffAmt" => rupees(invoice.round_off),
+        "TotInvVal" => rupees(invoice.grand_total)
       }
     }
+  end
+
+  # The IRP takes rupees and quantities as JSON numbers; amounts are stored in paise.
+  defp rupees(nil), do: 0
+  defp rupees(paise) when is_integer(paise), do: paise / 100
+
+  defp quantity(quantity) do
+    case Money.quantity(quantity) do
+      nil -> 0
+      decimal -> Decimal.to_float(decimal)
+    end
   end
 
   @doc """

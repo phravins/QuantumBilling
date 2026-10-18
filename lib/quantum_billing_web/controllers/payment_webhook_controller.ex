@@ -20,6 +20,13 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     * **Delivery is rate limited by source.** A signature check is cheap but
       not free, and this is a public endpoint.
 
+    * **Payer details are not kept.** The ledger stores only what reconciliation
+      needs (`Payments.webhook_record/1`), encrypted at rest.
+
+  The URL names the business by its slug (`/api/webhooks/razorpay/:slug`);
+  the bare path, which existing Razorpay dashboards point at, delivers to the
+  first business. An unknown slug is a 404 before anything else is looked at.
+
   Successfully handled duplicates return 200: a provider that is told "already
   done" with a 4xx will simply keep retrying.
   """
@@ -27,20 +34,30 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
 
   require Logger
 
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Payments
   alias QuantumBilling.Payments.RazorpayClient
   alias QuantumBilling.RateLimiter
+  alias QuantumBilling.Repo
   alias QuantumBilling.Webhooks
 
   @rate_limit 120
   @rate_limit_window_seconds 60
 
   def handle_razorpay(conn, params) do
+    {slug, params} = Map.pop(params, "slug")
+
     with :ok <- check_rate_limit(conn),
+         %{} = business <- Businesses.from_link(slug),
          {:ok, raw_body} <- raw_body(conn),
          :ok <- verify_signature(conn, raw_body) do
+      # The endpoint clears this again before the next request on the connection.
+      Repo.put_business(business)
       process(conn, params)
     else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{status: "error", message: "Unknown business"})
+
       {:error, :rate_limited, retry_after} ->
         conn
         |> put_resp_header("retry-after", to_string(retry_after))
@@ -67,9 +84,10 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
   defp process(conn, params) do
     event_id = event_id(conn, params)
 
+    # Trimmed of payer details, and encrypted at rest by the ledger itself.
     case Webhooks.claim("razorpay", event_id, %{
            event_type: params["event"],
-           payload: params
+           payload: Payments.webhook_record(params)
          }) do
       {:duplicate, _event} ->
         # Acknowledged, or the provider retries for ever.

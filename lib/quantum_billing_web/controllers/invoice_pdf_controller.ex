@@ -79,8 +79,13 @@ defmodule QuantumBillingWeb.InvoicePdfController do
     end
   end
 
-  def public(conn, %{"token" => token}) do
-    case Invoices.get_invoice_by_token(token) do
+  def public(conn, %{"token" => token} = params) do
+    # No session business for a visitor: the link names it. The endpoint
+    # clears it again before the next request on this connection.
+    business =
+      QuantumBilling.Repo.put_business(QuantumBilling.Businesses.from_link(params["slug"]))
+
+    case business && Invoices.get_invoice_by_token(token) do
       nil ->
         conn
         |> put_status(:not_found)

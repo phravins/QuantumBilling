@@ -20,6 +20,7 @@ defmodule QuantumBillingWeb.DashboardLive do
   alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments.QRCode
+  alias QuantumBillingWeb.LiveRefresh
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Invoices.subscribe()
@@ -36,8 +37,13 @@ defmodule QuantumBillingWeb.DashboardLive do
     {:noreply, assign(socket, :qr_modal_invoice, nil)}
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, assign_dashboard(socket)}
+    {:noreply, LiveRefresh.changed(socket, &assign_dashboard/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &assign_dashboard/1)}
   end
 
   defp assign_dashboard(socket) do
@@ -92,10 +98,10 @@ defmodule QuantumBillingWeb.DashboardLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
-          <div class="mb-4 flex items-center justify-between">
+          <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
 
-            <div class="flex items-center gap-4 text-xs text-base-content/60">
+            <div class="flex items-center gap-3 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-blue-500" /> CGST + SGST
               </span>
@@ -125,7 +131,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
 
         <.card>
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoices by Status</h2>
 
           <.donut_chart
             :if={@donut_segments != []}
@@ -145,7 +151,7 @@ defmodule QuantumBillingWeb.DashboardLive do
       <%!-- grow, not flex-1: flex-1 zeroes the basis and would let a tall table shrink. --%>
       <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
 
           <.empty_state
             :if={@invoices == []}
@@ -194,9 +200,9 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
 
         <.card class="flex flex-col">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
-          <ul :if={@compliance_items != []} class="space-y-4">
+          <ul :if={@compliance_items != []} class="space-y-3">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
               <.compliance_date_badge month={item.month} day={item.day} tone={item.tone} />
               <div>
@@ -226,14 +232,16 @@ defmodule QuantumBillingWeb.DashboardLive do
         :if={@qr_modal_invoice}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       >
-        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-3">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <div>
               <h3 class="text-base font-bold">UPI Payment QR Code</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@qr_modal_invoice.invoice_number} &bull; Total:
-                <strong class="text-emerald-600">₹{@qr_modal_invoice.grand_total ||
-                  @qr_modal_invoice.amount}</strong>
+                <strong class="text-emerald-600">{rupees(
+                  @qr_modal_invoice.grand_total ||
+                    @qr_modal_invoice.amount
+                )}</strong>
               </p>
             </div>
             <button
@@ -265,7 +273,7 @@ defmodule QuantumBillingWeb.DashboardLive do
 
           <div class="flex items-center justify-between gap-2 pt-2 border-t border-base-200">
             <.link
-              href={~p"/pay/#{@qr_modal_invoice.public_token || "tok_123"}"}
+              href={QuantumBillingWeb.PublicInvoiceLive.path(@qr_modal_invoice)}
               target="_blank"
               class="btn btn-sm btn-outline btn-primary text-xs"
             >

@@ -1,13 +1,15 @@
 defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   @moduledoc """
-  Applies the organisation's own security policy to every browser request:
+  Applies the installation's security policy to every browser request:
 
     * the IP allowlist, if one is set;
     * the inactivity timeout on a signed-in session;
     * mandatory two-factor enrolment, if the organisation requires it.
 
-  All three read from `organization_settings`, so they are policy the business
-  sets rather than constants in the code.
+  All three read from `installation_settings`, so they are policy the owners
+  set rather than constants in the code. They belong to the installation, not to
+  any one business: they guard the sign-in page, which is reached before a
+  business is chosen, and one person works across several firms with one login.
 
   Two details matter more than they look:
 
@@ -28,7 +30,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   import Plug.Conn
   import Phoenix.Controller
 
-  alias QuantumBilling.Settings
+  alias QuantumBilling.InstallationSettings
   alias QuantumBillingWeb.ClientIP
 
   @default_timeout_minutes 60
@@ -36,7 +38,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    organization = Settings.get_organization()
+    organization = InstallationSettings.get()
 
     conn
     |> check_ip_allowlist(organization)

@@ -21,7 +21,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
   a lock for as long as it takes, which on a large table is long enough to
   matter to everything else running at the time.
   """
-  use Oban.Worker, queue: :maintenance, max_attempts: 3
+  use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
   import Ecto.Query
 
@@ -37,8 +37,8 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
   @batch_size 5_000
   @ledger_retention_days 90
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: args}) do
     audit_days =
       case args do
         %{"audit_retention_days" => days} when is_integer(days) and days > 0 -> days

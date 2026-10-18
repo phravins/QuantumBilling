@@ -34,6 +34,7 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Notifications
+  alias QuantumBilling.Paging
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
@@ -70,9 +71,11 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  One page of invoices, filtered, sorted and counted by the database.
+  One page of invoices, filtered and sorted by the database.
 
-  Returns `%{rows:, total:, page:, per_page:, total_pages:}`.
+  Returns `%{rows:, page:, per_page:, has_next?:}`, plus `:total` and
+  `:total_pages` with `count: true`. See `QuantumBilling.Paging` on why the
+  rows are not counted otherwise.
 
   The searching, filtering, sorting and slicing used to happen in Elixir over
   every invoice in the system, reloaded into the LiveView's memory on every
@@ -88,29 +91,25 @@ defmodule QuantumBilling.Invoices do
     * `:client` — a `%Clients.Client{}`, narrowing to that client's invoices
     * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
     * `:page` / `:per_page`
+    * `:count` — also count the matching invoices
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
+    sort_field = Keyword.get(opts, :sort_field, :invoice_date)
+    sort_dir = Keyword.get(opts, :sort_dir, :desc)
 
-    query =
+    result =
       Invoice.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
       |> client_where(Keyword.get(opts, :client))
+      |> Paging.page(&order(&1, sort_field, sort_dir),
+        page: Keyword.get(opts, :page, 1),
+        per_page: per_page,
+        count: Keyword.get(opts, :count, false)
+      )
 
-    total = Repo.aggregate(query, :count, :id)
-    total_pages = max(ceil(total / per_page), 1)
-    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
-
-    rows =
-      query
-      |> order(Keyword.get(opts, :sort_field, :invoice_date), Keyword.get(opts, :sort_dir, :desc))
-      |> limit(^per_page)
-      |> offset(^((page - 1) * per_page))
-      |> Repo.all()
-      |> Enum.map(&to_row/1)
-
-    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+    %{result | rows: Enum.map(result.rows, &to_row/1)}
   end
 
   @doc """
@@ -171,7 +170,7 @@ defmodule QuantumBilling.Invoices do
   ₹1,00,000 saw no difference anywhere.
   """
   def count_requiring_e_way_bill do
-    threshold = Settings.get_organization().ewb_threshold_value || 50_000
+    threshold = Settings.get_organization().ewb_threshold_value || 5_000_000
 
     Invoice.kept()
     |> from(as: :invoice)
@@ -213,25 +212,31 @@ defmodule QuantumBilling.Invoices do
     Invoice.kept()
     |> select([i], %{
       count: count(i.id),
-      revenue: coalesce(sum(i.grand_total), 0),
+      revenue: type(coalesce(sum(i.grand_total), 0), :integer),
       tax:
-        coalesce(
-          sum(
-            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+        type(
+          coalesce(
+            sum(
+              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            ),
+            0
           ),
-          0
+          :integer
         ),
       outstanding:
-        coalesce(
-          sum(
-            fragment(
-              "CASE WHEN ? IN ('Paid', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
-              i.status,
-              i.grand_total
-            )
+        type(
+          coalesce(
+            sum(
+              fragment(
+                "CASE WHEN ? IN ('Paid', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
+                i.status,
+                i.grand_total
+              )
+            ),
+            0
           ),
-          0
+          :integer
         ),
       paid_count: coalesce(count(i.id) |> filter(i.status == "Paid"), 0)
     })
@@ -251,22 +256,71 @@ defmodule QuantumBilling.Invoices do
       |> where([_n, i], i.status not in ["Paid", "Cancelled"])
       |> where([_n, i], is_nil(i.deleted_at))
       |> select([n], %{
-        credits: coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0),
-        debits: coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0)
+        credits:
+          type(coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0), :integer),
+        debits: type(coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0), :integer)
       })
       |> Repo.one()
 
     case totals do
       nil -> %{credits: 0, debits: 0}
-      %{credits: credits, debits: debits} -> %{credits: rupees(credits), debits: rupees(debits)}
+      totals -> totals
     end
   end
 
-  # Note totals are decimals; invoice money is whole rupees everywhere else.
-  defp rupees(%Decimal{} = decimal), do: decimal |> Decimal.round(0) |> Decimal.to_integer()
-  defp rupees(number) when is_integer(number), do: number
-  defp rupees(number) when is_float(number), do: round(number)
-  defp rupees(_other), do: 0
+  @doc """
+  What each client still owes, as a query of `%{client_id:, outstanding:}`.
+
+  The same rule as `totals/0`, per client: the invoices that are neither paid
+  nor cancelled, less the credit notes and plus the debit notes raised against
+  them, floored at zero. Clients who owe nothing have no row.
+
+  Pass `client_ids` to compute only those clients — one indexed lookup each,
+  which is what a page of clients needs. Without it every client is grouped,
+  which is only worth paying to sort the whole directory by what is owed.
+  """
+  def outstanding_by_client(client_ids \\ nil) do
+    notes =
+      from n in CreditNote,
+        where: n.status != "Cancelled",
+        group_by: n.invoice_id,
+        select: %{
+          invoice_id: n.invoice_id,
+          net:
+            sum(
+              fragment(
+                "CASE WHEN ? = 'Credit' THEN -? ELSE ? END",
+                n.note_type,
+                n.grand_total,
+                n.grand_total
+              )
+            )
+        }
+
+    query =
+      from i in Invoice.kept(),
+        left_join: n in subquery(notes),
+        on: n.invoice_id == i.id,
+        where: not is_nil(i.client_id) and i.status not in ["Paid", "Cancelled"],
+        group_by: i.client_id,
+        select: %{
+          client_id: i.client_id,
+          outstanding:
+            type(
+              fragment(
+                "GREATEST(SUM(COALESCE(?, 0) + COALESCE(?, 0)), 0)",
+                i.grand_total,
+                n.net
+              ),
+              :integer
+            )
+        }
+
+    case client_ids do
+      nil -> query
+      ids -> where(query, [i], i.client_id in ^ids)
+    end
+  end
 
   @doc """
   Totals for the invoices dated within `month`.
@@ -284,12 +338,12 @@ defmodule QuantumBilling.Invoices do
     |> where([i], i.status != "Cancelled")
     |> select([i], %{
       count: count(i.id),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
-      cgst: coalesce(sum(i.cgst_amount), 0),
-      sgst: coalesce(sum(i.sgst_amount), 0),
-      igst: coalesce(sum(i.igst_amount), 0),
-      cess: coalesce(sum(i.cess_amount), 0),
-      invoice_value: coalesce(sum(i.grand_total), 0)
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
+      cgst: type(coalesce(sum(i.cgst_amount), 0), :integer),
+      sgst: type(coalesce(sum(i.sgst_amount), 0), :integer),
+      igst: type(coalesce(sum(i.igst_amount), 0), :integer),
+      cess: type(coalesce(sum(i.cess_amount), 0), :integer),
+      invoice_value: type(coalesce(sum(i.grand_total), 0), :integer)
     })
     |> Repo.one()
     |> case do
@@ -328,8 +382,12 @@ defmodule QuantumBilling.Invoices do
       |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
       |> select([i], %{
         month: fragment("date_trunc('month', ?)", i.invoice_date),
-        cgst_sgst: coalesce(sum(coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0)), 0),
-        igst: coalesce(sum(i.igst_amount), 0)
+        cgst_sgst:
+          type(
+            coalesce(sum(coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0)), 0),
+            :integer
+          ),
+        igst: type(coalesce(sum(i.igst_amount), 0), :integer)
       })
       |> Repo.all()
       |> Map.new(fn row -> {month_key(row.month), row} end)
@@ -547,7 +605,8 @@ defmodule QuantumBilling.Invoices do
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name,
-          grand_total: invoice.grand_total,
+          # Whole rupees, as integrations have always received it.
+          grand_total: div(invoice.grand_total || 0, 100),
           invoice_date: to_string(invoice.invoice_date)
         })
 
@@ -740,7 +799,8 @@ defmodule QuantumBilling.Invoices do
       details: %{
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name,
-        grand_total: invoice.grand_total
+        # Whole rupees, as older entries in the log hold.
+        grand_total: div(invoice.grand_total || 0, 100)
       }
     )
 

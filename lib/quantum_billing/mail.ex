@@ -285,6 +285,19 @@ defmodule QuantumBilling.Mail do
   def get_delivery(id), do: Repo.get(Delivery, id)
 
   @doc """
+  Removes one delivery from the log.
+
+  A queued message's job finds its delivery gone and is discarded by
+  `QuantumBilling.Workers.EmailWorker`, so removing it also stops the send.
+  """
+  def delete_delivery(id) do
+    case get_delivery(id) do
+      nil -> {:error, :not_found}
+      delivery -> delivery |> Repo.delete() |> broadcast_delivery()
+    end
+  end
+
+  @doc """
   The most recent delivery attempts, newest first.
 
   Bounded by design — this is the "did it go out?" panel, not an archive.

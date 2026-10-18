@@ -42,6 +42,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   alias QuantumBilling.Clients
   alias QuantumBilling.Invoices
+  alias QuantumBillingWeb.LiveRefresh
 
   @per_page 10
 
@@ -141,8 +142,13 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, load_invoices(socket)}
+    {:noreply, LiveRefresh.changed(socket, &load_invoices/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &load_invoices/1)}
   end
 
   defp load_invoices(socket) do
@@ -150,10 +156,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
       Invoices.page(
         client: socket.assigns.client,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: @per_page,
+        count: true
       )
 
     socket
+    |> assign(:outstanding, Clients.outstanding(socket.assigns.client))
     |> assign(:invoices, result.rows)
     |> assign(:invoice_count, result.total)
     |> assign(:total_pages, result.total_pages)
@@ -252,7 +260,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         <.summary_tile
           id="client-outstanding"
           label="Outstanding"
-          value={rupees(@client.outstanding, decimals: 2, space: true)}
+          value={rupees(@outstanding, decimals: 2, space: true)}
           hint="Unpaid balance carried on this account"
         />
 
@@ -278,7 +286,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         />
       </div>
 
-      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid gap-3 lg:grid-cols-3">
         <.card id="client-identity" class="lg:col-span-1">
           <h2 class="text-sm font-semibold tracking-tight">Identity</h2>
 
@@ -299,7 +307,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
             <.detail label="Phone" value={phone(@client)} />
           </dl>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Commercial</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Commercial</h2>
 
           <dl class="mt-3 space-y-2.5">
             <.detail
@@ -317,7 +325,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {address_lines(@client, :billing)}
           </p>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Shipping address</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Shipping address</h2>
 
           <%!-- Use the flag: when shipping follows billing the shipping fields are empty. --%>
           <p :if={@client.shipping_same_as_billing} class="mt-3 text-sm text-base-content/45">
@@ -374,7 +382,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <th>Due</th>
                 <th>Amount</th>
                 <th>Status</th>
-                <th class="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
@@ -391,7 +399,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <td><.status_badge status={invoice.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       navigate={~p"/invoices/#{invoice.id}"}
                       class={row_action_class()}
@@ -427,7 +435,11 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {@invoice_count} invoices
           </p>
 
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination
+            current_page={@page}
+            total_pages={@total_pages}
+            has_next={@page < @total_pages}
+          />
         </div>
       </.card>
     </Layouts.app>
@@ -455,7 +467,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   defp detail(assigns) do
     ~H"""
-    <div class="flex items-baseline justify-between gap-4">
+    <div class="flex items-baseline justify-between gap-3">
       <dt class="shrink-0 text-xs text-base-content/45">{@label}</dt>
       <dd class={[
         "text-right text-sm",

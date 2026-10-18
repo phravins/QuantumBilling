@@ -258,4 +258,32 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       assert has_element?(view, "#flash-error", "no longer exists")
     end
   end
+
+  describe "rows that fit the screen" do
+    setup do
+      for n <- 1..12 do
+        {:ok, _client} =
+          QuantumBilling.Clients.create_client(%{
+            "client_type" => "Consumer",
+            "name" => "Buyer #{n}",
+            "phone" => "90000000#{String.pad_leading("#{n}", 2, "0")}",
+            "billing_line1" => "Shop #{n}",
+            "billing_city" => "Pune",
+            "billing_state" => "Maharashtra (27)",
+            "billing_pin" => "411001"
+          })
+      end
+
+      :ok
+    end
+
+    test "the pager's measured fit replaces the default page size", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+      assert has_element?(view, ~s|button[aria-label="Next page"]:not([disabled])|)
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 15})
+
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+    end
+  end
 end

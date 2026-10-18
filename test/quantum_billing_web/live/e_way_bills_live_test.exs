@@ -98,17 +98,21 @@ defmodule QuantumBillingWeb.EWayBillsLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/e-way-bills")
 
-    html = view |> form("#ewb-search", %{"q" => "Northwind"}) |> render_change()
+    # Read the table alone: the notification bell can show another async test's client.
+    search = fn q ->
+      view |> form("#ewb-search", %{"q" => q}) |> render_change()
+      view |> element("#e-way-bills") |> render()
+    end
+
+    html = search.("Northwind")
     assert html =~ "Northwind Traders"
     refute html =~ "Contoso Logistics"
 
-    html = view |> form("#ewb-search", %{"q" => contoso.ewb_number}) |> render_change()
+    html = search.(contoso.ewb_number)
     assert html =~ "Contoso Logistics"
     refute html =~ "Northwind Traders"
 
-    html =
-      view |> form("#ewb-search", %{"q" => northwind.invoice.invoice_number}) |> render_change()
-
+    html = search.(northwind.invoice.invoice_number)
     assert html =~ "Northwind Traders"
     refute html =~ "Contoso Logistics"
   end

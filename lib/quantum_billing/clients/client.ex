@@ -26,6 +26,7 @@ defmodule QuantumBilling.Clients.Client do
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
+  alias QuantumBilling.Money.Paise
 
   @gstin_types ["Registered Business", "Composition Scheme", "SEZ Unit"]
 
@@ -75,9 +76,9 @@ defmodule QuantumBilling.Clients.Client do
     field :shipping_state, :string
     field :shipping_pin, :string
 
-    field :credit_limit, :integer, default: 0
+    field :credit_limit, Paise, default: 0
     field :payment_terms_days, :integer, default: 30
-    field :opening_balance, :integer, default: 0
+    field :opening_balance, Paise, default: 0
     field :notes, :string
 
     field :status, :string, default: "Active"

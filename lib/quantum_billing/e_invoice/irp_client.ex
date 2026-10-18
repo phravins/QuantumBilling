@@ -12,6 +12,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
 
   alias QuantumBilling.EInvoice
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
 
   @default_endpoint "https://einv-apisandbox.nic.in"
 
@@ -83,7 +84,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
         "DocNo" => invoice.invoice_number,
         "DocTyp" => "INV",
         "DocDt" => to_string(invoice.invoice_date),
-        "TotVal" => invoice.grand_total,
+        "TotVal" => Money.to_rupees_decimal(invoice.grand_total),
         "ItemCnt" => invoice.total_items,
         "MainHsnCode" => main_hsn_code(invoice),
         "Irn" => irn,
