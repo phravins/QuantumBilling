@@ -51,6 +51,40 @@ defmodule QuantumBilling.InvoicesTest do
     )
   end
 
+  # These are written only from the IRP's and Razorpay's answers. A form that
+  # could set them could plant a fake registration or a fake payment.
+  describe "portal and payment fields from form input" do
+    setup :setup_company
+
+    @forged %{
+      "irn" => "forged-irn",
+      "ack_number" => "999",
+      "ack_date" => "2026-01-01T00:00:00Z",
+      "signed_qr_code" => "forged-qr",
+      "signed_invoice" => "forged-jwt",
+      "irn_mode" => "live",
+      "razorpay_payment_link_id" => "plink_forged",
+      "razorpay_payment_url" => "https://evil.example/pay",
+      "razorpay_payment_id" => "pay_forged"
+    }
+
+    @fields ~w(irn ack_number ack_date signed_qr_code signed_invoice irn_mode
+               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
+
+    test "are ignored on create" do
+      {:ok, invoice} = Invoices.create_invoice(attrs(@forged))
+
+      for field <- @fields, do: assert(is_nil(Map.fetch!(invoice, field)), "#{field} was set")
+    end
+
+    test "are ignored on update" do
+      {:ok, invoice} = Invoices.create_invoice(attrs())
+      {:ok, updated} = Invoices.update_invoice(invoice, @forged)
+
+      for field <- @fields, do: assert(is_nil(Map.fetch!(updated, field)), "#{field} was set")
+    end
+  end
+
   describe "create_invoice/1" do
     setup :setup_company
 

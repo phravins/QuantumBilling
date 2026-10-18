@@ -1,9 +1,9 @@
 defmodule QuantumBillingWeb.ReportsController do
   @moduledoc """
-  Downloads for the Reports page.
+  Report downloads, linked from the Dashboard.
 
-  The export takes the same filter parameters the LiveView holds, so the file a
-  user gets always matches the figures they were looking at.
+  The export takes the Reports filter parameters (the Dashboard links pass this
+  year), so the file matches the tax summary the Dashboard shows.
   """
   use QuantumBillingWeb, :controller
 

@@ -73,7 +73,7 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
     test "every page still renders under the policy", %{conn: conn} do
       # A policy that breaks the application is worse than none, because it
       # gets turned off.
-      for path <- [~p"/dashboard", ~p"/invoices", ~p"/clients", ~p"/reports", ~p"/settings"] do
+      for path <- [~p"/dashboard", ~p"/invoices", ~p"/clients", ~p"/settings"] do
         assert {:ok, _view, _html} = live(conn, path), "#{path} did not mount under the CSP"
       end
     end

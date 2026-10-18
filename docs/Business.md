@@ -227,13 +227,13 @@ An invoice can have a separately stored Credit or Debit note with a reason, amou
 
 A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Paid or cancelled invoices are excluded from the open-receivable adjustment calculation. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
 
-## 12. Dashboard, reports, and return data
+## 12. Dashboard, exports, and return data
 
-The dashboard reads saved invoices to present invoice counts, billed values, tax summaries, open receivables, recent documents, a six-month tax trend, and status distribution. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables use invoice statuses and note adjustments rather than a payment installment ledger.
+The dashboard reads saved invoices to present invoice counts, billed values, open receivables, a six-month tax trend, status distribution, a tax summary by tax type and the top clients by invoice value for the current year, and the compliance calendar. There is no separate Reports page; the dashboard replaced it. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables use invoice statuses and note adjustments rather than a payment installment ledger.
 
-Reports combine date range, report type, invoice status, client name, and GSTIN filters. The same filtered query drives summary totals, the monthly trend, status breakdown, tax rows, top clients, and CSV export. Large CSV exports stream rows rather than loading the entire report into a browser process.
+The dashboard's Export menu downloads the current year as a GST tax summary or a sales register CSV. Both come from `/reports/export`, which also accepts date range, report type, invoice status, client name, and GSTIN parameters; the same filtered query drives the dashboard's tax summary and top clients. Large CSV exports stream rows rather than loading the entire report into a browser process.
 
-Report names need to be read with their current implementation:
+Report types accepted by the export (`report_type`) need to be read with their current implementation:
 
 | Report choice | Current behavior |
 | --- | --- |

@@ -507,13 +507,6 @@ defmodule QuantumBillingWeb.Layouts do
         color: "text-cyan-600 dark:text-cyan-400"
       },
       %{
-        key: :reports,
-        label: "Reports",
-        path: ~p"/reports",
-        icon: "hero-chart-bar",
-        color: "text-violet-600 dark:text-violet-400"
-      },
-      %{
         key: :compliance,
         label: "Compliance",
         path: ~p"/compliance",

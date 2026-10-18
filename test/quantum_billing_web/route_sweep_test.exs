@@ -141,7 +141,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/e-way-bills",
         ~p"/e-way-bills/new",
         ~p"/hsn-finder",
-        ~p"/reports",
         ~p"/compliance",
         ~p"/recurring",
         ~p"/bin",
@@ -329,7 +328,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert {:ok, _view, _html} = live(conn, ~p"/invoices")
       assert {:ok, _view, _html} = live(conn, ~p"/invoices/new")
       assert {:ok, _view, _html} = live(conn, ~p"/clients")
-      assert {:ok, _view, _html} = live(conn, ~p"/reports")
+      assert {:ok, _view, _html} = live(conn, ~p"/dashboard")
       assert conn |> get(~p"/invoices/#{invoice.id}/pdf") |> response(200)
       assert conn |> get(~p"/reports/export") |> response(200)
     end

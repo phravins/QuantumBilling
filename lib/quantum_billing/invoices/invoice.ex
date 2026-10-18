@@ -137,15 +137,16 @@ defmodule QuantumBilling.Invoices.Invoice do
     timestamps(type: :utc_datetime)
   end
 
+  # No IRN/acknowledgement or Razorpay fields: those are written only from the
+  # IRP's and Razorpay's answers (einvoice_changeset/2, Payments), never from a
+  # form, so a crafted submission cannot plant a fake IRN or payment.
   @castable ~w(invoice_number invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
                client_city client_pincode
                company_name company_address company_gstin company_state
                remarks terms status template_id layout_xml
-               irn ack_number ack_date signed_qr_code signed_invoice
-               currency exchange_rate export_type lut_number
-               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
+               currency exchange_rate export_type lut_number)a
 
   @doc """
   Builds an invoice changeset, including its line items.

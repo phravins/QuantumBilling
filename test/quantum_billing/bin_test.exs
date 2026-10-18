@@ -174,7 +174,7 @@ defmodule QuantumBilling.BinTest do
   end
 
   describe "the reports and returns" do
-    test "a binned invoice is out of the Reports page" do
+    test "a binned invoice is out of the report figures" do
       kept = invoice_fixture()
       binned(invoice_fixture(%{client_name: "Withdrawn Traders"}))
 

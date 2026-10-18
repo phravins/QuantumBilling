@@ -1,8 +1,8 @@
 defmodule QuantumBillingWeb.DashboardComponents do
   @moduledoc """
   UI building blocks for the QuantumBilling dashboard: stat cards, an inline
-  CSS bar chart, an inline SVG donut chart, status pills, and the compliance
-  calendar date badge.
+  CSS bar chart, an inline SVG donut chart, status pills, the compliance
+  calendar date badge, and the tax summary and top-client rows.
   """
   use Phoenix.Component
 
@@ -417,7 +417,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
     * `:mono` (default) — a monochrome ramp, so the segments read as one series
       rather than four unrelated colors. This is what the dashboard uses.
-    * `:color` — a categorical palette, for the Reports page, where charts are
+    * `:color` — a categorical palette, for the dashboard charts, where charts are
       the one place colour is allowed.
 
   The default keeps every existing caller monochrome.
@@ -554,5 +554,37 @@ defmodule QuantumBillingWeb.DashboardComponents do
     |> String.reverse()
     |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
     |> String.reverse()
+  end
+
+  @doc """
+  Renders one entry of the "Top Clients" list.
+  """
+  attr :rank, :integer, required: true
+  attr :name, :string, required: true
+  attr :value, :string, required: true
+
+  def top_client_row(assigns) do
+    ~H"""
+    <li class="flex items-center justify-between gap-3 text-sm">
+      <span class="flex min-w-0 items-center gap-2.5">
+        <span class="w-4 shrink-0 text-xs text-base-content/45">{@rank}.</span>
+        <span class="truncate text-base-content/80">{@name}</span>
+      </span>
+      <span class="whitespace-nowrap font-medium">{@value}</span>
+    </li>
+    """
+  end
+
+  @doc """
+  Renders the dash the tax summary shows for a column that does not apply to
+  that tax type, or the formatted amount when it does.
+  """
+  attr :amount, :integer, default: nil
+
+  def tax_cell(assigns) do
+    ~H"""
+    <span :if={is_nil(@amount)} class="text-base-content/35">&mdash;</span>
+    <span :if={@amount}>{QuantumBillingWeb.Format.rupees(@amount, decimals: 2)}</span>
+    """
   end
 end

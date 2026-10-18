@@ -1,8 +1,9 @@
 defmodule QuantumBilling.Reports do
   @moduledoc """
-  Aggregations behind the Reports page.
+  Report aggregations: the dashboard's tax summary and top clients, and the
+  CSV export.
 
-  Every panel on that page — the metric cards, both charts, the tax summary and
+  Every figure — the totals, the monthly trend, the tax summary and
   the top-clients list — is a different view of one set of invoices, and the
   filters have to move all of them together. So this module works from
   **row-level** invoices and derives each panel from them, rather than holding
@@ -57,7 +58,7 @@ defmodule QuantumBilling.Reports do
 
   The filtering happens in the database. It used to happen in Elixir over every
   invoice ever issued: a report on one month still read the whole table, and
-  the cost of opening the Reports page grew with the age of the business.
+  the cost of a report grew with the age of the business.
   """
   def invoices(filters) when is_map(filters) do
     filters
@@ -135,7 +136,7 @@ defmodule QuantumBilling.Reports do
   defp filter_report_type(query, _all_or_sales_register), do: query
 
   @doc """
-  Every panel on the Reports page, computed by the database.
+  Every report figure for `filters`, computed by the database.
 
   Five aggregate queries rather than one full table scan followed by five
   passes in Elixir. What comes back is the same shape the pure list functions
@@ -379,6 +380,19 @@ defmodule QuantumBilling.Reports do
       total?: false
     }
   end
+
+  @doc """
+  Tax rows by tax type for the filtered set, ending in a totals row: the same
+  rows `aggregate/1` returns as `:tax_rows`, without its other queries.
+  """
+  def tax_rows(filters) when is_map(filters), do: tax_rows_from(tax_type_totals(filters))
+
+  @doc """
+  The `limit` clients with the highest invoice value in the filtered set: the
+  same rows `aggregate/1` returns as `:top_clients`, without its other queries.
+  """
+  def top_client_totals(filters, limit \\ 5) when is_map(filters),
+    do: top_client_rows(filters, limit)
 
   defp top_client_rows(filters, limit \\ 5) do
     filters

@@ -33,6 +33,30 @@ defmodule QuantumBilling.ReportsAggregateTest do
     gstin: ""
   }
 
+  # The dashboard reads these on their own; they must agree with aggregate/1.
+  describe "tax_rows/1 and top_client_totals/2" do
+    test "return what aggregate/1 returns for the same filters" do
+      insert_invoice(%{invoice_number: "INV-1", client_name: "Acme Corp"})
+
+      insert_invoice(%{
+        invoice_number: "INV-2",
+        client_name: "Beta Ltd",
+        place_of_supply: "Karnataka",
+        taxable_value: 50_000,
+        cgst_amount: 0,
+        sgst_amount: 0,
+        igst_amount: 9_000
+      })
+
+      report = Reports.aggregate(@all)
+
+      assert Reports.tax_rows(@all) == report.tax_rows
+      assert Reports.top_client_totals(@all) == report.top_clients
+      assert [%{client: "Beta Ltd"}, %{client: "Acme Corp"}] = Reports.top_client_totals(@all)
+      assert [%{client: "Beta Ltd"}] = Reports.top_client_totals(@all, 1)
+    end
+  end
+
   describe "aggregate/1" do
     test "totals match what the rows say" do
       insert_invoice(%{invoice_number: "INV-1"})
