@@ -10,18 +10,18 @@ All detailed guides live in [`docs/`](docs/README.md).
 
 | Guide | Contents |
 | --- | --- |
-| [Getting started](docs/getting-started.md) | Native/Docker setup, migrations, seed account, login, troubleshooting |
+| [Getting started](docs/getting-started.md) | Local setup, migrations, seed account, login, troubleshooting |
 | [Business guide](docs/Business.md) | Business ownership, roles, billing workflows, features, and limits |
 | [Database structure](docs/database.md) | Public/business schemas, tables, relationships, money, indexes, migrations |
 | [Technical architecture](docs/technical-architecture.md) | Supervision, requests, LiveViews, contexts, jobs, integrations, security |
 | [Tech stack](docs/tech-stack.md) | Languages, dependency versions, tools, and their responsibilities |
 | [Configuration](docs/configuration.md) | Environment variables, secrets, email, payments, and government portals |
-| [Deployment and operations](docs/deployment.md) | Releases, Docker, migrations, storage, health, jobs, backup, recovery |
+| [Deployment and operations](docs/deployment.md) | Releases, migrations, storage, health, jobs, backup, recovery |
 | [Development](docs/development.md) | Repository map, Mix commands, testing, and contribution conventions |
 
 ## Run locally
 
-Use Elixir 1.18.3 / Erlang OTP 27 to match the Docker build, PostgreSQL 16, and Chromium for PDF generation. The project declares Elixir `~> 1.17`; see the [stack guide](docs/tech-stack.md).
+Use Elixir 1.18.3 / Erlang OTP 27, PostgreSQL 16, and Chromium for PDF generation. The project declares Elixir `~> 1.17`; see the [stack guide](docs/tech-stack.md).
 
 Copy the template **only if `.env` does not already exist**:
 
@@ -55,16 +55,6 @@ SEED_ADMIN_PASSWORD=
 ```
 
 Fill the password with your own value (8–72 characters). Login uses the configured **email and password**, not the username. Seeds confirm a newly created account directly and do not reset an existing password. The [setup guide](docs/getting-started.md#seed-account-and-login) gives the seed commands and rerun behavior.
-
-## Run with Docker Compose
-
-Set `DATABASE_USER`, `DATABASE_PASSWORD`, and the three encryption/signing keys in `.env`, then:
-
-```bash
-docker compose up --build
-```
-
-Compose starts PostgreSQL, runs migrations, then starts the app on port 4000. It does **not** run the seed file. See [Docker setup](docs/getting-started.md#docker-compose) for seeding and production email configuration.
 
 ## Checks and implementation status
 

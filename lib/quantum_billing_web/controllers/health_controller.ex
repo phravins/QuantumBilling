@@ -1,14 +1,20 @@
 defmodule QuantumBillingWeb.HealthController do
   @moduledoc """
-  Liveness and readiness for orchestrators.
+  Liveness and readiness for load balancers and process supervisors.
 
   ## Why it checks the database
 
   A health endpoint that only proves the web server accepted a socket is worse
-  than none: a container whose database connection has been exhausted or whose
+  than none: a node whose database connection has been exhausted or whose
   credentials are wrong answers it happily while every real request 500s. So
   this runs `SELECT 1` and reports unhealthy when that fails, which is what
-  makes `docker compose`'s `service_healthy` condition mean something.
+  makes a load balancer's health check mean something.
+
+  ## Why the failure reason is only logged
+
+  The endpoint is public. A database error message can name the host, port,
+  database and user, so the response says only "unavailable" and the detail
+  goes to the server log.
 
   ## Why it is JSON on the `:api` pipeline
 
@@ -17,6 +23,8 @@ defmodule QuantumBillingWeb.HealthController do
   database tells you nothing at the moment the database is the problem.
   """
   use QuantumBillingWeb, :controller
+
+  require Logger
 
   alias QuantumBilling.Repo
 
@@ -29,9 +37,11 @@ defmodule QuantumBillingWeb.HealthController do
         json(conn, %{status: "ok", database: "ok", version: version()})
 
       {:error, reason} ->
+        Logger.error("[Health] database check failed: #{reason}")
+
         conn
         |> put_status(:service_unavailable)
-        |> json(%{status: "error", database: reason, version: version()})
+        |> json(%{status: "error", database: "unavailable", version: version()})
     end
   end
 

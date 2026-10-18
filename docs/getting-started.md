@@ -1,6 +1,6 @@
 # Getting started
 
-This guide covers native development, Docker Compose, migrations, the seed account, and login. See [configuration](configuration.md) for environment variables and [database](database.md) for table ownership.
+This guide covers local development, migrations, the seed account, and login. See [configuration](configuration.md) for environment variables and [database](database.md) for table ownership.
 
 ## How business data is laid out
 
@@ -11,10 +11,9 @@ Migrations keep each business's data in a `biz_<id>` schema; accounts and the bu
 | Tool | Usage |
 | --- | --- |
 | Git | Obtain and update the source |
-| Elixir / Erlang | Project requirement: Elixir `~> 1.17`; Docker uses Elixir 1.18.3 / OTP 27.3.4.8 |
-| PostgreSQL | Use PostgreSQL 16 to match Compose; your local user must be able to create/migrate the configured dev/test databases |
+| Elixir / Erlang | Project requirement: Elixir `~> 1.17`; developed with Elixir 1.18.3 / OTP 27 |
+| PostgreSQL | Use PostgreSQL 16; your local user must be able to create/migrate the configured dev/test databases |
 | Chromium / Chrome | Generated PDFs; some delivery paths have an HTML fallback |
-| Docker with Compose | Alternative to installing native Elixir/PostgreSQL |
 | OpenSSL | Secret generation; `mix phx.gen.secret` is another option |
 
 Node.js is not required by the current asset workflow. Mix downloads standalone Tailwind and esbuild binaries. Check the tools selected by your shell:
@@ -143,40 +142,6 @@ After login, a sole membership is selected automatically; with several membershi
 
 Account emails use the selected business's relay and delivery ledger when there is a business context; signed-out registration/reset mail uses business 1. This fallback is implemented in `Accounts.UserNotifier` independently of browser business selection.
 
-## Docker Compose
-
-### Configure and start
-
-Copy `.env.example` only if needed. Set `DATABASE_USER`, `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, and `SECRETS_ENCRYPTION_KEY`. Compose constructs `DATABASE_URL` for its internal `db` service; native `DB_*` settings are separate.
-
-Use a URL-safe password with the current Compose mapping. The same variable becomes the raw PostgreSQL password and part of the connection URL; percent-encoding it in `.env` would make those disagree. A password containing reserved URL characters needs separate raw/encoded configuration and an adjusted mapping. Set `PHX_HOST` for deployment. Local Compose serves `http://localhost:4000`; public hosts use a TLS reverse proxy.
-
-```bash
-docker compose up --build
-docker compose ps
-```
-
-Startup is `db` healthy → `migrate` exits successfully → `app` starts. Migration is automatic; seeding is not. The database port is not published. `postgres_data` and `uploads` volumes persist data and logos.
-
-### Optional seeding
-
-Set `SEED_ADMIN_*` before creating/recreating the containers, then start the application in an `eval` VM and run the release seed helper. The seed file selects business 1 itself; `Release.seed` starts only the Repo, so the command starts the whole application first:
-
-```bash
-docker compose exec app bin/quantum_billing eval 'Application.ensure_all_started(:quantum_billing); QuantumBilling.Release.seed()'
-```
-
-The release has no Mix executable. Account/rerun rules above apply here too. Compose uses production settings: `/dev/mailbox` and `/dev/dashboard` are absent. Configure SMTP for registration/reset mail.
-
-### Logs and shutdown
-
-```bash
-docker compose logs --tail=100 app migrate
-docker compose down
-```
-
-`down` keeps named volumes. `docker compose down -v` deletes the database and uploads; it is a local reset, not an upgrade command.
-
 ## Troubleshooting
 
 | Symptom | Check |
@@ -190,7 +155,7 @@ docker compose down
 | Seed password does not change login | Seeds preserve existing accounts; use password reset |
 | PDF unavailable | Install Chromium/Chrome or set `PDF_CHROME_PATH` |
 | Missing colocated asset import | Use `mix assets.build` / `mix assets.deploy`, which compile first |
-| Port 4000 occupied | Set native `PORT`; Compose publishes host port 4000 explicitly |
+| Port 4000 occupied | Set `PORT` |
 | Business-related test failure | Check process business selection, scoped PubSub expectations, and schema-qualified raw SQL |
 
 Continue with [development](development.md) for checks, or [deployment](deployment.md) for releases and recovery.

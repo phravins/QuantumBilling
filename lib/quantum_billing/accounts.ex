@@ -769,7 +769,7 @@ defmodule QuantumBilling.Accounts do
             :ok
 
           {:error, reason} ->
-            Logger.warning("password reset email to #{user.email} failed: #{inspect(reason)}")
+            Logger.warning("password reset email to user #{user.id} failed: #{inspect(reason)}")
             :ok
         end
 

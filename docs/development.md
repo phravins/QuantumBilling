@@ -92,6 +92,6 @@ Money fields use integer paise/custom `Money.Paise` types. Decimal quantities/pe
 
 ### Configuration and documentation
 
-Add new environment variable names to `.env.example` with empty secrets, update Compose mappings when needed, and explain them in [configuration](configuration.md). Keep actual credentials out of logs, fixtures copied from production, docs, and tracked files.
+Add new environment variable names to `.env.example` with empty secrets and explain them in [configuration](configuration.md). Keep actual credentials out of logs, fixtures copied from production, docs, and tracked files.
 
 Update the business guide for workflow changes, database guide for storage changes, and architecture guide for ownership/process changes. Check relative links and examples against the files and task aliases present in the checkout.

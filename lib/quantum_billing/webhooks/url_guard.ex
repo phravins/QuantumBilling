@@ -27,8 +27,6 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   a second destination this never got to check.
   """
 
-  require Logger
-
   @doc """
   `:ok` if this server may POST to `url`, `{:error, reason}` otherwise.
 

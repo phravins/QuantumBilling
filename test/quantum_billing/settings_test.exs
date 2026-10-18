@@ -9,6 +9,23 @@ defmodule QuantumBilling.SettingsTest do
     Settings.update_section(Settings.get_organization(), attrs, section)
   end
 
+  describe "inspect/2 for the Organization module" do
+    test "does not include stored credentials" do
+      organization = %Organization{
+        smtp_password: "smtp-pass-1",
+        razorpay_key_secret: "rzp-secret-1",
+        irp_password: "irp-pass-1",
+        webhook_secret: "webhook-secret-1"
+      }
+
+      inspected = inspect(organization)
+
+      for secret <- ~w(smtp-pass-1 rzp-secret-1 irp-pass-1 webhook-secret-1) do
+        refute inspected =~ secret
+      end
+    end
+  end
+
   describe "get_organization/0" do
     test "returns usable defaults on an empty database" do
       organization = Settings.get_organization()

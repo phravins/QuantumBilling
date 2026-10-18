@@ -24,7 +24,7 @@ The guides distinguish locally simulated integrations from live external service
 ## Source of configuration
 
 - [`.env.example`](../.env.example) is the tracked template; secret values are empty.
-- `.env` is local, Git-ignored, and excluded from Docker builds.
+- `.env` is local and Git-ignored.
 - [`config/runtime.exs`](../config/runtime.exs) reads runtime settings; nonblank file values fill unset or empty environment values.
 - [`mix.exs`](../mix.exs) declares dependencies, aliases, and application metadata.
 - [`priv/repo/migrations`](../priv/repo/migrations) contains public and historical migrations.

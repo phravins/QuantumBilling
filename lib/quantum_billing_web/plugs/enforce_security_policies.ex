@@ -140,7 +140,6 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   defp check_mandatory_2fa(conn, _organization), do: conn
 
   defp enrolled?(%{totp_secret: secret}), do: is_binary(secret) and secret != ""
-  defp enrolled?(_user), do: false
 
   defp exempt_path?(path) do
     String.starts_with?(path, "/users/settings") or

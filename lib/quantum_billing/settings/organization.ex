@@ -79,7 +79,7 @@ defmodule QuantumBilling.Settings.Organization do
     field :smtp_host, :string
     field :smtp_port, :integer, default: 587
     field :smtp_username, :string
-    field :smtp_password, Encrypted.Secret
+    field :smtp_password, Encrypted.Secret, redact: true
     field :smtp_ssl, :boolean, default: false
     field :smtp_from_email, :string
     field :smtp_from_name, :string
@@ -90,12 +90,12 @@ defmodule QuantumBilling.Settings.Organization do
 
     # Integrations. The credentials among them are encrypted.
     field :razorpay_key_id, :string
-    field :razorpay_key_secret, Encrypted.Secret
+    field :razorpay_key_secret, Encrypted.Secret, redact: true
     field :irp_username, :string
-    field :irp_password, Encrypted.Secret
+    field :irp_password, Encrypted.Secret, redact: true
     field :irp_client_id, :string
     field :webhook_url, :string
-    field :webhook_secret, Encrypted.Secret
+    field :webhook_secret, Encrypted.Secret, redact: true
 
     # Security Settings
     # The sign-in rules are the installation's, kept in

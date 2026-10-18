@@ -1,20 +1,18 @@
 # Technology stack
 
-QuantumBilling is a Phoenix LiveView application backed by PostgreSQL. The same Elixir release serves the user interface, handles downloads/provider callbacks and runs background workers. This inventory is taken from [`mix.exs`](../mix.exs), [`mix.lock`](../mix.lock), [`config/config.exs`](../config/config.exs), [`Dockerfile`](../Dockerfile) and [`docker-compose.yml`](../docker-compose.yml).
+QuantumBilling is a Phoenix LiveView application backed by PostgreSQL. The same Elixir release serves the user interface, handles downloads/provider callbacks and runs background workers. This inventory is taken from [`mix.exs`](../mix.exs), [`mix.lock`](../mix.lock), [`config/config.exs`](../config/config.exs) and the [README](../README.md).
 
-Versions below describe this checkout, not a recommendation to upgrade. `mix.exs` declares allowed dependency ranges; `mix.lock` records the actual resolved versions. Binary tooling and container runtime versions are configured separately.
+Versions below describe this checkout, not a recommendation to upgrade. `mix.exs` declares allowed dependency ranges; `mix.lock` records the actual resolved versions. Binary tooling versions are configured separately.
 
 ## Runtime and data platform
 
 | Technology | Declared or configured version | Use |
 | --- | --- | --- |
 | Application | `0.1.0` | Mix application/release name: `quantum_billing`. |
-| Elixir | `~> 1.17` in Mix; `1.18.3` in Docker | Application language and Mix build/task tooling. |
-| Erlang/OTP | Docker `27.3.4.8` | BEAM runtime, OTP supervisors/processes, ETS, crypto, TLS and networking. The Mix project does not independently pin OTP. |
-| PostgreSQL | Compose `16-alpine` | Persistent relational data, schemas per business, indexes/constraints, transactions and Oban queue storage. |
-| Debian | Docker `bookworm-20260610-slim` | Builder/runtime image base. |
-| Chromium | Installed from the runtime image's package repository | Headless HTML-to-PDF rendering. No package version is pinned in the Dockerfile. |
-| Docker / Docker Compose | Not version-pinned in this repository | Production-style local/container build and orchestration of database, migrations and app. |
+| Elixir | `~> 1.17` in Mix; `1.18.3` recommended | Application language and Mix build/task tooling. |
+| Erlang/OTP | `27` recommended | BEAM runtime, OTP supervisors/processes, ETS, crypto, TLS and networking. The Mix project does not independently pin OTP. |
+| PostgreSQL | `16` recommended | Persistent relational data, schemas per business, indexes/constraints, transactions and Oban queue storage. |
+| Chromium | Installed on the host; not version-pinned | Headless HTML-to-PDF rendering. |
 
 There is no Redis, MongoDB, Kafka, Elasticsearch or object-storage service configured. Local image uploads live on disk. Monetary records use integer paise; Decimal handles quantity/boundary arithmetic.
 
@@ -115,7 +113,7 @@ The frontend entry points are [`assets/js/app.js`](../assets/js/app.js) and [`as
 | IRP / NIC | Req HTTP clients with local sandbox behavior; source limitations are documented in the architecture/business guides. |
 | Business webhook receiver | Queued Req JSON POSTs, optional HMAC signature and destination validation. |
 | PostgreSQL server | Postgrex connection pool shared by web traffic and Oban. |
-| TLS reverse proxy | Expected outside the application when using production HTTPS URLs; no proxy service is defined in Compose. |
+| TLS reverse proxy | Expected outside the application when using production HTTPS URLs; the repository does not configure one. |
 | Upload volume | Local persistent filesystem; needs a shared/persistent solution when running multiple app instances. |
 
 Simulation modes make local UI/workflow development possible without live provider accounts. They do not establish real government registration or collected payments. Read [configuration.md](configuration.md) before enabling providers, and [deployment.md](deployment.md) for runtime keys, volumes and release migration flow.
@@ -124,6 +122,6 @@ Simulation modes make local UI/workflow development possible without live provid
 
 - Change dependency requirements in `mix.exs`, then deliberately update/commit `mix.lock` when upgrading.
 - Change standalone CSS/JS executable versions in `config/config.exs`.
-- Change the tested container language/runtime/base image in `Dockerfile` and the database image in `docker-compose.yml`.
-- Keep the application version and the Compose uploads-volume release path in sync when bumping `0.1.0`.
+- Update the recommended Elixir/OTP/PostgreSQL versions here and in the README together.
+- When bumping `0.1.0`, update the release uploads path used by backups in [deployment.md](deployment.md).
 - Keep this inventory aligned with source after dependency or architecture changes; setup and validation steps live in [getting-started.md](getting-started.md) and [development.md](development.md).

@@ -18,7 +18,7 @@ defmodule QuantumBillingWeb.HealthControllerTest do
     end
 
     # No session, no CSRF, no current scope: the probe must answer identically
-    # signed out, which is how it behaves inside a container.
+    # signed out, which is how a load balancer calls it.
     test "needs no session", %{conn: _conn} do
       conn = get(build_conn(), ~p"/health")
 

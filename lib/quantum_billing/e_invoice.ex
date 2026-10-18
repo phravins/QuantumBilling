@@ -68,7 +68,7 @@ defmodule QuantumBilling.EInvoice do
   Converts the invoice into the official NIC JSON payload format for the IRP API.
   """
   def to_json(%Invoice{} = invoice) do
-    organization = Settings.get_organization() || %Organization{}
+    organization = Settings.get_organization()
 
     %{
       "Version" => "1.1",

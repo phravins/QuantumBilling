@@ -80,6 +80,10 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
+# Request parameters whose keys contain any of these are logged as [FILTERED]:
+# passwords, the credential settings (*_secret), tokens and 2FA codes.
+config :phoenix, :filter_parameters, ["password", "secret", "token", "code"]
+
 # Background work. Queues are split by what they wait on: webhooks on other
 # servers, mail on PDF rendering, maintenance on batched deletes.
 config :quantum_billing, Oban,

@@ -194,18 +194,15 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       igst_value: Money.to_input(invoice.igst_amount),
       other_amount: Money.to_input(invoice.cess_amount),
       # Transport details come from the organisation's saved defaults.
-      transport_mode: organization_field(organization, :ewb_transport_mode) || "Road",
+      transport_mode: organization.ewb_transport_mode || "Road",
       transporter_name: nil,
-      transporter_id: organization_field(organization, :ewb_transporter_id),
+      transporter_id: organization.ewb_transporter_id,
       vehicle_no: nil,
       distance_km: nil,
-      from_place: organization_field(organization, :city) || state_name(invoice.company_state),
+      from_place: organization.city || state_name(invoice.company_state),
       to_place: invoice.client_city || state_name(invoice.client_state)
     }
   end
-
-  defp organization_field(nil, _field), do: nil
-  defp organization_field(organization, field), do: Map.get(organization, field)
 
   defp document_type(type) do
     if type in EWayBillForm.document_types(), do: type, else: "Tax Invoice"

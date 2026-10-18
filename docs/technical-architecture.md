@@ -225,7 +225,7 @@ Invoice layouts are XML documents rather than arbitrary executable templates. `I
 
 The template designer, previews, invoice display and print paths share the renderer. `InvoiceDocument.sample/1` supplies an unsaved fictional invoice for the template/settings preview; it does not seed customer or invoice records. The issued invoice stores its layout snapshot.
 
-`InvoiceDoc.PDF` writes generated HTML into a temporary directory and launches headless Chromium. It discovers the executable through `PDF_CHROME_PATH`, application configuration, or common executable names. The default render timeout is 20 seconds, the output must begin with `%PDF-`, and the temporary directory is removed afterward. Chromium is launched with `--no-sandbox` for the container runtime; it renders application-generated document HTML rather than a user-supplied URL. The Docker runtime supplies Chromium and fonts.
+`InvoiceDoc.PDF` writes generated HTML into a temporary directory and launches headless Chromium. It discovers the executable through `PDF_CHROME_PATH`, application configuration, or common executable names. The default render timeout is 20 seconds, the output must begin with `%PDF-`, and the temporary directory is removed afterward. Chromium is launched with `--no-sandbox`; it renders application-generated document HTML rather than a user-supplied URL. The host must supply Chromium and fonts.
 
 If no PDF renderer is installed, mail attachment code can fall back to an accurately named HTML file. A PDF download requires a working renderer. E-way bills have a separate document module and reuse the PDF utility.
 
@@ -277,13 +277,13 @@ LiveView's compiler runs before asset bundling because the bundles import genera
 
 `Telemetry` defines endpoint/router/socket, database query/queue/decode/idle and VM memory/run-queue measurements. The development LiveDashboard displays configured metrics. `SlowQueryLogger` logs slow SQL and separates query time from queue time; the environment threshold defaults to 500 ms. Oban's logger records job lifecycle failures, while `TransportErrorFilter` reduces noise from aborted client connections.
 
-`GET /health` runs `SELECT 1` with a two-second timeout and returns database status plus application version, using HTTP 200 or 503. It checks database reachability, not tenant migration completeness, external integrations, a successful PDF render or business-route authorization.
+`GET /health` runs `SELECT 1` with a two-second timeout and returns database status plus application version, using HTTP 200 or 503. On failure it reports only `unavailable`; the error itself goes to the log. It checks database reachability, not tenant migration completeness, external integrations, a successful PDF render or business-route authorization.
 
 Tests use ExUnit, Ecto SQL Sandbox, Phoenix connection/LiveView test helpers, LazyHTML selectors, Swoosh's test adapter and Oban inline mode. Test coverage is organized around contexts, financial rules, encryption, providers, workers, controllers, LiveViews and security behavior. `mix precommit` compiles with warnings as errors, unlocks unused dependencies, formats and runs tests. See [development.md](development.md) for the verification workflow.
 
-The Docker build compiles a production release in an Elixir/OTP builder and copies it into a Debian runtime running as `nobody`. The runtime installs Chromium and fonts. Compose defines PostgreSQL, a one-shot migration container and the app container; the app waits for successful migrations. PostgreSQL and uploads use named volumes. No database port is published by Compose; the app publishes port 4000.
+Production runs an OTP release built with `mix release`. `bin/migrate` runs once before `bin/server` starts the endpoint; the host provides PostgreSQL, Chromium and fonts, and persistent upload storage.
 
-Production endpoint URLs use HTTPS, while Bandit listens on HTTP behind the deployment's TLS proxy. WebSocket forwarding, host/origin configuration, shared key material and persistent upload storage matter when adding app nodes. DNSCluster, business-scoped PubSub and Oban's leader-only cron provide building blocks for clustered operation; uploads live on local disk and need shared storage before running more than one app node. See [deployment.md](deployment.md) for release and container commands.
+Production endpoint URLs use HTTPS, while Bandit listens on HTTP behind the deployment's TLS proxy. WebSocket forwarding, host/origin configuration, shared key material and persistent upload storage matter when adding app nodes. DNSCluster, business-scoped PubSub and Oban's leader-only cron provide building blocks for clustered operation; uploads live on local disk and need shared storage before running more than one app node. See [deployment.md](deployment.md) for release commands.
 
 ## Source directory map
 
@@ -312,8 +312,6 @@ priv/repo/seeds.exs              Environment-configured seed account entry point
 priv/static/                    Built bundles, fonts, icons and uploaded images
 rel/overlays/bin/                Release server and migration commands
 test/                           Context, web, worker and utility tests plus sandbox fixtures
-Dockerfile                      Multi-stage production release build
-docker-compose.yml              PostgreSQL, migration and application containers
 mix.exs / mix.lock              Project, task aliases, dependency requirements and locked versions
 .env.example                    Environment-variable template; .env is local and untracked
 ```

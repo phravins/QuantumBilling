@@ -251,7 +251,7 @@ defmodule QuantumBilling.Payments do
           invoice_number: updated.invoice_number,
           invoice_id: updated.id,
           # Whole rupees, as integrations have always received it.
-          amount: div(updated.grand_total || 0, 100),
+          amount: div(updated.grand_total, 100),
           payment_id: payment_id,
           client_name: updated.client_name
         })
