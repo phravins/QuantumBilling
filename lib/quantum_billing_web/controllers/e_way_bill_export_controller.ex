@@ -94,15 +94,5 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     Enum.map_join([headers | rows], "", &csv_line/1)
   end
 
-  defp csv_line(fields) do
-    Enum.map_join(fields, ",", &escape/1) <> "\r\n"
-  end
-
-  defp escape(field) do
-    if String.contains?(field, [",", "\"", "\n", "\r"]) do
-      ~s("#{String.replace(field, "\"", "\"\"")}")
-    else
-      field
-    end
-  end
+  defp csv_line(fields), do: QuantumBillingWeb.CSV.line(fields)
 end

@@ -105,7 +105,8 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  @owner_only_sections [:smtp, :integrations, :security]
+  # Backup: the download is the whole database and a restore replaces it.
+  @owner_only_sections [:smtp, :integrations, :security, :backup]
 
   @doc """
   Whether a settings section is owner-only.
@@ -306,7 +307,17 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # A restore replaces every record in the business. The section is owner-only,
+  # but an event can be sent from any section, so this checks again.
   def handle_event("restore_backup", _params, socket) do
+    if Scope.owner?(socket.assigns.current_scope) do
+      restore_backup(socket)
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
+  defp restore_backup(socket) do
     entries =
       consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
         {:ok, File.read!(path)}

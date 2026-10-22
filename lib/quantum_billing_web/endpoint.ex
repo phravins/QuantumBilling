@@ -7,7 +7,10 @@ defmodule QuantumBillingWeb.Endpoint do
     signing_salt: "QEN7M6qy",
     # Encrypted as well as signed, so the cookie's contents are not readable.
     encryption_salt: "B3jws6iS",
-    same_site: "Lax"
+    same_site: "Lax",
+    # HTTPS-only in production (config/prod.exs), so the browser never sends
+    # the session over plain HTTP. Off in dev and test, which run without TLS.
+    secure: Application.compile_env(:quantum_billing, :secure_session_cookie, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
