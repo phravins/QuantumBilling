@@ -79,6 +79,19 @@ defmodule QuantumBilling.Events do
   def invoices_topic, do: "invoices"
 
   @doc """
+  Changes to a single invoice.
+
+  For listeners that care about exactly one — above all the public payment
+  page, which is unauthenticated. It used to subscribe to `invoices_topic/0`,
+  so every invoice change in the business was delivered into every customer's
+  session and thrown away on arrival. Nothing reached the screen, because the
+  page checked the id first, but a process holding other customers' invoices
+  is one careless line from showing them — and the fan-out grew with every
+  customer looking at a bill.
+  """
+  def invoice_topic(invoice_id), do: "invoice:#{invoice_id}"
+
+  @doc """
   E-way bills generated, cancelled, or moved to another vehicle.
 
   The message carries an `%EWayBill{}`, which it could not before: until the

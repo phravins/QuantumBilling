@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
   """
   use QuantumBillingWeb, :live_view
 
+  require Logger
+
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments
   alias QuantumBilling.Templates
@@ -22,12 +24,15 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
         {doc, accent, logo} = Templates.document_for(invoice)
 
         if connected?(socket) do
-          Invoices.subscribe()
+          # This invoice only. The global topic put every invoice in the
+          # business through this unauthenticated process.
+          Invoices.subscribe(invoice.id)
         end
 
         {:ok,
          socket
          |> assign(:page_title, "Tax Invoice #{invoice.invoice_number}")
+         |> assign(:payment_error, nil)
          |> assign(:invoice, invoice)
          |> assign(:doc, doc)
          |> assign(:accent, accent)
@@ -35,38 +40,81 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
     end
   end
 
-  def handle_info({:invoice_changed, updated_invoice}, socket) do
-    if updated_invoice.id == socket.assigns.invoice.id do
-      {doc, accent, logo} = Templates.document_for(updated_invoice)
-
-      {:noreply,
-       socket
-       |> assign(:invoice, updated_invoice)
-       |> assign(:doc, doc)
-       |> assign(:accent, accent)
-       |> assign(:logo, logo)}
-    else
-      {:noreply, socket}
-    end
+  # A broadcast is taken as "this invoice changed", never as the data to show.
+  # The page re-reads through the same lookup the link itself uses, so it
+  # renders exactly what a fresh visit would: a binned invoice is gone, and the
+  # payload's shape — whether its line items happen to be loaded — cannot crash
+  # a customer's page. It also means nothing that arrived in a message is ever
+  # put on this unauthenticated screen.
+  #
+  # The id is still compared, although the per-invoice subscription makes a
+  # mismatch impossible: a guarantee that holds only while two separate places
+  # agree is not one to lean on with other customers' invoices.
+  def handle_info({:invoice_changed, %{id: id}}, socket) when id == socket.assigns.invoice.id do
+    {:noreply, reload(socket)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
   def handle_event("pay_now", _params, socket) do
-    invoice = socket.assigns.invoice
+    # Re-read through the same lookup the link itself uses rather than trusting
+    # what was loaded when the page opened: the invoice may have been binned,
+    # or paid from another tab, since.
+    case Invoices.get_invoice_by_token(socket.assigns.invoice.public_token) do
+      nil ->
+        {:noreply, invoice_gone(socket)}
 
-    if invoice.razorpay_payment_url && invoice.razorpay_payment_url != "" do
-      {:noreply, redirect(socket, external: invoice.razorpay_payment_url)}
-    else
-      case Payments.generate_payment_link(invoice) do
-        {:ok, updated_invoice} ->
-          {:noreply, redirect(socket, external: updated_invoice.razorpay_payment_url)}
+      %{razorpay_payment_url: url} when is_binary(url) and url != "" ->
+        {:noreply, redirect(socket, external: url)}
 
-        {:error, reason} ->
-          {:noreply,
-           put_flash(socket, :error, "Could not launch payment gateway: #{inspect(reason)}")}
-      end
+      invoice ->
+        case Payments.generate_payment_link(invoice) do
+          {:ok, updated_invoice} ->
+            {:noreply, redirect(socket, external: updated_invoice.razorpay_payment_url)}
+
+          {:error, reason} ->
+            # The customer gets a sentence; the business gets the reason. This
+            # used to flash `inspect(reason)` to an unauthenticated visitor —
+            # a gateway error body describing how payments are configured, or
+            # a changeset carrying the invoice's own fields.
+            Logger.error(
+              "[PublicInvoice] payment link failed for invoice #{invoice.id}: #{inspect(reason)}"
+            )
+
+            # Inline rather than as a flash: this page has no layout, so a
+            # flash is never rendered — a failed payment used to look like a
+            # button that did nothing.
+            {:noreply,
+             assign(
+               socket,
+               :payment_error,
+               "Online payment is not available right now. Please try again later, " <>
+                 "or contact the business that sent this invoice."
+             )}
+        end
     end
+  end
+
+  defp reload(socket) do
+    case Invoices.get_invoice_by_token(socket.assigns.invoice.public_token) do
+      nil ->
+        invoice_gone(socket)
+
+      invoice ->
+        {doc, accent, logo} = Templates.document_for(invoice)
+
+        socket
+        |> assign(:invoice, invoice)
+        |> assign(:doc, doc)
+        |> assign(:accent, accent)
+        |> assign(:logo, logo)
+    end
+  end
+
+  defp invoice_gone(socket) do
+    socket
+    |> put_flash(:error, "Invalid or expired invoice link.")
+    |> push_navigate(to: "/")
   end
 
   def render(assigns) do
@@ -85,6 +133,15 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
             </p>
           </div>
+
+          <p
+            :if={@payment_error}
+            id="payment-error"
+            role="alert"
+            class="w-full rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-xs text-error sm:order-last"
+          >
+            {@payment_error}
+          </p>
 
           <div class="flex items-center gap-3">
             <span

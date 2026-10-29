@@ -80,6 +80,21 @@ config :tailwind,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
+# Request parameters scrubbed from logs.
+#
+# Phoenix's default is `["password"]` alone, which left the invitation `token`
+# in the sign-up URL, the webhook and payment-gateway `secret`s posted from
+# Settings, and 2FA recovery codes in plain text in any log written at debug
+# level. Production logs at :info, which happens to skip parameters, but that
+# is a log level doing a security control's job — and the API's keys must not
+# depend on it.
+#
+# Matching is by substring, so "token" also covers `public_token` and "secret"
+# covers `razorpay_key_secret`. It is deliberately not "code": that would blank
+# every `hsn_code` and `country_code` too, while a TOTP code is valid for thirty
+# seconds and single-use. Recovery codes are long-lived, so they are filtered.
+config :phoenix, :filter_parameters, ~w(password secret token api_key authorization recovery)
+
 # Configure Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",

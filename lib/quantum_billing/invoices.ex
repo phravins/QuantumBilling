@@ -889,10 +889,29 @@ defmodule QuantumBilling.Invoices do
   def subscribe, do: Events.subscribe(Events.invoices_topic())
 
   @doc """
+  Subscribes the caller to one invoice's changes only.
+
+  What an unauthenticated page must use: see `Events.invoice_topic/1`.
+  """
+  def subscribe(invoice_id), do: Events.subscribe(Events.invoice_topic(invoice_id))
+
+  @doc """
   Announces an invoice change to every listening page.
+
+  On two topics: the list, dashboard and report pages want every change, and
+  the public payment page wants exactly one invoice and has no business
+  receiving the rest.
   """
   def broadcast_change(invoice, event \\ :invoice_changed) do
     Events.broadcast(Events.invoices_topic(), {event, invoice})
+
+    case invoice do
+      %{id: id} when not is_nil(id) ->
+        Events.broadcast(Events.invoice_topic(id), {event, invoice})
+
+      _no_id ->
+        :ok
+    end
   end
 
   defdelegate invoice_types(), to: Invoice
