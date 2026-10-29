@@ -373,7 +373,7 @@ defmodule QuantumBilling.EWayBills do
       |> limit(^per_page)
       |> offset(^((page - 1) * per_page))
       |> Repo.all()
-      |> Enum.map(&to_row/1)
+      |> then(fn bills -> if opts[:records], do: bills, else: Enum.map(bills, &to_row/1) end)
 
     %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
   end
@@ -500,6 +500,20 @@ defmodule QuantumBilling.EWayBills do
   # being tracked, and a bill for a withdrawn document is not one; it comes
   # back with the invoice if that is restored. Bills that are in the Bin
   # themselves are left out for the plainer reason.
+  @doc """
+  A bill by id, visible on exactly the terms `page/1` lists it: not binned
+  itself, and not raised against an invoice that is binned.
+
+  `get_e_way_bill/1` checks only the bill, so a fetch by id could return what
+  the list hides. The API uses this so the two cannot disagree.
+  """
+  def get_listed_e_way_bill(id) do
+    case Integer.parse(to_string(id)) do
+      {id, ""} -> Repo.one(from [bill: b] in base_query(), where: b.id == ^id)
+      _not_an_id -> nil
+    end
+  end
+
   defp base_query do
     from b in EWayBill.kept(),
       as: :bill,

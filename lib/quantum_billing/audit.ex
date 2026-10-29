@@ -11,6 +11,7 @@ defmodule QuantumBilling.Audit do
   """
   def log_event(action, resource_type, resource_id \\ nil, opts \\ []) do
     user_id = Keyword.get(opts, :user_id)
+    api_key_id = Keyword.get(opts, :api_key_id)
     details = Keyword.get(opts, :details, %{})
     ip_address = Keyword.get(opts, :ip_address)
 
@@ -18,6 +19,7 @@ defmodule QuantumBilling.Audit do
       %AuditLog{}
       |> AuditLog.changeset(%{
         user_id: user_id,
+        api_key_id: api_key_id,
         action: to_string(action),
         resource_type: to_string(resource_type),
         resource_id: to_string(resource_id),

@@ -395,6 +395,13 @@ defmodule QuantumBillingWeb.Layouts do
             short_title: "Team",
             subtitle: "Accounts and invitations",
             icon: "hero-user-group"
+          },
+          %{
+            key: :"api-keys",
+            title: "API keys",
+            short_title: "API keys",
+            subtitle: "Access for your other systems",
+            icon: "hero-key"
           }
         ]
     else

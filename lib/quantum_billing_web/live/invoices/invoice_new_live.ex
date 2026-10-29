@@ -229,21 +229,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
+  # `client_id` stays as the form sent it — a string — so the form's own
+  # comparisons against the picker keep working; everything else is the shared
+  # snapshot the API uses too.
   defp copy_client(params, client) do
-    Map.merge(params, %{
-      "client_name" => client.name,
-      "client_gstin" => client.gstin,
-      # Not every client has a PAN typed in, but every GSTIN contains one.
-      "client_pan" => present(client.pan) || GST.pan_from_gstin(client.gstin),
-      "client_email" => client.email,
-      "client_state" => client.billing_state,
-      "client_billing_address" => billing_address(client),
-      # Copied as their own fields as well as into the printed blob: the
-      # e-invoice export needs the city and the PIN separately, and reading
-      # them back out of the blob would mean parsing an address.
-      "client_city" => client.billing_city,
-      "client_pincode" => client.billing_pin
-    })
+    Map.merge(params, Map.delete(Invoices.client_snapshot(client), "client_id"))
   end
 
   # The "Client Name" box is a plain text input, and people type into it
@@ -306,18 +296,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       "company_gstin" => organization.gstin,
       "company_state" => organization.state
     })
-  end
-
-  defp billing_address(client) do
-    [
-      client.name,
-      client.billing_line1,
-      client.billing_line2,
-      [client.billing_city, client.billing_state] |> Enum.reject(&is_nil/1) |> Enum.join(", "),
-      client.billing_pin
-    ]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join("\n")
   end
 
   # A named term implies the due date; "Custom" leaves whatever is in the box.

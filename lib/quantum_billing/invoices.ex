@@ -111,10 +111,16 @@ defmodule QuantumBilling.Invoices do
       |> limit(^per_page)
       |> offset(^((page - 1) * per_page))
       |> Repo.all()
-      |> Enum.map(&to_row/1)
+      |> shape(Keyword.get(opts, :records, false))
 
     %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
   end
+
+  # `records: true` hands back the invoices themselves, for callers that shape
+  # their own output — the API. Same query either way, so what is visible (the
+  # Bin excluded, the filters applied) is decided in exactly one place.
+  defp shape(invoices, true), do: invoices
+  defp shape(invoices, _rows), do: Enum.map(invoices, &to_row/1)
 
   @doc """
   The most recently issued invoices, as list rows.
@@ -530,6 +536,57 @@ defmodule QuantumBilling.Invoices do
   def change_invoice(%Invoice{} = invoice \\ %Invoice{}, attrs \\ %{}) do
     Invoice.changeset(invoice, attrs)
   end
+
+  @doc """
+  The client details an invoice records about whom it was issued to.
+
+  A snapshot, copied onto the invoice rather than read live through the
+  association: a GST invoice has to keep saying what it said when it was
+  issued, whatever later happens to the client record.
+
+  One function for both the invoice form and the API, so the two cannot
+  disagree about what an invoice records — and so the API never takes a
+  client's name, GSTIN or address from the request body, where a caller could
+  put an invoice in one customer's name and another's GSTIN.
+  """
+  def client_snapshot(%QuantumBilling.Clients.Client{} = client) do
+    %{
+      "client_id" => client.id,
+      "client_name" => client.name,
+      "client_gstin" => client.gstin,
+      # Not every client has a PAN typed in, but every GSTIN contains one.
+      "client_pan" => present(client.pan) || QuantumBilling.GST.pan_from_gstin(client.gstin),
+      "client_email" => client.email,
+      "client_state" => client.billing_state,
+      "client_billing_address" => billing_address(client),
+      # Copied as their own fields as well as into the printed blob: the
+      # e-invoice export needs the city and the PIN separately, and reading
+      # them back out of the blob would mean parsing an address.
+      "client_city" => client.billing_city,
+      "client_pincode" => client.billing_pin
+    }
+  end
+
+  defp billing_address(client) do
+    [
+      client.name,
+      client.billing_line1,
+      client.billing_line2,
+      [client.billing_city, client.billing_state] |> Enum.reject(&is_nil/1) |> Enum.join(", "),
+      client.billing_pin
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n")
+  end
+
+  defp present(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present(_value), do: nil
 
   @doc """
   Creates an invoice, assigning it the next number in the series.
