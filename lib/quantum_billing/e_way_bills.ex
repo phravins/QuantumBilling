@@ -35,6 +35,7 @@ defmodule QuantumBilling.EWayBills do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Paging
   alias QuantumBilling.Repo
+  alias QuantumBilling.Webhooks
   alias QuantumBilling.Settings
 
   # Allowlisted sort columns; `value` lives on the invoice.
@@ -100,6 +101,7 @@ defmodule QuantumBilling.EWayBills do
           end
 
           broadcast_change(bill)
+          Webhooks.publish("e_way_bill.generated", bill.id)
           {:ok, bill}
 
         {:error, changeset} ->
@@ -148,6 +150,7 @@ defmodule QuantumBilling.EWayBills do
           })
 
           broadcast_change(cancelled)
+          Webhooks.publish("e_way_bill.cancelled", cancelled.id)
           {:ok, cancelled}
 
         {:error, changeset} ->

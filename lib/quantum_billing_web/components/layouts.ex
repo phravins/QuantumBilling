@@ -428,6 +428,13 @@ defmodule QuantumBillingWeb.Layouts do
             short_title: "API keys",
             subtitle: "Access for your other systems",
             icon: "hero-key"
+          },
+          %{
+            key: :webhooks,
+            title: "Webhooks",
+            short_title: "Webhooks",
+            subtitle: "Events sent to your systems",
+            icon: "hero-signal"
           }
         ]
     else

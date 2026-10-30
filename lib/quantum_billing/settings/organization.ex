@@ -134,8 +134,11 @@ defmodule QuantumBilling.Settings.Organization do
 
   @smtp ~w(smtp_host smtp_port smtp_username smtp_password smtp_ssl smtp_from_email smtp_from_name)a
 
+  # `webhook_url` and `webhook_secret` are no longer set here: outgoing webhooks
+  # have their own endpoints (Settings › Webhooks). The columns stay, read once
+  # by the migration that carried them over.
   @integrations ~w(upi_vpa upi_payee_name razorpay_key_id razorpay_key_secret irp_username
-                   irp_password irp_client_id webhook_url webhook_secret)a
+                   irp_password irp_client_id)a
 
   @security ~w(allowed_ips session_timeout_minutes enforce_2fa audit_retention_days)a
 
@@ -235,7 +238,6 @@ defmodule QuantumBilling.Settings.Organization do
     |> cast(attrs, @integrations)
     |> keep_stored_secrets()
     |> trim(@integrations)
-    |> validate_webhook_url()
     |> validate_upi_vpa()
   end
 
@@ -329,20 +331,6 @@ defmodule QuantumBilling.Settings.Organization do
             :upi_vpa,
             "must be a UPI ID like yourbusiness@okhdfcbank, not an email address"
           )
-        end
-    end
-  end
-
-  # Checked by UrlGuard to block internal addresses; the worker re-checks before sending.
-  defp validate_webhook_url(changeset) do
-    case get_field(changeset, :webhook_url) do
-      blank when blank in [nil, ""] ->
-        changeset
-
-      url ->
-        case QuantumBilling.Webhooks.UrlGuard.check(url) do
-          :ok -> changeset
-          {:error, message} -> add_error(changeset, :webhook_url, message)
         end
     end
   end

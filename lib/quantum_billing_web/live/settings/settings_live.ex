@@ -1296,24 +1296,18 @@ defmodule QuantumBillingWeb.SettingsLive do
       <hr class="border-base-300" />
 
       <div>
-        <h3 class="text-sm font-semibold tracking-tight">Custom Event Webhooks</h3>
+        <h3 class="text-sm font-semibold tracking-tight">Event webhooks</h3>
         <p class="mt-1 text-xs text-base-content/60">
-          Stream realtime webhooks on invoice creation, payment completion, e-invoicing, and e-way bill events.
+          Send signed events — invoices created, updated and paid, e-invoicing, e-way bills,
+          clients and credit notes — to your own systems.
         </p>
-
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <.field
-            field={f[:webhook_url]}
-            label="Webhook Payload Endpoint URL"
-            placeholder="https://api.yourcompany.com/webhooks"
-          />
-          <.field
-            field={f[:webhook_secret]}
-            label="Webhook Signing Secret (HMAC SHA256)"
-            type="password"
-            placeholder="whsec_..."
-          />
-        </div>
+        <.link
+          id="webhooks-settings-link"
+          navigate={~p"/settings/webhooks"}
+          class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        >
+          <.icon name="hero-arrow-right" class="size-3.5" /> Manage webhook endpoints
+        </.link>
       </div>
     </.form>
     """

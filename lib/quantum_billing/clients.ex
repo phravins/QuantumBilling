@@ -19,6 +19,7 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Invoices
   alias QuantumBilling.Paging
   alias QuantumBilling.Repo
+  alias QuantumBilling.Webhooks
 
   @doc """
   Subscribes the caller to client changes.
@@ -280,6 +281,13 @@ defmodule QuantumBilling.Clients do
 
   defp announce({:ok, client} = result, event) do
     Events.broadcast(Events.clients_topic(), {event, client})
+
+    case event do
+      :client_created -> Webhooks.publish("client.created", client.id)
+      :client_updated -> Webhooks.publish("client.updated", client.id)
+      _other -> :ok
+    end
+
     result
   end
 

@@ -83,7 +83,7 @@ defmodule QuantumBilling.Backup do
                           tds_enabled notify_invoice_created notify_ewb_generated
                           notify_filing_reminders reminder_lead_days language rows_per_page
                           upi_vpa upi_payee_name razorpay_key_id irp_username irp_client_id
-                          webhook_url audit_retention_days doc_logo_path)a
+                          audit_retention_days doc_logo_path)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city

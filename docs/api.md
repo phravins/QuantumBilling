@@ -225,6 +225,6 @@ one from the Bin makes it visible again.
 
 ## Webhooks
 
-Outgoing webhooks are being reworked to send thin, signed events (`{id, type,
-created_at, data: {object, id}}`) that you then fetch through this API. This
-section will describe them when they ship.
+Webhooks tell you that something happened, with the event's id and the record
+it concerns; you then fetch the record through this API. See
+[webhooks.md](webhooks.md) for the events, the signature and the retry rules.

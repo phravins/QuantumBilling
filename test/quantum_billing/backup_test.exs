@@ -83,7 +83,10 @@ defmodule QuantumBilling.BackupTest do
       {:ok, _organization} =
         Settings.update_section(
           Settings.get_organization(),
-          %{"webhook_url" => "https://example.test/h", "webhook_secret" => "whsec_in_the_backup"},
+          %{
+            "razorpay_key_id" => "rzp_live_travels",
+            "razorpay_key_secret" => "whsec_in_the_backup"
+          },
           :integrations
         )
 
@@ -96,7 +99,7 @@ defmodule QuantumBilling.BackupTest do
       refute json =~ "smtp_password"
 
       # Configuration that is not a credential still travels.
-      assert json =~ "https://example.test/h"
+      assert json =~ "rzp_live_travels"
     end
 
     test "counts what is in a backup" do

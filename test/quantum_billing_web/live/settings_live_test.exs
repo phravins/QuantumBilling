@@ -108,7 +108,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
             {"security", "Allowed IP Ranges"},
             {"smtp", "SMTP Server Host"},
             {"backup", "1-Click Full System Backup"},
-            {"integrations", "Webhook Signing Secret"}
+            {"integrations", "Manage webhook endpoints"}
           ] do
         {:ok, _view, html} = live(conn, ~p"/settings/#{path}")
         assert html =~ marker, "expected #{path} panel to render #{inspect(marker)}"
@@ -384,15 +384,20 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       view
       |> form("#settings-form", %{
         "organization" => %{
-          "razorpay_key_id" => "rzp_test_999",
-          "webhook_secret" => "whsec_abc123"
+          "razorpay_key_id" => "rzp_test_999"
         }
       })
       |> render_submit()
 
       org = Settings.get_organization()
       assert org.razorpay_key_id == "rzp_test_999"
-      assert org.webhook_secret == "whsec_abc123"
+    end
+
+    test "points to the webhooks page instead of a single URL field", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      assert has_element?(view, "#webhooks-settings-link")
+      refute has_element?(view, ~s(input[name="organization[webhook_url]"]))
     end
 
     test "shows the Razorpay webhook URL that names this business", %{conn: conn} do

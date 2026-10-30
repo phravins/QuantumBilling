@@ -247,7 +247,7 @@ defmodule QuantumBilling.Payments do
           dedupe_key: "payment:#{payment_id || "invoice-#{updated.id}"}"
         })
 
-        Webhooks.dispatch("invoice.paid", %{
+        Webhooks.publish("invoice.paid", updated.id, %{
           invoice_number: updated.invoice_number,
           invoice_id: updated.id,
           # Whole rupees, as integrations have always received it.

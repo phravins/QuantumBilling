@@ -660,7 +660,7 @@ defmodule QuantumBilling.Invoices do
       {:ok, %{invoice: invoice}} ->
         broadcast_change(invoice, :invoice_changed)
 
-        Webhooks.dispatch("invoice.created", %{
+        Webhooks.publish("invoice.created", invoice.id, %{
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name,
@@ -713,6 +713,7 @@ defmodule QuantumBilling.Invoices do
     |> case do
       {:ok, invoice} ->
         broadcast_change(invoice, :invoice_changed)
+        Webhooks.publish("invoice.updated", invoice.id)
         {:ok, Repo.preload(invoice, :items, force: true)}
 
       {:error, changeset} ->
@@ -778,7 +779,7 @@ defmodule QuantumBilling.Invoices do
       submit_einvoice(invoice)
     else
       {:error, problems} when is_list(problems) ->
-        _ = Repo.update(Ecto.Changeset.change(invoice, %{status: "E-Invoice Failed"}))
+        mark_einvoice_failed(invoice)
         {:error, Enum.join(problems, " ")}
     end
   end
@@ -808,6 +809,7 @@ defmodule QuantumBilling.Invoices do
         |> case do
           {:ok, invoice} ->
             broadcast_change(invoice, :invoice_changed)
+            Webhooks.publish("invoice.e_invoice_generated", invoice.id)
             {:ok, Repo.preload(invoice, :items, force: true)}
 
           {:error, changeset} ->
@@ -815,13 +817,16 @@ defmodule QuantumBilling.Invoices do
         end
 
       {:error, reason} ->
-        # Directly, like the other status stamps: status is not a form field.
-        with {:ok, failed} <-
-               Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
-          broadcast_change(failed, :invoice_changed)
-        end
-
+        mark_einvoice_failed(invoice)
         {:error, reason}
+    end
+  end
+
+  # Directly, like the other status stamps: status is not a form field.
+  defp mark_einvoice_failed(invoice) do
+    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
+      broadcast_change(failed, :invoice_changed)
+      Webhooks.publish("invoice.e_invoice_failed", failed.id)
     end
   end
 

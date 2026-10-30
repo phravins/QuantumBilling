@@ -73,6 +73,8 @@ defmodule QuantumBillingWeb.Router do
       # Keys reach the books without anyone signing in, so issuing them is the
       # owner's call, like handing out accounts.
       live "/settings/api-keys", SettingsLive.ApiKeys, :index
+      # A webhook sends the business's activity to a server someone typed in.
+      live "/settings/webhooks", SettingsLive.Webhooks, :index
     end
   end
 

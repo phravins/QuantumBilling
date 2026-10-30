@@ -1,105 +1,29 @@
 defmodule QuantumBilling.Workers.WebhookDispatchWorker do
   @moduledoc """
-  Delivers an event to the organisation's own webhook endpoint.
+  The webhook worker before endpoints had their own table, kept only so jobs
+  it queued before an upgrade are not lost.
 
-  The endpoint and signing secret have been collectable in Settings >
-  Integrations for a while without anything ever posting to them. This is what
-  posts to them: an invoice being issued, paid or registered with the IRP is
-  announced to whatever the business has pointed at that URL — an accounting
-  system, an internal dashboard, a Zapier hook.
-
-  ## Signed
-
-  Every request carries `x-quantumbilling-signature`, an HMAC-SHA256 of the
-  exact body under the shared secret, and `x-quantumbilling-timestamp`. Without
-  a signature the endpoint has no way to tell the application's delivery from
-  anybody else who learns the URL, and webhook URLs leak: they sit in logs,
-  proxies and browser history.
-
-  ## Retried, then dropped
-
-  Six attempts with exponential backoff. A customer endpoint being down is
-  normal and temporary; being down for a day means the event is stale anyway,
-  and retrying for ever is how a queue fills up with a single broken
-  integration.
+  Such a job carries `{"event", "payload"}`. It is handed to
+  `QuantumBilling.Webhooks.publish/3`, which records it as a delivery to
+  whichever endpoints subscribe — the endpoint carried over from the old
+  setting among them, in the format it always had. Nothing queues this worker
+  any more; `QuantumBilling.Workers.WebhookDeliveryWorker` does the sending.
   """
-  use QuantumBilling.Worker, queue: :webhooks, max_attempts: 6
+  use QuantumBilling.Worker, queue: :webhooks, max_attempts: 3
 
-  require Logger
-
-  alias QuantumBilling.Settings
   alias QuantumBilling.Webhooks
-  alias QuantumBilling.Webhooks.UrlGuard
-
-  @request_timeout_ms 10_000
 
   @impl QuantumBilling.Worker
   def process(%Oban.Job{args: %{"event" => event} = args}) do
-    organization = Settings.get_organization()
-    url = organization.webhook_url
+    payload = args["payload"] || %{}
 
-    cond do
-      is_nil(url) or url == "" ->
-        :discard
-
-      true ->
-        # Resolved, checked and pinned here, at send time: the request goes to
-        # the address that passed, so DNS cannot change its answer in between.
-        case UrlGuard.pin(url) do
-          {:ok, pinned_url, pin_options} ->
-            body = Jason.encode!(%{event: event, payload: args["payload"] || %{}, sent_at: now()})
-            post(pinned_url, pin_options, body, organization.webhook_secret, event)
-
-          {:error, reason} ->
-            Logger.warning("[WebhookDispatchWorker] refusing #{event}: endpoint #{reason}")
-            :discard
-        end
+    if event in Webhooks.event_types() do
+      {:ok, _event_id} = Webhooks.publish(event, payload["invoice_id"], payload)
+      :ok
+    else
+      {:discard, "unknown event #{event}"}
     end
   end
 
   def process(%Oban.Job{}), do: :discard
-
-  defp post(url, pin_options, body, secret, event) do
-    headers =
-      [
-        {"content-type", "application/json"},
-        {"user-agent", "QuantumBilling-Webhook/1"},
-        {"x-quantumbilling-event", event},
-        {"x-quantumbilling-timestamp", now()}
-      ] ++ signature_header(body, secret)
-
-    options =
-      [
-        body: body,
-        headers: headers,
-        receive_timeout: @request_timeout_ms,
-        retry: false,
-        # Not followed: a redirect target never went through UrlGuard.
-        redirect: false,
-        decode_body: false
-      ] ++ pin_options
-
-    case Req.post(url, options) do
-      {:ok, %{status: status}} when status in 200..299 ->
-        :ok
-
-      # The endpoint rejected the request itself; retrying cannot help.
-      {:ok, %{status: status}} when status in 400..499 and status not in [408, 429] ->
-        Logger.warning("[WebhookDispatchWorker] #{event} rejected with HTTP #{status}")
-        :discard
-
-      {:ok, %{status: status}} ->
-        {:error, "webhook endpoint returned HTTP #{status}"}
-
-      {:error, exception} ->
-        {:error, "webhook delivery failed: #{Exception.message(exception)}"}
-    end
-  end
-
-  defp signature_header(_body, secret) when secret in [nil, ""], do: []
-
-  defp signature_header(body, secret),
-    do: [{"x-quantumbilling-signature", Webhooks.sign(body, secret)}]
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 end

@@ -70,5 +70,13 @@ defmodule QuantumBilling.CreditNotes do
     %CreditNote{}
     |> CreditNote.changeset(params)
     |> Repo.insert()
+    |> case do
+      {:ok, note} = result ->
+        QuantumBilling.Webhooks.publish("credit_note.created", note.id)
+        result
+
+      error ->
+        error
+    end
   end
 end
