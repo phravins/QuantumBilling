@@ -6,26 +6,23 @@ defmodule QuantumBillingWeb.UserAuth do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Businesses
+  alias QuantumBilling.Events
+  alias QuantumBilling.InstallationSettings
+  alias QuantumBilling.Repo
 
   @owner_only_message "That area is limited to account owners."
 
-  # Make the remember me cookie valid for 14 days. This should match
-  # the session validity setting in UserToken.
+  # Should match the session validity in UserToken.
   @max_cookie_age_in_days 14
   @remember_me_cookie "_quantum_billing_web_user_remember_me"
   @remember_me_options [
-    sign: true,
+    encrypt: true,
     max_age: @max_cookie_age_in_days * 24 * 60 * 60,
     same_site: "Lax"
   ]
 
-  # How old the session token should be before a new one is issued. When a request is made
-  # with a session token older than this value, then a new session token will be created
-  # and the session and remember-me cookies (if set) will be updated with the new token.
-  # Lowering this value will result in more tokens being created by active users. Increasing
-  # it will result in less time before a session token expires for a user to get issued a new
-  # token. This can be set to a value greater than `@max_cookie_age_in_days` to disable
-  # the reissuing of tokens completely.
+  # Tokens older than this are reissued.
   @session_reissue_age_in_days 7
 
   @doc """
@@ -113,10 +110,7 @@ defmodule QuantumBillingWeb.UserAuth do
     conn
     |> renew_session(nil)
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
-    # Straight to the sign-in page, not to `/`. The root is a protected route,
-    # so going there on the way out meant every sign-out bounced off
-    # `require_authenticated_user/2` and stacked a red "You must log in" on top
-    # of the goodbye message.
+    # To the sign-in page: / is protected and would add a "must log in" flash.
     |> redirect(to: ~p"/users/log-in")
   end
 
@@ -136,11 +130,94 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  @doc """
+  Chooses the business this request works in.
+
+  The one named by `"business_id"` in the session, if the user is still a
+  member and it is not archived; otherwise, when they belong to exactly one,
+  that one, written back to the session so the next request need not guess.
+  With several and no valid choice, none is chosen and `require_business/2`
+  sends them to the picker.
+
+  The choice goes on the scope and into `QuantumBilling.Repo`, which is what
+  points every query in the request at the business's own schema.
+  """
+  def fetch_current_business(conn, _opts) do
+    case conn.assigns[:current_scope] do
+      %Scope{user: %Accounts.User{}} = scope ->
+        scope = choose_business(scope, get_session(conn, :business_id))
+        Repo.put_business(scope.business)
+
+        conn
+        |> assign(:current_scope, scope)
+        |> remember_business(scope.business)
+
+      _signed_out ->
+        conn
+    end
+  end
+
+  defp remember_business(conn, nil), do: conn
+
+  defp remember_business(conn, %{id: id}) do
+    if get_session(conn, :business_id) == id, do: conn, else: put_session(conn, :business_id, id)
+  end
+
+  # One query: the user's businesses, from which the chosen one is picked.
+  defp choose_business(%Scope{user: user} = scope, business_id) do
+    pairs = Businesses.list_for_user(user)
+    scope = %{scope | businesses: Enum.map(pairs, &elem(&1, 0))}
+
+    case Enum.find(pairs, fn {business, _} -> business.id == business_id end) || only(pairs) do
+      {business, membership} -> Scope.put_membership(scope, %{membership | business: business})
+      nil -> scope
+    end
+  end
+
+  defp only([pair]), do: pair
+  defp only(_none_or_several), do: nil
+
+  @doc """
+  Plug for routes that work inside a business: sends a user who has not chosen
+  one to the picker.
+  """
+  def require_business(conn, _opts) do
+    if conn.assigns.current_scope.business do
+      conn
+    else
+      conn
+      |> redirect(to: ~p"/businesses")
+      |> halt()
+    end
+  end
+
+  @doc """
+  The PubSub topic for one signed-in browser.
+
+  Keyed by a hash of the session token rather than the token itself: topic
+  names show up in logs and the LiveDashboard, and the token is a credential.
+  """
+  def browser_topic(token) when is_binary(token) do
+    "browser:" <> Base.url_encode64(:crypto.hash(:sha256, token), padding: false)
+  end
+
+  @doc """
+  Tells this browser's other tabs that it now works in `business_id`; each
+  reloads. See `on_mount(:require_business, ...)`.
+  """
+  def broadcast_business_switch(conn, business_id) do
+    if token = get_session(conn, :user_token) do
+      Events.broadcast(browser_topic(token), {:business_switched, business_id})
+    end
+
+    conn
+  end
+
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
       {token, conn}
     else
-      conn = fetch_cookies(conn, signed: [@remember_me_cookie])
+      conn = fetch_cookies(conn, encrypted: [@remember_me_cookie])
 
       if token = conn.cookies[@remember_me_cookie] do
         {token, conn |> put_token_in_session(token) |> put_session(:user_remember_me, true)}
@@ -161,14 +238,8 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # This function is the one responsible for creating session tokens
-  # and storing them safely in the session and cookies. It may be called
-  # either when logging in, during sudo mode, or to renew a session which
-  # will soon expire.
-  #
-  # When the session is created, rather than extended, the renew_session
-  # function will clear the session to avoid fixation attacks. See the
-  # renew_session function to customize this behaviour.
+  # Called on login, in sudo mode, or to renew a session.
+  # A new session is cleared first to prevent fixation.
   defp create_or_extend_session(conn, user, params) do
     token = Accounts.generate_user_session_token(user)
     remember_me = get_session(conn, :user_remember_me)
@@ -239,6 +310,9 @@ defmodule QuantumBillingWeb.UserAuth do
       on user_token.
       Redirects to login page if there's no logged user.
 
+    * `:require_business` - Redirects to the business picker when none is
+      chosen; otherwise follows a switch made in another tab of this browser.
+
   ## Examples
 
   Use the `on_mount` lifecycle macro in LiveViews to mount or authenticate
@@ -266,20 +340,14 @@ defmodule QuantumBillingWeb.UserAuth do
 
     cond do
       session_expired?(session) ->
-        # A tab that has been open and idle past the organisation's inactivity
-        # window. The plug cannot see it — no HTTP request has been made — so
-        # without this check a long-lived LiveView outlives the policy it is
-        # supposed to obey.
+        # An idle tab makes no HTTP request, so the plug cannot expire it.
         socket =
           socket
           |> Phoenix.LiveView.put_flash(
             :error,
             "Your session has expired due to inactivity. Please log in again."
           )
-          # Sent to the sign-in page rather than logged out from here: a
-          # LiveView cannot clear a session cookie. The full page load this
-          # causes goes through `EnforceSecurityPolicies`, which does the
-          # actual sign-out with the same message.
+          # Redirect: a LiveView cannot clear the cookie; EnforceSecurityPolicies signs out.
           |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
         {:halt, socket}
@@ -312,6 +380,18 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_business, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    case socket.assigns.current_scope do
+      %Scope{business: %{id: business_id}} ->
+        {:cont, follow_business_switches(socket, session["user_token"], business_id)}
+
+      _no_business ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/businesses")}
+    end
+  end
+
   def on_mount(:require_owner, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
@@ -327,25 +407,40 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # Reads the same session stamp and the same setting the plug does, so the two
-  # cannot disagree about when a session has gone stale.
+  # Same stamp and setting as the plug.
   defp session_expired?(session) do
     with last_activity when is_integer(last_activity) <- session["last_activity_at"],
          minutes when is_integer(minutes) and minutes > 0 <-
-           QuantumBilling.Settings.get_organization().session_timeout_minutes do
+           InstallationSettings.get().session_timeout_minutes do
       System.system_time(:second) - last_activity > minutes * 60
     else
       _no_stamp_or_setting -> false
     end
   end
 
-  # The sidebar renders the signed-in user's name, initials and designation from
-  # `current_scope`, and every authenticated page draws that sidebar. Subscribing
-  # here rather than in each LiveView means editing your profile refreshes it in
-  # all of your open windows, with no page having to know about it.
-  #
-  # The `handle_info` hook is attached rather than left to the page: a LiveView
-  # with no matching clause would crash on a message it never asked for.
+  # A switch in another tab reloads this one into the new business. A full
+  # redirect, not a navigation: the business this socket works in was fixed
+  # from the session when it mounted, and only a page load reads it again.
+  defp follow_business_switches(socket, token, business_id) do
+    if Phoenix.LiveView.connected?(socket) and is_binary(token) do
+      Events.subscribe(browser_topic(token))
+
+      Phoenix.LiveView.attach_hook(socket, :business_switched, :handle_info, fn
+        {:business_switched, ^business_id}, socket ->
+          {:halt, socket}
+
+        {:business_switched, _other}, socket ->
+          {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/")}
+
+        _message, socket ->
+          {:cont, socket}
+      end)
+    else
+      socket
+    end
+  end
+
+  # Profile edits refresh the sidebar in all of the user's windows.
   defp watch_own_account(socket) do
     if Phoenix.LiveView.connected?(socket) do
       Accounts.subscribe_user(socket.assigns.current_scope.user)
@@ -353,7 +448,8 @@ defmodule QuantumBillingWeb.UserAuth do
       Phoenix.LiveView.attach_hook(socket, :profile_updated, :handle_info, fn
         {:profile_updated, %{id: id} = updated}, socket ->
           if socket.assigns.current_scope.user.id == id do
-            {:halt, Phoenix.Component.assign(socket, :current_scope, Scope.for_user(updated))}
+            scope = %{socket.assigns.current_scope | user: updated}
+            {:halt, Phoenix.Component.assign(socket, :current_scope, scope)}
           else
             {:cont, socket}
           end
@@ -366,15 +462,28 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  # Also points this process's queries at the scope's business: a LiveView is
+  # a process of its own, and the plug only set it for the HTTP request.
   defp mount_current_scope(socket, session) do
-    Phoenix.Component.assign_new(socket, :current_scope, fn ->
-      {user, _} =
-        if user_token = session["user_token"] do
-          Accounts.get_user_by_session_token(user_token)
-        end || {nil, nil}
+    socket =
+      Phoenix.Component.assign_new(socket, :current_scope, fn ->
+        {user, _} =
+          if user_token = session["user_token"] do
+            Accounts.get_user_by_session_token(user_token)
+          end || {nil, nil}
 
-      Scope.for_user(user)
-    end)
+        case Scope.for_user(user) do
+          nil -> nil
+          scope -> choose_business(scope, session["business_id"])
+        end
+      end)
+
+    case socket.assigns.current_scope do
+      %Scope{business: business} -> Repo.put_business(business)
+      nil -> Repo.put_business(nil)
+    end
+
+    socket
   end
 
   @doc "Returns the path to redirect to after log in."
@@ -422,10 +531,7 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
-  # Only worth saying when the visitor was after something in particular.
-  # The root is the dashboard, so opening the bare address signed out lands
-  # here too — and being told off for opening the app is not information, it
-  # is noise on the first screen anyone sees.
+  # Only when the visitor asked for a specific page.
   defp maybe_explain_redirect(conn) do
     if current_path(conn) == "/" do
       conn

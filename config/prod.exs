@@ -25,6 +25,9 @@ config :quantum_billing, QuantumBillingWeb.Endpoint,
 
 config :quantum_billing, :api_require_https, true
 
+# The session cookie is marked Secure; read at compile time by the endpoint.
+config :quantum_billing, secure_session_cookie: true
+
 # Configure Swoosh API Client
 config :swoosh, api_client: Swoosh.ApiClient.Req
 

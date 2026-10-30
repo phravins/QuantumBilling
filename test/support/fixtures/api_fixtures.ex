@@ -8,6 +8,7 @@ defmodule QuantumBilling.ApiFixtures do
 
   alias QuantumBilling.AccountsFixtures
   alias QuantumBilling.ApiKeys
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Clients
   alias QuantumBilling.EWayBills
   alias QuantumBilling.Invoices.Invoice
@@ -15,17 +16,22 @@ defmodule QuantumBilling.ApiFixtures do
 
   @endpoint QuantumBillingWeb.Endpoint
 
-  @doc "A live key holding `scopes`. Returns `{raw, key}`."
+  @doc """
+  A live key holding `scopes`, for business 1 unless `:business` says
+  otherwise. Returns `{raw, key}`.
+  """
   def api_key_fixture(scopes, attrs \\ %{}) do
     owner = Map.get_lazy(attrs, :owner, fn -> AccountsFixtures.owner_fixture() end)
+    business = Map.get_lazy(attrs, :business, &Businesses.default!/0)
 
     {:ok, %{key: key, raw: raw}} =
       ApiKeys.create_key(
         Map.merge(
           %{"name" => "Integration #{System.unique_integer([:positive])}", "scopes" => scopes},
-          Map.delete(attrs, :owner)
+          Map.drop(attrs, [:owner, :business])
         ),
-        owner
+        owner,
+        business
       )
 
     {raw, key}

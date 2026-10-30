@@ -26,12 +26,12 @@ defmodule QuantumBilling.EInvoice.Payload do
   alias QuantumBilling.GST
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings.Organization
 
   @version "1.1"
 
-  # The document types the schema knows. A Bill of Supply and an Export Invoice
-  # are deliberately absent — see `EInvoice.validate/2`.
+  # Bill of Supply and Export Invoice are absent on purpose; see EInvoice.validate/2.
   @types %{
     "Tax Invoice" => "INV",
     "Credit Note" => "CRN",
@@ -63,8 +63,6 @@ defmodule QuantumBilling.EInvoice.Payload do
      ]}
   end
 
-  # In the file itself, not only in the UI: whoever opens this months from now
-  # will not have the screen that produced it in front of them.
   defp comment(invoice) do
     {:comment,
      "\n  GST e-invoice (INV-01) data for #{invoice.invoice_number}, rendered as XML.\n" <>
@@ -82,8 +80,6 @@ defmodule QuantumBilling.EInvoice.Payload do
      ]}
   end
 
-  # B2B when the buyer is registered, B2C when they are not. The distinction is
-  # the buyer's GSTIN and nothing else.
   defp supply_type(%Invoice{client_gstin: gstin}) do
     if GST.valid_gstin?(gstin), do: "B2B", else: "B2C"
   end
@@ -112,8 +108,7 @@ defmodule QuantumBilling.EInvoice.Payload do
      |> compact()}
   end
 
-  # From the invoice's snapshot, never from the client record: the buyer on a
-  # tax document is who it was billed to at the time.
+  # From the invoice's snapshot, not the client record.
   defp buyer_details(invoice) do
     {"BuyerDtls", [],
      [
@@ -152,17 +147,15 @@ defmodule QuantumBilling.EInvoice.Payload do
      [
        element("SlNo", Integer.to_string(index)),
        element("PrdDesc", item.description),
-       # The schema wants goods or services. Nothing on the form records which,
-       # and a SAC is what a service carries, so the HSN/SAC code decides it:
-       # service accounting codes begin with 99.
+       # SAC codes (services) begin with 99.
        element("IsServc", if(service?(item.hsn_sac), do: "Y", else: "N")),
        element("HsnCd", item.hsn_sac),
-       element("Qty", Integer.to_string(item.quantity || 0)),
+       element("Qty", quantity(item.quantity)),
        element("Unit", unit_code(item.unit)),
        element("UnitPrice", decimal(item.rate)),
        element("TotAmt", decimal(amount)),
        element("AssAmt", decimal(amount)),
-       element("GstRt", decimal(item.tax_rate)),
+       element("GstRt", percent(item.tax_rate)),
        element("CgstAmt", decimal(cgst)),
        element("SgstAmt", decimal(sgst)),
        element("IgstAmt", decimal(igst)),
@@ -183,15 +176,12 @@ defmodule QuantumBilling.EInvoice.Payload do
      ]}
   end
 
-  # Which tax applies is the supply's business, not the document's — the same
-  # rule the renderer enforces, for the same reason.
   defp split(tax, true), do: {div(tax, 2), tax - div(tax, 2), 0}
   defp split(tax, false), do: {0, 0, tax}
 
   defp service?(hsn) when is_binary(hsn), do: String.starts_with?(hsn, "99")
   defp service?(_hsn), do: false
 
-  # The schema's unit codes, which are not the labels the form offers.
   @units %{
     "Nos" => "NOS",
     "Kg" => "KGS",
@@ -205,18 +195,24 @@ defmodule QuantumBilling.EInvoice.Payload do
 
   defp unit_code(unit), do: Map.get(@units, unit, "OTH")
 
-  # dd/mm/yyyy, which is what INV-01 specifies — not the ISO form Ecto stores.
+  # dd/mm/yyyy, as INV-01 specifies.
   defp date(%Date{} = date), do: Calendar.strftime(date, "%d/%m/%Y")
   defp date(_other), do: ""
 
-  # Whole rupees in, two decimals out. Deliberately not shared with the CSV
-  # export's identical-looking helper: one serves a spreadsheet and one serves a
-  # schema, and coupling them would mean a change for one silently altering the
-  # other.
+  # Paise in, rupees with two decimals out.
   defp decimal(nil), do: "0.00"
+  defp decimal(paise) when is_integer(paise), do: Money.to_input(paise)
 
-  defp decimal(amount) when is_integer(amount),
-    do: :erlang.float_to_binary(amount * 1.0, decimals: 2)
+  # A GST rate is a plain percentage, not money.
+  defp percent(nil), do: "0.00"
+  defp percent(rate) when is_integer(rate), do: :erlang.float_to_binary(rate * 1.0, decimals: 2)
+
+  # Three places, as INV-01 allows.
+  defp quantity(quantity) do
+    (Money.quantity(quantity) || Decimal.new(0))
+    |> Decimal.round(3)
+    |> Decimal.to_string(:normal)
+  end
 
   defp first_line(nil), do: ""
 

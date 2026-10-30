@@ -1,39 +1,102 @@
 defmodule QuantumBillingWeb.Format do
   @moduledoc """
   Display formatting helpers shared by the list and detail pages.
+
+  Amounts arrive in paise (see `QuantumBilling.Money`).
   """
 
+  alias QuantumBilling.Money
+
   @doc """
-  Formats an integer rupee amount using Indian digit grouping (last three
+  Formats an amount held in paise using Indian digit grouping (last three
   digits, then pairs), prefixed with the rupee sign.
 
   ## Options
 
-    * `:decimals` - number of decimal places to render (default `0`)
+    * `:decimals` - `0` (the default) rounds half-up to whole rupees, as lists
+      and the dashboard show them; `2` shows the paise, as documents do
     * `:space` - whether to put a space after the rupee sign (default `false`)
 
   ## Examples
 
-      iex> QuantumBillingWeb.Format.rupees(150_000)
+      iex> QuantumBillingWeb.Format.rupees(15_000_000)
       "₹1,50,000"
 
-      iex> QuantumBillingWeb.Format.rupees(15_000, decimals: 2, space: true)
-      "₹ 15,000.00"
+      iex> QuantumBillingWeb.Format.rupees(1_500_050, decimals: 2, space: true)
+      "₹ 15,000.50"
+
+      iex> QuantumBillingWeb.Format.rupees(1_500_050)
+      "₹15,001"
 
   """
-  def rupees(amount, opts \\ []) when is_integer(amount) do
-    decimals = Keyword.get(opts, :decimals, 0)
+  def rupees(paise, opts \\ []) when is_integer(paise) do
     space = if Keyword.get(opts, :space, false), do: " ", else: ""
 
-    fraction =
-      if decimals > 0 do
-        "." <> String.duplicate("0", decimals)
-      else
-        ""
-      end
-
-    "₹" <> space <> group_indian(amount) <> fraction
+    "₹" <> space <> figure(paise, Keyword.get(opts, :decimals, 0))
   end
+
+  @doc """
+  An amount held in paise as a grouped number with no rupee sign, for CSV
+  cells and chart labels.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.figure(-12_345_678, 2)
+      "-1,23,456.78"
+
+  """
+  def figure(paise, decimals \\ 0)
+
+  def figure(paise, 0) when is_integer(paise) do
+    {rupees, _round_off} = Money.round_to_rupee(paise)
+    group_indian(div(rupees, 100))
+  end
+
+  def figure(paise, 2) when is_integer(paise) do
+    sign = if paise < 0, do: "-", else: ""
+    paise = abs(paise)
+    fraction = paise |> rem(100) |> Integer.to_string() |> String.pad_leading(2, "0")
+
+    sign <> group_indian(div(paise, 100)) <> "." <> fraction
+  end
+
+  @doc """
+  The value a rupee input shows: stored paise as rupees, and anything else —
+  what the user typed — exactly as typed.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.money_input(125_050)
+      "1250.50"
+
+      iex> QuantumBillingWeb.Format.money_input("1250.5")
+      "1250.5"
+
+  """
+  def money_input(paise) when is_integer(paise), do: Money.to_input(paise)
+  def money_input(typed), do: typed
+
+  @doc """
+  A quantity without the trailing zeros its column carries: `2.500` is `2.5`,
+  `1.000` is `1`.
+
+  ## Examples
+
+      iex> QuantumBillingWeb.Format.quantity(Decimal.new("2.500"))
+      "2.5"
+
+      iex> QuantumBillingWeb.Format.quantity(Decimal.new("10.000"))
+      "10"
+
+  """
+  def quantity(nil), do: ""
+  def quantity(quantity) when is_integer(quantity), do: Integer.to_string(quantity)
+
+  def quantity(%Decimal{} = quantity) do
+    quantity |> Decimal.normalize() |> Decimal.to_string(:normal)
+  end
+
+  def quantity(quantity), do: to_string(quantity)
 
   @doc """
   Formats a date the way every list and detail page shows it.
@@ -90,32 +153,43 @@ defmodule QuantumBillingWeb.Format do
   @tens ~w(_ _ Twenty Thirty Forty Fifty Sixty Seventy Eighty Ninety)
 
   @doc """
-  Spells a rupee amount out the way an invoice foot does.
+  Spells an amount held in paise out the way an invoice foot does.
 
   Indian numbering, so it groups by crore and lakh rather than million and
   billion.
 
   ## Examples
 
-      iex> QuantumBillingWeb.Format.rupees_in_words(70_800)
+      iex> QuantumBillingWeb.Format.rupees_in_words(7_080_000)
       "Rupees Seventy Thousand Eight Hundred Only"
+
+      iex> QuantumBillingWeb.Format.rupees_in_words(1_250_050)
+      "Rupees Twelve Thousand Five Hundred and Fifty Paise Only"
 
       iex> QuantumBillingWeb.Format.rupees_in_words(0)
       "Rupees Zero Only"
 
   """
-  def rupees_in_words(amount) when is_integer(amount) and amount < 0 do
-    "Minus " <> rupees_in_words(-amount)
+  def rupees_in_words(paise) when is_integer(paise) and paise < 0 do
+    "Minus " <> rupees_in_words(-paise)
   end
 
   def rupees_in_words(0), do: "Rupees Zero Only"
 
-  def rupees_in_words(amount) when is_integer(amount) do
-    "Rupees " <> String.trim(in_words(amount)) <> " Only"
+  def rupees_in_words(paise) when paise < 100 do
+    String.trim(in_words(paise)) <> " Paise Only"
   end
 
-  # Indian grouping: crore, then lakh, then the last three digits read as a
-  # Western hundred.
+  def rupees_in_words(paise) when is_integer(paise) do
+    rupees = "Rupees " <> String.trim(in_words(div(paise, 100)))
+
+    case rem(paise, 100) do
+      0 -> rupees <> " Only"
+      fraction -> rupees <> " and " <> String.trim(in_words(fraction)) <> " Paise Only"
+    end
+  end
+
+  # Indian grouping: crore, lakh, then hundreds.
   defp in_words(0), do: ""
 
   defp in_words(n) when n >= 10_000_000 do
@@ -134,15 +208,12 @@ defmodule QuantumBillingWeb.Format do
     in_words(div(n, 100)) <> " Hundred" <> in_words(rem(n, 100))
   end
 
-  # Everything below twenty has its own name, which is why the table runs that
-  # far rather than stopping at nine.
   defp in_words(n) when n >= 20 do
     " " <> Enum.at(@tens, div(n, 10)) <> in_words(rem(n, 10))
   end
 
   defp in_words(n), do: " " <> Enum.at(@ones, n)
 
-  # Groups the last three digits, then every two digits above that:
   # 1500000 -> "15,00,000"
   defp group_indian(amount) do
     digits = amount |> abs() |> Integer.to_string()

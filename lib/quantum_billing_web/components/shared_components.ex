@@ -16,9 +16,6 @@ defmodule QuantumBillingWeb.SharedComponents do
                             "border-base-300 bg-base-100 px-3 text-sm text-base-content/60 " <>
                             "transition-colors hover:bg-base-200 hover:text-base-content"
 
-  # The toolbar controls run a size below the page-header buttons: they sit
-  # above every list and repeat on every page, so the height they take is
-  # height the list itself does not get.
   @filter_input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 pl-8 pr-3 " <>
                         "text-xs placeholder:text-base-content/45 focus:outline-none " <>
                         "focus:ring-2 focus:ring-base-content/10"
@@ -47,17 +44,12 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
 
-  # `[&>th]:py-1.5` sets the header's height from here rather than cell by cell.
-  # daisyUI's own `.table` padding is 0.75rem top and bottom, which on a row of
-  # 10px uppercase labels is most of the row's height; the arbitrary variant
-  # outranks it because daisyUI wraps its rules in zero-specificity `:where()`.
-  # Horizontal padding is left alone — only the height was too generous.
-  # `font-semibold` and a darker tint than the rows beneath: at this size the
-  # labels were reading as the same weight as the data they head.
+  # The arbitrary variant outranks daisyUI's zero-specificity .table padding.
   @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
                       "text-base-content/60 [&>th]:py-1.5"
 
-  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60"
+  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60 " <>
+                     "[&>td]:py-2.5"
 
   @doc "The solid, near-black call-to-action button used in page headers."
   def action_button_class, do: @action_button_class
@@ -116,7 +108,7 @@ defmodule QuantumBillingWeb.SharedComponents do
       <.card class="lg:col-span-2" padding="p-6">…</.card>
   """
   attr :class, :any, default: nil
-  attr :padding, :string, default: "p-4"
+  attr :padding, :string, default: "p-3"
   attr :as, :string, default: "div", doc: "the tag to render, e.g. `button` for clickable tiles"
   attr :rest, :global, include: ~w(type)
 
@@ -263,7 +255,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   def status_badge(assigns) do
     ~H"""
     <span class={[
-      "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+      "inline-block max-w-full truncate rounded-full border px-2 py-0.5 align-middle text-xs font-medium whitespace-nowrap",
       status_badge_class(@status)
     ]}>{@status}</span>
     """
@@ -283,11 +275,53 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Inactive"), do: @pending
   defp status_badge_class("Blocked"), do: @negative
   defp status_badge_class("Expired"), do: @pending
-  # GST compliance obligations.
   defp status_badge_class("Filed"), do: @positive
   defp status_badge_class("Pending"), do: @pending
   defp status_badge_class("Overdue"), do: @negative
   defp status_badge_class(_other), do: @neutral
+
+  @doc """
+  Says whether a government-portal result was filed or only simulated.
+
+  A demo e-way bill number or IRN looks exactly like a real one, so every place
+  that shows one says which it is. `compact` gives the short form for tables.
+  """
+  attr :mode, :string, required: true, doc: ~s("demo" or "live")
+  attr :id, :string, default: nil
+  attr :compact, :boolean, default: false
+
+  def portal_mode_badge(assigns) do
+    ~H"""
+    <span
+      id={@id}
+      data-mode={@mode}
+      title={
+        if(@mode == "live",
+          do: "Accepted by the government portal",
+          else: "Generated locally in demo mode; not filed with the government"
+        )
+      }
+      class={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 align-middle text-xs font-medium whitespace-nowrap",
+        portal_mode_class(@mode)
+      ]}
+    >
+      <.icon
+        name={if(@mode == "live", do: "hero-check-badge", else: "hero-beaker")}
+        class="size-3.5"
+      />
+      {portal_mode_label(@mode, @compact)}
+    </span>
+    """
+  end
+
+  defp portal_mode_class("live"), do: @positive
+  defp portal_mode_class(_demo), do: @pending
+
+  defp portal_mode_label("live", true), do: "Filed"
+  defp portal_mode_label("live", false), do: "Filed on portal"
+  defp portal_mode_label(_demo, true), do: "Demo"
+  defp portal_mode_label(_demo, false), do: "Demo – not filed with the government"
 
   @doc """
   Renders a labelled form control with its validation errors.
@@ -306,6 +340,11 @@ defmodule QuantumBillingWeb.SharedComponents do
   ## Examples
 
       <.field field={f[:gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
+
+  `type="money"` is a rupee amount: a number input in steps of a paisa that
+  shows a stored paise value as rupees, and passes back whatever was typed.
+
+      <.field field={f[:credit_limit]} label="Credit Limit (₹)" type="money" />
   """
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
@@ -313,10 +352,20 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :required, :boolean, default: false
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
-  # `autocomplete` and `spellcheck` matter on the auth forms: without them
-  # password managers do not offer to fill or save credentials.
+  # autocomplete and spellcheck let password managers fill auth forms.
   attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
                 autocomplete spellcheck)
+
+  def field(%{type: "money"} = assigns) do
+    rest =
+      %{min: "0", step: "0.01"}
+      |> Map.merge(assigns.rest)
+      |> Map.put(:value, QuantumBillingWeb.Format.money_input(assigns.field.value))
+
+    assigns
+    |> assign(type: "number", rest: rest)
+    |> field()
+  end
 
   def field(assigns) do
     assigns = assign(assigns, :errors, field_errors(assigns.field))
@@ -344,8 +393,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp control_class("textarea"), do: form_textarea_class()
   defp control_class(_type), do: form_input_class()
 
-  # `input/1` only renders errors for fields the user has touched; mirror that
-  # rule here so the border and the hint agree with the message it prints.
+  # Same rule as input/1: errors only for touched fields.
   defp field_errors(%Phoenix.HTML.FormField{} = field) do
     if Phoenix.Component.used_input?(field) do
       Enum.map(field.errors, &translate_field_error/1)
@@ -430,9 +478,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :caption_class, :string, default: "mt-2 text-2xs text-base-content/60"
 
   def upi_qr(assigns) do
-    # The organisation is read once and handed to both calls: this component
-    # renders inside a modal that can be opened per row, and three settings
-    # queries per open adds up for something that never changes between them.
+    # Read once for both calls; this renders per row.
     organization = QuantumBilling.Settings.get_organization()
 
     assigns =
@@ -508,15 +554,29 @@ defmodule QuantumBillingWeb.SharedComponents do
   The page number is an outlined disc rather than a filled one. Filled, it read
   as the primary action on the row when it is not an action at all — it is just
   where you are.
+
+  With `fit_rows`, the pager measures how many rows fit between the table's
+  header and the bottom of the screen and sends that to the LiveView as a
+  `"fit_rows"` event, so a full-height list never leaves empty space above a
+  second page. The LiveView handles it with `fit_rows_per_page/1`.
   """
   attr :current_page, :integer, required: true
-  attr :total_pages, :integer, required: true
+  attr :has_next, :boolean, required: true
+
+  attr :total_pages, :integer,
+    default: nil,
+    doc: "only where the list is counted anyway; the label says \"of N\" with it"
+
+  attr :fit_rows, :boolean, default: false
+  attr :id, :string, default: "pagination"
 
   def pagination(assigns) do
     assigns = assign(assigns, :page_button_class, @page_button_class)
 
     ~H"""
     <div class="flex items-center gap-1.5">
+      <%!-- A static phx-hook, so the colocated ".FitRows" name gets resolved. --%>
+      <span :if={@fit_rows} id={@id} phx-hook=".FitRows" hidden></span>
       <button
         type="button"
         aria-label="Previous page"
@@ -530,7 +590,12 @@ defmodule QuantumBillingWeb.SharedComponents do
 
       <span
         aria-current="page"
-        aria-label={"Page #{@current_page} of #{@total_pages}"}
+        aria-label={
+          if(@total_pages,
+            do: "Page #{@current_page} of #{@total_pages}",
+            else: "Page #{@current_page}"
+          )
+        }
         class={[
           "inline-flex size-7 shrink-0 items-center justify-center rounded-full",
           "border border-base-content/70 text-xs font-medium text-base-content"
@@ -543,13 +608,81 @@ defmodule QuantumBillingWeb.SharedComponents do
         type="button"
         aria-label="Next page"
         class={@page_button_class}
-        disabled={@current_page == @total_pages}
+        disabled={not @has_next}
         phx-click="paginate"
         phx-value-page={@current_page + 1}
       >
         <.icon name="hero-chevron-right" class="size-4" />
       </button>
     </div>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".FitRows">
+      // Measured against <main>, not the card: the card grows with its rows, so
+      // measuring it would feed each answer back into the next one.
+      export default {
+        mounted() {
+          this.onResize = () => {
+            clearTimeout(this.timer)
+            this.timer = setTimeout(() => this.fit(), 150)
+          }
+          window.addEventListener("resize", this.onResize)
+          this.fit()
+        },
+
+        updated() {
+          this.fit()
+        },
+
+        destroyed() {
+          clearTimeout(this.timer)
+          window.removeEventListener("resize", this.onResize)
+        },
+
+        fit() {
+          // this.el sits in the pager; the pager's parent is the footer row.
+          const footer = this.el.parentElement.parentElement
+          const main = this.el.closest("main")
+          let card = footer
+          while (card && !card.querySelector("tbody")) card = card.parentElement
+          const tbody = card && card.querySelector("tbody")
+          const row = tbody && tbody.querySelector("tr")
+          if (!main || !row || row.offsetHeight === 0) return
+
+          const px = (el, prop) => parseFloat(getComputedStyle(el)[prop]) || 0
+          const top =
+            tbody.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop
+          const available =
+            main.clientHeight - top -
+            px(main, "paddingBottom") -
+            footer.offsetHeight -
+            px(card, "paddingBottom") -
+            px(card, "borderBottomWidth")
+
+          const rows = Math.min(Math.max(Math.floor(available / row.offsetHeight), 5), 100)
+          if (rows !== this.sent) {
+            this.sent = rows
+            this.pushEvent("fit_rows", {rows})
+          }
+        }
+      }
+    </script>
     """
   end
+
+  @doc """
+  Reads the row count a `<.pagination fit_rows>` pager sent, clamped to 5..100.
+
+  The number comes from the browser, so anything that isn't a whole number is
+  refused rather than trusted.
+  """
+  def fit_rows_per_page(rows) when is_integer(rows), do: {:ok, rows |> max(5) |> min(100)}
+
+  def fit_rows_per_page(rows) when is_binary(rows) do
+    case Integer.parse(rows) do
+      {rows, ""} -> fit_rows_per_page(rows)
+      _not_a_number -> :error
+    end
+  end
+
+  def fit_rows_per_page(_rows), do: :error
 end

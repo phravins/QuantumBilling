@@ -7,9 +7,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
@@ -24,9 +27,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> push_navigate(to: ~p"/invoices")}
 
       invoice ->
-        # Registering an e-invoice happens in a background job now, so this
-        # page has to be told when it finishes rather than holding the click
-        # open until it does.
+        # E-invoice registration runs in a job that reports back on this topic.
         if connected?(socket), do: Invoices.subscribe()
 
         {doc, accent, logo} = Templates.document_for(invoice)
@@ -45,18 +46,22 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     end
   end
 
-  # Queued rather than called: the IRP is a government service over the public
-  # internet, and holding this click open for it meant a page that hung when it
-  # was slow and a failure that nothing ever retried. The job reports back
-  # through the invoice topic, which this page is subscribed to.
+  # Queued: the IRP is slow and failures need retrying.
   def handle_event("generate_einvoice", _params, socket) do
     invoice = socket.assigns.invoice
 
     case Invoices.queue_einvoice(invoice) do
       {:ok, :queued} ->
+        message =
+          if IRPClient.live?(),
+            do: "Registering #{invoice.invoice_number} with the IRP…",
+            else:
+              "Creating a demo IRN for #{invoice.invoice_number}. " <>
+                "Demo mode: it will not be registered with the IRP."
+
         {:noreply,
          socket
-         |> put_flash(:info, "Registering #{invoice.invoice_number} with the IRP…")
+         |> put_flash(:info, message)
          |> refresh_invoice()}
 
       {:ok, :already_registered} ->
@@ -156,7 +161,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     {:noreply, assign(socket, :show_cn_modal, !Map.get(socket.assigns, :show_cn_modal, false))}
   end
 
-  # The job that registered the IRN, or an edit in another window.
   def handle_info({:invoice_changed, %{id: id}}, socket) do
     if id == socket.assigns.invoice.id do
       {:noreply, refresh_invoice(socket)}
@@ -203,87 +207,31 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <:subtitle>{@invoice.invoice_type}</:subtitle>
 
         <:actions>
-          <div class="flex flex-wrap items-center gap-2">
-            <.status_badge status={@invoice.status} />
-
-            <button
-              :if={@invoice.status != "E-Invoice Generated"}
-              type="button"
-              phx-click="generate_einvoice"
-              class={action_button_class()}
-            >
-              <.icon name="hero-bolt" class="size-4" /> 1-Click Generate IRN
-            </button>
-
-            <button
-              :if={is_nil(@e_way_bill)}
-              type="button"
-              phx-click="toggle_ewb_modal"
-              class={action_button_class()}
-            >
-              <.icon name="hero-truck" class="size-4" /> Generate E-Way Bill
-            </button>
-
-            <button
-              :if={!@invoice.razorpay_payment_url}
-              type="button"
-              phx-click="generate_payment_link"
-              class={action_button_class()}
-            >
-              <.icon name="hero-qr-code" class="size-4" /> Razorpay / UPI Link
-            </button>
-
-            <button
-              type="button"
-              phx-click="toggle_cn_modal"
-              class={action_button_class()}
-            >
-              <.icon name="hero-document-duplicate" class="size-4" /> Issue Credit/Debit Note
-            </button>
-
-            <.link
-              href={~p"/pay/#{@invoice.public_token || "tok_123"}"}
-              target="_blank"
-              class={action_button_class()}
-            >
-              <.icon name="hero-globe-alt" class="size-4" /> Public Portal Link
-            </.link>
-
-            <button
-              type="button"
-              phx-click="send_email"
-              class={action_button_class()}
-            >
-              <.icon name="hero-paper-airplane" class="size-4" /> Send PDF via Email
-            </button>
-
-            <.link
-              href={~p"/invoices/#{@invoice.id}/pdf/download"}
-              class={secondary_button_class()}
-            >
-              <.icon name="hero-arrow-down-tray" class="size-4" /> PDF
-            </.link>
-
-            <.link navigate={~p"/invoices"} class={secondary_button_class()}>
-              <.icon name="hero-arrow-left" class="size-4" /> Back to Invoices
-            </.link>
-          </div>
+          <button
+            id="invoice-actions-toggle"
+            type="button"
+            phx-click={show_drawer()}
+            aria-controls="invoice-actions-drawer"
+            class={action_button_class()}
+          >
+            <.icon name="hero-bars-3-bottom-right" class="size-4" /> Actions
+          </button>
         </:actions>
       </.header>
 
-      <%!-- Banners Section --%>
       <div class="mb-6 space-y-3">
-        <%!-- Official E-Invoice IRP Banner --%>
         <div
-          :if={@invoice.irn}
+          :if={@invoice.irn && !Invoice.demo_irn?(@invoice)}
+          id="irn-panel"
           class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="space-y-1">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
                   <.icon name="hero-check-badge" class="size-3.5" /> E-Invoice Verified (IRP)
                 </span>
+                <.portal_mode_badge id="irn-mode-badge" mode="live" />
                 <span class="text-xs text-base-content/60">
                   Ack No: <strong class="text-base-content">{@invoice.ack_number}</strong>
                 </span>
@@ -304,21 +252,54 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </div>
         </div>
 
-        <%!-- Official E-Way Bill Banner --%>
+        <%!-- A demo IRN looks exactly like a real one; this panel must not. --%>
+        <div
+          :if={Invoice.demo_irn?(@invoice)}
+          id="demo-irn-panel"
+          class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
+                  <.icon name="hero-beaker" class="size-3.5" /> Demo IRN – not registered with the IRP
+                </span>
+                <.portal_mode_badge id="irn-mode-badge" mode="demo" />
+              </div>
+              <p class="text-xs text-base-content/70">
+                Generated locally in demo mode. This invoice has not been reported to the
+                government; configure live IRP access to register it.
+              </p>
+              <p class="font-mono text-xs text-base-content/50 break-all">
+                Demo IRN: {@invoice.irn}
+              </p>
+            </div>
+
+            <button
+              :if={@invoice.signed_qr_code}
+              type="button"
+              phx-click="toggle_qr_modal"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 text-xs font-medium hover:bg-amber-500/20"
+            >
+              <.icon name="hero-qr-code" class="size-4" /> View Demo QR Code
+            </button>
+          </div>
+        </div>
+
         <div
           :if={@e_way_bill}
           class="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="space-y-1">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 rounded-md bg-cyan-600 px-2 py-0.5 text-xs font-bold text-white">
-                  <.icon name="hero-truck" class="size-3.5" /> E-Way Bill Generated
+                  <.icon name="hero-truck" class="size-3.5" />
+                  {if EWayBill.demo?(@e_way_bill),
+                    do: "Demo E-Way Bill",
+                    else: "E-Way Bill Generated"}
                 </span>
-                <%!-- No "MH12AB1234" / "250 km" placeholders here any more.
-                A consignment note that states a vehicle it is not on is worse
-                than one that states none: this is the document an officer
-                reads at a check post. --%>
+                <.portal_mode_badge id="ewb-mode-badge" mode={@e_way_bill.portal_mode} />
                 <span class="text-xs text-base-content/60">
                   Vehicle:
                   <strong class="text-base-content">{@e_way_bill.vehicle_number || "—"}</strong>
@@ -333,8 +314,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               </p>
             </div>
 
-            <%!-- The generated bill's own document. Without these the number
-            was the only trace of it anywhere in the application. --%>
             <div class="flex flex-wrap items-center gap-2">
               <.link
                 href={~p"/e-way-bills/#{@e_way_bill.id}/print"}
@@ -354,7 +333,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </div>
         </div>
 
-        <%!-- Razorpay Payment Link Card --%>
         <div
           :if={@invoice.razorpay_payment_url}
           class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -380,16 +358,19 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <%!-- Identified so a test can assert against the document itself rather
-      than the page around it: the invoice number and the client name also
-      appear in the notification bell up in the header, and a bare match on the
-      rendered page cannot tell the two apart. --%>
-      <.card id="invoice-document" padding="p-8">
-        <Renderer.stylesheet doc={@doc} />
-        <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
-      </.card>
+      <%!-- A portrait A4 sheet on a desk; aspect-ratio is only a minimum, so a long invoice grows downward. The id lets tests target the document rather than the notification bell. --%>
+      <div id="invoice-sheet-desk" class="rounded-box bg-base-200 p-3 sm:p-8">
+        <div
+          id="invoice-document"
+          class="mx-auto aspect-[210/297] w-full max-w-[210mm] bg-white p-4 text-black shadow-xl ring-1 ring-black/5 sm:p-[12mm]"
+        >
+          <Renderer.stylesheet doc={@doc} />
+          <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+        </div>
+      </div>
 
-      <%!-- Signed & UPI QR Modal --%>
+      <.actions_drawer invoice={@invoice} e_way_bill={@e_way_bill} />
+
       <div
         :if={@show_qr_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -400,7 +381,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h3 class="text-base font-bold">QR Codes & Payments</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@invoice.invoice_number} &bull; Total Due:
-                <strong class="text-emerald-600">₹{@invoice.grand_total}</strong>
+                <strong class="text-emerald-600">{rupees(@invoice.grand_total)}</strong>
               </p>
             </div>
             <button
@@ -412,7 +393,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             </button>
           </div>
 
-          <%!-- Instant UPI Payment QR Code --%>
           <div class="p-4 bg-base-200/50 rounded-xl border border-base-200 flex flex-col items-center justify-center space-y-3">
             <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/70">
               Instant UPI Payment QR
@@ -420,14 +400,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.upi_qr
               invoice={@invoice}
               size_class="w-48 h-48"
-              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay ₹#{@invoice.grand_total}"}
+              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay #{rupees(@invoice.grand_total)}"}
               caption_class="mt-2 text-xs text-center font-medium text-base-content/80"
             />
           </div>
 
-          <%!-- Government Signed E-Invoice QR Code --%>
           <div
-            :if={@invoice.signed_qr_code}
+            :if={@invoice.signed_qr_code && !Invoice.demo_irn?(@invoice)}
             class="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3"
           >
             <div class="flex items-center justify-between">
@@ -437,6 +416,28 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
             </div>
             <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-emerald-500/20 shadow-sm">
+              {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
+            </div>
+            <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
+              {@invoice.signed_qr_code}
+            </div>
+          </div>
+
+          <div
+            :if={@invoice.signed_qr_code && Invoice.demo_irn?(@invoice)}
+            id="demo-qr-panel"
+            class="p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-700">
+                Demo QR – not verifiable
+              </h4>
+              <.portal_mode_badge mode="demo" compact />
+            </div>
+            <p class="text-2xs text-base-content/70">
+              Simulated in demo mode. Government apps will not verify this code.
+            </p>
+            <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-amber-500/30 shadow-sm">
               {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
             </div>
             <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
@@ -454,7 +455,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <%!-- E-Way Bill Generation Modal --%>
       <div
         :if={Map.get(assigns, :show_ewb_modal, false)}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -470,13 +470,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
-          <%!--
-          Nothing here is prefilled with a sample vehicle or distance. A wrong
-          vehicle number on a bill an officer stops the truck to read is worse
-          than an empty field, and these values go straight to the NIC portal.
-          The transporter and mode do come from the organisation's saved
-          defaults, which is what the settings screen offers them for.
-          --%>
+          <%!-- No sample vehicle or distance prefilled: these go straight to the NIC portal. Transporter and mode come from saved defaults. --%>
           <form phx-submit="generate_ewb" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Distance (in KM)</label>
@@ -530,7 +524,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <%!-- Credit / Debit Note Modal --%>
       <div
         :if={Map.get(assigns, :show_cn_modal, false)}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -569,7 +562,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <input
                 type="number"
                 name="grand_total"
-                value={@invoice.grand_total}
+                min="0"
+                step="0.01"
+                value={money_input(@invoice.grand_total)}
                 class="input input-bordered w-full text-xs"
                 required
               />
@@ -583,5 +578,217 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  attr :invoice, :map, required: true
+  attr :e_way_bill, :map, default: nil
+
+  # Every action on the invoice, in a panel that slides in from the right.
+  # Opening and closing are client-only JS, so they survive LiveView patches.
+  defp actions_drawer(assigns) do
+    ~H"""
+    <div
+      id="invoice-actions-backdrop"
+      class="fixed inset-0 z-40 hidden bg-black/40"
+      phx-click={hide_drawer()}
+      aria-hidden="true"
+    />
+
+    <aside
+      id="invoice-actions-drawer"
+      class="fixed inset-y-0 right-0 z-50 hidden w-full max-w-sm flex-col border-l border-base-300 bg-base-100 shadow-2xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invoice-actions-title"
+      phx-window-keydown={hide_drawer()}
+      phx-key="Escape"
+    >
+      <div class="flex items-start justify-between gap-3 border-b border-base-300 px-4 py-3">
+        <div class="min-w-0">
+          <p class="text-xs font-medium uppercase tracking-wide text-base-content/45">
+            Invoice actions
+          </p>
+          <h2 id="invoice-actions-title" class="truncate text-base font-semibold tracking-tight">
+            {@invoice.invoice_number}
+          </h2>
+          <div id="invoice-actions-status" class="mt-1.5">
+            <.status_badge status={@invoice.status} />
+          </div>
+        </div>
+
+        <button
+          id="invoice-actions-close"
+          type="button"
+          phx-click={hide_drawer()}
+          class={row_action_class()}
+          aria-label="Close actions"
+        >
+          <.icon name="hero-x-mark" class="size-5" />
+        </button>
+      </div>
+
+      <div class="flex-1 space-y-4 overflow-y-auto p-3">
+        <section :if={@invoice.status != "E-Invoice Generated" or is_nil(@e_way_bill)}>
+          <h3 class={drawer_group_class()}>E-Invoice &amp; E-Way Bill</h3>
+
+          <.drawer_item
+            :if={@invoice.status != "E-Invoice Generated"}
+            id="drawer-generate-irn"
+            icon="hero-bolt"
+            label="1-Click Generate IRN"
+            hint="Register this invoice with the IRP"
+            phx-click={JS.push("generate_einvoice") |> hide_drawer()}
+          />
+          <.drawer_item
+            :if={is_nil(@e_way_bill)}
+            id="drawer-generate-ewb"
+            icon="hero-truck"
+            label="Generate E-Way Bill"
+            hint="Vehicle and distance for the consignment"
+            phx-click={JS.push("toggle_ewb_modal") |> hide_drawer()}
+          />
+        </section>
+
+        <section>
+          <h3 class={drawer_group_class()}>Payments</h3>
+
+          <.drawer_item
+            :if={!@invoice.razorpay_payment_url}
+            id="drawer-payment-link"
+            icon="hero-qr-code"
+            label="Razorpay / UPI Link"
+            hint="Create a payment link for the client"
+            phx-click={JS.push("generate_payment_link") |> hide_drawer()}
+          />
+          <.drawer_item
+            id="drawer-credit-note"
+            icon="hero-document-duplicate"
+            label="Issue Credit/Debit Note"
+            hint="Adjust the value of this invoice"
+            phx-click={JS.push("toggle_cn_modal") |> hide_drawer()}
+          />
+        </section>
+
+        <section>
+          <h3 class={drawer_group_class()}>Share</h3>
+
+          <.drawer_item
+            id="drawer-public-link"
+            icon="hero-globe-alt"
+            label="Public Portal Link"
+            hint="Opens the client's view in a new tab"
+            trailing="hero-arrow-top-right-on-square"
+            href={QuantumBillingWeb.PublicInvoiceLive.path(@invoice)}
+            target="_blank"
+          />
+          <.drawer_item
+            id="drawer-send-email"
+            icon="hero-paper-airplane"
+            label="Send PDF via Email"
+            hint="Email the invoice to the client"
+            phx-click={JS.push("send_email") |> hide_drawer()}
+          />
+          <.drawer_item
+            id="drawer-download-pdf"
+            icon="hero-arrow-down-tray"
+            label="Download PDF"
+            hint="Save a print-ready copy"
+            trailing="hero-arrow-down-tray"
+            href={~p"/invoices/#{@invoice.id}/pdf/download"}
+          />
+        </section>
+      </div>
+
+      <div class="border-t border-base-300 p-3">
+        <.link
+          id="drawer-back"
+          navigate={~p"/invoices"}
+          class={[secondary_button_class(), "w-full justify-center"]}
+        >
+          <.icon name="hero-arrow-left" class="size-4" /> Back to Invoices
+        </.link>
+      </div>
+    </aside>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, default: nil
+  attr :trailing, :string, default: "hero-chevron-right"
+  attr :rest, :global, include: ~w(href navigate target)
+
+  defp drawer_item(assigns) do
+    ~H"""
+    <%= if @rest[:href] || @rest[:navigate] do %>
+      <.link id={@id} class={drawer_item_class()} {@rest}>
+        <.drawer_item_body icon={@icon} label={@label} hint={@hint} trailing={@trailing} />
+      </.link>
+    <% else %>
+      <button id={@id} type="button" class={drawer_item_class()} {@rest}>
+        <.drawer_item_body icon={@icon} label={@label} hint={@hint} trailing={@trailing} />
+      </button>
+    <% end %>
+    """
+  end
+
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, default: nil
+  attr :trailing, :string, required: true
+
+  defp drawer_item_body(assigns) do
+    ~H"""
+    <span class="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/70 transition-colors group-hover:bg-base-300 group-hover:text-base-content">
+      <.icon name={@icon} class="size-4" />
+    </span>
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-sm font-medium">{@label}</span>
+      <span :if={@hint} class="block truncate text-xs text-base-content/50">{@hint}</span>
+    </span>
+    <.icon
+      name={@trailing}
+      class="size-4 shrink-0 text-base-content/30 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-base-content/60"
+    />
+    """
+  end
+
+  defp drawer_item_class do
+    "group flex w-full items-center gap-3 rounded-field px-2.5 py-2 text-left transition-colors hover:bg-base-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+  end
+
+  defp drawer_group_class do
+    "mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-base-content/45"
+  end
+
+  defp show_drawer(js \\ %JS{}) do
+    js
+    |> JS.show(
+      to: "#invoice-actions-backdrop",
+      transition: {"transition-opacity ease-out duration-200", "opacity-0", "opacity-100"}
+    )
+    |> JS.show(
+      to: "#invoice-actions-drawer",
+      display: "flex",
+      time: 200,
+      transition:
+        {"transition-transform ease-out duration-200", "translate-x-full", "translate-x-0"}
+    )
+    |> JS.focus_first(to: "#invoice-actions-drawer")
+  end
+
+  defp hide_drawer(js \\ %JS{}) do
+    js
+    |> JS.hide(
+      to: "#invoice-actions-backdrop",
+      transition: {"transition-opacity ease-in duration-150", "opacity-100", "opacity-0"}
+    )
+    |> JS.hide(
+      to: "#invoice-actions-drawer",
+      time: 150,
+      transition:
+        {"transition-transform ease-in duration-150", "translate-x-0", "translate-x-full"}
+    )
   end
 end

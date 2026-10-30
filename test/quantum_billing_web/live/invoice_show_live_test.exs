@@ -128,6 +128,32 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     end
   end
 
+  describe "the actions drawer" do
+    test "holds the status and every action, behind one header button", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#invoice-actions-toggle")
+      assert has_element?(view, "#invoice-actions-drawer #invoice-actions-status", "Draft")
+
+      for id <- ~w(drawer-generate-irn drawer-generate-ewb drawer-payment-link drawer-credit-note
+                   drawer-public-link drawer-send-email drawer-download-pdf drawer-back) do
+        assert has_element?(view, "#invoice-actions-drawer ##{id}"), "missing ##{id}"
+      end
+    end
+
+    test "an action in the drawer still reaches the server", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      html = view |> element("#drawer-send-email") |> render_click()
+
+      assert html =~ "queued for delivery to billing@v2v.in"
+    end
+  end
+
   describe "tax presentation" do
     test "an intra-state invoice shows CGST and SGST, not IGST", %{conn: conn} do
       invoice = create_invoice()
@@ -164,6 +190,51 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
 
     test "a nonsense id redirects rather than crashing", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: "/invoices"}}} = live(conn, ~p"/invoices/not-an-id")
+    end
+  end
+
+  # A demo IRN or e-way bill number looks exactly like a filed one; the page must not.
+  describe "portal mode" do
+    defp with_irn(invoice, mode) do
+      invoice
+      |> QuantumBilling.Invoices.Invoice.einvoice_changeset(%{
+        irn: String.duplicate("a", 64),
+        ack_number: "112010000000001",
+        signed_qr_code: "qr",
+        signed_invoice: "jwt",
+        irn_mode: mode,
+        status: "E-Invoice Generated"
+      })
+      |> QuantumBilling.Repo.update!()
+    end
+
+    test "a demo IRN is labelled demo, not verified", %{conn: conn} do
+      invoice = create_invoice() |> with_irn("demo")
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#demo-irn-panel")
+      assert has_element?(view, ~s(#irn-mode-badge[data-mode="demo"]))
+      refute has_element?(view, "#irn-panel")
+    end
+
+    test "an IRN the IRP registered keeps the verified panel", %{conn: conn} do
+      invoice = create_invoice() |> with_irn("live")
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#irn-panel")
+      assert has_element?(view, ~s(#irn-mode-badge[data-mode="live"]))
+      refute has_element?(view, "#demo-irn-panel")
+    end
+
+    test "an e-way bill shows the mode that issued it", %{conn: conn} do
+      invoice = create_invoice()
+      {:ok, _bill} = QuantumBilling.EWayBills.generate_e_way_bill(invoice, %{})
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, ~s(#ewb-mode-badge[data-mode="demo"]))
     end
   end
 end

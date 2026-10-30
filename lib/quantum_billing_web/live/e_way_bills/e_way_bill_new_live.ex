@@ -21,9 +21,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   import QuantumBillingWeb.EWayBillsComponents
 
   alias QuantumBilling.EWayBills
+  alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.EWayBills.NICClient
   alias QuantumBilling.EWayBills.Validity
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
 
   @defaults %{
@@ -105,30 +108,36 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
-  # The portal issues the number, so this goes through the same context call
-  # the invoice page uses rather than minting one locally.
   defp generate(socket, invoice, form, changeset) do
     case EWayBills.generate_e_way_bill(invoice, transport_params(form)) do
       {:ok, bill} ->
         {:noreply,
          socket
-         |> put_flash(
-           :info,
-           "E-Way Bill #{bill.ewb_number} generated for #{bill.invoice.invoice_number}."
-         )
+         |> put_flash(:info, generated_message(bill))
          |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")}
 
       {:error, reason} ->
+        message =
+          NICClient.error_message(reason) ||
+            "Could not generate the e-way bill: #{inspect(reason)}"
+
         {:noreply,
          socket
-         |> put_flash(:error, "Could not generate the e-way bill: #{inspect(reason)}")
+         |> put_flash(:error, message)
          |> assign_form(changeset)}
     end
   end
 
-  # A cancelled bill does not block a new one: Rule 138(9) exists so a fresh
-  # bill can be raised against the same document, which is why this asks for
-  # the *live* bill rather than for any bill.
+  defp generated_message(bill) do
+    if EWayBill.demo?(bill) do
+      "Demo e-way bill #{bill.ewb_number} created for #{bill.invoice.invoice_number}. " <>
+        "It was not filed with the government."
+    else
+      "E-Way Bill #{bill.ewb_number} generated for #{bill.invoice.invoice_number}."
+    end
+  end
+
+  # Only the live bill blocks a new one; Rule 138(9) allows reissue after cancelling.
   defp fetch_document(%EWayBillForm{document_no: document_no}) do
     case Invoices.get_invoice_by_number(String.trim(document_no || "")) do
       nil ->
@@ -142,8 +151,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     end
   end
 
-  # The keys `NICClient` reads off the params, so what the form collected is
-  # what the portal is asked for.
   defp transport_params(%EWayBillForm{} = form) do
     %{
       "distance_km" => form.distance_km,
@@ -175,9 +182,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     assign(socket, :invoice_options, options)
   end
 
-  # Everything the portal needs that the invoice already knows. A state the
-  # e-way bill vocabulary does not recognise is dropped rather than prefilled
-  # into a field that would then refuse to validate.
+  # Unrecognised states are dropped rather than prefilled.
   defp prefill(invoice) do
     organization = Settings.get_organization()
 
@@ -194,27 +199,22 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       to_party: invoice.client_name,
       to_gstin: invoice.client_gstin,
       to_state: known_state(invoice.client_state || invoice.place_of_supply),
-      total_goods_value: invoice.taxable_value,
-      cgst_value: invoice.cgst_amount,
-      sgst_value: invoice.sgst_amount,
-      igst_value: invoice.igst_amount,
-      other_amount: invoice.cess_amount,
-      # Transport details belong to the bill, not the document, so there is
-      # nothing on the invoice to prefill them from. The organisation's saved
-      # defaults are the next best thing and are what the settings screen
-      # offers them for.
-      transport_mode: organization_field(organization, :ewb_transport_mode) || "Road",
+      # The form reads rupees, as typed.
+      total_goods_value: Money.to_input(invoice.taxable_value),
+      cgst_value: Money.to_input(invoice.cgst_amount),
+      sgst_value: Money.to_input(invoice.sgst_amount),
+      igst_value: Money.to_input(invoice.igst_amount),
+      other_amount: Money.to_input(invoice.cess_amount),
+      # Transport details come from the organisation's saved defaults.
+      transport_mode: organization.ewb_transport_mode || "Road",
       transporter_name: nil,
-      transporter_id: organization_field(organization, :ewb_transporter_id),
+      transporter_id: organization.ewb_transporter_id,
       vehicle_no: nil,
       distance_km: nil,
-      from_place: organization_field(organization, :city) || state_name(invoice.company_state),
+      from_place: organization.city || state_name(invoice.company_state),
       to_place: invoice.client_city || state_name(invoice.client_state)
     }
   end
-
-  defp organization_field(nil, _field), do: nil
-  defp organization_field(organization, field), do: Map.get(organization, field)
 
   defp document_type(type) do
     if type in EWayBillForm.document_types(), do: type, else: "Tax Invoice"
@@ -224,7 +224,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     if state in EWayBillForm.states(), do: state, else: nil
   end
 
-  # "Maharashtra (27)" is a state, not a place; the place field wants the town.
   defp state_name(nil), do: nil
   defp state_name(state), do: state |> String.replace(~r/\s*\(\d+\)$/, "") |> String.trim()
 
@@ -266,12 +265,9 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div class="space-y-4 lg:col-span-2">
-          <%!-- A bill is raised against a document. Picking the invoice here
-          fills in the parties, the amounts and the transport details it
-          already knows, and is what the submission is matched back to. --%>
-          <.card class="p-4">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div class="space-y-3 lg:col-span-2">
+          <.card>
             <form id="ewb-load-invoice" phx-change="load_invoice">
               <.input
                 type="select"
@@ -299,10 +295,10 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             id="ewb-form"
             phx-change="validate"
             phx-submit="save"
-            class="space-y-4"
+            class="space-y-3"
           >
             <.form_section step="1" title="Transaction Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <.field
                   field={f[:supply_type]}
                   label="Supply Type"
@@ -335,7 +331,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                     Transaction Type<span class="ml-0.5 text-error">*</span>
                   </span>
 
-                  <div class="flex h-9 items-center gap-6">
+                  <div class="flex h-9 items-center gap-4">
                     <.radio_option
                       :for={type <- EWayBillForm.transaction_types()}
                       field={f[:transaction_type]}
@@ -348,8 +344,8 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="2" title="Parties Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div class="space-y-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="space-y-3">
                   <.field
                     field={f[:from_party]}
                     label="From (Dispatch From)"
@@ -372,7 +368,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
                   />
                 </div>
 
-                <div class="space-y-4">
+                <div class="space-y-3">
                   <.field
                     field={f[:to_party]}
                     label="To (Ship To)"
@@ -398,18 +394,34 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="3" title="Item Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <.field
                   field={f[:total_goods_value]}
                   label="Total Value of Goods"
-                  type="number"
+                  type="money"
                   required
-                  min="0"
                   placeholder="60000"
-                /> <.field field={f[:cgst_value]} label="Total CGST Value" type="number" min="0" />
-                <.field field={f[:sgst_value]} label="Total SGST Value" type="number" min="0" />
-                <.field field={f[:igst_value]} label="Total IGST Value" type="number" min="0" />
-                <.field field={f[:other_amount]} label="Other Amount (+)" type="number" min="0" />
+                />
+                <.field
+                  field={f[:cgst_value]}
+                  label="Total CGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:sgst_value]}
+                  label="Total SGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:igst_value]}
+                  label="Total IGST Value"
+                  type="money"
+                />
+                <.field
+                  field={f[:other_amount]}
+                  label="Other Amount (+)"
+                  type="money"
+                />
                 <div class="sm:col-span-2">
                   <span class="mb-1.5 block text-xs font-medium text-base-content/60">
                     Total Invoice Value
@@ -426,7 +438,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
             </.form_section>
 
             <.form_section step="4" title="Transport Details">
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <.field
                   field={f[:transport_mode]}
                   label="Transport Mode"
@@ -479,10 +491,10 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
           </.form>
         </div>
 
-        <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <div class="space-y-3 lg:sticky lg:top-16 lg:self-start">
           <.card>
-            <.brand_mark class="mb-4 border-b border-base-300 pb-4" icon_class="size-6" />
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
+            <.brand_mark class="mb-3 border-b border-base-300 pb-4" icon_class="size-6" />
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">E-Way Bill Summary</h2>
 
             <div class="space-y-2.5">
               <.summary_row label="Supply Type" value={@summary.supply_type} />
@@ -575,8 +587,6 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     |> assign(:validity, validity(summary.distance_km))
   end
 
-  # The same Rule 138(10) sum the issued bill will be dated by, shown while
-  # the distance is still being typed.
   defp validity(nil), do: nil
 
   defp validity(distance_km) do

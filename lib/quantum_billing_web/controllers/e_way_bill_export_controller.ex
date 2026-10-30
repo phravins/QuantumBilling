@@ -17,6 +17,7 @@ defmodule QuantumBillingWeb.EWayBillExportController do
   use QuantumBillingWeb, :controller
 
   alias QuantumBilling.EWayBills
+  alias QuantumBilling.Money
 
   @headers [
     "EWB Number",
@@ -31,7 +32,8 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     "Mode",
     "Vehicle",
     "Transporter",
-    "Status"
+    "Status",
+    "Portal"
   ]
 
   def export(conn, params) do
@@ -69,9 +71,14 @@ defmodule QuantumBillingWeb.EWayBillExportController do
       to_string(row.mode_of_transport || ""),
       to_string(row.vehicle_number || ""),
       to_string(row.transporter_name || ""),
-      to_string(row.status)
+      to_string(row.status),
+      portal(row.portal_mode)
     ]
   end
+
+  # A demo number in a spreadsheet looks like a filed one; say which it is.
+  defp portal("live"), do: "Filed"
+  defp portal(_demo), do: "Demo (not filed)"
 
   defp valid_until(nil), do: ""
 
@@ -79,27 +86,13 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     Calendar.strftime(valid_until, "%d/%m/%Y %H:%M")
   end
 
-  # Plain numbers, not the ₹-prefixed display strings: a spreadsheet has to be
-  # able to sum this column.
+  # Plain rupee numbers, from paise, so a spreadsheet can sum them.
   defp amount(nil), do: ""
-  defp amount(%Decimal{} = value), do: Decimal.to_string(Decimal.round(value, 2), :normal)
-  defp amount(value), do: :erlang.float_to_binary(value * 1.0, decimals: 2)
+  defp amount(paise), do: Money.to_input(paise)
 
-  # A dependency-free writer, copied in intent from `ReportsController`: a
-  # client name containing a comma must not shift every following column.
   defp to_csv(headers, rows) do
     Enum.map_join([headers | rows], "", &csv_line/1)
   end
 
-  defp csv_line(fields) do
-    Enum.map_join(fields, ",", &escape/1) <> "\r\n"
-  end
-
-  defp escape(field) do
-    if String.contains?(field, [",", "\"", "\n", "\r"]) do
-      ~s("#{String.replace(field, "\"", "\"\"")}")
-    else
-      field
-    end
-  end
+  defp csv_line(fields), do: QuantumBillingWeb.CSV.line(fields)
 end

@@ -141,7 +141,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/e-way-bills",
         ~p"/e-way-bills/new",
         ~p"/hsn-finder",
-        ~p"/reports",
         ~p"/compliance",
         ~p"/recurring",
         ~p"/bin",
@@ -157,7 +156,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "every settings section an owner can open renders", %{conn: conn, user: user} do
-      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       for section <- ~w(general invoice tax e-way-bill smtp integrations security notifications) do
         assert {:ok, _view, _html} = live(conn, ~p"/settings/#{section}"),
@@ -185,9 +184,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       case QuantumBillingWeb.InvoiceDoc.PDF.executable() do
         nil ->
-          # No headless browser here. Sending the print page beats sending
-          # something that is not a PDF, which is what the mail attachment
-          # used to do.
+          # No headless browser here, so it falls back to the print page.
           assert redirected_to(conn) == ~p"/invoices/#{invoice.id}/pdf"
 
         _binary ->
@@ -195,10 +192,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       end
     end
 
-    # Both e-way bill row actions used to link at a filtered invoice list:
-    # the form GST EWB-01 a driver must carry was nowhere in the application.
-    # Addressed by the bill, not the invoice: an invoice can carry a cancelled
-    # bill and its live replacement, and the two need separate URLs.
+    # Addressed by the bill: an invoice can carry a cancelled bill and its replacement.
     test "the e-way bill document answers", context do
       %{conn: conn, interstate: interstate, bill: bill} = context
 
@@ -228,7 +222,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       body = conn |> get(~p"/e-way-bills/export") |> response(200)
 
-      # Not the GST tax summary the button used to hand back.
       assert body =~ "EWB Number,Document Number"
       assert body =~ bill.ewb_number
       assert body =~ interstate.invoice_number
@@ -281,11 +274,11 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "the backup download answers for an owner", %{conn: conn, user: user} do
-      {:ok, _owner} = QuantumBilling.Accounts.set_role(user, "owner")
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
-      assert %{"version" => "2.1", "invoices" => [_ | _]} = Jason.decode!(body)
+      assert %{"version" => "3.0", "invoices" => [_ | _]} = Jason.decode!(body)
     end
   end
 
@@ -335,7 +328,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert {:ok, _view, _html} = live(conn, ~p"/invoices")
       assert {:ok, _view, _html} = live(conn, ~p"/invoices/new")
       assert {:ok, _view, _html} = live(conn, ~p"/clients")
-      assert {:ok, _view, _html} = live(conn, ~p"/reports")
+      assert {:ok, _view, _html} = live(conn, ~p"/dashboard")
       assert conn |> get(~p"/invoices/#{invoice.id}/pdf") |> response(200)
       assert conn |> get(~p"/reports/export") |> response(200)
     end
@@ -343,8 +336,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
   describe "the owner-only pages, as an owner" do
     setup %{user: user} do
-      {:ok, owner} = QuantumBilling.Accounts.set_role(user, "owner")
-      %{owner: owner}
+      {:ok, _membership} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
+      %{owner: user}
     end
 
     test "the team page renders", %{conn: conn} do
@@ -382,4 +375,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert message =~ "Invalid or expired"
     end
   end
+
+  defp default_business, do: QuantumBilling.Businesses.default!()
 end

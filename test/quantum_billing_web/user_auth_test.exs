@@ -74,6 +74,21 @@ defmodule QuantumBillingWeb.UserAuthTest do
       assert max_age == @remember_me_cookie_max_age
     end
 
+    test "the remember-me cookie does not reveal the session token", %{conn: conn, user: user} do
+      conn = conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
+      token = get_session(conn, :user_token)
+
+      %{value: cookie} = conn.resp_cookies[@remember_me_cookie]
+
+      # A merely signed cookie carries the token in a decodable segment.
+      decoded =
+        for part <- String.split(cookie, "."),
+            {:ok, bytes} <- [Base.url_decode64(part, padding: false)],
+            do: bytes
+
+      refute Enum.any?(decoded, &String.contains?(&1, token))
+    end
+
     test "redirects to settings when user is already logged in", %{conn: conn, user: user} do
       conn =
         conn
@@ -348,9 +363,7 @@ defmodule QuantumBillingWeb.UserAuthTest do
                "You must log in to access this page."
     end
 
-    # Opening the bare address is not an error. The root is the dashboard, so
-    # every signed-out visitor lands here — telling them off for opening the
-    # app is noise on the first screen anyone sees.
+    # The root is the dashboard, so a plain visit gets no flash.
     test "says nothing when the visitor only opened the app root" do
       conn = reject_request_for("/")
 

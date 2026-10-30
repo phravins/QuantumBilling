@@ -16,6 +16,8 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Events
+  alias QuantumBilling.Invoices
+  alias QuantumBilling.Paging
   alias QuantumBilling.Repo
 
   @doc """
@@ -26,16 +28,12 @@ defmodule QuantumBilling.Clients do
   """
   def subscribe, do: Events.subscribe(Events.clients_topic())
 
-  # The list page's sortable columns. An allowlist, because the field arrives
-  # from a click in the browser and ends up in an ORDER BY.
+  # Allowlisted: the sort field comes from the browser.
   @sortable %{name: :name, outstanding: :outstanding, status: :status}
 
   @default_per_page 10
   @max_per_page 200
 
-  # How many clients a picker offers at once. Enough that a small business
-  # never has to search, small enough that a large one does not ship its whole
-  # customer list to the browser.
   @picker_limit 50
 
   @doc """
@@ -48,11 +46,12 @@ defmodule QuantumBilling.Clients do
   end
 
   @doc """
-  One page of clients, searched, filtered, sorted and counted by the database.
+  One page of clients, searched, filtered and sorted by the database.
 
-  Returns `%{rows:, total:, page:, per_page:, total_pages:}`. Same reasoning as
-  `QuantumBilling.Invoices.page/1`: a customer directory is the other table
-  that only ever grows, and it was being copied into every open browser tab.
+  Returns `%{rows:, page:, per_page:, has_next?:}` — see `QuantumBilling.Paging`.
+  Same reasoning as `QuantumBilling.Invoices.page/1`: a customer directory is
+  the other table that only ever grows, and it was being copied into every open
+  browser tab.
 
   ## Options
 
@@ -64,23 +63,46 @@ defmodule QuantumBilling.Clients do
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
-    query =
+    sort_field = Keyword.get(opts, :sort_field)
+    sort_dir = Keyword.get(opts, :sort_dir, :asc)
+
+    result =
       Client.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
+      |> Paging.page(&order(&1, sort_field, sort_dir),
+        page: Keyword.get(opts, :page, 1),
+        per_page: per_page
+      )
 
-    total = Repo.aggregate(query, :count, :id)
-    total_pages = max(ceil(total / per_page), 1)
-    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
+    %{result | rows: put_outstanding(result.rows)}
+  end
 
-    rows =
-      query
-      |> order(Keyword.get(opts, :sort_field), Keyword.get(opts, :sort_dir, :asc))
-      |> limit(^per_page)
-      |> offset(^((page - 1) * per_page))
+  @doc """
+  What `client` still owes, in whole rupees.
+
+  Computed from its invoices and notes on every read — see
+  `QuantumBilling.Invoices.outstanding_by_client/1` — so it can never drift
+  from them. The `outstanding` column is not maintained and stays zero.
+  """
+  def outstanding(%Client{id: id}) do
+    case Repo.one(Invoices.outstanding_by_client([id])) do
+      %{outstanding: owed} -> owed
+      nil -> 0
+    end
+  end
+
+  defp put_outstanding([]), do: []
+
+  defp put_outstanding(clients) do
+    owed =
+      clients
+      |> Enum.map(& &1.id)
+      |> Invoices.outstanding_by_client()
       |> Repo.all()
+      |> Map.new(&{&1.client_id, &1.outstanding})
 
-    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+    Enum.map(clients, &%{&1 | outstanding: Map.get(owed, &1.id, 0)})
   end
 
   @doc "The columns the list page may sort on."
@@ -153,9 +175,16 @@ defmodule QuantumBilling.Clients do
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query
   defp status_where(query, status), do: where(query, [c], c.status == ^status)
 
-  # No column chosen: alphabetical, which is what the directory has always
-  # shown by default.
   defp order(query, nil, _direction), do: order_by(query, [c], asc: c.name, asc: c.id)
+
+  # Outstanding is computed, not stored, so sorting by it groups every client's invoices.
+  defp order(query, :outstanding, direction) do
+    direction = if direction == :desc, do: :desc, else: :asc
+
+    query
+    |> join(:left, [c], o in subquery(Invoices.outstanding_by_client()), on: o.client_id == c.id)
+    |> order_by([c, o], [{^direction, coalesce(o.outstanding, 0)}, {^direction, c.id}])
+  end
 
   defp order(query, field, direction) do
     case Map.fetch(@sortable, field) do
@@ -249,8 +278,6 @@ defmodule QuantumBilling.Clients do
     |> announce(:client_updated)
   end
 
-  # Only a successful write is announced, and the notification never changes
-  # the result the caller gets back.
   defp announce({:ok, client} = result, event) do
     Events.broadcast(Events.clients_topic(), {event, client})
     result

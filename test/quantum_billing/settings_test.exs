@@ -9,6 +9,23 @@ defmodule QuantumBilling.SettingsTest do
     Settings.update_section(Settings.get_organization(), attrs, section)
   end
 
+  describe "inspect/2 for the Organization module" do
+    test "does not include stored credentials" do
+      organization = %Organization{
+        smtp_password: "smtp-pass-1",
+        razorpay_key_secret: "rzp-secret-1",
+        irp_password: "irp-pass-1",
+        webhook_secret: "webhook-secret-1"
+      }
+
+      inspected = inspect(organization)
+
+      for secret <- ~w(smtp-pass-1 rzp-secret-1 irp-pass-1 webhook-secret-1) do
+        refute inspected =~ secret
+      end
+    end
+  end
+
   describe "get_organization/0" do
     test "returns usable defaults on an empty database" do
       organization = Settings.get_organization()
@@ -117,11 +134,8 @@ defmodule QuantumBilling.SettingsTest do
     end
 
     test "a blank prefix resets to the default rather than clearing" do
-      # Ecto's cast/4 replaces an empty value with the *field's default* rather
-      # than dropping it, so clearing this box resets the prefix to "INV" — it
-      # does not keep the previous value and does not leave it blank. That is
-      # the behaviour we want for a required setting: the numbering scheme can
-      # never end up with no prefix at all.
+      # cast/4 replaces an empty value with the field default, so the prefix resets
+      # to "INV" rather than going blank.
       {:ok, _} = save(%{"invoice_prefix" => "GST"}, :invoice)
       assert {:ok, organization} = save(%{"invoice_prefix" => ""}, :invoice)
 

@@ -3,17 +3,9 @@ import Config
 # Only in tests, remove the complexity from the password hashing algorithm
 config :pbkdf2_elixir, :rounds, 1
 
-# Configure your database.
-#
-# Credentials and the database name live in config/runtime.exs, which reads
-# them from the environment (and from .env if present). MIX_TEST_PARTITION is
-# appended there, so built-in test partitioning still works in CI.
-# `pool_size` has to exceed ExUnit's `max_cases`, which defaults to
-# `schedulers_online() * 2`. At exactly that number every async test is holding
-# the only connection it will get, leaving nothing for the sandbox owner a new
-# test checks out during setup, and checkouts start timing out under load rather
-# than waiting. The symptom is unrelated tests failing in `setup_sandbox` with
-# "connection not available", and it moves around with the seed.
+# Configure your database. Credentials live in config/runtime.exs.
+# pool_size must exceed ExUnit's max_cases (schedulers_online() * 2), or sandbox
+# checkouts time out under load.
 config :quantum_billing, QuantumBilling.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 4,
@@ -42,6 +34,11 @@ config :logger, level: :warning
 # a missing or rejected key is an error, not a fake link.
 config :quantum_billing, razorpay_sandbox: true
 
+# Ecto.Migrator takes an advisory lock on a connection of its own, which the
+# sandbox's single shared connection can never grant: creating a business in a
+# test would wait on itself.
+config :quantum_billing, :tenant_migration_lock, false
+
 # Configure Oban for inline testing
 config :quantum_billing, Oban, testing: :inline
 
@@ -55,6 +52,3 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
-
-# Background jobs run inline in tests (see the Oban config above), so nothing
-# needs a scheduler switched off any more.

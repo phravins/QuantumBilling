@@ -13,6 +13,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Invoices
+  alias QuantumBillingWeb.LiveRefresh
 
   @per_page 10
 
@@ -36,17 +37,11 @@ defmodule QuantumBillingWeb.InvoicesLive do
      |> assign(:status_filter, "All Status")
      |> assign(:sort_field, :invoice_date)
      |> assign(:sort_dir, :desc)
-     |> assign(:page, 1)}
+     |> assign(:page, 1)
+     |> assign(:per_page, @per_page)}
   end
 
-  # Applies a search or status carried in the URL.
-  #
-  # Other pages link here already — the Clients list sends you to this client's
-  # invoices — and until now the query string was read by nobody: the link
-  # arrived at an unfiltered list and quietly showed everything. The page is
-  # loaded from here rather than from `mount/3` so the filters are in place
-  # before the first render, and so a link followed while the page is already
-  # open re-filters it.
+  # Applies a search or status from the URL before the first render.
   def handle_params(params, _uri, socket) do
     {:noreply,
      socket
@@ -63,9 +58,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
-  # Matched against the page's own list rather than trusted: this is a query
-  # string on its way to a WHERE clause, and an unknown status would silently
-  # empty the table.
+  # Allowlisted status.
   defp status_param(params, fallback) do
     case Map.get(params, "status") do
       status when status in @status_options -> status
@@ -82,8 +75,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
-    # Matched against the context's allowlist rather than converted: a sort
-    # field is user input on its way to an ORDER BY.
+    # Allowlisted: the sort field comes from the browser.
     case Enum.find(Invoices.sortable_fields(), &(to_string(&1) == field_str)) do
       nil ->
         {:noreply, socket}
@@ -103,6 +95,22 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("paginate", %{"page" => page_str}, socket) do
     case Integer.parse(page_str) do
       {page, ""} -> {:noreply, socket |> assign(:page, page) |> load_page()}
@@ -113,12 +121,9 @@ defmodule QuantumBillingWeb.InvoicesLive do
   def handle_event("delete", %{"id" => id}, socket) do
     case Invoices.get_invoice(id) do
       nil ->
-        # Already gone — most likely deleted in another window, whose broadcast
-        # is about to refresh this list anyway.
         {:noreply, put_flash(socket, :error, "That invoice no longer exists.")}
 
       invoice ->
-        # Moves it to the Bin rather than removing it: see `Invoices.delete_invoice/2`.
         case Invoices.delete_invoice(invoice, user_id: socket.assigns.current_scope.user.id) do
           {:ok, invoice} ->
             {:noreply,
@@ -132,13 +137,16 @@ defmodule QuantumBillingWeb.InvoicesLive do
     end
   end
 
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, load_page(socket)}
+    {:noreply, LiveRefresh.changed(socket, &load_page/1)}
   end
 
-  # One query pair — a count and a page — per interaction. The page number is
-  # re-clamped by the context, so deleting the last row of the last page lands
-  # on a page that exists instead of an empty one.
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &load_page/1)}
+  end
+
+  # The context clamps the page number, so deleting the last row stays on a real page.
   defp load_page(socket) do
     result =
       Invoices.page(
@@ -147,13 +155,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
     |> assign(:rows, result.rows)
-    |> assign(:total, result.total)
-    |> assign(:total_pages, result.total_pages)
+    |> assign(:empty?, result.rows == [])
+    |> assign(:has_next, result.has_next?)
     |> assign(:page, result.page)
     |> assign(:row_offset, (result.page - 1) * result.per_page)
   end
@@ -180,7 +188,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
         </:actions>
       </.header>
 
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="invoice-search"
           phx-change="search"
@@ -224,9 +232,9 @@ defmodule QuantumBillingWeb.InvoicesLive do
         </div>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
-          :if={@total == 0}
+          :if={@empty?}
           class="flex-1 justify-center"
           icon="hero-document-text"
           title={
@@ -240,13 +248,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
               else: "Try a different search term or status."
           }
         />
-        <div :if={@total > 0}>
+        <div :if={not @empty?}>
           <table class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Invoice"
                     field={:seq}
@@ -255,52 +263,57 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
                 <th>Client</th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Invoice Date"
                     field={:invoice_date}
                   />
                 </th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Due Date"
                     field={:due_date}
                   />
                 </th>
 
-                <th>Total Amount</th>
+                <th class="w-36">Total Amount</th>
 
-                <th>Status</th>
+                <th class="w-44">Status</th>
 
-                <th class="text-right">Actions</th>
+                <th class="w-32">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              <%!-- The serial carries on across pages rather than restarting at
-              1, so it reads as a position in the list, not on the screen. --%>
+              <%!-- The serial continues across pages. --%>
               <tr
                 :for={{row, index} <- Enum.with_index(@rows)}
                 id={"invoice-#{row.id}"}
                 class={table_row_class()}
               >
-                <td class="text-base-content/45">{@row_offset + index + 1}</td>
+                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                  {@row_offset + index + 1}
+                </td>
 
-                <td class="font-medium">{row.number}</td>
+                <td class="truncate whitespace-nowrap font-medium">{row.number}</td>
 
-                <td>{row.client}</td>
+                <td class="truncate whitespace-nowrap" title={row.client}>{row.client}</td>
 
-                <td class="text-base-content/60">{format_date(row.invoice_date)}</td>
+                <td class="whitespace-nowrap text-base-content/60">
+                  {format_date(row.invoice_date)}
+                </td>
 
-                <td class="text-base-content/60">{format_date(row.due_date)}</td>
+                <td class="whitespace-nowrap text-base-content/60">{format_date(row.due_date)}</td>
 
-                <td class="font-medium">{rupees(row.amount)}</td>
+                <td class="whitespace-nowrap font-medium tabular-nums">
+                  {rupees(row.amount)}
+                </td>
 
-                <td><.status_badge status={row.status} /></td>
+                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       navigate={~p"/invoices/#{row.id}"}
                       class={row_action_class()}
@@ -330,9 +343,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
                         </li>
 
                         <li>
-                          <%!-- A real navigation, not a LiveView event: the
-                          print view is a plain page the browser has to load
-                          before it can offer to save it. --%>
+                          <%!-- Real navigation: the print view is a plain page. --%>
                           <.link href={~p"/invoices/#{row.id}/pdf/download"}>
                             <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
                           </.link>
@@ -359,8 +370,8 @@ defmodule QuantumBillingWeb.InvoicesLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
     </Layouts.app>

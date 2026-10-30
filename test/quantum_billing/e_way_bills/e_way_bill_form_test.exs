@@ -121,8 +121,7 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
       assert %{total_goods_value: ["must be greater than 0"]} = errors_on(changeset)
     end
 
-    # The distance is what the validity is computed from, so a bill without one
-    # has no expiry — the form used not to ask for it at all.
+    # The validity is computed from the distance, so it is required.
     test "requires a distance the portal would accept" do
       assert %{distance_km: ["must be greater than 0"]} =
                errors_on(
@@ -171,13 +170,13 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
     test "sums goods, taxes and other charges from a changeset" do
       changeset = EWayBillForm.changeset(%EWayBillForm{}, valid_attrs(%{"other_amount" => "500"}))
 
-      assert EWayBillForm.total_invoice_value(changeset) == 71_300
+      assert EWayBillForm.total_invoice_value(changeset) == 7_130_000
     end
 
     test "treats missing amounts as zero" do
       changeset = EWayBillForm.changeset(%EWayBillForm{}, %{"total_goods_value" => "1000"})
 
-      assert EWayBillForm.total_invoice_value(changeset) == 1000
+      assert EWayBillForm.total_invoice_value(changeset) == 100_000
     end
 
     test "works on an applied struct too" do

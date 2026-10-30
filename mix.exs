@@ -88,6 +88,8 @@ defmodule QuantumBilling.MixProject do
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
+      # Public first, then each business's own schema.
+      "ecto.migrate": ["ecto.migrate", "quantum_billing.migrate_businesses"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind quantum_billing", "esbuild quantum_billing"],

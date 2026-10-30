@@ -32,14 +32,13 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
-  # Above this, an inter-state sale to an unregistered buyer is reported
-  # individually (B2CL) rather than summarised (B2CS). Whole rupees.
-  @b2cl_threshold 250_000
+  # Above ₹2,50,000 (held in paise), an inter-state B2C sale is reported as B2CL, not B2CS.
+  @b2cl_threshold 25_000_000
 
-  # Rows per database round trip while streaming a period.
   @stream_rows 500
 
   @doc """
@@ -115,14 +114,17 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         |> in_period(from, to)
         |> select([i], %{
           count: count(i.id),
-          value: coalesce(sum(i.grand_total), 0),
+          value: type(coalesce(sum(i.grand_total), 0), :integer),
           tax:
-            coalesce(
-              sum(
-                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            type(
+              coalesce(
+                sum(
+                  coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                    coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+                ),
+                0
               ),
-              0
+              :integer
             )
         })
         |> Repo.one()
@@ -131,27 +133,15 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     end
   end
 
-  # Cancelled invoices are not supplies and must not be filed. Drafts are
-  # included: in this application a draft has already consumed a number in the
-  # statutory series, so leaving it out would put a gap in the return.
+  # Cancelled invoices are excluded; drafts are included because they hold a number in the series.
   defp in_period(query, from, to) do
     query
     |> where([i], i.invoice_date >= ^from and i.invoice_date <= ^to)
     |> where([i], i.status != "Cancelled")
   end
 
-  # One streamed pass, shaping each invoice into the small maps the schema
-  # needs and dropping the row before reading the next.
-  #
-  # This used to load every invoice in the period as a full struct with its
-  # items preloaded, hold all of them, and then traverse the list four separate
-  # times — once per section — so nothing was released in between. A month of
-  # 1,625 invoices cost 27 MB; a business filing 20,000 in a month would have
-  # needed a third of a gigabyte to produce one return, on the 11th, when
-  # everyone files at once.
-  #
-  # `Repo.stream/2` cannot preload, so items are fetched a chunk at a time and
-  # attached by hand, the same way the backup export does it.
+  # Streamed in one pass to keep memory flat on large periods.
+  # Repo.stream/2 cannot preload, so items are fetched per chunk.
   defp accumulate(from, to) do
     empty = %{b2b: %{}, b2cl: %{}, b2cs: %{}, hsn: %{}}
 
@@ -188,9 +178,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     end)
   end
 
-  # Where one invoice lands. Exactly one of b2b, b2cl and b2cs takes it — the
-  # same three-way split the four separate filters used to make — and its lines
-  # always contribute to the HSN summary.
+  # Exactly one of b2b, b2cl and b2cs takes the invoice; its lines always feed the HSN summary.
   defp absorb(%Invoice{} = invoice, sections) do
     sections = %{sections | hsn: absorb_hsn(invoice, sections.hsn)}
 
@@ -211,11 +199,13 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
       %{
         "inum" => invoice.invoice_number,
         "idt" => format_date(invoice.invoice_date),
-        "val" => invoice.grand_total,
+        "val" => rupees(invoice.grand_total),
         "pos" => state_code(invoice.place_of_supply),
         "rchrg" => "N",
         "inv_typ" => "R",
-        "irn" => invoice.irn,
+        # A demo IRN was never registered; filing it would report a number the
+        # government has no record of.
+        "irn" => if(Invoice.demo_irn?(invoice), do: nil, else: invoice.irn),
         "itms" => rate_lines(invoice)
       }
       |> drop_nils()
@@ -227,16 +217,14 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     entry = %{
       "inum" => invoice.invoice_number,
       "idt" => format_date(invoice.invoice_date),
-      "val" => invoice.grand_total,
+      "val" => rupees(invoice.grand_total),
       "itms" => rate_lines(invoice)
     }
 
     Map.update(groups, state_code(invoice.place_of_supply), [entry], &[entry | &1])
   end
 
-  # Summarised, as the schema requires, by place of supply *and* rate *and*
-  # whether the supply was inter-state — grouping on the place alone merged
-  # rates into one line and reported them at a rate nobody charged.
+  # Grouped by place of supply, rate and inter-state flag, as the schema requires.
   defp absorb_b2cs(invoice, groups) do
     intra? = Invoice.intra_state?(invoice)
     pos = state_code(invoice.place_of_supply)
@@ -255,14 +243,12 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp absorb_hsn(%Invoice{items: items}, groups) when is_list(items) do
     Enum.reduce(items, groups, fn item, acc ->
-      # The field is `hsn_sac`. Reading `hsn_code` is what raised on every
-      # export that had a line item to summarise.
       key = {item.hsn_sac || "998311", item.tax_rate || 0}
 
       line = %{
         taxable: InvoiceItem.amount(item),
         tax: InvoiceItem.tax(item),
-        quantity: item.quantity || 0,
+        quantity: Money.quantity(item.quantity) || Decimal.new(0),
         description: item.description,
         uqc: uqc(item)
       }
@@ -272,7 +258,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
           held
           | taxable: held.taxable + line.taxable,
             tax: held.tax + line.tax,
-            quantity: held.quantity + line.quantity
+            quantity: Decimal.add(held.quantity, line.quantity)
         }
       end)
     end)
@@ -287,8 +273,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     CreditNote
     |> where([n], n.inserted_at >= ^from_at and n.inserted_at < ^to_at)
     |> where([n], n.status != "Cancelled")
-    # A note amends an invoice in this return. When that invoice is in the Bin
-    # it is not in the return, so neither is the note.
+    # Notes on binned invoices are left out with their invoice.
     |> join(:left, [n], i in assoc(n, :invoice))
     |> where([_n, i], is_nil(i.deleted_at))
     |> order_by([n], asc: n.id)
@@ -320,10 +305,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "pos" => pos,
         "typ" => "OE",
         "rt" => rate / 1,
-        "txval" => totals.taxable,
-        "iamt" => igst,
-        "camt" => cgst,
-        "samt" => sgst,
+        "txval" => rupees(totals.taxable),
+        "iamt" => rupees(igst),
+        "camt" => rupees(cgst),
+        "samt" => rupees(sgst),
         "csamt" => 0
       }
     end)
@@ -332,8 +317,6 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp format_cdnr(credit_notes) do
     credit_notes
-    # A note whose invoice has since been deleted has nothing to amend, and
-    # reading through the association would have raised here.
     |> Enum.filter(&match?(%Invoice{}, &1.invoice))
     |> Enum.group_by(& &1.invoice.client_gstin)
     |> Enum.reject(fn {ctin, _notes} -> ctin in [nil, ""] end)
@@ -349,7 +332,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
               "p_gst_flag" => "N",
               "inum" => note.invoice.invoice_number,
               "idt" => format_date(note.invoice.invoice_date),
-              "val" => decimal_to_number(note.grand_total),
+              "val" => rupees(note.grand_total),
               "rsn" => note.reason || "Adjustment"
             }
           end)
@@ -368,10 +351,10 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "hsn_sc" => hsn,
         "desc" => totals.description || "Goods or services",
         "uqc" => totals.uqc,
-        "qty" => totals.quantity,
+        "qty" => Decimal.to_float(totals.quantity),
         "rt" => rate / 1,
-        "txval" => totals.taxable,
-        "val" => totals.taxable + totals.tax,
+        "txval" => rupees(totals.taxable),
+        "val" => rupees(totals.taxable + totals.tax),
         "iamt" => 0,
         "camt" => 0,
         "samt" => 0,
@@ -382,7 +365,6 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   # ── Shared shaping ────────────────────────────────────────────────────────
 
-  # One entry per tax rate on the invoice, which is what `itms` means.
   defp rate_lines(%Invoice{} = invoice) do
     intra? = Invoice.intra_state?(invoice)
 
@@ -397,18 +379,17 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
         "num" => index,
         "itm_det" => %{
           "rt" => rate / 1,
-          "txval" => totals.taxable,
-          "iamt" => igst,
-          "camt" => cgst,
-          "samt" => sgst,
+          "txval" => rupees(totals.taxable),
+          "iamt" => rupees(igst),
+          "camt" => rupees(cgst),
+          "samt" => rupees(sgst),
           "csamt" => 0
         }
       }
     end)
   end
 
-  # Falls back to the invoice's own stored totals when it has no line items —
-  # a return still has to balance against the invoice value.
+  # Falls back to the stored totals when the invoice has no line items.
   defp rate_totals(%Invoice{items: items}) when is_list(items) and items != [] do
     items
     |> Enum.group_by(&(&1.tax_rate || 0))
@@ -443,9 +424,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     presence(gstin) != nil and type in [nil, "Tax Invoice", "Export Invoice", "Debit Note"]
   end
 
-  # `"Maharashtra (27)"` and `"27"` both carry the code the schema wants; the
-  # two-digit prefix of a bare state name does not, so that falls back rather
-  # than filing "Ma" as a state code.
+  # A bare state name has no code, so it falls back rather than filing "Ma".
   defp state_code(place) when is_binary(place) do
     case Regex.run(~r/\((\d{2})\)|^(\d{2})\b/, place) do
       [_match, code] -> code
@@ -473,9 +452,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp uqc(_item), do: "OTH"
 
-  defp decimal_to_number(%Decimal{} = decimal), do: Decimal.to_float(decimal)
-  defp decimal_to_number(number) when is_number(number), do: number
-  defp decimal_to_number(_other), do: 0
+  # The portal schema takes rupees as JSON numbers; two decimals survive a float.
+  defp rupees(nil), do: 0
+  defp rupees(paise) when is_integer(paise), do: paise / 100
 
   defp drop_nils(map), do: Map.reject(map, fn {_key, value} -> is_nil(value) end)
 

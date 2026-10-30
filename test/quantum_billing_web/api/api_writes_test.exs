@@ -55,8 +55,10 @@ defmodule QuantumBillingWeb.API.WritesTest do
       assert invoice.status == "Draft"
       assert is_binary(invoice.invoice_number)
       assert data["number"] == invoice.invoice_number
-      assert [%{"description" => "Consulting", "quantity" => 2, "rate" => 5000}] = data["items"]
+      # Paise in, paise out: 2 × ₹50.00.
+      assert [%{"description" => "Consulting", "quantity" => "2", "rate" => 5000}] = data["items"]
       assert data["amounts"]["taxable_value"] == 10_000
+      assert [%{rate: 5000}] = invoice.items
     end
 
     test "refuses, by name, every field the application sets for itself" do
@@ -120,6 +122,18 @@ defmodule QuantumBillingWeb.API.WritesTest do
       assert json_response(conn, 422)["error"]["fields"] == %{
                "items.0.amount" => ["is not accepted by the API"]
              }
+    end
+
+    test "a rate must be whole paise: no floats, no rupee strings" do
+      {raw, _key} = api_key_fixture(["invoices:write"])
+      client = client_fixture()
+
+      for rate <- [50.5, "5000", -1] do
+        body = invoice_body(client, %{"items" => [%{"description" => "x", "rate" => rate}]})
+        conn = raw |> api_conn() |> api_post(~p"/api/v1/invoices", body)
+
+        assert %{"items.0.rate" => [_]} = json_response(conn, 422)["error"]["fields"]
+      end
     end
 
     test "a client that does not exist, or is in the Bin, is a field error" do

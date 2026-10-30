@@ -33,12 +33,11 @@ defmodule QuantumBilling.EWayBills do
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Notifications
+  alias QuantumBilling.Paging
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
-  # Sort key to column. An allowlist, so the sort a browser asks for can never
-  # reach the query as an arbitrary column name. `value` lives on the invoice,
-  # which is why it is tagged with the binding it belongs to.
+  # Allowlisted sort columns; `value` lives on the invoice.
   @sortable %{
     ewb_no: {:bill, :ewb_number},
     issued_on: {:bill, :ewb_date},
@@ -83,19 +82,17 @@ defmodule QuantumBilling.EWayBills do
             }
           )
 
-          # Gated on `notify_ewb_generated`, and deliberately not matched on:
-          # the bill exists at the government's end whatever the mail relay
-          # does, so a notice that cannot be queued must not turn a successful
-          # generation into an error.
+          # Not matched on: the bill already exists at the government's end.
           _ = EWayBillNotifier.notify_generated(bill)
 
-          # The same switch also gates the in-app line, so turning the
-          # notification off turns off both the mail and the bell rather than
-          # half of each.
           if Settings.get_organization().notify_ewb_generated != false do
             Notifications.notify(%{
               kind: "e_way_bill",
-              title: "E-Way Bill #{bill.ewb_number} generated",
+              title:
+                if(EWayBill.demo?(bill),
+                  do: "Demo e-way bill #{bill.ewb_number} created (not filed)",
+                  else: "E-Way Bill #{bill.ewb_number} generated"
+                ),
               body: "#{invoice.invoice_number} · #{bill.vehicle_number || "no vehicle recorded"}",
               path: "/invoices/#{invoice.id}",
               dedupe_key: "ewb_generated:#{bill.id}"
@@ -140,9 +137,7 @@ defmodule QuantumBilling.EWayBills do
             }
           )
 
-          # Ungated, and a warning rather than a notice: a spent EWB number
-          # against a consignment already on the road is something the business
-          # has to know about, whatever it has asked not to be told.
+          # Always sent: a cancelled bill on a moving consignment must be known.
           Notifications.notify(%{
             kind: "e_way_bill",
             severity: "warning",
@@ -305,8 +300,6 @@ defmodule QuantumBilling.EWayBills do
     |> announce(:purge_e_way_bill, opts)
   end
 
-  # Audited and broadcast only when the write happened; the caller gets back
-  # exactly what the repo returned.
   defp announce({:ok, %EWayBill{} = bill} = result, action, opts) do
     Audit.log_event(action, "EWayBill", bill.id,
       user_id: Keyword.get(opts, :user_id),
@@ -342,11 +335,10 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  One page of e-way bills, searched, filtered, sorted and counted by the
-  database.
+  One page of e-way bills, searched, filtered and sorted by the database.
 
-  Returns `%{rows:, total:, page:, per_page:, total_pages:}`, the same shape the
-  invoice list uses, so both pages paginate identically.
+  Returns `%{rows:, page:, per_page:, has_next?:}`, the same shape the invoice
+  list uses, so both pages paginate identically — see `QuantumBilling.Paging`.
 
   ## Options
 
@@ -358,24 +350,22 @@ defmodule QuantumBilling.EWayBills do
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
-    query =
+    sort_field = Keyword.get(opts, :sort_field, :issued_on)
+    sort_dir = Keyword.get(opts, :sort_dir, :desc)
+
+    result =
       base_query()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
+      |> Paging.page(&order(&1, sort_field, sort_dir),
+        page: Keyword.get(opts, :page, 1),
+        per_page: per_page
+      )
 
-    total = Repo.aggregate(query, :count, :id)
-    total_pages = max(ceil(total / per_page), 1)
-    page = opts |> Keyword.get(:page, 1) |> clamp(1, total_pages)
-
-    rows =
-      query
-      |> order(Keyword.get(opts, :sort_field, :issued_on), Keyword.get(opts, :sort_dir, :desc))
-      |> limit(^per_page)
-      |> offset(^((page - 1) * per_page))
-      |> Repo.all()
-      |> then(fn bills -> if opts[:records], do: bills, else: Enum.map(bills, &to_row/1) end)
-
-    %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
+    # `records: true` hands back the bills themselves, for the API.
+    if Keyword.get(opts, :records, false),
+      do: result,
+      else: %{result | rows: Enum.map(result.rows, &to_row/1)}
   end
 
   @doc """
@@ -458,8 +448,6 @@ defmodule QuantumBilling.EWayBills do
 
   defp preload_bill(nil, _opts), do: nil
 
-  # The items come too: the goods table is the part of Form GST EWB-01 an
-  # officer actually reads, and without them it prints empty.
   defp preload_bill(%EWayBill{} = bill, opts) do
     Repo.preload(
       bill,
@@ -471,10 +459,7 @@ defmodule QuantumBilling.EWayBills do
     )
   end
 
-  # Part-B is a table of legs, and the first leg is the vehicle the bill was
-  # raised with. Nothing records it while it is still the only one — the bill's
-  # own `vehicle_number` says it — so the first update writes it down before
-  # overwriting it, or the journey would begin at its second vehicle.
+  # Records the original vehicle as the first Part-B leg before it is replaced.
   defp ensure_first_leg(%EWayBill{} = bill) do
     recorded? = Repo.exists?(from p in PartBUpdate, where: p.e_way_bill_id == ^bill.id)
 
@@ -492,14 +477,6 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  # Named bindings, because the row the list page renders is half bill and half
-  # invoice — the number and the vehicle come from one, the consignee and the
-  # value from the other.
-  #
-  # Bills whose invoice is in the Bin are left out. The list is of consignments
-  # being tracked, and a bill for a withdrawn document is not one; it comes
-  # back with the invoice if that is restored. Bills that are in the Bin
-  # themselves are left out for the plainer reason.
   @doc """
   A bill by id, visible on exactly the terms `page/1` lists it: not binned
   itself, and not raised against an invoice that is binned.
@@ -514,6 +491,7 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
+  # Bills in the Bin, or whose invoice is in the Bin, are left out.
   defp base_query do
     from b in EWayBill.kept(),
       as: :bill,
@@ -558,8 +536,7 @@ defmodule QuantumBilling.EWayBills do
     {binding, column} = Map.get(@sortable, field, {:bill, :ewb_date})
     direction = if direction == :asc, do: :asc, else: :desc
 
-    # The id breaks ties, so two bills issued on the same day cannot swap
-    # places between one page and the next.
+    # The id breaks ties so paging is stable.
     case binding do
       :bill ->
         order_by(query, [bill: b], [{^direction, field(b, ^column)}, {^direction, b.id}])
@@ -581,15 +558,12 @@ defmodule QuantumBilling.EWayBills do
     Map.new(params, fn {key, value} -> {to_string(key), value} end)
   end
 
-  # The list page's own vocabulary. It was written against a shape no schema
-  # ever had — `ewb_no`, `to_party`, `value` — so every row raised a KeyError
-  # as soon as one real bill existed. The keys are unchanged now the bill has
-  # a table of its own; only where they are read from moved.
   defp to_row(%EWayBill{invoice: %Invoice{} = invoice} = bill) do
     %{
       id: bill.id,
       invoice_id: invoice.id,
       ewb_no: bill.ewb_number,
+      portal_mode: bill.portal_mode,
       document_no: invoice.invoice_number,
       issued_on: bill.ewb_date,
       valid_until: bill.valid_until,
@@ -602,9 +576,6 @@ defmodule QuantumBilling.EWayBills do
       transporter_name: bill.transporter_name,
       mode_of_transport: bill.mode_of_transport,
       status: status(bill),
-      # Computed here rather than in the template, because the Rule 138(9)
-      # window is measured from `inserted_at`, which the row does not carry and
-      # the list page has no business knowing about.
       cancellable: cancellable?(bill)
     }
   end

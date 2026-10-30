@@ -177,7 +177,7 @@ defmodule QuantumBillingWeb.ClientNewLiveTest do
       view |> form("#client-form", %{"client" => params}) |> render_submit()
 
       assert [client] = Clients.list_clients()
-      assert client.credit_limit == 50_000
+      assert client.credit_limit == 5_000_000
       assert client.payment_terms_days == 45
       assert client.notes == "Pays on time."
     end
@@ -208,9 +208,6 @@ defmodule QuantumBillingWeb.ClientNewLiveTest do
     end
   end
 
-  # There was no way into this module with an existing client at all: the list
-  # page's row menu was a button with nothing behind it, so a client could be
-  # created and then never corrected.
   describe "editing an existing client" do
     setup do
       {:ok, client} = Clients.create_client(valid_params())

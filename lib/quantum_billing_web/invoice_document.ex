@@ -34,10 +34,7 @@ defmodule QuantumBillingWeb.InvoiceDocument do
   def sample(%Organization{} = organization) do
     seller = seller_fields(organization)
 
-    # Place of supply follows the seller's own state so the supply stays
-    # intra-state and the hard-coded CGST + SGST split below stays true of it.
-    # Left on the seller's state, an invoice from Karnataka to Maharashtra
-    # would print a CGST line that a real one would have raised as IGST.
+    # Seller's own state, so the hard-coded CGST + SGST split stays correct.
     place = seller[:company_state] || "Maharashtra (27)"
 
     sample(nil)
@@ -62,15 +59,15 @@ defmodule QuantumBillingWeb.InvoiceDocument do
       client_billing_address: "14 Harbour Road\nMumbai - 400002",
       client_email: "accounts@northwind.example",
       client_state: "Maharashtra (27)",
-      taxable_value: 24_000,
-      cgst_amount: 2_160,
-      sgst_amount: 2_160,
+      taxable_value: 2_400_000,
+      cgst_amount: 216_000,
+      sgst_amount: 216_000,
       igst_amount: 0,
       cess_amount: 0,
       round_off: 0,
-      grand_total: 28_320,
+      grand_total: 2_832_000,
       total_items: 2,
-      total_quantity: 3,
+      total_quantity: Decimal.new(3),
       remarks: "Delivered against PO-8842.",
       terms: "Payable within 30 days.",
       status: "Draft",
@@ -78,30 +75,28 @@ defmodule QuantumBillingWeb.InvoiceDocument do
         %InvoiceItem{
           description: "Design retainer",
           hsn_sac: "998311",
-          quantity: 1,
+          quantity: Decimal.new(1),
           unit: "Nos",
-          rate: 18_000,
+          rate: 1_800_000,
           tax_rate: 18,
-          amount: 18_000,
+          amount: 1_800_000,
           position: 0
         },
         %InvoiceItem{
           description: "Support hours",
           hsn_sac: "998313",
-          quantity: 2,
+          quantity: Decimal.new(2),
           unit: "Hrs",
-          rate: 3_000,
+          rate: 300_000,
           tax_rate: 18,
-          amount: 6_000,
+          amount: 600_000,
           position: 1
         }
       ]
     }
   end
 
-  # Only the fields that are actually filled in: a blank company name in
-  # settings should leave the placeholder standing rather than print an
-  # invoice with no seller on it.
+  # Only filled fields, so blanks keep the placeholder.
   defp seller_fields(%Organization{} = organization) do
     address =
       [organization.address, "#{organization.city} #{organization.pincode}"]

@@ -22,7 +22,7 @@ defmodule QuantumBillingWeb.API.V1.ClientJSON do
   def index(%{page: page}) do
     %{
       data: Enum.map(page.rows, &client/1),
-      meta: Map.take(page, [:page, :per_page, :total, :total_pages])
+      meta: QuantumBillingWeb.API.Pagination.meta(page)
     }
   end
 

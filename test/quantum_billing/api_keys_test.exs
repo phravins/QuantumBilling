@@ -5,11 +5,13 @@ defmodule QuantumBilling.ApiKeysTest do
 
   alias QuantumBilling.ApiKeys
   alias QuantumBilling.ApiKeys.ApiKey
+  alias QuantumBilling.Businesses
 
   defp create(attrs) do
     ApiKeys.create_key(
       Map.merge(%{"name" => "Sync", "scopes" => ["invoices:read"]}, attrs),
-      owner_fixture()
+      owner_fixture(),
+      Businesses.default!()
     )
   end
 
@@ -76,7 +78,7 @@ defmodule QuantumBilling.ApiKeysTest do
       |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(:second), -2 * 86_400))
       |> Repo.update!()
 
-      assert {:ok, 1} = ApiKeys.prune_idempotency_keys()
+      assert {:ok, 1} = ApiKeys.prune_idempotency_keys(Businesses.default!())
       assert {:error, :in_progress} = ApiKeys.begin_idempotent(key, "new", "hash")
       assert {:proceed, _} = ApiKeys.begin_idempotent(key, "old", "hash")
     end

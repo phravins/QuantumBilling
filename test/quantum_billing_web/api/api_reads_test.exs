@@ -92,11 +92,30 @@ defmodule QuantumBillingWeb.API.ReadsTest do
       {raw, _key} = api_key_fixture(["clients:read"])
       client_fixture()
 
-      body = raw |> api_conn() |> get(~p"/api/v1/clients?page=9999") |> json_response(200)
+      body = raw |> api_conn() |> get(~p"/api/v1/clients?page=999") |> json_response(200)
 
       assert body["data"] == []
-      assert body["meta"]["page"] == 9999
-      assert body["meta"]["total_pages"] < 9999
+      assert body["meta"] == %{"page" => 999, "per_page" => 25, "has_next" => false}
+    end
+
+    test "says whether there is a next page, without counting" do
+      {raw, _key} = api_key_fixture(["clients:read"])
+      for _ <- 1..3, do: client_fixture()
+
+      first = raw |> api_conn() |> get(~p"/api/v1/clients?per_page=2") |> json_response(200)
+
+      assert length(first["data"]) == 2
+      assert first["meta"]["has_next"] == true
+      refute Map.has_key?(first["meta"], "total")
+    end
+
+    test "refuses pages beyond the furthest any list reads" do
+      {raw, _key} = api_key_fixture(["clients:read"])
+
+      conn =
+        raw |> api_conn() |> get("/api/v1/clients?page=#{QuantumBilling.Paging.max_page() + 1}")
+
+      assert json_response(conn, 400)["error"]["fields"]["page"]
     end
 
     test "status and search narrow the list" do

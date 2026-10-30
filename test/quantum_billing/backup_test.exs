@@ -60,12 +60,10 @@ defmodule QuantumBilling.BackupTest do
       client = client_fixture()
       invoice_fixture(client)
 
-      # The previous exporter handed structs to Jason, which raises on
-      # `__meta__` — so the download button returned a 500 every time.
       json = Backup.export_json()
       data = Jason.decode!(json)
 
-      assert data["version"] == "2.1"
+      assert data["version"] == "3.0"
       assert [%{"name" => "Acme Corp"}] = data["clients"]
       assert [%{"invoice_number" => number}] = data["invoices"]
       assert is_binary(number)
@@ -132,8 +130,6 @@ defmodule QuantumBilling.BackupTest do
       assert counts.invoices == 1
       assert counts.invoice_items == 1
 
-      # The previous restore deleted invoices and re-inserted only clients, so
-      # restoring a backup destroyed the invoices it was meant to bring back.
       [restored] = Invoices.list_invoices()
       assert restored.number == invoice.invoice_number
 
@@ -186,9 +182,7 @@ defmodule QuantumBilling.BackupTest do
       assert Recurring.due_profiles() == []
     end
 
-    # The same for the two kinds that reached the Bin later. A restore that
-    # dropped `deleted_at` here would put a deleted customer back in every
-    # picker, and have a deleted e-way bill claim its invoice again.
+    # The same for clients and e-way bills in the Bin.
     test "a client and an e-way bill that were in the Bin are still in it afterwards" do
       kept = client_fixture()
 
@@ -288,9 +282,7 @@ defmodule QuantumBilling.BackupTest do
       client = client_fixture()
       invoice = invoice_fixture(client)
 
-      # What a 2.0 export looked like: the bill lived on the invoice, in eight
-      # columns that no longer exist on the schema. Users still hold these
-      # files, so refusing them would destroy working backups.
+      # A 2.0 export kept the bill on the invoice; users still hold these files.
       legacy =
         Backup.export_json()
         |> Jason.decode!()
@@ -324,6 +316,83 @@ defmodule QuantumBilling.BackupTest do
       assert bill.status == "Active"
       assert bill.invoice_id == invoice.id
       assert bill.valid_until == ~N[2026-03-03 00:00:00]
+      # Nothing in a 2.0 file says how the bill was issued.
+      assert bill.portal_mode == "demo"
+    end
+
+    test "keeps the portal mode, and infers it for files written before it was recorded" do
+      client = client_fixture()
+      invoice = invoice_fixture(client)
+      {:ok, _bill} = QuantumBilling.EWayBills.generate_e_way_bill(invoice, %{})
+
+      Repo.update!(
+        Ecto.Changeset.change(invoice,
+          irn: String.duplicate("a", 64),
+          signed_invoice: "MOCK_SIGNED_JWT_x",
+          irn_mode: "demo"
+        )
+      )
+
+      # Round trip.
+      assert {:ok, _counts} = Backup.restore_json(Backup.export_json())
+      assert Repo.get!(Invoice, invoice.id).irn_mode == "demo"
+      assert [%{portal_mode: "demo"}] = Repo.all(QuantumBilling.EWayBills.EWayBill)
+
+      # An older 3.0 file, without either field.
+      older =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> update_in(["invoices"], fn rows -> Enum.map(rows, &Map.delete(&1, "irn_mode")) end)
+        |> update_in(["e_way_bills"], fn rows ->
+          Enum.map(rows, &Map.delete(&1, "portal_mode"))
+        end)
+        |> Jason.encode!()
+
+      assert {:ok, _counts} = Backup.restore_json(older)
+      assert Repo.get!(Invoice, invoice.id).irn_mode == "demo"
+      assert [%{portal_mode: "demo"}] = Repo.all(QuantumBilling.EWayBills.EWayBill)
+    end
+
+    test "restores a 2.1 file, reading its whole-rupee amounts as paise" do
+      client = client_fixture(%{credit_limit: "50000"})
+      invoice = invoice_fixture(client)
+
+      # 2.1 held whole rupees and whole-number quantities.
+      to_rupees = fn row, fields ->
+        Enum.reduce(fields, row, fn field, acc ->
+          Map.update(acc, field, nil, &(&1 && div(&1, 100)))
+        end)
+      end
+
+      legacy =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("version", "2.1")
+        |> update_in(["invoices"], fn rows ->
+          Enum.map(
+            rows,
+            &to_rupees.(&1, ~w(taxable_value cgst_amount sgst_amount igst_amount
+                               cess_amount round_off grand_total))
+          )
+        end)
+        |> update_in(["invoice_items"], fn rows ->
+          Enum.map(rows, &(&1 |> to_rupees.(~w(rate amount)) |> Map.put("quantity", 2)))
+        end)
+        |> update_in(["clients"], fn rows ->
+          Enum.map(rows, &to_rupees.(&1, ~w(credit_limit opening_balance outstanding)))
+        end)
+        |> update_in(["organization"], &(&1 && to_rupees.(&1, ~w(ewb_threshold_value))))
+        |> Jason.encode!()
+
+      assert {:ok, _counts} = Backup.restore_json(legacy)
+
+      restored = Invoices.get_invoice!(invoice.id)
+      assert restored.grand_total == invoice.grand_total
+      assert restored.taxable_value == 1_000_000
+      assert [%{rate: 500_000, amount: 1_000_000} = item] = restored.items
+      assert Decimal.equal?(item.quantity, 2)
+      assert Clients.get_client!(client.id).credit_limit == 5_000_000
+      assert Settings.get_organization().ewb_threshold_value == 5_000_000
     end
 
     test "a 2.0 file with no e-way bill on its invoices restores no bills" do
@@ -384,12 +453,9 @@ defmodule QuantumBilling.BackupTest do
 
       chunks = Enum.reverse(chunks)
 
-      # The whole point of the rework: the download starts on the first chunk
-      # and the file is never assembled in memory. `export_json/0` at fifty
-      # thousand invoices held a hundred megabytes of binary at once and took
-      # thirty-six seconds before the browser saw a byte.
+      # Streamed: the download starts on the first chunk and is never held in memory whole.
       assert length(chunks) > 25
-      assert hd(chunks) =~ ~s("version":"2.1")
+      assert hd(chunks) =~ ~s("version":"3.0")
 
       document = chunks |> Enum.join() |> Jason.decode!()
       assert length(document["invoices"]) == 25
@@ -413,9 +479,7 @@ defmodule QuantumBilling.BackupTest do
   describe "restore_json/1 at volume" do
     test "inserts in batches rather than one statement per section" do
       client = client_fixture()
-      # Postgres refuses a statement with more than 65,535 parameters, so a
-      # single `insert_all` over a real backup's invoices fails outright. These
-      # are few enough to be quick and many enough to cross a batch boundary.
+      # Enough rows to cross an insert_all batch boundary (Postgres caps parameters at 65,535).
       for _ <- 1..120, do: invoice_fixture(client)
 
       json = Backup.export_json()

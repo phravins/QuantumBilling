@@ -9,7 +9,13 @@ configuration, never in a web page, a mobile app or a URL.
 
 ## Keys
 
-An **owner** creates keys under **Settings › API keys**. Each key has:
+An **owner** creates keys under **Settings › API keys**, in the business they
+are working in. **A key belongs to that one business**: it reads and writes that
+business's books only, and nothing in a request can point it at another. On an
+installation that keeps several businesses, each needs keys of its own. If a
+business is archived, its keys stop working.
+
+Each key has:
 
 - a **name** — use the name of the system that will hold it;
 - **permissions** (scopes) — tick only what that system needs;
@@ -87,14 +93,17 @@ Per key, per minute: **600 reads** and **60 writes**. Every response carries
 
 ## Pagination
 
-List endpoints take `page` (from 1) and `per_page` (default 25, at most 100), and
-return:
+List endpoints take `page` (1 to 1000) and `per_page` (default 25, at most 100),
+and return:
 
 ```json
-{"data": [ … ], "meta": {"page": 1, "per_page": 25, "total": 312, "total_pages": 13}}
+{"data": [ … ], "meta": {"page": 1, "per_page": 25, "has_next": true}}
 ```
 
-A page past the end returns `"data": []`. Stop when `page >= total_pages`.
+Keep requesting the next page while `has_next` is true. Lists are not counted —
+counting a large table on every page is what made the screens slow — so there
+is no total. A page past the end returns `"data": []`. Pages stop at 1000; to
+reach further, narrow the list with `status` or `search`.
 
 Lists also accept `status` (exact match, e.g. `Draft`, `Paid`) and `search`.
 
@@ -141,9 +150,15 @@ The calling key's `name`, `prefix`, `scopes`, `expires_at` and `created_at`.
 }
 ```
 
-Amounts are whole rupees, as integers. `GET /invoices/:id` adds `items`
-(`position`, `description`, `hsn_sac`, `quantity`, `unit`, `rate`, `tax_rate`,
-`amount`). `payment_url` is added only for keys with `invoices:payment_links`.
+**Every amount is an integer number of paise** (₹1 = 100 paise), in responses
+and in requests alike — `11800` above is ₹118.00. Integers, so nothing is lost to
+floating-point rounding on a tax figure.
+
+`GET /invoices/:id` adds `items` (`position`, `description`, `hsn_sac`,
+`quantity`, `unit`, `rate`, `tax_rate`, `amount`). `quantity` is a decimal sent
+as a string (`"2.5"`); `rate` and `amount` are paise. `payment_url` is added only
+for keys with `invoices:payment_links`, and names the business
+(`https://…/p/<business>/<token>`).
 
 The client's email, PAN and address are not on invoices; read them from
 `/clients` with `clients:read`.
@@ -162,13 +177,15 @@ The client's email, PAN and address are not on invoices; read them from
   "terms": "Payable within 30 days.",
   "items": [
     {"description": "Consulting", "hsn_sac": "998313", "quantity": 2, "unit": "Nos",
-     "rate": 5000, "tax_rate": 18}
+     "rate": 500000, "tax_rate": 18}
   ]
 }
 ```
 
 Required: `client_id`, `invoice_date`, `place_of_supply`, and 1–200 `items`, each
-with a `description`. The invoice is created as a **Draft**.
+with a `description`. `rate` is paise (`500000` is ₹5,000.00) and must be a whole
+number; `quantity` may be a number or a decimal string. The invoice is created as
+a **Draft**.
 
 The server decides, and the body cannot set: the invoice number; your company's
 details; the client's name, GSTIN and address (copied from the client record);

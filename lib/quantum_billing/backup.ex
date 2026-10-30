@@ -52,22 +52,28 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money.Paise
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  @version "2.1"
+  @version "3.0"
 
-  # 2.0 files are still restored. They carried the e-way bill on the invoice
-  # itself, in eight columns that no longer exist; `upgrade/1` turns those into
-  # `e_way_bills` rows on the way in. Refusing them would have destroyed every
-  # backup users already hold, which is the one thing a backup must not do.
-  @readable_versions ["2.0", @version]
+  # Older files are still restored; upgrade/1 brings them to the current shape.
+  @readable_versions ["2.0", "2.1", @version]
 
-  # Read from the settings row, minus the credentials. `Encrypted.Secret`
-  # columns decrypt on load, so including them would put live secrets in the
-  # file in plaintext.
+  # Before 3.0 these held whole rupees (credit notes, two-place decimals); now paise.
+  @rupee_fields %{
+    "invoices" =>
+      ~w(taxable_value cgst_amount sgst_amount igst_amount cess_amount round_off grand_total),
+    "invoice_items" => ~w(rate amount),
+    "clients" => ~w(credit_limit opening_balance outstanding),
+    "credit_notes" => ~w(subtotal tax_total grand_total)
+  }
+
+  # Credentials are excluded: encrypted columns decrypt on load. So are the
+  # sign-in rules, which belong to the installation rather than this business.
   @organization_fields ~w(company_name trade_name address city pincode phone email gstin pan
                           state currency financial_year timezone date_format invoice_prefix
                           invoice_next_number invoice_number_padding invoice_due_days
@@ -76,8 +82,7 @@ defmodule QuantumBilling.Backup do
                           tds_enabled notify_invoice_created notify_ewb_generated
                           notify_filing_reminders reminder_lead_days language rows_per_page
                           upi_vpa upi_payee_name razorpay_key_id irp_username irp_client_id
-                          webhook_url allowed_ips session_timeout_minutes enforce_2fa
-                          audit_retention_days doc_logo_path)a
+                          webhook_url audit_retention_days doc_logo_path)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city
@@ -91,7 +96,7 @@ defmodule QuantumBilling.Backup do
                      company_name company_address company_gstin company_state remarks terms
                      total_items total_quantity taxable_value cgst_amount sgst_amount igst_amount
                      cess_amount round_off grand_total status irn ack_number ack_date
-                     signed_qr_code signed_invoice currency
+                     signed_qr_code signed_invoice irn_mode currency
                      exchange_rate export_type lut_number razorpay_payment_link_id
                      razorpay_payment_url razorpay_payment_id public_token template_id
                      layout_xml deleted_at)a
@@ -100,16 +105,13 @@ defmodule QuantumBilling.Backup do
 
   @e_way_bill_fields ~w(id invoice_id ewb_number ewb_date valid_until status distance_km
                         mode_of_transport vehicle_number transporter_id transporter_name
-                        cancelled_at cancellation_reason deleted_at)a
+                        cancelled_at cancellation_reason deleted_at portal_mode)a
 
   @part_b_fields ~w(id e_way_bill_id vehicle_number mode_of_transport place reason updated_on)a
 
   @template_fields ~w(id name layout_xml accent is_default archived_at)a
 
-  # `deleted_at` on clients, invoices, e-way bills and profiles is what puts a
-  # record in the Bin. It travels with the backup so a restore does not quietly
-  # bring back everything that had been deleted; a file written before the
-  # column existed simply has no value for it, which reads as "not in the Bin".
+  # deleted_at travels with the backup so binned records stay in the Bin.
   @profile_fields ~w(id title frequency next_run_date status auto_send_email client_id
                      items_json deleted_at)a
 
@@ -118,12 +120,7 @@ defmodule QuantumBilling.Backup do
 
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
-  # Every table in the file, in the order it is written and restored. Parents
-  # before children, so a restore never inserts a row whose foreign key has
-  # not arrived yet.
-  # Keyed by atom rather than by string: the JSON name is derived from it,
-  # while going the other way would mean `String.to_existing_atom/1` on a name
-  # that may never have been an atom in this release.
+  # Parents before children, so foreign keys resolve on restore.
   @sections [
     {:clients, Client, @client_fields},
     {:templates, InvoiceTemplate, @template_fields},
@@ -136,11 +133,9 @@ defmodule QuantumBilling.Backup do
     {:audit_logs, AuditLog, @audit_fields}
   ]
 
-  # Postgres accepts at most 65,535 bind parameters per statement. Batches are
-  # sized from the widest row so the count stays comfortably under it.
+  # Postgres allows at most 65,535 bind parameters per statement.
   @max_parameters 20_000
 
-  # How many rows `Repo.stream/2` fetches from its cursor at a time.
   @stream_rows 500
 
   @doc """
@@ -202,8 +197,6 @@ defmodule QuantumBilling.Backup do
       Jason.encode_to_iodata!(@version),
       ",\"generated_at\":",
       Jason.encode_to_iodata!(DateTime.utc_now() |> DateTime.to_iso8601()),
-      # Said in the file itself, because whoever restores it six months from
-      # now will not be whoever read the release notes.
       ",\"note\":",
       Jason.encode_to_iodata!(
         "Credentials (SMTP password, API secrets, webhook secret) are deliberately " <>
@@ -239,17 +232,13 @@ defmodule QuantumBilling.Backup do
          :ok <- check_version(data) do
       data = upgrade(data)
 
-      # No timeout: restoring a year of invoices is one long transaction by
-      # nature, and the pool's fifteen-second default aborted it at exactly the
-      # size where a restore is worth having.
+      # No timeout: a large restore is one long transaction.
       Repo.transaction(
         fn ->
-          # Children first: invoice items and credit notes reference invoices,
-          # invoices reference clients.
+          # Children first.
           Repo.delete_all(AuditLog)
           Repo.delete_all(CreditNote)
           Repo.delete_all(InvoiceItem)
-          # Part-B rows hang off e-way bills, which hang off invoices.
           Repo.delete_all(PartBUpdate)
           Repo.delete_all(EWayBill)
           Repo.delete_all(Invoice)
@@ -264,9 +253,7 @@ defmodule QuantumBilling.Backup do
 
           restore_organization!(data["organization"])
 
-          # The rows carry their original ids, so every sequence has to be moved
-          # past them. Without this the next insert reuses id 1 and fails on the
-          # primary key.
+          # Rows keep their ids, so move every sequence past them.
           Enum.each(
             ~w(clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
                invoice_templates recurring_profiles credit_notes audit_logs),
@@ -294,9 +281,6 @@ defmodule QuantumBilling.Backup do
     end
   end
 
-  # 1.0 files were produced by an exporter that raised before writing anything,
-  # so none exist; anything claiming to be one is not a backup of this system.
-  # 2.0 and 2.1 both restore — see `upgrade/1`.
   defp check_version(%{"version" => version}) when version in @readable_versions, do: :ok
 
   defp check_version(%{"version" => other}),
@@ -306,13 +290,7 @@ defmodule QuantumBilling.Backup do
 
   defp check_version(_data), do: {:error, "That file is not a QuantumBilling backup."}
 
-  # Brings a 2.0 file up to the current shape.
-  #
-  # In 2.0 an e-way bill was eight columns on the invoice, so a file holds at
-  # most one bill per invoice and no Part-B history at all. Each invoice that
-  # carries an EWB number becomes one `e_way_bills` row; the extra keys left on
-  # the invoice are ignored, because `cast_row/3` reads only the fields named
-  # in `@invoice_fields`.
+  # A 2.0 file kept the e-way bill as columns on the invoice.
   defp upgrade(%{"version" => "2.0"} = data) do
     bills =
       data
@@ -324,10 +302,58 @@ defmodule QuantumBilling.Backup do
     data
     |> Map.put("e_way_bills", bills)
     |> Map.put("e_way_bill_part_b_updates", [])
+    |> Map.put("version", "2.1")
+    |> upgrade()
+  end
+
+  # A 2.1 file holds rupees where 3.0 holds paise.
+  defp upgrade(%{"version" => "2.1"} = data) do
+    data =
+      Enum.reduce(@rupee_fields, data, fn {section, fields}, acc ->
+        Map.update(acc, section, [], fn
+          rows when is_list(rows) -> Enum.map(rows, &rupees_to_paise(&1, fields))
+          other -> other
+        end)
+      end)
+
+    data
+    |> Map.update("organization", nil, &rupees_to_paise(&1, ~w(ewb_threshold_value)))
     |> Map.put("version", @version)
   end
 
   defp upgrade(data), do: data
+
+  defp rupees_to_paise(row, fields) when is_map(row) do
+    Enum.reduce(fields, row, fn field, acc ->
+      case Map.fetch(acc, field) do
+        {:ok, rupees} when is_integer(rupees) ->
+          Map.put(acc, field, rupees * 100)
+
+        {:ok, rupees} when is_binary(rupees) or is_float(rupees) ->
+          Map.put(acc, field, paise(rupees))
+
+        _absent_or_nil ->
+          acc
+      end
+    end)
+  end
+
+  defp rupees_to_paise(other, _fields), do: other
+
+  # Leaves an unreadable value for cast_row/3 to reject by name.
+  defp paise(rupees) do
+    decimal = if is_float(rupees), do: Decimal.from_float(rupees), else: Decimal.parse(rupees)
+
+    case decimal do
+      %Decimal{} = decimal -> paise_of(decimal)
+      {%Decimal{} = decimal, ""} -> paise_of(decimal)
+      _not_a_number -> rupees
+    end
+  end
+
+  defp paise_of(decimal) do
+    decimal |> Decimal.mult(100) |> Decimal.round(0, :half_up) |> Decimal.to_integer()
+  end
 
   defp issued?(%{"ewb_number" => number}) when is_binary(number), do: String.trim(number) != ""
   defp issued?(_invoice), do: false
@@ -340,11 +366,8 @@ defmodule QuantumBilling.Backup do
       "invoice_id" => invoice["id"],
       "ewb_number" => invoice["ewb_number"],
       "ewb_date" => ewb_date,
-      # Rule 138(10) gives one day per 200 km, and a 2.0 file that never
-      # recorded an expiry can only be assumed to have had the minimum.
+      # Rule 138(10): assume the minimum one-day validity.
       "valid_until" => invoice["ewb_valid_until"] || day_after(ewb_date),
-      # A cancelled invoice cannot have a live bill against it, and the column
-      # the status would have come from never existed.
       "status" => if(invoice["status"] == "Cancelled", do: "Cancelled", else: "Active"),
       "distance_km" => invoice["distance_km"] || 0,
       "mode_of_transport" => invoice["mode_of_transport"] || "Road",
@@ -372,9 +395,7 @@ defmodule QuantumBilling.Backup do
     end
   end
 
-  # `insert_all/3` rather than changesets: a backup is data this application
-  # already validated on the way in, and re-validating it would reject rows
-  # whose rules have since changed — which is precisely when a restore matters.
+  # insert_all rather than changesets: re-validating old rows could reject them.
   defp insert_all!(_schema, nil, _fields), do: 0
   defp insert_all!(_schema, [], _fields), do: 0
 
@@ -383,10 +404,6 @@ defmodule QuantumBilling.Backup do
     has_timestamps? = :inserted_at in schema.__schema__(:fields)
     has_updated_at? = :updated_at in schema.__schema__(:fields)
 
-    # One statement per batch. A single `insert_all` of every row would exceed
-    # Postgres's 65,535-parameter ceiling on any real dataset and be rejected
-    # outright — the restore failed precisely when there was something to
-    # restore.
     batch_size = max(div(@max_parameters, max(length(fields) + 2, 1)), 1)
 
     rows
@@ -413,21 +430,42 @@ defmodule QuantumBilling.Backup do
   defp maybe_put(map, false, _key, _value), do: map
   defp maybe_put(map, true, key, value), do: Map.put(map, key, value)
 
-  # JSON gives back strings; the database wants dates, decimals and maps. Ecto's
-  # own type casting is what knows which is which, per column.
   defp cast_row(row, schema, fields) when is_map(row) do
-    for field <- fields, into: %{} do
-      value = Map.get(row, Atom.to_string(field), Map.get(row, field))
+    cast =
+      for field <- fields, into: %{} do
+        value = Map.get(row, Atom.to_string(field), Map.get(row, field))
 
-      case Ecto.Type.cast(schema.__schema__(:type, field), value) do
-        {:ok, cast} -> {field, cast}
-        :error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
+        case Ecto.Type.cast(stored_type(schema, field), value) do
+          {:ok, cast} -> {field, cast}
+          _error -> Repo.rollback("#{schema}.#{field} could not read #{inspect(value)}.")
+        end
       end
-    end
+
+    fill_portal_mode(schema, cast)
   end
 
   defp cast_row(other, schema, _fields) do
     Repo.rollback("#{schema} expected an object per row, got #{inspect(other)}.")
+  end
+
+  # Backups written before the portal mode was recorded: the same rule as the
+  # migration that added it. Bills become demo; a simulated IRN is signed
+  # MOCK_SIGNED_JWT_.
+  defp fill_portal_mode(EWayBill, %{portal_mode: nil} = row), do: %{row | portal_mode: "demo"}
+
+  defp fill_portal_mode(Invoice, %{irn_mode: nil, irn: irn} = row) when is_binary(irn) do
+    mock? = String.starts_with?(row[:signed_invoice] || "", "MOCK_SIGNED_JWT_")
+    %{row | irn_mode: if(mock?, do: "demo", else: "live")}
+  end
+
+  defp fill_portal_mode(_schema, row), do: row
+
+  # The file holds paise; casting through Paise would read them as rupees.
+  defp stored_type(schema, field) do
+    case schema.__schema__(:type, field) do
+      Paise -> :integer
+      type -> type
+    end
   end
 
   defp restore_organization!(nil), do: :ok
@@ -442,9 +480,9 @@ defmodule QuantumBilling.Backup do
           into: %{} do
         value = Map.get(attrs, Atom.to_string(field))
 
-        case Ecto.Type.cast(Organization.__schema__(:type, field), value) do
+        case Ecto.Type.cast(stored_type(Organization, field), value) do
           {:ok, cast} -> {field, cast}
-          :error -> Repo.rollback("organization.#{field} could not read #{inspect(value)}.")
+          _error -> Repo.rollback("organization.#{field} could not read #{inspect(value)}.")
         end
       end
 
@@ -463,16 +501,19 @@ defmodule QuantumBilling.Backup do
   defp restore_organization!(_other),
     do: Repo.rollback("Settings in the backup are not an object.")
 
+  # Raw SQL skips Ecto's prefix, so the table is named with its schema.
   defp resync_sequence(table) do
+    qualified = ~s("#{Repo.business_schema!()}".#{table})
+
     Repo.query!(
       """
       SELECT setval(
         pg_get_serial_sequence($1, 'id'),
-        COALESCE((SELECT MAX(id) FROM #{table}), 0) + 1,
+        COALESCE((SELECT MAX(id) FROM #{qualified}), 0) + 1,
         false
       )
       """,
-      [table]
+      [qualified]
     )
   end
 end

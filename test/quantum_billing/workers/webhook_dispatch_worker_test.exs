@@ -34,9 +34,7 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorkerTest do
     :ok
   end
 
-  # A blank credential means "I did not touch it" — the settings form is
-  # write-only for secrets, so it always posts an empty box. Clearing one for
-  # real is a direct write.
+  # A blank secret means "unchanged" in the settings form, so clearing is a direct write.
   defp clear_webhook_secret do
     Settings.get_organization()
     |> Ecto.Changeset.change(%{webhook_secret: nil})
@@ -138,10 +136,8 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorkerTest do
 
   describe "the endpoint is re-checked immediately before sending" do
     test "a job is discarded when the endpoint now points inside the network" do
-      # Saved as something acceptable, then changed underneath — which is also
-      # what DNS rebinding looks like: the name that passed at save time now
-      # resolves somewhere private. The check at save time cannot catch that;
-      # this one can, because it runs against live DNS right before connecting.
+      # Changed after saving, as DNS rebinding would; the worker re-checks live DNS
+      # before connecting.
       Settings.get_organization()
       |> Ecto.Changeset.change(%{webhook_url: "http://169.254.169.254/latest/meta-data/"})
       |> Repo.update!()
@@ -184,9 +180,7 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorkerTest do
 
   describe "the stored signing secret" do
     test "survives a settings save that posts the secret box empty" do
-      # The box is write-only, so it renders empty on every load and posts
-      # empty on every save. Treating that as "clear it" would wipe the
-      # secret whenever anyone changed the webhook URL.
+      # The secret box always posts empty, which must not clear it.
       {:ok, _organization} =
         Settings.update_section(
           Settings.get_organization(),

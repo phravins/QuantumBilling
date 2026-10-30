@@ -5,11 +5,6 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
   setup :register_and_log_in_user
 
-  # Search, sorting, status filtering, pagination and the summary-tile filter
-  # shortcuts all need rows to act on, and there are none until the clients
-  # table exists. Those tests come back with the schema, built on database
-  # fixtures rather than invented records.
-
   test "renders the page shell", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/clients")
 
@@ -71,7 +66,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
           "billing_pin" => "400093"
         })
 
-      # No GSTIN and no email — the shape that used to crash the search.
+      # No GSTIN and no email.
       {:ok, walk_in} =
         QuantumBilling.Clients.create_client(%{
           "client_type" => "Consumer",
@@ -107,8 +102,6 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
     end
 
     test "search does not crash on a client with no GSTIN or email", %{conn: conn} do
-      # filter_search/2 used to call String.downcase/1 on both unguarded, so any
-      # search at all blew up once an unregistered client existed.
       {:ok, view, _html} = live(conn, ~p"/clients")
 
       html = view |> form("#clients-search", %{"q" => "walk"}) |> render_change()
@@ -135,9 +128,6 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
       assert html =~ "Walk-in Buyer"
     end
 
-    # Both row actions used to be decoration: the kebab was a `<button>` with no
-    # `phx-click`, and the eye linked to a query string `InvoicesLive` never
-    # read. These are the tests that would have caught either.
     test "the row menu links to the client's own edit page", %{
       conn: conn,
       business_client: client
@@ -150,9 +140,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
              )
     end
 
-    # The eye used to point at `/invoices?q=<name>`, which is what the menu's
-    # "View invoices" item beside it already does. On a directory row the eye
-    # means "open this record", so it opens the client.
+    # The eye opens the client; the menu has "View invoices".
     test "the eye opens the client", %{conn: conn, business_client: client} do
       {:ok, view, _html} = live(conn, ~p"/clients")
 
@@ -268,6 +256,34 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
       render_click(view, "delete", %{"id" => "not-an-id"})
       assert has_element?(view, "#flash-error", "no longer exists")
+    end
+  end
+
+  describe "rows that fit the screen" do
+    setup do
+      for n <- 1..12 do
+        {:ok, _client} =
+          QuantumBilling.Clients.create_client(%{
+            "client_type" => "Consumer",
+            "name" => "Buyer #{n}",
+            "phone" => "90000000#{String.pad_leading("#{n}", 2, "0")}",
+            "billing_line1" => "Shop #{n}",
+            "billing_city" => "Pune",
+            "billing_state" => "Maharashtra (27)",
+            "billing_pin" => "411001"
+          })
+      end
+
+      :ok
+    end
+
+    test "the pager's measured fit replaces the default page size", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/clients")
+      assert has_element?(view, ~s|button[aria-label="Next page"]:not([disabled])|)
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 15})
+
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
     end
   end
 end

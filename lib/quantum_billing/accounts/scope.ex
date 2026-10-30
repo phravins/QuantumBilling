@@ -17,8 +17,11 @@ defmodule QuantumBilling.Accounts.Scope do
   """
 
   alias QuantumBilling.Accounts.User
+  alias QuantumBilling.Businesses.Membership
 
-  defstruct user: nil
+  # `business` and `membership` are the business being worked in and the
+  # caller's place in it; `businesses` is every one they may switch to.
+  defstruct user: nil, business: nil, membership: nil, businesses: []
 
   @doc """
   Creates a scope for the given user.
@@ -31,13 +34,19 @@ defmodule QuantumBilling.Accounts.Scope do
 
   def for_user(nil), do: nil
 
-  @doc """
-  Whether the caller owns the installation.
+  @doc "The scope with the business `membership` belongs to chosen."
+  def put_membership(%__MODULE__{} = scope, %Membership{business: business} = membership) do
+    %{scope | business: business, membership: membership}
+  end
 
-  Asked of the scope rather than reached through to the user, so an
-  authorization check reads the same wherever it appears and a nil scope — a
-  signed-out caller — answers `false` rather than raising.
+  @doc """
+  Whether the caller owns the business they are working in.
+
+  Asked of the scope rather than reached through to the membership, so an
+  authorization check reads the same wherever it appears, and a signed-out
+  caller or one who has not chosen a business answers `false` rather than
+  raising.
   """
-  def owner?(%__MODULE__{user: user}), do: User.owner?(user)
+  def owner?(%__MODULE__{membership: membership}), do: Membership.owner?(membership)
   def owner?(_scope), do: false
 end

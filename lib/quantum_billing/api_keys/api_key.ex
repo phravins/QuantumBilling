@@ -6,12 +6,17 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   raw key exists in exactly two places: the response to the request that
   created it, shown once, and the system the owner pastes it into. This table
   holds only its SHA-256, so reading the database yields no key that works.
+
+  A key belongs to one business and reaches that business's books only. It is
+  kept in `public` because a request has to find its key before it can know
+  which business it is for.
   """
   use Ecto.Schema
 
   import Ecto.Changeset
 
   alias QuantumBilling.Accounts.User
+  alias QuantumBilling.Businesses.Business
 
   @hash_algorithm :sha256
   @rand_size 32
@@ -34,6 +39,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   @scopes ~w(invoices:read invoices:write invoices:payment_links
              clients:read clients:write e_way_bills:read)
 
+  @schema_prefix "public"
   schema "api_keys" do
     field :name, :string
     field :prefix, :string
@@ -44,6 +50,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
     field :expires_at, :utc_datetime
     field :revoked_at, :utc_datetime
 
+    belongs_to :business, Business
     belongs_to :created_by, User
 
     timestamps(type: :utc_datetime)
@@ -58,7 +65,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   The raw key is never written down; only its hash and a short display prefix
   are stored.
   """
-  def build(attrs, %User{} = created_by) do
+  def build(attrs, %User{} = created_by, %Business{} = business) do
     raw = @key_prefix <> Base.url_encode64(:crypto.strong_rand_bytes(@rand_size), padding: false)
 
     changeset =
@@ -73,6 +80,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
       |> validate_future(:expires_at)
       |> put_change(:prefix, String.slice(raw, 0, @display_length))
       |> put_change(:hashed_key, hash(raw))
+      |> put_change(:business_id, business.id)
       |> put_assoc(:created_by, created_by)
       |> unique_constraint(:prefix)
       |> unique_constraint(:hashed_key)

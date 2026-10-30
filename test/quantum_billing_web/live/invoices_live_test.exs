@@ -81,12 +81,8 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
   end
 
   describe "with invoices in the database" do
-    # Every assertion about which invoices are on screen is made against the
-    # row — `#invoice-<id>` — and not against the rendered document. The bell in
-    # the layout lists the notification each `create_invoice/1` writes, and that
-    # notification names the invoice number and the client, so `html =~ name` is
-    # true whatever the table below it is showing. Scoping here is what tells a
-    # filter that works apart from one that has quietly stopped filtering.
+    # Assert on `#invoice-<id>` rows: the notification bell also names the invoice
+    # number and the client.
     test "a saved invoice appears in the table", %{conn: conn} do
       invoice = create_invoice()
 
@@ -147,12 +143,7 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
     end
 
     test "an invoice created elsewhere appears without a reload", %{conn: conn} do
-      # The list already subscribed to invoice events from the realtime work;
-      # this confirms create_invoice/1 actually broadcasts. The row, not the
-      # document: the same write also broadcasts a notification, and matching on
-      # the client name alone would be satisfied by the bell filling in while
-      # the table stayed empty — which is the one thing this test exists to rule
-      # out.
+      # Scoped to the row, not the notification bell.
       {:ok, view, html} = live(conn, ~p"/invoices")
       assert html =~ "No invoices yet"
 
@@ -161,9 +152,22 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       assert has_element?(view, "#invoice-#{invoice.id}")
     end
 
-    # The Clients page has linked here with `?q=<client>` for a while, and until
-    # `handle_params/3` existed the query string was read by nobody: the link
-    # arrived at an unfiltered list and quietly showed everything.
+    # A burst of writes, like the recurring sweep, must not reload the list once per write.
+    test "changes during the refresh window wait for it to close", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      first = create_invoice()
+      assert has_element?(view, "#invoice-#{first.id}")
+
+      second = create_invoice(%{"client_name" => "Insta Capital"})
+      refute has_element?(view, "#invoice-#{second.id}")
+
+      send(view.pid, :live_refresh_window_closed)
+
+      assert has_element?(view, "#invoice-#{second.id}")
+    end
+
+    # The Clients page links here with `?q=<client>`.
     test "a search carried in the URL is applied on the first render", %{conn: conn} do
       first = create_invoice()
       second = create_invoice(%{"client_name" => "Insta Capital"})
@@ -182,9 +186,7 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
       assert has_element?(view, "#invoice-#{invoice.id}")
     end
 
-    # A query string on its way to a WHERE clause. An unrecognised status used to
-    # be impossible to send; now that the URL carries one, it must not silently
-    # empty the table either.
+    # An unknown status falls back rather than emptying the table.
     test "an unknown status in the URL falls back rather than emptying the list", %{conn: conn} do
       invoice = create_invoice()
 
@@ -230,6 +232,75 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
       assert {:error, {kind, %{to: "/invoices"}}} = live(conn, ~p"/invoices/#{invoice.id}")
       assert kind in [:redirect, :live_redirect]
+    end
+  end
+
+  describe "rows that fit the screen" do
+    defp row_count(view) do
+      view |> render() |> LazyHTML.from_fragment() |> LazyHTML.query("tbody tr") |> Enum.count()
+    end
+
+    setup do
+      for _ <- 1..12, do: create_invoice()
+      :ok
+    end
+
+    test "the pager's measured fit replaces the default page size", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      assert row_count(view) == 10
+      refute has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 15})
+
+      assert row_count(view) == 12
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+    end
+
+    test "a short screen still gets a sensible page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 1})
+
+      assert row_count(view) == 5
+    end
+
+    test "keeps the row that was at the top of the page on screen", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+      render_click(view, "paginate", %{"page" => "2"})
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => 5})
+
+      # Rows 11 and 12 were on page 2 of 10; at 5 a page they are on page 3.
+      assert has_element?(view, ~s(span[aria-current="page"]), "3")
+      assert row_count(view) == 2
+    end
+
+    test "Next stops on the last page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+      refute has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+
+      render_click(view, "paginate", %{"page" => "2"})
+
+      assert row_count(view) == 2
+      assert has_element?(view, ~s(button[aria-label="Next page"][disabled]))
+    end
+
+    test "a forged page number lands on the last real page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      render_click(view, "paginate", %{"page" => "10000000"})
+
+      assert has_element?(view, ~s(span[aria-current="page"]), "2")
+      assert row_count(view) == 2
+    end
+
+    test "ignores a value that isn't a number", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      view |> element("#pagination") |> render_hook("fit_rows", %{"rows" => "lots"})
+
+      assert row_count(view) == 10
     end
   end
 end

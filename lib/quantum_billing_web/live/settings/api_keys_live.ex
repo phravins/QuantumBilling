@@ -4,7 +4,9 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
 
   A key is access to the books without a person signing in, so issuing one is
   an owner's decision, as handing out accounts is. Both the route and the
-  `on_mount` hook require an owner.
+  `on_mount` hook require an owner of the business being worked in, and the
+  page shows and changes that business's keys only — a key issued here reaches
+  this business's books and no other's.
 
   The key itself is shown once, straight after it is created, and never again:
   only its SHA-256 hash is stored, so there is nothing to show later. Lose it
@@ -43,7 +45,8 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
      |> load_keys()}
   end
 
-  defp load_keys(socket), do: assign(socket, :keys, ApiKeys.list_keys())
+  defp load_keys(socket),
+    do: assign(socket, :keys, ApiKeys.list_keys(socket.assigns.current_scope.business))
 
   defp assign_form(socket, params, changeset \\ nil) do
     changeset =
@@ -66,7 +69,11 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
       "expires_at" => expires_at(params["expires_in"])
     }
 
-    case ApiKeys.create_key(attrs, socket.assigns.current_scope.user) do
+    case ApiKeys.create_key(
+           attrs,
+           socket.assigns.current_scope.user,
+           socket.assigns.current_scope.business
+         ) do
       {:ok, %{key: key, raw: raw}} ->
         {:noreply,
          socket
@@ -86,7 +93,7 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
   end
 
   def handle_event("revoke", %{"id" => id}, socket) do
-    case ApiKeys.get_key(id) do
+    case ApiKeys.get_key(socket.assigns.current_scope.business, id) do
       nil ->
         {:noreply, load_keys(socket)}
 

@@ -68,8 +68,7 @@ defmodule QuantumBilling.Encrypted.Cipher do
   # Anything shorter than an IV and a tag was not written by this cipher.
   def decrypt(_value, _config_key, _aad), do: :error
 
-  # Derived rather than used raw, so a configured value does not have to be
-  # exactly 32 bytes for AES-256 to accept it.
+  # Derived so the configured key need not be exactly 32 bytes.
   defp key(config_key) do
     :crypto.hash(:sha256, fetch_key!(config_key))
   end

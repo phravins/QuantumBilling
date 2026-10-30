@@ -1,17 +1,14 @@
 defmodule QuantumBillingWeb.DashboardLive do
   @moduledoc """
-  The GST invoicing overview dashboard: stats, invoice trend chart,
-  invoice status breakdown, recent invoices, and compliance calendar.
+  The one overview of the business: headline stats, the six-month tax trend,
+  the status breakdown, this year's tax summary and top clients, the
+  compliance calendar, and the CSV exports.
 
-  Every panel is derived from `QuantumBilling.Invoices`, which has nothing to
-  return until the multi-tenant Ecto schema lands, so each currently renders its
-  empty state. The derivations live in private helpers here so they can be
-  swapped for real Repo queries without touching `render/1`.
-
-  The compliance calendar is empty for the same reason, though it is a different
-  kind of gap: GST return deadlines are statutory reference data rather than
-  tenant records, so it wants computing from the filing calendar rather than
-  reading from a table.
+  It replaced a separate Reports page that repeated the same cards, trend and
+  status donut. The two Reports panels that said something new — tax by type
+  and top clients — live here, read through `QuantumBilling.Reports` for the
+  current year, and the export links point at the same `/reports/export`
+  download.
   """
   use QuantumBillingWeb, :live_view
 
@@ -19,33 +16,24 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
-  alias QuantumBilling.Payments.QRCode
+  alias QuantumBilling.Reports
+  alias QuantumBillingWeb.LiveRefresh
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Invoices.subscribe()
 
-    {:ok, socket |> assign(:qr_modal_invoice, nil) |> assign_dashboard()}
+    {:ok, assign_dashboard(socket)}
   end
 
-  def handle_event("show_qr_modal", %{"id" => id}, socket) do
-    invoice = Invoices.get_invoice(id)
-    {:noreply, assign(socket, :qr_modal_invoice, invoice)}
-  end
-
-  def handle_event("close_qr_modal", _params, socket) do
-    {:noreply, assign(socket, :qr_modal_invoice, nil)}
-  end
-
-  # Every panel is derived from the invoice set, so a change to it rebuilds all
-  # of them together rather than leaving the cards and the charts disagreeing.
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, assign_dashboard(socket)}
+    {:noreply, LiveRefresh.changed(socket, &assign_dashboard/1)}
   end
 
-  # Counts come from aggregate queries and the table from a limited one. The
-  # dashboard used to load every invoice in the database in order to count them
-  # and show five, on every page load and on every change anywhere in the
-  # application.
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &assign_dashboard/1)}
+  end
+
   defp assign_dashboard(socket) do
     today = Date.utc_today()
     totals = Invoices.totals()
@@ -53,6 +41,9 @@ defmodule QuantumBillingWeb.DashboardLive do
     status_counts = Invoices.status_counts()
     chart_months = billed_months(Invoices.monthly_tax_split(6, today))
     obligations = Compliance.obligations(today)
+    # This year, as the export links download it.
+    year = Reports.default_filters()
+    tax_rows = Reports.tax_rows(year)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -65,7 +56,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     |> assign(:chart_axis, chart_axis(chart_max(chart_months)))
     |> assign(:donut_segments, donut_segments(status_counts))
     |> assign(:donut_total, totals.count)
-    |> assign(:invoices, Invoices.recent_invoices(5))
+    |> assign(:tax_rows, tax_rows)
+    # Only the totals row means nothing was billed.
+    |> assign(:has_tax_rows, Enum.any?(tax_rows, &(not &1.total?)))
+    |> assign(:top_clients, Reports.top_client_totals(year))
+    |> assign(:period_label, Reports.range_label(year.date_range, today))
     |> assign(:compliance_items, compliance_items(obligations, today))
   end
 
@@ -81,6 +76,39 @@ defmodule QuantumBillingWeb.DashboardLive do
       <.header>
         Dashboard
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
+
+        <:actions>
+          <div id="dashboard-export" class="dropdown dropdown-end">
+            <div tabindex="0" role="button" class={secondary_button_class()}>
+              <.icon name="hero-arrow-down-tray" class="size-4" /> Export
+              <.icon name="hero-chevron-down" class="size-4" />
+            </div>
+
+            <ul
+              tabindex="0"
+              class="dropdown-content menu z-10 mt-2 w-60 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+            >
+              <li>
+                <.link
+                  id="export-tax-summary"
+                  href={~p"/reports/export?#{[date_range: "This Year"]}"}
+                >
+                  GST tax summary – this year (CSV)
+                </.link>
+              </li>
+              <li>
+                <.link
+                  id="export-sales-register"
+                  href={
+                    ~p"/reports/export?#{[date_range: "This Year", report_type: "Sales Register"]}"
+                  }
+                >
+                  Sales register – this year (CSV)
+                </.link>
+              </li>
+            </ul>
+          </div>
+        </:actions>
       </.header>
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -97,14 +125,11 @@ defmodule QuantumBillingWeb.DashboardLive do
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <%!-- A column, so the plot takes the height the card actually has.
-        With a fixed-height chart the card stretched to its neighbour and the
-        difference showed as dead space under the axis. --%>
         <.card class="flex flex-col lg:col-span-2">
-          <div class="mb-4 flex items-center justify-between">
+          <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-semibold tracking-tight">GST Invoices - Last 6 Months</h2>
 
-            <div class="flex items-center gap-4 text-xs text-base-content/60">
+            <div class="flex items-center gap-3 text-xs text-base-content/60">
               <span class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-blue-500" /> CGST + SGST
               </span>
@@ -134,7 +159,7 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
 
         <.card>
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoices by Status</h2>
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoices by Status</h2>
 
           <.donut_chart
             :if={@donut_segments != []}
@@ -151,64 +176,86 @@ defmodule QuantumBillingWeb.DashboardLive do
         </.card>
       </div>
 
-      <%!-- `grow`, not `flex-1`: flex-1 zeroes the basis, which lets a tall
-      table be squashed. This only takes height that is going spare, which is
-      the whole point — the panels reach the bottom of the window instead of
-      leaving a band of empty page under them. --%>
-      <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-3">
-        <.card class="flex flex-col lg:col-span-2">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Recent Tax Invoices</h2>
+      <%!-- grow, not flex-1: flex-1 zeroes the basis and would let a tall table shrink. --%>
+      <div class="mt-3 grid grow grid-cols-1 gap-3 lg:grid-cols-12">
+        <.card id="dashboard-tax-summary" class="flex flex-col lg:col-span-6">
+          <div class="mb-2.5 flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold tracking-tight">Tax Summary (by Tax Type)</h2>
+            <span class="text-xs text-base-content/45">{@period_label}</span>
+          </div>
+
+          <div :if={@has_tax_rows} class="overflow-x-auto">
+            <table class="w-full">
+              <thead>
+                <tr class={table_head_class()}>
+                  <th class="pr-4 text-left">Tax Type</th>
+                  <th class="pr-4">Taxable Value (₹)</th>
+                  <th class="pr-4">CGST (₹)</th>
+                  <th class="pr-4">SGST (₹)</th>
+                  <th class="pr-4">IGST (₹)</th>
+                  <th>Total Tax (₹)</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr
+                  :for={row <- @tax_rows}
+                  class={[table_row_class(), row.total? && "font-semibold [&>td]:underline"]}
+                >
+                  <td class="py-2.5 pr-4">{row.label}</td>
+                  <td class="py-2.5 pr-4">{rupees(row.taxable_value, decimals: 2)}</td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.cgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.sgst} /></td>
+                  <td class="py-2.5 pr-4"><.tax_cell amount={row.igst} /></td>
+                  <td class="py-2.5">{rupees(row.total_tax, decimals: 2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <.empty_state
-            :if={@invoices == []}
-            icon="hero-document-text"
-            title="No invoices yet"
-            description="GST invoices you create will appear here."
+            :if={!@has_tax_rows}
+            class="flex-1 justify-center"
+            icon="hero-receipt-percent"
+            title="No tax to summarise yet"
+            description="Tax by type appears once this year has invoices."
           />
-          <div :if={@invoices != []} class="overflow-x-auto">
-            <.table id="invoices" rows={@invoices}>
-              <:col :let={row} label="Invoice #">{row.number}</:col>
-
-              <:col :let={row} label="Date">{format_date(row.invoice_date)}</:col>
-
-              <:col :let={row} label="Customer GSTIN">{row.gstin || "—"}</:col>
-
-              <:col :let={row} label="Tax Type">{row.tax_type}</:col>
-
-              <:col :let={row} label="Total Amount">
-                {rupees(row.amount, decimals: 2, space: true)}
-              </:col>
-
-              <:col :let={row} label="Status"><.status_badge status={row.status} /></:col>
-
-              <:action :let={row}>
-                <button
-                  class={row_action_class()}
-                  aria-label="View QR code"
-                  phx-click="show_qr_modal"
-                  phx-value-id={row.id}
-                >
-                  <.icon name="hero-qr-code" class="size-4" />
-                </button>
-              </:action>
-            </.table>
-          </div>
-
-          <div class="mt-auto flex items-center justify-between pt-4 text-sm text-base-content/60">
-            <span :if={@invoices != []}>Showing 1 to {length(@invoices)} entries</span>
-            <.link
-              navigate={~p"/invoices"}
-              class="ml-auto font-medium text-base-content hover:underline"
-            >
-              View all invoices &rarr;
-            </.link>
-          </div>
         </.card>
 
-        <.card class="flex flex-col">
-          <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+        <.card id="dashboard-top-clients" class="flex flex-col lg:col-span-3">
+          <div class="mb-2.5 flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold tracking-tight">Top Clients</h2>
+            <span class="text-xs text-base-content/45">{@period_label}</span>
+          </div>
 
-          <ul :if={@compliance_items != []} class="space-y-4">
+          <ul :if={@top_clients != []} class="space-y-3.5">
+            <.top_client_row
+              :for={{client, index} <- Enum.with_index(@top_clients, 1)}
+              rank={index}
+              name={client.client}
+              value={rupees(client.value)}
+            />
+          </ul>
+
+          <.empty_state
+            :if={@top_clients == []}
+            class="flex-1 justify-center"
+            icon="hero-users"
+            title="No clients billed yet"
+            description="Your highest-billed clients this year appear here."
+          />
+          <.link
+            navigate={~p"/clients"}
+            class="mt-auto block pt-4 text-sm font-medium text-base-content hover:underline"
+          >
+            View all clients &rarr;
+          </.link>
+        </.card>
+
+        <.card class="flex flex-col lg:col-span-3">
+          <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+
+          <ul :if={@compliance_items != []} class="space-y-3">
             <li :for={item <- @compliance_items} class="flex items-center gap-3">
               <.compliance_date_badge month={item.month} day={item.day} tone={item.tone} />
               <div>
@@ -233,75 +280,10 @@ defmodule QuantumBillingWeb.DashboardLive do
           </.link>
         </.card>
       </div>
-
-      <%!-- Dashboard Quick Invoice QR Modal --%>
-      <div
-        :if={@qr_modal_invoice}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      >
-        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
-          <div class="flex items-center justify-between border-b border-base-200 pb-3">
-            <div>
-              <h3 class="text-base font-bold">UPI Payment QR Code</h3>
-              <p class="text-xs text-base-content/60">
-                Invoice {@qr_modal_invoice.invoice_number} &bull; Total:
-                <strong class="text-emerald-600">₹{@qr_modal_invoice.grand_total ||
-                  @qr_modal_invoice.amount}</strong>
-              </p>
-            </div>
-            <button
-              type="button"
-              phx-click="close_qr_modal"
-              class="text-base-content/50 hover:text-base-content"
-            >
-              <.icon name="hero-x-mark" class="size-5" />
-            </button>
-          </div>
-
-          <div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-base-200 shadow-inner">
-            <.upi_qr
-              invoice={@qr_modal_invoice}
-              size_class="w-48 h-48"
-              caption="Scan with GPay, PhonePe, Paytm, BHIM or any UPI App"
-              caption_class="mt-3 text-xs font-semibold text-gray-800 text-center"
-            />
-          </div>
-
-          <div :if={@qr_modal_invoice.signed_qr_code} class="border-t border-base-200 pt-3">
-            <p class="text-xs font-bold mb-1 text-center">
-              Government E-Invoice Verified (Signed QR)
-            </p>
-            <div class="w-32 h-32 mx-auto bg-white p-2 rounded-lg border border-base-200">
-              {raw(QRCode.generate_svg(@qr_modal_invoice.signed_qr_code))}
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between gap-2 pt-2 border-t border-base-200">
-            <.link
-              href={~p"/pay/#{@qr_modal_invoice.public_token || "tok_123"}"}
-              target="_blank"
-              class="btn btn-sm btn-outline btn-primary text-xs"
-            >
-              <.icon name="hero-globe-alt" class="size-3.5" /> Public Payment Link
-            </.link>
-            <button
-              type="button"
-              phx-click="close_qr_modal"
-              class="btn btn-sm btn-ghost text-xs"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
     </Layouts.app>
     """
   end
 
-  # Every card is a figure this system actually holds. They used to be three
-  # hardcoded zeros and a count, which is indistinguishable from a business
-  # that has issued nothing — and stayed that way no matter how much was
-  # invoiced.
   defp stats(totals, month, obligations) do
     pending_returns =
       Enum.count(obligations, &(&1.status in ["Pending", "Overdue"] and &1.category == :returns))
@@ -349,16 +331,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     ]
   end
 
-  # Six months of zeros is not a chart, it is an empty state — and drawing one
-  # makes a business that has issued nothing look like one whose invoices went
-  # missing.
+  # All zeros is an empty state, not a chart.
   defp billed_months(months) do
     if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
   end
 
-  # Two series over one x-axis. Split rather than summed because the whole
-  # point of the panel is which half of the tax the month was: an intra-state
-  # month and an inter-state month of the same size are different facts.
   defp chart_series(months) do
     [
       %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
@@ -366,14 +343,11 @@ defmodule QuantumBillingWeb.DashboardLive do
     ]
   end
 
-  # Five labels, top gridline down, matching the five rules the chart draws.
   defp chart_axis(max) do
     Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i) end)
   end
 
-  # The chart scales against the tallest reading, rounded up so the gridlines
-  # land on round numbers. A fixed ceiling made every real invoice overflow the
-  # box.
+  # Rounded up so gridlines land on round numbers.
   defp chart_max(months) do
     tallest =
       months
@@ -390,8 +364,6 @@ defmodule QuantumBillingWeb.DashboardLive do
     end
   end
 
-  # Real counts, in a fixed order so the ring's colours stay stable, with empty
-  # statuses dropped.
   defp donut_segments(status_counts) do
     [
       %{
@@ -400,16 +372,13 @@ defmodule QuantumBillingWeb.DashboardLive do
         tone: :strong
       },
       %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
-      # `:positive`, not `:soft` — under the colour palette `:soft` is the red
-      # that marks a failed e-invoice, and a paid invoice is the opposite.
+      # :positive, not :soft, which is the failure red.
       %{label: "Paid", value: status_counts["Paid"] || 0, tone: :positive},
       %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
     ]
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # The next statutory deadlines, from the same calendar the Compliance page
-  # shows — so the dashboard and that page cannot disagree about what is due.
   defp compliance_items(obligations, today) do
     obligations
     |> Compliance.upcoming(today, 4)

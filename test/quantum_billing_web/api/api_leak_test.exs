@@ -138,8 +138,11 @@ defmodule QuantumBillingWeb.API.LeakTest do
 
       refute Map.has_key?(json_response(plain_body, 200)["data"], "payment_url")
 
+      # The slugged link, which names the business the invoice belongs to.
+      slug = QuantumBilling.Businesses.default!().slug
+
       assert json_response(linked_body, 200)["data"]["payment_url"] ==
-               url(~p"/pay/#{invoice.public_token}")
+               url(~p"/p/#{slug}/#{invoice.public_token}")
 
       # The link is to this application's own page, never the gateway URL
       # stored on the invoice — that one is set by the gateway, and the page

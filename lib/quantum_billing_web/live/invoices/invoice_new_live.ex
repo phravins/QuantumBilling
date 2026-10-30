@@ -33,9 +33,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
 
-  # Serves both /invoices/new and /invoices/:id/edit. The form, the totals and
-  # the validation are identical either way — only what the save writes to
-  # differs — so one LiveView rather than a near-copy that drifts.
+  # Serves both new and edit.
   def mount(params, _session, socket) do
     organization = Settings.get_organization()
 
@@ -47,8 +45,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       |> assign(:selected_client_id, nil)
       |> assign(:gstin_hint, nil)
       |> assign_client_options()
-      # Read-only here: the picker offers designs, it does not create them, so
-      # this must not seed one just because somebody opened the form.
+      # Read-only: opening the form must not create a design.
       |> assign(:template_options, template_options())
 
     case params do
@@ -57,8 +54,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
-  # `{label, value}` pairs for the select. Empty when no design has been created
-  # yet, in which case the picker is hidden and `create_invoice/1` seeds one.
+  # Empty when no design exists; the picker is then hidden.
   defp template_options do
     Enum.map(Templates.list_templates(), fn template -> {template.name, template.id} end)
   end
@@ -103,10 +99,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
-  # An invoice saved before its client had a GSTIN or PAN on file — or one
-  # whose PAN was simply never copied — opens with those boxes empty. What the
-  # client record (or the GSTIN itself) can supply is offered in the form; it
-  # is only written if the user saves.
+  # Offers tax ids the client record can supply; saved only if the user saves.
   defp missing_tax_ids(%Invoice{} = invoice, client) do
     gstin = present(invoice.client_gstin) || present(client && client.gstin)
 
@@ -128,8 +121,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
   defp present(_value), do: nil
 
-  # Narrows the client picker. It carries no name, so what is typed here never
-  # reaches the invoice params or the changeset.
   def handle_event("search_clients", %{"value" => search}, socket) do
     {:noreply, socket |> assign(:client_search, search) |> assign_client_options()}
   end
@@ -154,10 +145,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
-  # Save Draft and Preview are the same write. They differ only in the label,
-  # because nothing in this scope distinguishes a previewed invoice from a
-  # saved one — and validating first means clicking the "wrong" button can
-  # never quietly persist an invalid invoice.
+  # Save Draft and Preview are the same write.
   def handle_event("save", %{"invoice" => params}, socket) do
     {params, _socket} = apply_client_choice(params, socket)
     params = params |> pan_from_gstin() |> apply_payment_term()
@@ -186,8 +174,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   defp saved_message(_existing, invoice), do: "Invoice #{invoice.invoice_number} updated."
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
-    # The totals are already on the changeset — recalculate/1 put them there —
-    # so the panel and the eventual database row cannot disagree.
     invoice = Ecto.Changeset.apply_changes(changeset)
 
     socket
@@ -196,19 +182,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     |> assign(:intra_state?, Invoice.intra_state?(changeset))
   end
 
-  # Copies the chosen client's details onto the invoice, but only the moment
-  # the choice changes — otherwise every keystroke would overwrite an edit the
-  # user just made to one of those fields.
-  #
-  # The previous choice is tracked in socket state rather than a hidden input:
-  # a hidden field would have to be trusted from the browser, and the server
-  # already knows what it last rendered.
+  # Copies the client's details only when the choice changes, so edits survive.
+  # The previous choice is kept server-side, not in a hidden input.
   defp apply_client_choice(params, socket) do
     id = params["client_id"]
 
-    # Read from the database rather than from whatever the picker happens to be
-    # showing: the options are a bounded search result now, and a client that
-    # has scrolled out of them is still a valid choice.
+    # From the database: the client may no longer be in the picker's results.
     client = id not in [nil, ""] && Clients.get_client(id)
 
     cond do
@@ -219,8 +198,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
          |> assign(:gstin_hint, gstin_hint(client))
          |> assign_client_options()}
 
-      # Back to "Select a client": forget the choice, so picking the same
-      # client again copies its details afresh and the hint does not linger.
       id == "" and socket.assigns.selected_client_id != nil ->
         {params, socket |> assign(:selected_client_id, nil) |> assign(:gstin_hint, nil)}
 
@@ -236,14 +213,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     Map.merge(params, Map.delete(Invoices.client_snapshot(client), "client_id"))
   end
 
-  # The "Client Name" box is a plain text input, and people type into it
-  # instead of using the picker above. When what they typed is exactly a
-  # client's name, that is the same decision as picking the client, so it is
-  # turned into one here and `apply_client_choice/2` does the copying.
-  #
-  # Only when the name box is the input that changed: otherwise a hand-edited
-  # name that happens to match would re-select a client on every keystroke
-  # elsewhere in the form.
+  # A typed name that exactly matches a client selects that client,
+  # but only when the name box itself changed.
   defp match_typed_client(params, ["invoice", "client_name"]) do
     case Clients.get_client_by_name(params["client_name"]) do
       nil -> params
@@ -253,10 +224,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
   defp match_typed_client(params, _other_target), do: params
 
-  # Characters 3–12 of a GSTIN are the holder's PAN, so an empty PAN box next
-  # to a complete GSTIN is filled in rather than left for the user to retype.
-  # A PAN that has been typed is never overwritten — a mismatch is for the
-  # changeset to report, not for this to paper over.
+  # Fills an empty PAN from the GSTIN (characters 3-12); never overwrites one.
   defp pan_from_gstin(params) do
     gstin = params |> Map.get("client_gstin") |> to_string() |> String.trim() |> String.upcase()
 
@@ -266,7 +234,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
-  # Why the GSTIN box is empty, for a client that has none to copy.
   defp gstin_hint(%Clients.Client{} = client) do
     if present(client.gstin) == nil do
       "No GSTIN on file for this client (#{client.client_type})."
@@ -284,11 +251,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     |> assign(:client_options_truncated?, length(options) >= Clients.picker_limit())
   end
 
-  # The issuing company, so the summary can tell intra-state from inter-state
-  # while the form is being filled in. `create_invoice/1` writes these again at
-  # save time from a locked read, which is the authoritative copy — this one
-  # exists so the preview does not quietly show CGST/SGST for an inter-state
-  # supply.
+  # So the live preview picks CGST/SGST or IGST correctly; create_invoice/1 sets it again.
   defp with_company(params, %Organization{} = organization) do
     Map.merge(params, %{
       "company_name" => organization.company_name,
@@ -350,17 +313,17 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
         </:actions>
       </.header>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.form
           :let={f}
           for={@form}
           id="invoice-form"
           phx-change="validate"
           phx-submit="save"
-          class="space-y-4 lg:col-span-2"
+          class="space-y-3 lg:col-span-2"
         >
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 1
               </span>
@@ -368,7 +331,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Invoice Details</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field
                 field={f[:invoice_type]}
                 label="Invoice Type"
@@ -376,8 +339,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 required
                 options={Invoices.invoice_types()}
               />
-              <%!-- The design is frozen onto the invoice when it is saved, so
-              this is only editable while it is a draft. --%>
+              <%!-- Frozen onto the invoice on save, so editable only while a draft. --%>
               <.field
                 :if={@template_options != []}
                 field={f[:template_id]}
@@ -423,8 +385,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 2
               </span>
@@ -432,7 +394,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Client Details</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label
                   for={f[:client_id].id}
@@ -448,13 +410,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         name="hero-magnifying-glass"
                         class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-base-content/45"
                       />
-                      <%!--
-                      Bound with phx-keyup rather than wrapped in its own form:
-                      a nested <form> is invalid HTML and ends the invoice form
-                      early, which drops every field below it. It carries no
-                      name either, so it is never submitted as an invoice
-                      field.
-                      --%>
+                      <%!-- phx-keyup with no name, not a nested form: a nested form would end the invoice form early. --%>
                       <input
                         type="text"
                         id="client-picker-search"
@@ -530,15 +486,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 type="textarea"
                 rows="4"
               />
-              <div class="space-y-4">
+              <div class="space-y-3">
                 <.field field={f[:client_pan]} label="PAN" placeholder="AABCA1234A" />
                 <.field field={f[:client_email]} label="Email" type="email" />
               </div>
             </div>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 3
               </span>
@@ -566,7 +522,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
                     <th class="w-24 pr-2 text-left">Tax (%)</th>
 
-                    <th class="w-32 pr-2 text-right">Amount (₹)</th>
+                    <th class="w-32 pr-2">Amount (₹)</th>
 
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
@@ -574,17 +530,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                   </tr>
                 </thead>
 
-                <%!--
-                  `inputs_for` rather than a loop over the raw association: it
-                  leaves out the rows Ecto has marked for replacement and it
-                  knows each stored row's id. Without the id every change made
-                  while editing was read as "these are all new rows", and the
-                  stored ones came back as duplicates that could not be removed.
-
-                  `skip_hidden` because the hidden inputs would otherwise land
-                  directly inside <tbody>, where an <input> is not allowed; they
-                  are written into the first cell instead.
-                --%>
+                <%!-- inputs_for keeps stored row ids (no duplicate rows on edit); skip_hidden because an input is invalid directly in tbody. --%>
                 <tbody id="invoice-items">
                   <.inputs_for :let={item_f} field={f[:items]} skip_hidden>
                     <tr id={"invoice-item-#{item_f.index}"} class={table_row_class()}>
@@ -630,10 +576,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       <td class="py-2 pr-2 align-top">
                         <input
                           type="number"
-                          min="1"
+                          min="0.001"
+                          step="0.001"
                           id={item_f[:quantity].id}
                           name={item_f[:quantity].name}
-                          value={item_f[:quantity].value}
+                          value={quantity(item_f[:quantity].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -658,9 +605,10 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         <input
                           type="number"
                           min="0"
+                          step="0.01"
                           id={item_f[:rate].id}
                           name={item_f[:rate].name}
-                          value={item_f[:rate].value}
+                          value={money_input(item_f[:rate].value)}
                           class={form_input_class()}
                         />
                       </td>
@@ -681,7 +629,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         </select>
                       </td>
 
-                      <td class="py-2 pr-2 text-right align-middle">
+                      <td class="py-2 pr-2 align-middle">
                         <.line_amount item={item_f.source} index={item_f.index} />
                       </td>
 
@@ -718,8 +666,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </label>
           </.card>
 
-          <.card padding="p-6">
-            <div class="mb-4 flex items-center gap-2.5">
+          <.card padding="p-4">
+            <div class="mb-3 flex items-center gap-2.5">
               <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
                 4
               </span>
@@ -727,7 +675,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <h2 class="text-sm font-semibold tracking-tight">Additional Information</h2>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field
                 field={f[:remarks]}
                 label="Remarks"
@@ -756,9 +704,9 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           </.card>
         </.form>
 
-        <div class="space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <div class="space-y-3 lg:sticky lg:top-16 lg:self-start">
           <.card>
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Invoice Summary</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Invoice Summary</h2>
 
             <div class="space-y-2.5">
               <.summary_line label="Total Items" value={@summary.total_items} />
@@ -789,10 +737,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             </div>
             <hr class="my-4 border-base-300" />
             <.summary_line
+              id="invoice-summary-round-off"
               label="Round Off"
               value={rupees(@summary.round_off, decimals: 2, space: true)}
             />
-            <div class="mt-4 flex items-start justify-between gap-4 rounded-field bg-base-200 px-3 py-2.5">
+            <div class="mt-4 flex items-start justify-between gap-3 rounded-field bg-base-200 px-3 py-2.5">
               <span class="text-sm font-semibold">Grand Total</span>
               <span id="invoice-summary-grand-total" class="text-sm font-semibold tracking-tight">
                 {rupees(@summary.grand_total, decimals: 2, space: true)}
@@ -815,7 +764,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
           </.card>
 
           <.card>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-3">
               <h2 class="text-sm font-semibold tracking-tight">From (Your Company)</h2>
 
               <.link
@@ -853,14 +802,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
+  attr :id, :string, default: nil
   attr :label, :string, required: true
   attr :value, :any, required: true
 
   defp summary_line(assigns) do
     ~H"""
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex items-start justify-between gap-3">
       <span class="text-xs text-base-content/60">{@label}</span>
-      <span class="text-right text-xs font-medium">{@value}</span>
+      <span id={@id} class="text-right text-xs font-medium">{@value}</span>
     </div>
     """
   end
@@ -868,11 +818,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   attr :item, Ecto.Changeset, required: true
   attr :index, :integer, required: true
 
-  # What one row comes to, tax included, with the tax named beneath it.
-  #
-  # It used to show quantity × rate alone, so choosing a different GST rate
-  # changed nothing in the row and the only sign the tax had been worked out
-  # was in the summary panel. The rows now add up to the Grand Total.
   defp line_amount(assigns) do
     assigns = assign(assigns, :figures, line_figures(assigns.item))
 
@@ -890,9 +835,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     """
   end
 
-  # One row's figures as typed, before anything is saved. Worked out by the
-  # same two functions the invoice totals are summed from, so a row and the
-  # summary panel cannot disagree about the tax.
+  # Same functions as the invoice totals, so rows and summary agree.
   defp line_figures(%Ecto.Changeset{} = changeset) do
     item = Ecto.Changeset.apply_changes(changeset)
     amount = InvoiceItem.amount(item)
@@ -901,8 +844,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     %{amount: amount, tax: tax, total: amount + tax}
   end
 
-  # `cast_assoc` reports "add at least one item" against :items, which no
-  # individual input owns, so it is surfaced under the table instead.
+  # The cast_assoc error has no input of its own, so it shows under the table.
   defp item_errors(form) do
     form.source.errors
     |> Keyword.get_values(:items)

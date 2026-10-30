@@ -36,9 +36,7 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
       assert total_line =~ :erlang.float_to_binary(expected.total_tax * 1.0, decimals: 2)
     end
 
-    # An export that actually differs per filter needs rows to filter; that
-    # assertion returns with the invoices table. What is checkable now is that
-    # every filter parameter is accepted rather than crashing the download.
+    # Every filter parameter is accepted rather than crashing the download.
     test "accepts every filter parameter", %{conn: conn} do
       params = [
         date_range: "Last Month",

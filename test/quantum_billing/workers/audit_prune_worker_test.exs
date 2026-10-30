@@ -34,7 +34,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorkerTest do
         :security
       )
 
-    assert {:ok, result} = AuditPruneWorker.perform(%Oban.Job{args: %{}})
+    assert {:ok, result} = AuditPruneWorker.perform(%Oban.Job{args: %{"business_id" => 1}})
 
     assert result.audit_logs == 1
     assert Repo.get(AuditLog, old.id) == nil
@@ -46,7 +46,9 @@ defmodule QuantumBilling.Workers.AuditPruneWorkerTest do
     age(AuditLog, log.id, 10)
 
     assert {:ok, %{audit_logs: 1}} =
-             AuditPruneWorker.perform(%Oban.Job{args: %{"audit_retention_days" => 7}})
+             AuditPruneWorker.perform(%Oban.Job{
+               args: %{"business_id" => 1, "audit_retention_days" => 7}
+             })
   end
 
   test "prunes the mail and webhook ledgers on their own fixed window" do
@@ -56,7 +58,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorkerTest do
     age(QuantumBilling.Mail.Delivery, delivery.id, 200)
     age(WebhookEvent, event.id, 200)
 
-    assert {:ok, result} = AuditPruneWorker.perform(%Oban.Job{args: %{}})
+    assert {:ok, result} = AuditPruneWorker.perform(%Oban.Job{args: %{"business_id" => 1}})
 
     assert result.email_deliveries == 1
     assert result.webhook_events == 1
@@ -67,6 +69,6 @@ defmodule QuantumBilling.Workers.AuditPruneWorkerTest do
     {:ok, _log} = Audit.log_event(:login, "User", 1)
 
     assert {:ok, %{audit_logs: 0, email_deliveries: 0, webhook_events: 0}} =
-             AuditPruneWorker.perform(%Oban.Job{args: %{}})
+             AuditPruneWorker.perform(%Oban.Job{args: %{"business_id" => 1}})
   end
 end

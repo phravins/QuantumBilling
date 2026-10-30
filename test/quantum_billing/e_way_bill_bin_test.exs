@@ -21,8 +21,8 @@ defmodule QuantumBilling.EWayBillBinTest do
       client_state: "Karnataka",
       client_name: "Acme India Pvt Ltd",
       client_gstin: "27AAAAA0000A1Z5",
-      taxable_value: 100_000,
-      grand_total: 118_000
+      taxable_value: 10_000_000,
+      grand_total: 11_800_000
     }
 
     Repo.insert!(struct(%Invoice{}, Map.merge(defaults, attrs)))
@@ -72,7 +72,7 @@ defmodule QuantumBilling.EWayBillBinTest do
       gone = binned(bill_fixture())
 
       assert Enum.map(EWayBills.list_e_way_bills(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [row]} = EWayBills.page()
+      assert %{rows: [row]} = EWayBills.page()
       assert row.id == kept.id
       assert Enum.map(EWayBills.export_rows(), & &1.id) == [kept.id]
 

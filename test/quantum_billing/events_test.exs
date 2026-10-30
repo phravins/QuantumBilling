@@ -4,14 +4,25 @@ defmodule QuantumBilling.EventsTest do
   alias QuantumBilling.Events
 
   describe "topics" do
-    test "organisation data is shared, so its topics carry no user" do
-      # Two signed-in users looking at /clients see the same list, so a write by
-      # one has to reach the other. Keying these by user would silently break
-      # that.
-      assert Events.clients_topic() == "clients"
-      assert Events.invoices_topic() == "invoices"
-      assert Events.e_way_bills_topic() == "e_way_bills"
-      assert Events.settings_topic() == "settings"
+    test "a business's data is shared within it, so its topics carry no user" do
+      # Not keyed by user: everyone in the business sees the same list.
+      QuantumBilling.Repo.with_business(%{id: 1, schema: "biz_1"}, fn ->
+        assert Events.clients_topic() == "clients:biz_1"
+        assert Events.invoices_topic() == "invoices:biz_1"
+        assert Events.e_way_bills_topic() == "e_way_bills:biz_1"
+        assert Events.settings_topic() == "settings:biz_1"
+      end)
+    end
+
+    test "each business has its own topics" do
+      one = QuantumBilling.Repo.with_business(%{id: 1, schema: "biz_1"}, &Events.invoices_topic/0)
+      two = QuantumBilling.Repo.with_business(%{id: 2, schema: "biz_2"}, &Events.invoices_topic/0)
+
+      refute one == two
+    end
+
+    test "with no business there is no business topic to use" do
+      assert_raise QuantumBilling.Repo.NoBusinessError, &Events.invoices_topic/0
     end
 
     test "a user's own account is keyed by id" do

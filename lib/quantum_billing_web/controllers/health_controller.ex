@@ -1,14 +1,14 @@
 defmodule QuantumBillingWeb.HealthController do
   @moduledoc """
-  Liveness and readiness for orchestrators.
+  Liveness and readiness for load balancers and process supervisors.
 
   ## Why it checks the database
 
   A health endpoint that only proves the web server accepted a socket is worse
-  than none: a container whose database connection has been exhausted or whose
+  than none: a node whose database connection has been exhausted or whose
   credentials are wrong answers it happily while every real request 500s. So
   this runs `SELECT 1` and reports unhealthy when that fails, which is what
-  makes `docker compose`'s `service_healthy` condition mean something.
+  makes a load balancer's health check mean something.
 
   ## Why it is JSON on the `:api` pipeline
 
@@ -68,8 +68,7 @@ defmodule QuantumBillingWeb.HealthController do
       {:error, error} -> {:error, Exception.message(error)}
     end
   rescue
-    # A pool with no free connections raises rather than returning an error
-    # tuple, and that is precisely the state a probe exists to catch.
+    # An exhausted pool raises rather than returning an error.
     error -> {:error, Exception.message(error)}
   catch
     :exit, _reason -> {:error, "database connection unavailable"}

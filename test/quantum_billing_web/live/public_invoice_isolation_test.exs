@@ -49,8 +49,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveIsolationTest do
       # The global topic carries every invoice change in the business. An
       # unauthenticated process has no business holding any of them, even
       # briefly, even to throw them away.
-      refute view.pid in subscribers("invoices")
-      assert view.pid in subscribers("invoice:#{mine.id}")
+      refute view.pid in subscribers(QuantumBilling.Events.invoices_topic())
+      assert view.pid in subscribers(QuantumBilling.Events.invoice_topic(mine.id))
     end
 
     test "a change to another customer's invoice never reaches it", %{conn: conn} do

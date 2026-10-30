@@ -42,12 +42,11 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   alias QuantumBilling.Clients
   alias QuantumBilling.Invoices
+  alias QuantumBillingWeb.LiveRefresh
 
   @per_page 10
 
-  # Redirected rather than raised, for the same reason `ClientNewLive` does it:
-  # the row this was clicked on may have been rendered before another window
-  # deleted the client, and a 500 is the wrong answer to a stale link.
+  # Redirect on a missing id: the link may be stale.
   def mount(%{"id" => id}, _session, socket) do
     case Clients.get_client(id) do
       nil ->
@@ -80,8 +79,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
   end
 
   def handle_event("set_status", %{"status" => status}, socket) do
-    # Checked against the schema's own list rather than trusted: the status
-    # arrives from a click and ends up in an UPDATE.
+    # Allowlisted: the status comes from the browser.
     if status in Clients.statuses() do
       case Clients.update_client(socket.assigns.client, %{"status" => status}) do
         {:ok, client} ->
@@ -103,9 +101,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
-  # Moves one of this client's invoices to the Bin — the same thing the bin
-  # button on the Invoices list does. Read fresh by id, and only ever an
-  # invoice that is on this page: the id arrives from a click.
+  # Read fresh by id, and only an invoice shown on this page.
   def handle_event("delete_invoice", %{"id" => id}, socket) do
     with %{} = invoice <- Invoices.get_invoice(id),
          true <- Enum.any?(socket.assigns.invoices, &(&1.id == invoice.id)),
@@ -120,16 +116,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
         {:noreply,
          socket |> put_flash(:error, "That invoice no longer exists.") |> load_invoices()}
 
-      # `false`: a real invoice, but not one of the rows this page is showing.
-      # The id comes from the browser, and this page is one client's history.
       _refused ->
         {:noreply, put_flash(socket, :error, "That invoice could not be deleted.")}
     end
   end
 
-  # Only this client's edits. The topic carries every client in the business,
-  # and overwriting the record on somebody else's save would show the wrong
-  # customer under this URL.
+  # Only this client's edits.
   def handle_info({event, client}, socket)
       when event in [:client_created, :client_updated, :client_restored] do
     if client.id == socket.assigns.client.id do
@@ -139,9 +131,6 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
-  # This client was deleted in another window. The page has nothing left to
-  # show that a reload would not answer with "no longer exists", so it says so
-  # now rather than leaving a record on screen that every button would fail on.
   def handle_info({event, client}, socket) when event in [:client_binned, :client_purged] do
     if client.id == socket.assigns.client.id do
       {:noreply,
@@ -153,10 +142,13 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
-  # Re-read rather than spliced in: whether the invoice belongs on this page at
-  # all is the filter's question, not the row's, and the totals move with it.
+  # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
-    {:noreply, load_invoices(socket)}
+    {:noreply, LiveRefresh.changed(socket, &load_invoices/1)}
+  end
+
+  def handle_info(:live_refresh_window_closed, socket) do
+    {:noreply, LiveRefresh.window_closed(socket, &load_invoices/1)}
   end
 
   defp load_invoices(socket) do
@@ -164,10 +156,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
       Invoices.page(
         client: socket.assigns.client,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: @per_page,
+        count: true
       )
 
     socket
+    |> assign(:outstanding, Clients.outstanding(socket.assigns.client))
     |> assign(:invoices, result.rows)
     |> assign(:invoice_count, result.total)
     |> assign(:total_pages, result.total_pages)
@@ -190,8 +184,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
       </nav>
 
       <.header>
-        <%!-- A span, not a div: the header renders this slot inside its `h1`,
-        which takes phrasing content. --%>
+        <%!-- A span: rendered inside the header's h1. --%>
         <span class="inline-flex items-center gap-3">
           <.client_avatar name={@client.name} />
           <span id="client-name">{@client.name}</span>
@@ -262,14 +255,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
         </:actions>
       </.header>
 
-      <%!-- A tile each, identified, so a test can assert against the one it
-      means. Every figure here is a number rendered as text, and four of them
-      side by side in one container match each other's digits. --%>
+      <%!-- Each tile has an id so tests can target it. --%>
       <div id="client-summary" class="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <.summary_tile
           id="client-outstanding"
           label="Outstanding"
-          value={rupees(@client.outstanding, decimals: 2, space: true)}
+          value={rupees(@outstanding, decimals: 2, space: true)}
           hint="Unpaid balance carried on this account"
         />
 
@@ -295,7 +286,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         />
       </div>
 
-      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid gap-3 lg:grid-cols-3">
         <.card id="client-identity" class="lg:col-span-1">
           <h2 class="text-sm font-semibold tracking-tight">Identity</h2>
 
@@ -316,7 +307,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
             <.detail label="Phone" value={phone(@client)} />
           </dl>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Commercial</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Commercial</h2>
 
           <dl class="mt-3 space-y-2.5">
             <.detail
@@ -334,12 +325,9 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {address_lines(@client, :billing)}
           </p>
 
-          <h2 class="mt-5 text-sm font-semibold tracking-tight">Shipping address</h2>
+          <h2 class="mt-4 text-sm font-semibold tracking-tight">Shipping address</h2>
 
-          <%!-- The flag, not a comparison of the two sets of columns: when
-          shipping follows billing the shipping fields are simply left empty,
-          so rendering them would print a blank address rather than the
-          billing one. --%>
+          <%!-- Use the flag: when shipping follows billing the shipping fields are empty. --%>
           <p :if={@client.shipping_same_as_billing} class="mt-3 text-sm text-base-content/45">
             Same as the billing address.
           </p>
@@ -394,7 +382,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <th>Due</th>
                 <th>Amount</th>
                 <th>Status</th>
-                <th class="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
@@ -411,7 +399,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <td><.status_badge status={invoice.status} /></td>
 
                 <td>
-                  <div class="flex justify-end gap-1">
+                  <div class="flex gap-1">
                     <.link
                       navigate={~p"/invoices/#{invoice.id}"}
                       class={row_action_class()}
@@ -447,7 +435,11 @@ defmodule QuantumBillingWeb.ClientShowLive do
             {@invoice_count} invoices
           </p>
 
-          <.pagination current_page={@page} total_pages={@total_pages} />
+          <.pagination
+            current_page={@page}
+            total_pages={@total_pages}
+            has_next={@page < @total_pages}
+          />
         </div>
       </.card>
     </Layouts.app>
@@ -473,11 +465,9 @@ defmodule QuantumBillingWeb.ClientShowLive do
   attr :value, :any, required: true
   attr :mono, :boolean, default: false
 
-  # An em dash for a field nobody filled in, rather than an empty row that
-  # reads as a rendering fault.
   defp detail(assigns) do
     ~H"""
-    <div class="flex items-baseline justify-between gap-4">
+    <div class="flex items-baseline justify-between gap-3">
       <dt class="shrink-0 text-xs text-base-content/45">{@label}</dt>
       <dd class={[
         "text-right text-sm",
@@ -495,8 +485,6 @@ defmodule QuantumBillingWeb.ClientShowLive do
   defp phone(%{phone: phone}) when phone in [nil, ""], do: nil
   defp phone(%{phone_country_code: code, phone: phone}), do: "#{code} #{phone}"
 
-  # Joined from whichever parts exist, so a client with no city does not print
-  # a line of stray commas.
   defp address_lines(client, prefix) do
     [:line1, :line2, :city, :state, :pin]
     |> Enum.map(&Map.get(client, :"#{prefix}_#{&1}"))

@@ -1,8 +1,9 @@
 defmodule QuantumBilling.Reports do
   @moduledoc """
-  Aggregations behind the Reports page.
+  Report aggregations: the dashboard's tax summary and top clients, and the
+  CSV export.
 
-  Every panel on that page — the metric cards, both charts, the tax summary and
+  Every figure — the totals, the monthly trend, the tax summary and
   the top-clients list — is a different view of one set of invoices, and the
   filters have to move all of them together. So this module works from
   **row-level** invoices and derives each panel from them, rather than holding
@@ -30,17 +31,12 @@ defmodule QuantumBilling.Reports do
 
   @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
 
-  # The most months a trend chart will draw. Two years of readings fit across a
-  # card and still leave the labels legible; beyond that the line is a comb.
   @trend_months 24
 
-  # A dropdown nobody can scroll through is not a filter. Past this many names
-  # the list is cut rather than shipped in full to every open Reports page.
   @client_name_limit 500
 
   import Ecto.Query, warn: false
 
-  alias QuantumBilling.Clients.Client
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
@@ -62,7 +58,7 @@ defmodule QuantumBilling.Reports do
 
   The filtering happens in the database. It used to happen in Elixir over every
   invoice ever issued: a report on one month still read the whole table, and
-  the cost of opening the Reports page grew with the age of the business.
+  the cost of a report grew with the age of the business.
   """
   def invoices(filters) when is_map(filters) do
     filters
@@ -101,8 +97,7 @@ defmodule QuantumBilling.Reports do
   about what "This Quarter, Tax Liability, client X" means.
   """
   def query(filters) when is_map(filters) do
-    # Binned invoices are out of every report: `kept/1` here covers the page,
-    # the totals and the export, because they all start from this query.
+    # Binned invoices are excluded from every report.
     Invoice.kept()
     |> filter_dates(range_bounds(filters[:date_range]))
     |> filter_equal(:status, filters[:status], "All Status")
@@ -141,7 +136,7 @@ defmodule QuantumBilling.Reports do
   defp filter_report_type(query, _all_or_sales_register), do: query
 
   @doc """
-  Every panel on the Reports page, computed by the database.
+  Every report figure for `filters`, computed by the database.
 
   Five aggregate queries rather than one full table scan followed by five
   passes in Elixir. What comes back is the same shape the pure list functions
@@ -177,14 +172,17 @@ defmodule QuantumBilling.Reports do
     |> query()
     |> select([i], %{
       count: count(i.id),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
       tax_amount:
-        coalesce(
-          sum(
-            coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-              coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+        type(
+          coalesce(
+            sum(
+              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+            ),
+            0
           ),
-          0
+          :integer
         )
     })
     |> Repo.one()
@@ -210,14 +208,17 @@ defmodule QuantumBilling.Reports do
       |> select([i], %{
         month: fragment("date_trunc('month', ?)", i.invoice_date),
         count: count(i.id),
-        taxable_value: coalesce(sum(i.taxable_value), 0),
+        taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
         tax_amount:
-          coalesce(
-            sum(
-              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
+                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           )
       })
       |> Repo.all()
@@ -225,19 +226,8 @@ defmodule QuantumBilling.Reports do
     fill_months(rows, range_bounds(filters[:date_range], today), today)
   end
 
-  # Every month across the range, whether or not anything was invoiced in it.
-  #
-  # `GROUP BY` only returns months that have rows, and a chart drawn straight
-  # from that is wrong twice over. A quiet month vanishes from the axis, so
-  # March is plotted next to June as though they were consecutive and the slope
-  # between them is a month-per-month rate that nothing measured. And
-  # `month_delta/2` compares the last two rows as "this month against last
-  # month" when they may be a quarter apart.
-  #
-  # Nothing billed at all is a different thing from a quiet month, though:
-  # gap-filling fills gaps between readings, and with no readings there is
-  # nothing to fill. Returning the empty list lets the panel say there are no
-  # invoices in the period rather than drawing a confident flat zero.
+  # Fills months with no invoices so the chart's axis is continuous.
+  # With no rows at all, returns [] so the panel can say there is nothing to show.
   defp fill_months([], _bounds, _today), do: []
 
   defp fill_months(rows, bounds, today) do
@@ -258,11 +248,7 @@ defmodule QuantumBilling.Reports do
     end)
   end
 
-  # The months the chart draws: the selected range, cut off at the current
-  # month so a year-to-date view does not flatline through months that have
-  # not happened, and capped so "All Time" over several years stays a chart
-  # rather than a picket fence. Without bounds — "All Time" — the invoices
-  # themselves say where to start.
+  # The selected range, capped at the current month and at @trend_months.
   defp chart_months(rows, bounds, today) do
     today = today || Date.utc_today()
 
@@ -341,9 +327,7 @@ defmodule QuantumBilling.Reports do
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # The same rule `to_row/1` applies in Elixir, expressed in SQL so the
-  # grouping can happen in the database: which taxes were actually charged,
-  # falling back to where the supply went when an invoice carries no tax at all.
+  # Same rule as to_row/1, in SQL so grouping happens in the database.
   @tax_type_sql """
   CASE
     WHEN COALESCE(cgst_amount, 0) > 0 OR COALESCE(sgst_amount, 0) > 0 THEN 'CGST + SGST'
@@ -361,11 +345,11 @@ defmodule QuantumBilling.Reports do
     |> group_by([i], fragment(@tax_type_sql))
     |> select([i], %{
       tax_type: fragment(@tax_type_sql),
-      taxable_value: coalesce(sum(i.taxable_value), 0),
-      cgst: coalesce(sum(i.cgst_amount), 0),
-      sgst: coalesce(sum(i.sgst_amount), 0),
-      igst: coalesce(sum(i.igst_amount), 0),
-      cess: coalesce(sum(i.cess_amount), 0)
+      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
+      cgst: type(coalesce(sum(i.cgst_amount), 0), :integer),
+      sgst: type(coalesce(sum(i.sgst_amount), 0), :integer),
+      igst: type(coalesce(sum(i.igst_amount), 0), :integer),
+      cess: type(coalesce(sum(i.cess_amount), 0), :integer)
     })
     |> Repo.all()
     |> Map.new(&{&1.tax_type, &1})
@@ -380,8 +364,6 @@ defmodule QuantumBilling.Reports do
       ]
       |> Enum.reject(&is_nil/1)
 
-    # The totals row is present even with nothing to total, matching
-    # `tax_summary/1`: the table always shows its bottom line, reading zero.
     rows ++ [totals_row(rows)]
   end
 
@@ -399,6 +381,19 @@ defmodule QuantumBilling.Reports do
     }
   end
 
+  @doc """
+  Tax rows by tax type for the filtered set, ending in a totals row: the same
+  rows `aggregate/1` returns as `:tax_rows`, without its other queries.
+  """
+  def tax_rows(filters) when is_map(filters), do: tax_rows_from(tax_type_totals(filters))
+
+  @doc """
+  The `limit` clients with the highest invoice value in the filtered set: the
+  same rows `aggregate/1` returns as `:top_clients`, without its other queries.
+  """
+  def top_client_totals(filters, limit \\ 5) when is_map(filters),
+    do: top_client_rows(filters, limit)
+
   defp top_client_rows(filters, limit \\ 5) do
     filters
     |> query()
@@ -407,13 +402,16 @@ defmodule QuantumBilling.Reports do
       client: i.client_name,
       value:
         selected_as(
-          coalesce(
-            sum(
-              coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
-                coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
-                coalesce(i.cess_amount, 0)
+          type(
+            coalesce(
+              sum(
+                coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
+                  coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
+                  coalesce(i.cess_amount, 0)
+              ),
+              0
             ),
-            0
+            :integer
           ),
           :value
         )
@@ -458,7 +456,8 @@ defmodule QuantumBilling.Reports do
       cgst: invoice.cgst_amount || 0,
       sgst: invoice.sgst_amount || 0,
       igst: invoice.igst_amount || 0,
-      cess: invoice.cess_amount || 0
+      cess: invoice.cess_amount || 0,
+      round_off: invoice.round_off || 0
     }
   end
 
@@ -490,8 +489,6 @@ defmodule QuantumBilling.Reports do
   defp matches?(_value, all, all), do: true
   defp matches?(value, filter, _all), do: value == filter
 
-  # "Sales Register" is every invoice; the other report types narrow to the
-  # rows that report actually concerns.
   defp matches_report_type?(_row, nil), do: true
   defp matches_report_type?(_row, "All Reports"), do: true
   defp matches_report_type?(_row, "Sales Register"), do: true
@@ -532,9 +529,7 @@ defmodule QuantumBilling.Reports do
 
   defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
 
-  # Percentage change between the last two months represented in the set.
-  # Returns nil when there is nothing to compare against, so the caller can omit
-  # the caption rather than print a meaningless 0%.
+  # nil when there is nothing to compare, so the caption is omitted.
   defp delta([], _measure), do: nil
 
   defp delta(invoices, measure) do
@@ -638,8 +633,7 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  # Totals only cover the columns that actually applied to some row, so an
-  # all-inter-state period shows a dash under CGST rather than a misleading 0.
+  # Only columns that applied to some row are totalled, so unused ones show a dash.
   defp sum_present(rows, fun) do
     case Enum.filter(rows, &(fun.(&1) != nil)) do
       [] -> nil
@@ -737,23 +731,49 @@ defmodule QuantumBilling.Reports do
   strings and eleven megabytes of process memory, on every load of the Reports
   page, to arrive at two thousand distinct names. It grew with the age of the
   business, and every one of those names was also rendered as an `<option>`.
+
+  ## Why the invoice names are a skip scan
+
+  A plain `UNION` still had to sort every invoice's client name to dedupe
+  them: on a million invoices, a 44 MB on-disk sort and two seconds per
+  Reports load. The invoice side therefore walks `invoices_client_name_index`
+  one distinct name at a time — "the first name after the last one" — so the
+  cost is one index probe per name returned, however many invoices share it.
+  Only the first `client_name_limit/0` names of each side can make the final
+  list, so each side stops there before the two are merged.
   """
   def client_names do
-    from_clients = from(c in Client.kept(), select: %{name: c.name}, where: not is_nil(c.name))
+    # Raw SQL skips Ecto's prefix, so the business's schema is named here.
+    schema = Repo.business_schema!()
 
-    from_invoices =
-      from(i in Invoice.kept(), select: %{name: i.client_name}, where: not is_nil(i.client_name))
-
-    names =
-      from(n in subquery(union(from_clients, ^from_invoices)),
-        where: n.name != "",
-        order_by: n.name,
-        limit: @client_name_limit,
-        select: n.name
+    %{rows: rows} =
+      Repo.query!(
+        """
+        WITH RECURSIVE invoice_names(name, n) AS (
+          (SELECT client_name, 1 FROM "#{schema}".invoices
+           WHERE deleted_at IS NULL AND client_name > ''
+           ORDER BY client_name LIMIT 1)
+          UNION ALL
+          SELECT (SELECT i.client_name FROM "#{schema}".invoices i
+                  WHERE i.deleted_at IS NULL AND i.client_name > p.name
+                  ORDER BY i.client_name LIMIT 1),
+                 p.n + 1
+          FROM invoice_names p
+          WHERE p.name IS NOT NULL AND p.n < $1
+        )
+        SELECT name FROM (
+          SELECT name FROM invoice_names WHERE name IS NOT NULL
+          UNION
+          (SELECT name FROM "#{schema}".clients WHERE deleted_at IS NULL AND name > ''
+           ORDER BY name LIMIT $1)
+        ) names
+        ORDER BY name
+        LIMIT $1
+        """,
+        [@client_name_limit]
       )
-      |> Repo.all()
 
-    ["All Clients" | names]
+    ["All Clients" | List.flatten(rows)]
   end
 
   @doc "How many names the client filter offers before it stops listing them."

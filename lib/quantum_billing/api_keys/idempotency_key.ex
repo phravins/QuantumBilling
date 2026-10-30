@@ -10,6 +10,7 @@ defmodule QuantumBilling.ApiKeys.IdempotencyKey do
 
   alias QuantumBilling.ApiKeys.ApiKey
 
+  @schema_prefix "public"
   schema "api_idempotency_keys" do
     field :key, :string
     field :request_hash, :binary

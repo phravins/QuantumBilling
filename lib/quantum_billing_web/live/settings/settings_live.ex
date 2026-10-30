@@ -25,7 +25,9 @@ defmodule QuantumBillingWeb.SettingsLive do
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.EWayBills.NICClient
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
@@ -63,15 +65,7 @@ defmodule QuantumBillingWeb.SettingsLive do
      )}
   end
 
-  # Settings saved in another window. `update_section/3` broadcasts *from* the
-  # saver, so this only ever reaches other windows — the one that saved keeps
-  # the form it is sitting in.
-  #
-  # The struct in the message is deliberately ignored and the row re-read. A
-  # broadcast is a signal that something changed, not a value to trust: the
-  # payload was loaded by a different process, on a different connection, and
-  # adopting it wholesale hands this page a record it never read itself. The
-  # clients list takes the same approach for the same reason.
+  # Only other windows get this. Re-read rather than trusting the payload.
   def handle_info({:settings_updated, _organization}, socket) do
     {:noreply,
      socket
@@ -79,14 +73,10 @@ defmodule QuantumBillingWeb.SettingsLive do
      |> assign_form(socket.assigns.section)}
   end
 
-  # A template edited in the pad, or in another window. Same reasoning as the
-  # settings broadcast: re-read rather than adopt the payload.
   def handle_info({:invoice_template_changed, _template}, socket) do
     {:noreply, assign_templates(socket)}
   end
 
-  # A message going out while the SMTP panel is open. The panel is the one
-  # place that shows delivery state, so nothing else needs rebuilding.
   def handle_info({:email_delivery_changed, _delivery}, socket) do
     if socket.assigns[:section] == :smtp do
       {:noreply, assign_deliveries(socket)}
@@ -99,10 +89,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     section = section_from(params["section"])
 
     if owner_only?(section) and not Scope.owner?(socket.assigns.current_scope) do
-      # These three panels hold the credentials for other systems — the SMTP
-      # relay, the payment gateway keys, the IRP password, the webhook signing
-      # secret — and the security policy that governs everyone's sessions.
-      # Staff bill; owners administer.
+      # Credentials and security policy: owners only.
       {:noreply,
        socket
        |> put_flash(:error, "Those settings are limited to account owners.")
@@ -118,7 +105,8 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  @owner_only_sections [:smtp, :integrations, :security]
+  # Backup: the download is the whole database and a restore replaces it.
+  @owner_only_sections [:smtp, :integrations, :security, :backup]
 
   @doc """
   Whether a settings section is owner-only.
@@ -128,21 +116,13 @@ defmodule QuantumBillingWeb.SettingsLive do
   """
   def owner_only?(section), do: section in @owner_only_sections
 
-  # The organisation and the specimen invoice move together.
-  #
-  # The specimen is built *from* the organisation — it prints the real company
-  # name, address and GSTIN — so leaving it behind means the thumbnails and the
-  # test print keep showing the details you just changed away from, which reads
-  # as the save not having worked.
+  # The specimen invoice is built from the organisation, so it moves with it.
   defp assign_organization(socket, organization) do
     socket
-    |> assign(:organization, organization)
-    # The thumbnails render a real invoice rather than an empty shell, so a
-    # design can be judged by how it handles figures and a long description.
+    |> assign(:organization, Settings.with_installation_rules(organization))
     |> assign(:sample, InvoiceDocument.sample(organization))
   end
 
-  # Read only for the panel that shows them.
   defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
   defp assign_deliveries(socket, _section), do: socket
 
@@ -150,9 +130,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     assign(socket, :deliveries, Mail.list_recent_deliveries(8))
   end
 
-  # Only the Customization panel lists templates, and `ensure_default/0` writes —
-  # so this is called from the one place a user has actually asked to see them,
-  # rather than on every settings page load.
+  # Only here: ensure_default/0 writes.
   defp assign_templates(socket, :customization) do
     Templates.ensure_default()
     assign_templates(socket)
@@ -175,10 +153,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     Enum.find_value(sections(), :general, fn s -> if to_string(s.key) == value, do: s.key end)
   end
 
-  # Built from the scrubbed organisation: stored credentials must not travel
-  # back to the browser, and a `password` input renders whatever value it is
-  # given. Saving still works on the real struct — a blank secret box means
-  # "leave it as it is".
+  # From the scrubbed organisation, so stored credentials never reach the browser.
   defp assign_form(socket, section) when section in @saveable do
     changeset =
       socket.assigns.organization
@@ -190,18 +165,11 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
 
-  # ── Invoice designs ───────────────────────────────────────────────────────
-  #
-  # These are list actions rather than form fields, so they are plain clicks and
-  # do not go through the section's changeset. The design itself is edited in
-  # `InvoiceTemplateDesignLive`.
+  # ── Invoice designs ──
+  # List actions; the design itself is edited in InvoiceTemplateDesignLive.
 
-  # ── Text tools ────────────────────────────────────────────────────────────
-  #
-  # These write a design's page setup rather than a settings column: typography
-  # belongs to the document, so a heading weight chosen here is the same one the
-  # design pad shows and the PDF prints. Every change says which design it came
-  # from, because each card carries its own toolbar.
+  # ── Text tools ──
+  # Write the design's page setup, not a settings column.
 
   def handle_event("toggle_text_tools", %{"id" => id}, socket) do
     open = if to_string(socket.assigns.open_tools) == id, do: nil, else: template_id(id)
@@ -296,9 +264,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, cancel_upload(socket, :logo, ref)}
   end
 
-  # Synchronous on purpose — the whole point is to report what the relay said,
-  # to the person who just pressed the button. Every other message in the
-  # application goes through the queue.
+  # Synchronous: reports what the relay said.
   def handle_event("send_test_email", _params, socket) do
     recipient = test_recipient(socket.assigns)
 
@@ -306,7 +272,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       {:ok, _metadata} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Test email sent to #{recipient}.")
+         |> put_flash(:info, test_sent_message(recipient))
          |> assign_deliveries()}
 
       {:error, message} ->
@@ -325,7 +291,33 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # The section is checked on navigation, but an event can be sent from any of them.
+  def handle_event("delete_delivery", %{"id" => id}, socket) do
+    if Scope.owner?(socket.assigns.current_scope) do
+      case Mail.delete_delivery(id) do
+        {:ok, _delivery} ->
+          {:noreply, socket |> put_flash(:info, "Delivery removed.") |> assign_deliveries()}
+
+        {:error, _reason} ->
+          {:noreply,
+           socket |> put_flash(:error, "That delivery is already gone.") |> assign_deliveries()}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
+  # A restore replaces every record in the business. The section is owner-only,
+  # but an event can be sent from any section, so this checks again.
   def handle_event("restore_backup", _params, socket) do
+    if Scope.owner?(socket.assigns.current_scope) do
+      restore_backup(socket)
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
+  defp restore_backup(socket) do
     entries =
       consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
         {:ok, File.read!(path)}
@@ -350,8 +342,6 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Says what actually came back, so "restored" is a statement of fact rather
-  # than an assurance.
   defp restored_summary(counts) do
     [
       {:clients, "clients"},
@@ -364,12 +354,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     |> Enum.join(", ")
   end
 
-  # Writes the newly uploaded file, if there is one, and puts its path into the
-  # params so the changeset saves it alongside everything else in the panel.
-  # Nothing else in the form knows the logo is a file rather than a field.
-  # Re-read rather than trusting the assign: the toolbar is one of several
-  # windows onto the same row, and writing back a page derived from a stale
-  # render would undo whatever the design pad changed in between.
+  # Re-read rather than trusting the assign, which may be stale.
   defp save_page(socket, id, fun) do
     case Templates.get_template(id) do
       nil ->
@@ -386,8 +371,6 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # The toolbar posts the id as a string; the assign is compared against the
-  # template's own id, so it is kept as whatever the list holds.
   defp template_id(id) do
     case Integer.parse(id) do
       {parsed, ""} -> parsed
@@ -395,9 +378,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Runs a template action by id, refreshing the list either way. An id the list
-  # no longer holds — a stale click from a window opened before it was removed —
-  # is a no-op that re-reads rather than an error.
+  # A stale id re-reads instead of erroring.
   defp with_template(socket, id, fun, message) do
     case Templates.get_template(id) do
       nil ->
@@ -416,7 +397,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
     case consume_uploaded_entries(socket, :logo, &store_logo/2) do
       [{:ok, path}] ->
-        # The old file is only unlinked once the new one is safely on disk.
+        # Unlink the old file only once the new one is on disk.
         if previous && previous != path, do: Uploads.delete(previous)
         {Map.put(params, "doc_logo_path", path), socket}
 
@@ -432,8 +413,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:ok, Uploads.store(path, entry.client_type)}
   end
 
-  # LiveView rejects a file before it ever reaches `Uploads.store/2`, so these
-  # have to be worded here rather than by the context.
+  # LiveView rejects these before Uploads.store/2 sees them.
   defp upload_message(:too_large) do
     "That file is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
   end
@@ -452,11 +432,6 @@ defmodule QuantumBillingWeb.SettingsLive do
       notifications={@notifications}
       unread_count={@unread_count}
     >
-      <%!-- The open section names the page. A standing "Settings / Manage your
-      account and application settings" said nothing the sidebar had not
-      already said, and left the panel repeating the section title inside its
-      own card. Save sits here for the same reason it does on every other form
-      page: it belongs to the page, not to the panel. --%>
       <.header>
         {section(@section).title}
         <:actions :if={@form}>
@@ -466,20 +441,13 @@ defmodule QuantumBillingWeb.SettingsLive do
         </:actions>
       </.header>
 
-      <%!-- `gap-4` rather than `space-y-4`: this is a flex column now, so the
-      panel can take the height left over instead of stopping under its last
-      field. The Logo card below it keeps its natural height. --%>
-      <div class="flex flex-1 flex-col gap-4">
-        <.card padding="p-6" class="flex flex-1 flex-col">
+      <div class="flex flex-1 flex-col gap-3">
+        <.card padding="p-4" class="flex flex-1 flex-col">
           {render_panel(assigns)}
         </.card>
 
-        <%!-- The logo moved to Customization, where it sits beside the preview
-        that shows what it will look like. This card points at it rather than
-        offering a second upload that would fight the first over the same
-        column. --%>
-        <.card :if={@section == :general} padding="p-6">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <.card :if={@section == :general} padding="p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
 
@@ -506,7 +474,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       id="settings-form"
       phx-change="validate"
       phx-submit="save"
-      class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
     >
       <.field field={f[:company_name]} label="Company Name" required />
       <.field
@@ -527,8 +495,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         prompt="Select state"
         options={EWayBillForm.states()}
       />
-      <%!-- Beside the address rather than inside it: the e-invoice export needs
-      the city and the PIN as their own fields. --%>
+      <%!-- Separate fields: the e-invoice export needs the city and PIN. --%>
       <.field field={f[:city]} label="City" placeholder="Mumbai" />
       <.field
         field={f[:pincode]}
@@ -569,7 +536,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :invoice} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <.field field={f[:invoice_prefix]} label="Invoice Prefix" required placeholder="INV" />
         <.field field={f[:invoice_next_number]} label="Next Number" type="number" required min="1" />
         <.field
@@ -589,7 +556,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         </p>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:invoice_due_days]}
           label="Default Payment Terms (days)"
@@ -614,7 +581,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :e_way_bill} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:ewb_transport_mode]}
           label="Default Transport Mode"
@@ -630,20 +597,13 @@ defmodule QuantumBillingWeb.SettingsLive do
         <.field
           field={f[:ewb_threshold_value]}
           label="Threshold Value (₹)"
-          type="number"
-          min="0"
+          type="money"
           hint="An e-way bill is required above this consignment value."
         />
       </div>
 
       <div class="mt-4">
-        <%!--
-        Says what it does today rather than what its name promises. The switch
-        is saved and read, but nothing generates a bill on its own: that needs
-        a background worker calling the NIC portal unattended, which is a
-        larger change than a toggle. Better to name the gap than to offer a
-        switch that quietly does nothing.
-        --%>
+        <%!-- The switch is saved, but nothing generates bills automatically yet. --%>
         <.toggle
           field={f[:ewb_auto_generate]}
           label="Flag invoices that need an e-way bill"
@@ -661,7 +621,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :tax} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:default_gst_rate]}
           label="Default GST Rate (%)"
@@ -700,7 +660,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:reminder_lead_days]}
           label="Remind me this many days ahead"
@@ -711,8 +671,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="mt-4 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold tracking-tight">SMTP Mailer Test</h3>
           <p class="mt-1 text-xs text-base-content/60">
@@ -735,7 +695,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :preferences} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:language]}
           label="Language"
@@ -751,7 +711,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
+    <div class="mt-4 border-t border-base-300 pt-5">
       <p class="text-sm font-medium">Theme</p>
 
       <p class="mt-1 text-sm text-base-content/60">
@@ -767,16 +727,16 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :security} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <.form
         :let={f}
         for={@form}
         id="settings-form"
         phx-change="validate"
         phx-submit="save"
-        class="space-y-4"
+        class="space-y-3"
       >
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:allowed_ips]}
             label="Allowed IP Ranges (Whitelisting)"
@@ -801,15 +761,21 @@ defmodule QuantumBillingWeb.SettingsLive do
 
         <.toggle
           field={f[:enforce_2fa]}
-          label="Enforce 2FA for all organization users"
+          label="Enforce 2FA for everyone"
           hint="Requires two-factor authentication on every login."
         />
+
+        <p id="installation-rules-note" class="flex items-start gap-1.5 text-xs text-base-content/55">
+          <.icon name="hero-information-circle" class="mt-px size-3.5 shrink-0" />
+          The IP ranges, session timeout and 2FA rule apply to every business on this
+          installation. Audit log retention is this business's own.
+        </p>
       </.form>
 
       <hr class="border-base-300" />
 
-      <dl class="space-y-4">
-        <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
+      <dl class="space-y-3">
+        <div class="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
           <div>
             <dt class="text-sm font-medium">Account Email</dt>
             <dd class="mt-0.5 text-sm text-base-content/60">{@current_scope.user.email}</dd>
@@ -838,7 +804,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp render_panel(%{section: :smtp} = assigns) do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field field={f[:smtp_host]} label="SMTP Server Host" placeholder="smtp.mailgun.org" />
         <.field field={f[:smtp_port]} label="Port" type="number" placeholder="587" />
         <.field
@@ -870,8 +836,8 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </.form>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="mt-4 border-t border-base-300 pt-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold tracking-tight">Test SMTP Mail Dispatch</h3>
           <p class="mt-1 text-xs text-base-content/60">
@@ -890,7 +856,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </div>
 
-    <div class="mt-6 border-t border-base-300 pt-5">
+    <div class="mt-4 border-t border-base-300 pt-5">
       <h3 class="text-sm font-semibold tracking-tight">Recent Deliveries</h3>
       <p class="mt-1 text-xs text-base-content/60">
         Every message the application has tried to send, whether it arrived, and what went wrong
@@ -903,22 +869,29 @@ defmodule QuantumBillingWeb.SettingsLive do
       </p>
 
       <div :if={@deliveries != []} class="mt-3 overflow-x-auto">
-        <table class="table table-sm">
+        <table id="deliveries" class="table table-sm table-fixed">
           <thead>
             <tr class={table_head_class()}>
-              <th>When</th>
-              <th>To</th>
+              <th class="w-28">When</th>
+              <th class="w-56">To</th>
               <th>Subject</th>
-              <th>Status</th>
+              <th class="w-40">Status</th>
+              <th class="w-12"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
-            <tr :for={delivery <- @deliveries} id={"delivery-#{delivery.id}"} class="text-xs">
+            <tr
+              :for={delivery <- @deliveries}
+              id={"delivery-#{delivery.id}"}
+              class="align-middle text-xs"
+            >
               <td class="whitespace-nowrap text-base-content/50">
                 {Calendar.strftime(delivery.inserted_at, "%d %b %H:%M")}
               </td>
-              <td class="truncate">{delivery.to_email}</td>
-              <td class="truncate text-base-content/60">{delivery.subject}</td>
+              <td class="truncate" title={delivery.to_email}>{delivery.to_email}</td>
+              <td class="truncate text-base-content/60" title={delivery.subject}>
+                {delivery.subject}
+              </td>
               <td>
                 <span class={[
                   "badge badge-sm",
@@ -928,9 +901,27 @@ defmodule QuantumBillingWeb.SettingsLive do
                 ]}>
                   {delivery.status}
                 </span>
-                <span :if={delivery.last_error} class="ml-1 block text-2xs text-error">
+                <span
+                  :if={delivery.last_error}
+                  class="mt-0.5 block truncate text-2xs text-error"
+                  title={delivery.last_error}
+                >
                   {delivery.last_error}
                 </span>
+              </td>
+              <td class="text-right">
+                <button
+                  type="button"
+                  id={"delivery-delete-#{delivery.id}"}
+                  phx-click="delete_delivery"
+                  phx-value-id={delivery.id}
+                  data-confirm="Remove this delivery from the log?"
+                  class={row_delete_class()}
+                  aria-label={"Remove delivery to #{delivery.to_email}"}
+                  title="Remove from log"
+                >
+                  <.icon name="hero-trash" class="size-4" />
+                </button>
               </td>
             </tr>
           </tbody>
@@ -942,7 +933,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :customization} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
         <h3 class="text-sm font-semibold tracking-tight">Logo</h3>
 
@@ -1029,7 +1020,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp render_panel(%{section: :backup} = assigns) do
     ~H"""
-    <div class="space-y-6">
+    <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold tracking-tight">1-Click Full System Backup</h3>
         <p class="mt-1 text-sm text-base-content/60">
@@ -1085,14 +1076,54 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :integrations} = assigns) do
+    # Read from the environment, which is what the portal clients act on.
+    assigns =
+      assign(assigns,
+        portal_modes: [
+          {"irp-mode", "E-invoicing (IRP)", mode(IRPClient.live?()),
+           "IRP_CLIENT_ID, IRP_CLIENT_SECRET and IRP_SANDBOX=false"},
+          {"nic-mode", "E-way bills (NIC)", mode(NICClient.live?()),
+           "NIC_EWB_API_URL and NIC_EWB_API_KEY"}
+        ]
+      )
+
     ~H"""
+    <section id="government-portals" class="mb-4 rounded-xl border border-base-300 p-4">
+      <h3 class="text-sm font-semibold tracking-tight">Government portals</h3>
+      <p class="mt-1 text-xs text-base-content/60">
+        Whether IRNs and e-way bills are filed with the government or generated locally for
+        demonstration. Every result is labelled with the mode that produced it.
+      </p>
+
+      <ul class="mt-3 divide-y divide-base-200">
+        <li
+          :for={{id, label, mode, env} <- @portal_modes}
+          class="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p class="text-sm font-medium">{label}</p>
+            <p class="text-xs text-base-content/60">
+              <%= if mode == "live" do %>
+                Requests go to the portal; if it does not answer, you see an error and nothing is
+                recorded.
+              <% else %>
+                Numbers are generated locally and are not filed. To go live, set {env} on the
+                server.
+              <% end %>
+            </p>
+          </div>
+          <.portal_mode_badge id={id} mode={mode} />
+        </li>
+      </ul>
+    </section>
+
     <.form
       :let={f}
       for={@form}
       id="settings-form"
       phx-change="validate"
       phx-submit="save"
-      class="space-y-6"
+      class="space-y-4"
     >
       <div>
         <h3 class="text-sm font-semibold tracking-tight">UPI Payments</h3>
@@ -1101,7 +1132,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           payment QR code — without it, no payment QR is drawn.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:upi_vpa]}
             label="UPI ID (VPA)"
@@ -1125,7 +1156,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           are refused rather than simulated.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field field={f[:razorpay_key_id]} label="Razorpay Key ID" placeholder="rzp_live_..." />
           <.field
             field={f[:razorpay_key_secret]}
@@ -1133,6 +1164,20 @@ defmodule QuantumBillingWeb.SettingsLive do
             type="password"
             placeholder="••••••••••••"
           />
+        </div>
+
+        <div id="razorpay-webhook" class="mt-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+          <p class="text-xs font-medium text-base-content/70">Webhook URL for this business</p>
+          <code
+            id="razorpay-webhook-url"
+            class="mt-1 block select-all break-all font-mono text-xs text-base-content"
+          >
+            {url(~p"/api/webhooks/razorpay/#{@current_scope.business.slug}")}
+          </code>
+          <p class="mt-1 text-xs text-base-content/60">
+            Paste this into the Razorpay dashboard for {@current_scope.business.name}. Each business has its own,
+            so a payment is recorded against the right firm.
+          </p>
         </div>
       </div>
 
@@ -1144,7 +1189,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           Configure direct IRP / ClearTax API credentials for 1-click IRN & Signed QR code fetching.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <.field field={f[:irp_username]} label="IRP Username" placeholder="GSTIN_USER" />
           <.field
             field={f[:irp_password]}
@@ -1164,7 +1209,7 @@ defmodule QuantumBillingWeb.SettingsLive do
           Stream realtime webhooks on invoice creation, payment completion, e-invoicing, and e-way bill events.
         </p>
 
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={f[:webhook_url]}
             label="Webhook Payload Endpoint URL"
@@ -1182,13 +1227,27 @@ defmodule QuantumBillingWeb.SettingsLive do
     """
   end
 
-  # Who a test goes to: the person signed in, then the organisation's contact
-  # address. Never a client, and never typed in.
+  # The signed-in user, then the organisation's address; never a client.
   defp test_recipient(%{current_scope: scope, organization: organization}),
     do: test_recipient(scope, organization)
 
   defp test_recipient(scope, organization) do
     presence(scope && scope.user && scope.user.email) || presence(organization.email)
+  end
+
+  # With no relay in development, mail goes to the local preview.
+  defp test_sent_message(recipient) do
+    local_preview? =
+      not Mail.own_relay?(Settings.get_organization()) and
+        Application.get_env(:quantum_billing, QuantumBilling.Mailer)[:adapter] ==
+          Swoosh.Adapters.Local
+
+    if local_preview? do
+      "No SMTP relay is set, so the test went to the local preview at /dev/mailbox, " <>
+        "not to #{recipient}."
+    else
+      "Test email sent to #{recipient}."
+    end
   end
 
   defp presence(nil), do: nil
@@ -1201,4 +1260,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp presence(value), do: value
+
+  defp mode(true), do: "live"
+  defp mode(false), do: "demo"
 end

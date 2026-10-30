@@ -16,7 +16,7 @@ defmodule QuantumBillingWeb.API.V1.EWayBillJSON do
   def index(%{page: page}) do
     %{
       data: Enum.map(page.rows, &bill/1),
-      meta: Map.take(page, [:page, :per_page, :total, :total_pages])
+      meta: QuantumBillingWeb.API.Pagination.meta(page)
     }
   end
 

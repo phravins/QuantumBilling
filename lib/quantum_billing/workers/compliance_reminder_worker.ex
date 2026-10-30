@@ -31,7 +31,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   rather than hiding it: the reminder is honest about being a deadline, not a
   status, and it stops being a nuisance the moment filing records land.
   """
-  use Oban.Worker, queue: :maintenance, max_attempts: 3
+  use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
   require Logger
 
@@ -39,8 +39,8 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Settings
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: args}) do
     organization = Settings.get_organization()
 
     if organization.notify_filing_reminders == false do
@@ -75,9 +75,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
     written
   end
 
-  # `{:ok, :duplicate}` from a day this obligation was already announced is a
-  # success, not a failure — it is the whole point of the dedupe key — so it is
-  # simply not counted.
+  # {:ok, :duplicate} is not counted.
   defp announce(obligation) do
     Notifications.notify(%{
       kind: "compliance",
@@ -105,7 +103,6 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
     "#{obligation.type} for #{obligation.period_label} is due in #{obligation.days_until} days"
   end
 
-  # An explicit date in the job args, so a test does not have to travel in time.
   defp today(%{"today" => date}) when is_binary(date) do
     case Date.from_iso8601(date) do
       {:ok, parsed} -> parsed

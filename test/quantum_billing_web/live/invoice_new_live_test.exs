@@ -174,10 +174,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "line items" do
-    # These drive the change handler directly rather than through form/3.
-    # form/3 checks every value against the inputs currently rendered, which
-    # cannot express "add a row that does not exist yet" — the browser sends
-    # exactly these params, so this is what the handler has to cope with.
+    # Drives the change handler directly: form/3 cannot add a row that is not rendered yet.
     defp line(description, rate, position) do
       %{
         "description" => description,
@@ -259,8 +256,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "the tax on a row" do
-    # The rows from the bug report: 12 × 3,000 and 23 × 30, both at 18%. The
-    # Amount column showed 36,000 and 690 whatever rate was chosen.
+    # 12 × 3,000 and 23 × 30, both at 18%.
     defp taxed_line(description, quantity, rate, tax_rate, position) do
       %{
         "description" => description,
@@ -294,10 +290,12 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
       assert has_element?(view, "#invoice-item-amount-0", "₹42,480.00")
       assert has_element?(view, "#invoice-item-tax-0", "₹6,480.00")
 
-      assert has_element?(view, "#invoice-item-amount-1", "₹814.00")
-      assert has_element?(view, "#invoice-item-tax-1", "₹124.00")
+      # 18% of ₹690 is ₹124.20, kept to the paisa.
+      assert has_element?(view, "#invoice-item-amount-1", "₹814.20")
+      assert has_element?(view, "#invoice-item-tax-1", "₹124.20")
 
-      # 42,480 + 814: what the rows show is what the invoice comes to.
+      # 42,480 + 814.20, rounded to the rupee: what the rows show is what the invoice comes to.
+      assert has_element?(view, "#invoice-summary-round-off", "₹ -0.20")
       assert has_element?(view, "#invoice-summary-grand-total", "₹ 43,294.00")
     end
 
@@ -365,10 +363,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
   end
 
   describe "editing items" do
-    # The edit form is where rows used to multiply: a stored row that comes back
-    # without its id is read as a new one, and the stored one is kept beside it.
-    # These go through form/3 on purpose, so what is submitted is what the page
-    # actually rendered — hidden ids included.
+    # Through form/3, so the hidden row ids are submitted as on the real page.
     setup do
       {:ok, invoice} =
         Invoices.create_invoice(
@@ -419,7 +414,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
         |> render_change()
 
       assert rows(twice) == 2
-      assert has_element?(view, item_input(0, "rate", "1500"))
+      assert has_element?(view, item_input(0, "rate", "1500.00"))
       assert has_element?(view, item_input(1, "description", "Second"))
     end
 
@@ -791,7 +786,7 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
       assert path == "/invoices/#{invoice.id}"
       assert invoice.number == "INV-0001"
       assert invoice.status == "Draft"
-      assert invoice.amount == 59_000
+      assert invoice.amount == 5_900_000
     end
 
     test "stores the company snapshot", %{conn: conn} do

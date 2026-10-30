@@ -18,7 +18,8 @@ defmodule QuantumBilling.Webhooks.WebhookEvent do
     field :provider, :string
     field :event_id, :string
     field :event_type, :string
-    field :payload, :map, default: %{}
+    # No schema default: Ecto would encrypt it at compile time, before any key is set.
+    field :payload, QuantumBilling.Encrypted.Map, redact: true
     field :status, :string, default: "processed"
     field :error, :string
 

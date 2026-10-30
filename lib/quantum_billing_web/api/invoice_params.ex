@@ -25,6 +25,8 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
   GSTIN. The number and the issuing company come from the server too.
   """
 
+  alias QuantumBilling.Money
+
   @top ~w(client_id invoice_type invoice_date due_date payment_terms place_of_supply
           remarks terms items)
   @item ~w(description hsn_sac quantity unit rate tax_rate)
@@ -78,13 +80,20 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
       {%{} = item, index}, {:ok, acc} ->
         case refuse_unknown(item, @item, "items.#{index}.") do
           :ok ->
-            attrs =
-              item
-              |> Map.take(@item)
-              |> Map.new(fn {key, value} -> {key, stringify(value)} end)
-              |> Map.put("position", to_string(index))
+            case rate(item["rate"], index) do
+              {:ok, rate} ->
+                attrs =
+                  item
+                  |> Map.take(@item)
+                  |> Map.new(fn {key, value} -> {key, stringify(value)} end)
+                  |> put_rate(rate)
+                  |> Map.put("position", to_string(index))
 
-            {:cont, {:ok, Map.put(acc, to_string(index), attrs)}}
+                {:cont, {:ok, Map.put(acc, to_string(index), attrs)}}
+
+              {:error, _fields} = error ->
+                {:halt, error}
+            end
 
           {:error, _fields} = error ->
             {:halt, error}
@@ -99,6 +108,18 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
     do: {:error, %{"items" => ["can contain at most #{@max_items} lines"]}}
 
   defp items(_items), do: {:error, %{"items" => ["must be a non-empty list of lines"]}}
+
+  # Every amount in the API is integer paise, in both directions, so a caller
+  # never rounds a float. The changeset reads a rate as rupees typed into the
+  # form, so it is handed over in that form: 125050 becomes "1250.50".
+  defp rate(nil, _index), do: {:ok, nil}
+  defp rate(paise, _index) when is_integer(paise) and paise >= 0, do: {:ok, Money.to_input(paise)}
+
+  defp rate(_other, index),
+    do: {:error, %{"items.#{index}.rate" => ["must be a whole number of paise, 0 or more"]}}
+
+  defp put_rate(attrs, nil), do: attrs
+  defp put_rate(attrs, rupees), do: Map.put(attrs, "rate", rupees)
 
   # The changeset casts from strings, as the form sends them.
   defp stringify(value) when is_binary(value), do: value

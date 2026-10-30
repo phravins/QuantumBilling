@@ -2,13 +2,23 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   import Swoosh.Email
 
   alias QuantumBilling.Accounts.User
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Mail
+  alias QuantumBilling.Repo
 
-  # Account mail goes out over the same relay as everything else — the
-  # organisation's own SMTP server when one is configured — and from the same
-  # sender address. A confirmation link arriving from a stranger's domain is
-  # how a sign-in mail ends up in a spam folder.
+  # Sent now (the person is waiting for the link) but recorded in the delivery ledger.
+  #
+  # Account mail can go out before anyone has chosen a business — signing up,
+  # resetting a password — so it uses the current business's relay and ledger
+  # when there is one, and otherwise the first business's, which is the relay
+  # the installation always used.
   defp deliver(recipient, subject, body) do
+    Repo.with_business(Repo.business() || Businesses.default!(), fn ->
+      send_now(recipient, subject, body)
+    end)
+  end
+
+  defp send_now(recipient, subject, body) do
     email =
       new()
       |> to(recipient)
@@ -16,8 +26,20 @@ defmodule QuantumBilling.Accounts.UserNotifier do
       |> subject(subject)
       |> text_body(body)
 
-    with {:ok, _metadata} <- Mail.deliver(email) do
-      {:ok, email}
+    delivery =
+      case Mail.record_queued(%{to_email: recipient, kind: "account", subject: subject}) do
+        {:ok, delivery} -> delivery
+        {:error, _changeset} -> nil
+      end
+
+    case Mail.deliver(email) do
+      {:ok, _metadata} ->
+        delivery && Mail.mark_sent(delivery)
+        {:ok, email}
+
+      {:error, message} ->
+        delivery && Mail.mark_failed(delivery, message, true)
+        {:error, message}
     end
   end
 

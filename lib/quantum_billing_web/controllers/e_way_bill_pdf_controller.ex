@@ -69,8 +69,6 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
     end)
   end
 
-  # The bill carries its invoice and its Part-B history, because the document
-  # prints all three.
   defp with_e_way_bill(conn, id, render) do
     case EWayBills.get_e_way_bill(id) do
       nil ->

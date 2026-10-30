@@ -17,10 +17,13 @@ defmodule QuantumBilling.Events do
   sidebar in your other tabs, not everyone else's — so that one is keyed by user
   id.
 
-  When schema-per-tenant lands, the organisation topics gain the tenant in their
-  name and every publisher and subscriber follows from this module alone. That
-  is the reason topics are built here rather than written as string literals at
-  each call site.
+  Organisation topics carry the business in their name — `"invoices:biz_2"` —
+  taken from the business the calling process works in (see
+  `QuantumBilling.Repo.business/0`). A window open on one firm hears nothing
+  about another's invoices, and no publisher or subscriber has to say which
+  business it means: both already run inside one. Building a topic with no
+  business chosen raises, like a query would, rather than falling back to a
+  topic every firm shares.
 
   ## Messages
 
@@ -73,10 +76,10 @@ defmodule QuantumBilling.Events do
   # ── Topics ─────────────────────────────────────────────────────────────────
 
   @doc "Clients created or edited anywhere in the organisation."
-  def clients_topic, do: "clients"
+  def clients_topic, do: business_topic("clients")
 
   @doc "Invoices created, edited or cancelled."
-  def invoices_topic, do: "invoices"
+  def invoices_topic, do: business_topic("invoices")
 
   @doc """
   Changes to a single invoice.
@@ -89,7 +92,11 @@ defmodule QuantumBilling.Events do
   is one careless line from showing them — and the fan-out grew with every
   customer looking at a bill.
   """
-  def invoice_topic(invoice_id), do: "invoice:#{invoice_id}"
+  #
+  # Business-scoped like the rest: ids restart in every business's schema, so
+  # `invoice:7` alone would join one firm's customer page to another firm's
+  # invoice 7.
+  def invoice_topic(invoice_id), do: business_topic("invoice:#{invoice_id}")
 
   @doc """
   E-way bills generated, cancelled, or moved to another vehicle.
@@ -99,10 +106,10 @@ defmodule QuantumBilling.Events do
   send, so this topic broadcast one while its documented message said
   otherwise.
   """
-  def e_way_bills_topic, do: "e_way_bills"
+  def e_way_bills_topic, do: business_topic("e_way_bills")
 
   @doc "Organisation settings."
-  def settings_topic, do: "settings"
+  def settings_topic, do: business_topic("settings")
 
   @doc """
   Invoice layouts created, edited, archived or made default.
@@ -111,7 +118,7 @@ defmodule QuantumBilling.Events do
   Settings: the pad autosaves on every drag, and a settings window has no reason
   to rebuild its form each time somebody nudges a block in another tab.
   """
-  def invoice_templates_topic, do: "invoice_templates"
+  def invoice_templates_topic, do: business_topic("invoice_templates")
 
   @doc """
   One user's own account details.
@@ -121,7 +128,7 @@ defmodule QuantumBilling.Events do
   def user_topic(user_id), do: "user:#{user_id}"
 
   @doc "Audit trail logs."
-  def audit_logs_topic, do: "audit_logs"
+  def audit_logs_topic, do: business_topic("audit_logs")
 
   @doc """
   Outgoing mail: queued, sent, failed.
@@ -131,7 +138,7 @@ defmodule QuantumBilling.Events do
   several times per message, and a settings window has no reason to rebuild its
   form each time an invoice goes out.
   """
-  def mail_topic, do: "mail"
+  def mail_topic, do: business_topic("mail")
 
   @doc """
   The in-app notification feed.
@@ -143,5 +150,7 @@ defmodule QuantumBilling.Events do
   the bell — and because the producers are spread across contexts, workers and
   a payment webhook.
   """
-  def notifications_topic, do: "notifications"
+  def notifications_topic, do: business_topic("notifications")
+
+  defp business_topic(name), do: name <> ":" <> QuantumBilling.Repo.business_schema!()
 end

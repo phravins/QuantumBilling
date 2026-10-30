@@ -11,7 +11,7 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
       invoice_date: ~D[2026-03-01],
       client_name: "Acme Corp",
       client_email: "billing@acme.test",
-      grand_total: 11_800,
+      grand_total: 1_180_000,
       currency: "INR"
     }
   end
@@ -32,9 +32,7 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
       without_sandbox(fn ->
         assert {:error, message} = RazorpayClient.create_payment_link(invoice())
 
-        # The old behaviour was to answer every failure with a fabricated
-        # `plink_…` id and an `rzp.io` URL that does not exist, record it on
-        # the invoice, and report success.
+        # Fails loudly rather than fabricating a payment link.
         assert message =~ "not configured"
         refute RazorpayClient.configured?()
       end)
@@ -50,6 +48,35 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
       assert link_id =~ "plink_sandbox_"
       assert url =~ "sandbox"
       assert RazorpayClient.configured?()
+    end
+  end
+
+  describe "create_payment_link/1 with credentials" do
+    setup do
+      System.put_env("RAZORPAY_KEY_ID", "rzp_test_key")
+      System.put_env("RAZORPAY_KEY_SECRET", "rzp_test_secret")
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_ID") end)
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_SECRET") end)
+
+      previous = Req.default_options()
+      Req.default_options(plug: {Req.Test, __MODULE__})
+      on_exit(fn -> Req.default_options(previous) end)
+
+      :ok
+    end
+
+    test "asks for the grand total as it is stored, already in paise" do
+      test_pid = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:payload, Jason.decode!(body)})
+        Req.Test.json(conn, %{"id" => "plink_123", "short_url" => "https://rzp.io/i/x"})
+      end)
+
+      assert {:ok, %{link_id: "plink_123"}} = RazorpayClient.create_payment_link(invoice())
+
+      assert_receive {:payload, %{"amount" => 1_180_000, "currency" => "INR"}}
     end
   end
 

@@ -14,7 +14,7 @@ defmodule QuantumBillingWeb.LogFilteringTest do
 
   test "scrubs every kind of credential this application receives" do
     params = %{
-      "user" => %{"password" => "hunter2", "recovery_code" => "ab12-cd34"},
+      "user" => %{"password" => "hunter2", "recovery_code" => "ab12-cd34", "code" => "123456"},
       "token" => "invitation-token",
       "organization" => %{
         "smtp_password" => "smtp-pass",
@@ -29,6 +29,7 @@ defmodule QuantumBillingWeb.LogFilteringTest do
 
     assert filtered["user"]["password"] == @filtered
     assert filtered["user"]["recovery_code"] == @filtered
+    assert filtered["user"]["code"] == @filtered
     assert filtered["token"] == @filtered
     assert filtered["organization"]["smtp_password"] == @filtered
     assert filtered["organization"]["webhook_secret"] == @filtered
@@ -38,9 +39,14 @@ defmodule QuantumBillingWeb.LogFilteringTest do
   end
 
   test "leaves ordinary business fields readable" do
-    params = %{"hsn_code" => "998313", "country_code" => "+91", "client_name" => "Acme"}
+    params = %{
+      "client_name" => "Acme",
+      "invoice_date" => "2026-10-01",
+      "place_of_supply" => "Kerala"
+    }
 
     # Over-filtering makes logs useless for the debugging they exist for.
+    # (`*_code` fields are the accepted exception: "code" is filtered for 2FA.)
     assert filter(params) == params
   end
 end

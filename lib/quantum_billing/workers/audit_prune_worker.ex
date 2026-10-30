@@ -21,7 +21,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
   a lock for as long as it takes, which on a large table is long enough to
   matter to everything else running at the time.
   """
-  use Oban.Worker, queue: :maintenance, max_attempts: 3
+  use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
   import Ecto.Query
 
@@ -38,8 +38,8 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
   @batch_size 5_000
   @ledger_retention_days 90
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: args}) do
     audit_days =
       case args do
         %{"audit_retention_days" => days} when is_integer(days) and days > 0 -> days
@@ -49,14 +49,11 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
     audit = prune(AuditLog, audit_days)
     deliveries = prune(Delivery, @ledger_retention_days)
     webhooks = prune(WebhookEvent, @ledger_retention_days)
-    # Through the context rather than through `prune/2` above, because only
-    # notifications that have been *read* may go: an unread one is still
-    # somebody's outstanding item however old it is, and silently deleting it
-    # would be the feed losing something nobody ever saw.
+    # Through the context: only read notifications may be pruned.
     notifications = Notifications.prune(@ledger_retention_days)
     # Stored API responses for replay. A day's lifetime, not 90: they hold
     # whole response bodies, and nothing replays them after that anyway.
-    {:ok, idempotency} = ApiKeys.prune_idempotency_keys()
+    {:ok, idempotency} = ApiKeys.prune_idempotency_keys(Repo.business())
 
     if audit + deliveries + webhooks + notifications + idempotency > 0 do
       Logger.info(

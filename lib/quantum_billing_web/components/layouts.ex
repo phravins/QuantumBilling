@@ -5,10 +5,6 @@ defmodule QuantumBillingWeb.Layouts do
   """
   use QuantumBillingWeb, :html
 
-  # Embed all files in layouts/* within this module.
-  # The default root.html.heex file contains the HTML
-  # skeleton of your application, namely HTML headers
-  # and other static content.
   embed_templates "layouts/*"
 
   @doc """
@@ -37,9 +33,7 @@ defmodule QuantumBillingWeb.Layouts do
     default: nil,
     doc: "the key of the active settings section, when one is open"
 
-  # Defaulted rather than required, and assigned by `NotificationsHook` on every
-  # authenticated socket. The defaults are what a page rendered outside that
-  # hook falls back to — an empty bell rather than a crash.
+  # Assigned by NotificationsHook; defaults cover pages rendered outside it.
   attr :notifications, :list, default: [], doc: "the newest notifications, newest first"
 
   attr :unread_count, :integer, default: 0, doc: "how many of them have not been read"
@@ -55,30 +49,13 @@ defmodule QuantumBillingWeb.Layouts do
     ~H"""
     <div class="flex min-h-screen bg-base-200">
       <aside class="sticky top-0 flex h-screen w-48 shrink-0 flex-col border-r border-base-300 bg-base-100">
-        <%!-- The bare mark, matching the sign-in and legal screens: no filled
-        tile, and the icon takes its colour from the surrounding text. --%>
         <.brand_mark class="px-4 py-4" />
         <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
           <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
 
           <ul class="space-y-0.5">
             <li :for={item <- @nav_items} class="group">
-              <%!-- Settings is the one item with sections beneath it. The
-              chevron opens them, animating the row track from 0fr to 1fr —
-              the one way to transition to an unknown height in CSS alone, so
-              this needs neither JavaScript nor a server round trip.
-
-              Open is driven off `@active_sub`, not `@active_nav`. Every
-              settings panel marks a sub-item, so the list holding it unfolds
-              and stays unfolded while you move between sections. Account
-              Settings marks the Settings nav item but no sub-item, so it no
-              longer springs the whole list open on arrival — which is what
-              tying this to `@active_nav` used to do.
-
-              Server-rendered rather than remembered only in the browser: a
-              navigation rebuilds this sidebar from scratch, and restoring the
-              state afterwards in JavaScript meant the list visibly snapped
-              shut and reopened on every section you picked. --%>
+              <%!-- Opens off @active_sub so the list stays unfolded across settings sections; the 0fr to 1fr row track animates the height without JS. --%>
               <input
                 :if={item.key == :settings}
                 type="checkbox"
@@ -100,10 +77,7 @@ defmodule QuantumBillingWeb.Layouts do
                     )
                   ]}
                 >
-                  <%!-- Each destination keeps its own hue, so the row is
-                  recognisable by colour before the label is read. Dimmed
-                  while inactive: at full strength nine saturated icons
-                  compete with the page itself. --%>
+                  <%!-- Each destination keeps its own hue, dimmed while inactive. --%>
                   <.icon
                     name={item.icon}
                     class={[
@@ -134,8 +108,6 @@ defmodule QuantumBillingWeb.Layouts do
                 </label>
               </div>
 
-              <%!-- No icons on the sections: half of them repeat an icon
-              already sitting a few pixels above in this same list. --%>
               <div
                 :if={item.key == :settings}
                 id="settings-sections"
@@ -191,12 +163,12 @@ defmodule QuantumBillingWeb.Layouts do
               <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
             </div>
 
-            <%!-- `w-full`, not a fixed width: the sidebar is only 12rem, so
-            anything wider hangs out over the page beside it. --%>
+            <%!-- w-full: the sidebar is only 12rem wide. --%>
             <ul
               tabindex="0"
               class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
             >
+              <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
               <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
 
               <li>
@@ -208,19 +180,11 @@ defmodule QuantumBillingWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <%!-- justify-end, not justify-between: the sidebar toggle used to sit on
-        the left and is gone, so anything left aligned would drift over to it. --%>
-        <header class="sticky top-0 z-10 flex h-12 items-center justify-end border-b border-base-300 bg-base-100 px-6">
-          <%!-- The bell used to be a button with a permanently lit red dot and
-          nothing behind it: no feed, no count, and no handler for the click.
-          `NotificationsHook` subscribes every authenticated socket to the
-          notifications topic and assigns the feed, so the badge now counts real
-          unread rows and the panel lists them as they arrive.
+        <header class="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3">
+          <.business_switcher scope={@current_scope} />
 
-          Wider than the sidebar's menus because these are sentences rather than
-          labels, and the list is capped and scrolls: a busy morning should not
-          run the panel off the bottom of the screen. --%>
-          <div class="dropdown dropdown-end">
+          <%!-- Live feed from NotificationsHook; capped and scrollable. Absent outside a business. --%>
+          <div :if={business_chosen?(@current_scope)} class="dropdown dropdown-end">
             <div
               tabindex="0"
               role="button"
@@ -229,8 +193,6 @@ defmodule QuantumBillingWeb.Layouts do
               aria-label={notifications_label(@unread_count)}
             >
               <.icon name="hero-bell" class="size-4.5" />
-              <%!-- Hidden at zero rather than always lit, and a number rather
-              than a dot: a marker that never goes out says nothing. --%>
               <span
                 :if={@unread_count > 0}
                 class="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[0.625rem] font-semibold leading-4 text-white"
@@ -270,10 +232,7 @@ defmodule QuantumBillingWeb.Layouts do
                 class="max-h-96 divide-y divide-base-300 overflow-y-auto"
               >
                 <li :for={notification <- @notifications} id={"notification-#{notification.id}"}>
-                  <%!-- A button, not a link: the server marks it read and then
-                  navigates, so the two cannot race — a link carrying its own
-                  `phx-click` sometimes leaves the item you just opened
-                  unread. --%>
+                  <%!-- A button, not a link: the server marks it read and then navigates, so the two cannot race. --%>
                   <button
                     type="button"
                     phx-click="open_notification"
@@ -317,18 +276,8 @@ defmodule QuantumBillingWeb.Layouts do
           </div>
         </header>
 
-        <%!-- A flex column so a page can hand a panel `flex-1` and have it take
-        the height left over — an empty list reads as broken when its card stops
-        halfway down an otherwise blank screen. Block children are unaffected:
-        without `flex-1` they still take their natural height. --%>
-        <%!-- Bottom gap matches the side gap. A deeper one was fine under a
-        card that stopped short, but now that a panel can run the full height
-        it just reads as a band of dead space under the page.
-
-        The top gap is tighter still: the bar above already separates the page
-        from the chrome, so every pixel here is one the table below does not
-        get. --%>
-        <main class="flex flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3">
+        <%!-- A flex column so a page can give a panel flex-1 to fill the remaining height. --%>
+        <main class="flex flex-1 flex-col overflow-y-auto px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5">
           {render_slot(@inner_block)}
         </main>
       </div>
@@ -377,12 +326,89 @@ defmodule QuantumBillingWeb.Layouts do
     """
   end
 
-  # The topbar renders before anyone signs in (and in tests that mount the
-  # layout without a scope), so both helpers tolerate a nil scope.
-  # Staff are not shown the panels they would be refused. Hiding them is a
-  # courtesy on top of the real check — `SettingsLive.handle_params/3` and the
-  # `:require_owner` hook are what actually enforce this; a navigation list is
-  # not a permission.
+  attr :scope, :any, required: true
+
+  # Each entry posts to the switch action: only an HTTP response can write the
+  # session, and the session is what every tab of this browser follows.
+  defp business_switcher(assigns) do
+    ~H"""
+    <div :if={@scope && @scope.user} class="dropdown">
+      <div
+        tabindex="0"
+        role="button"
+        id="business-switcher"
+        class={[
+          "flex max-w-64 items-center gap-2 rounded-field px-2 py-1 text-sm",
+          "transition-colors hover:bg-base-200"
+        ]}
+      >
+        <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-base-200 text-base-content/60">
+          <.icon name="hero-building-office-2" class="size-3.5" />
+        </span>
+        <span class="truncate font-medium">
+          {if @scope.business, do: @scope.business.name, else: "Choose a business"}
+        </span>
+        <.icon name="hero-chevron-up-down" class="size-4 shrink-0 text-base-content/45" />
+      </div>
+
+      <div
+        tabindex="0"
+        id="business-switcher-menu"
+        class="dropdown-content z-20 mt-2 w-72 overflow-hidden rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+      >
+        <p class={["px-2.5 pb-1.5 pt-1", micro_label_class()]}>Businesses</p>
+        <ul class="max-h-80 space-y-0.5 overflow-y-auto">
+          <li :for={business <- @scope.businesses}>
+            <.link
+              href={~p"/businesses/#{business.id}/switch"}
+              method="post"
+              id={"switch-business-#{business.id}"}
+              class={[
+                "flex items-center gap-2 rounded-field px-2.5 py-2 text-sm transition-colors",
+                if(current_business?(@scope, business),
+                  do: "bg-base-200 font-medium",
+                  else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                )
+              ]}
+            >
+              <span class="min-w-0 flex-1 truncate">{business.name}</span>
+              <.icon
+                :if={current_business?(@scope, business)}
+                name="hero-check"
+                class="size-4 shrink-0 text-primary"
+              />
+            </.link>
+          </li>
+        </ul>
+
+        <div class="mt-1.5 space-y-0.5 border-t border-base-300 pt-1.5">
+          <.link
+            navigate={~p"/businesses"}
+            class="flex items-center gap-2 rounded-field px-2.5 py-2 text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-squares-2x2" class="size-4" /> All businesses
+          </.link>
+          <.link
+            :if={QuantumBilling.Accounts.Scope.owner?(@scope)}
+            navigate={~p"/businesses/new"}
+            id="new-business-link"
+            class="flex items-center gap-2 rounded-field px-2.5 py-2 text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-plus" class="size-4" /> New business
+          </.link>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp business_chosen?(%{business: %{}}), do: true
+  defp business_chosen?(_scope), do: false
+
+  defp current_business?(%{business: %{id: id}}, %{id: id}), do: true
+  defp current_business?(_scope, _business), do: false
+
+  # Tolerates a nil scope. Hiding panels is a courtesy; the real check is on the server.
   defp visible_settings_sections(scope) do
     sections = QuantumBillingWeb.SettingsComponents.sections()
 
@@ -409,8 +435,6 @@ defmodule QuantumBillingWeb.Layouts do
     end
   end
 
-  # Prefer the name the user set on Account Settings, falling back to the email
-  # so an account with no profile filled in still renders.
   defp user_name(%{user: %{full_name: name}}) when is_binary(name) and name != "", do: name
   defp user_name(%{user: %{email: email}}) when is_binary(email), do: email
   defp user_name(_scope), do: "Signed out"
@@ -428,16 +452,11 @@ defmodule QuantumBillingWeb.Layouts do
 
   defp user_initials(_scope), do: "--"
 
-  # Read out by a screen reader in place of "Notifications", which on its own
-  # gives no hint that there is anything to open.
   defp notifications_label(0), do: "Notifications, none unread"
   defp notifications_label(1), do: "Notifications, 1 unread"
   defp notifications_label(count), do: "Notifications, #{count} unread"
 
-  # The kind says what the notification is about, so it picks the glyph; the
-  # severity says how it went, so it picks the colour. Keeping them apart is
-  # what lets a failed e-way bill and a generated one share an icon and still
-  # read differently.
+  # Kind picks the glyph, severity picks the colour.
   defp notification_icon("invoice"), do: "hero-document-text"
   defp notification_icon("payment"), do: "hero-banknotes"
   defp notification_icon("e_way_bill"), do: "hero-truck"
@@ -446,8 +465,6 @@ defmodule QuantumBillingWeb.Layouts do
   defp notification_icon("client"), do: "hero-user-plus"
   defp notification_icon(_other), do: "hero-information-circle"
 
-  # Same palette as `status_badge/1`, so a "Paid" badge and a payment
-  # notification are the same green.
   defp notification_tone("success"), do: "bg-emerald-50 text-emerald-700"
   defp notification_tone("warning"), do: "bg-amber-50 text-amber-700"
   defp notification_tone("error"), do: "bg-rose-50 text-rose-700"
@@ -458,9 +475,7 @@ defmodule QuantumBillingWeb.Layouts do
 
   defp user_designation(_scope), do: nil
 
-  # `color` is a literal class string per item, never assembled from the key:
-  # Tailwind scans source text, so "text-#{hue}-600" is never emitted and the
-  # icon renders in the inherited colour instead.
+  # Literal class strings: Tailwind cannot see interpolated ones.
   defp nav_items do
     [
       %{
@@ -497,13 +512,6 @@ defmodule QuantumBillingWeb.Layouts do
         path: ~p"/hsn-finder",
         icon: "hero-magnifying-glass",
         color: "text-cyan-600 dark:text-cyan-400"
-      },
-      %{
-        key: :reports,
-        label: "Reports",
-        path: ~p"/reports",
-        icon: "hero-chart-bar",
-        color: "text-violet-600 dark:text-violet-400"
       },
       %{
         key: :compliance,

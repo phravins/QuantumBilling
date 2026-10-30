@@ -27,8 +27,8 @@ defmodule QuantumBillingWeb.EWayBillsComponents do
 
   def form_section(assigns) do
     ~H"""
-    <.card padding="p-5" class={@class}>
-      <div class="mb-4 flex items-center gap-2.5">
+    <.card padding="p-4" class={@class}>
+      <div class="mb-3 flex items-center gap-2.5">
         <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-2xs font-semibold text-primary-content">
           {@step}
         </span>
@@ -77,7 +77,7 @@ defmodule QuantumBillingWeb.EWayBillsComponents do
   def summary_row(assigns) do
     ~H"""
     <div class={[
-      "flex items-start justify-between gap-4",
+      "flex items-start justify-between gap-3",
       @emphasis && "rounded-field bg-base-200 px-3 py-2.5"
     ]}>
       <span class={[

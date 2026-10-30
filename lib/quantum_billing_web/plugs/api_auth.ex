@@ -11,11 +11,23 @@ defmodule QuantumBillingWeb.Plugs.ApiAuth do
   Every other failure — no key, a malformed one, an unknown one, a revoked or
   expired one — gets the same 401 with the same body. Distinguishing them would
   tell whoever is guessing which of their guesses came close.
+
+  ## The business
+
+  A key belongs to one business, and authenticating it is what makes that
+  business current for the request (`QuantumBilling.Repo.put_business/1`): every
+  query after this point reads that business's schema and no other. Nothing in
+  the request — no header, no parameter — can choose a different one.
+
+  The endpoint clears any business a previous request on the same connection
+  left behind (`forget_business` in `QuantumBillingWeb.Endpoint`), so a request
+  refused here runs with no business at all, and any query it tried would raise.
   """
 
   import Plug.Conn
 
   alias QuantumBilling.ApiKeys
+  alias QuantumBilling.Repo
   alias QuantumBillingWeb.API.Error
   alias QuantumBillingWeb.ClientIP
 
@@ -46,6 +58,7 @@ defmodule QuantumBillingWeb.Plugs.ApiAuth do
          {:ok, key} <- ApiKeys.authenticate(String.trim(raw)) do
       ip = conn |> ClientIP.client_ip_tuple() |> ClientIP.to_string_ip()
       ApiKeys.touch(key, ip)
+      Repo.put_business(key.business)
 
       conn
       |> assign(:api_key, key)

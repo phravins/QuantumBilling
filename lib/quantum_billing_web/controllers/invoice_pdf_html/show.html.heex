@@ -5,22 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{@invoice.invoice_number}</title>
 
-    <%!-- The same stylesheet the on-screen document uses, in `:print` mode so
-    it also carries the paper rules. This page deliberately loads none of
-    `app.css`: its mask-based icon classes and daisyUI theme are not available
-    to a saved file, and an icon rendered through them came out blank. --%>
+    <%!-- Print-mode document stylesheet; app.css is not loaded, as its mask icons save blank in a PDF. --%>
     <Renderer.stylesheet doc={@doc} mode={:print} />
   </head>
 
   <body>
     <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
-    <%!-- A raw script rather than a colocated hook: this is a controller-
-    rendered page with no LiveSocket, so there is no hook to colocate onto.
-
-    Nonced like the one in the root layout. This page renders with the layout
-    switched off, so it does not inherit that tag — and without the nonce the
-    Content-Security-Policy blocks this, which does not fail loudly: the page
-    renders perfectly and simply never opens the print dialog. --%>
+    <%!-- Raw script (no LiveSocket here), nonced because the layout is off and CSP silently blocks an un-nonced script. --%>
     <script nonce={@conn.assigns[:csp_nonce]}>
       // Straight into the print dialog, where "Save as PDF" writes the file.
       window.addEventListener("load", () => window.print())

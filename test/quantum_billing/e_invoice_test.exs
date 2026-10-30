@@ -124,8 +124,7 @@ defmodule QuantumBilling.EInvoiceTest do
       assert text(tree, ["Version"]) == "1.1"
     end
 
-    # The whole point of being honest about what this is. If somebody later adds
-    # a fabricated IRN or an unsigned QR, this is what should stop them.
+    # Guards against a fabricated IRN or an unsigned QR.
     test "carries no IRN, acknowledgement or QR code" do
       names = all_names(tree(invoice()))
 
@@ -226,6 +225,33 @@ defmodule QuantumBilling.EInvoiceTest do
         assert tree |> text(["ValDtls", field]) |> String.contains?("."),
                "#{field} was not written as a decimal"
       end
+    end
+
+    test "a fractional quantity, paise and the round off all reach the file" do
+      # 2.5 × ₹99.99 = ₹249.98; 18% GST = ₹45.00; ₹294.98 rounds to ₹295.
+      tree = tree(invoice(%{}, %{"quantity" => "2.5", "rate" => "99.99"}))
+      item = at(tree, ["ItemList", "Item"])
+
+      assert content(at(item, ["Qty"])) == "2.500"
+      assert content(at(item, ["UnitPrice"])) == "99.99"
+      assert text(tree, ["ValDtls", "AssVal"]) == "249.98"
+      assert text(tree, ["ValDtls", "RndOffAmt"]) == "0.02"
+      assert text(tree, ["ValDtls", "TotInvVal"]) == "295.00"
+    end
+
+    test "the IRP JSON carries rupees, not the stored paise" do
+      invoice =
+        invoice(%{}, %{"quantity" => "2.5", "rate" => "99.99"})
+        |> QuantumBilling.Repo.preload(:items)
+
+      json = EInvoice.to_json(invoice)
+      [item] = json["ItemList"]
+
+      assert item["Qty"] == 2.5
+      assert item["UnitPrice"] == 99.99
+      assert json["ValDetails"]["AssVal"] == 249.98
+      assert json["ValDetails"]["RndOffAmt"] == 0.02
+      assert json["ValDetails"]["TotInvVal"] == 295.0
     end
 
     test "a SAC marks the line as a service, an HSN as goods" do

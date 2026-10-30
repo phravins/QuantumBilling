@@ -22,12 +22,11 @@ defmodule QuantumBilling.Payments.QRCode do
   require Logger
 
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
-  # `name@handle`: the same shape every UPI app accepts, and deliberately not a
-  # full email pattern — a VPA has no dots-in-domain requirement and an address
-  # with one is the mistake this is here to catch.
+  # name@handle; an email address is the mistake this catches.
   @vpa_format ~r/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/
 
   @doc """
@@ -110,8 +109,7 @@ defmodule QuantumBilling.Payments.QRCode do
     content
     |> EQRCode.encode()
     |> EQRCode.svg(svg_options)
-    # The XML declaration is only valid at the very start of a document, and
-    # this SVG is inlined into one.
+    # The XML declaration is invalid once the SVG is inlined.
     |> String.replace(~r/<\?xml[^>]*\?>/, "")
     |> String.trim()
   rescue
@@ -139,29 +137,23 @@ defmodule QuantumBilling.Payments.QRCode do
       presence(organization.company_name) || presence(invoice.company_name) || "QuantumBilling"
   end
 
-  # Money is whole rupees everywhere in this application, and UPI wants rupees
-  # with two decimal places.
+  # Paise in, rupees with two decimals out.
   defp amount(nil), do: nil
-  defp amount(rupees) when is_integer(rupees) and rupees > 0, do: "#{rupees}.00"
-  defp amount(_rupees), do: nil
+  defp amount(paise) when is_integer(paise) and paise > 0, do: Money.to_input(paise)
+  defp amount(_paise), do: nil
 
-  # What the payer sees in their UPI app, and what lands on the bank statement.
   defp note(%Invoice{invoice_number: number}) when is_binary(number),
     do: String.slice("Invoice " <> number, 0, 50)
 
   defp note(_invoice), do: "Invoice"
 
-  # The transaction reference has a restricted character set in practice, so
-  # anything else is dropped rather than sent and rejected.
   defp reference(%Invoice{invoice_number: number}) when is_binary(number) do
     number |> String.replace(~r/[^A-Za-z0-9]/, "") |> String.slice(0, 35)
   end
 
   defp reference(_invoice), do: nil
 
-  # Percent-encode everything outside the unreserved set. `encode_www_form/1`
-  # would turn a space into `+`, which several UPI apps show literally in the
-  # payee name.
+  # Not encode_www_form/1: several UPI apps show "+" literally.
   defp escape(value), do: value |> to_string() |> URI.encode(&URI.char_unreserved?/1)
 
   defp presence(value) when is_binary(value) do

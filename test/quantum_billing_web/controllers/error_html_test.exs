@@ -51,11 +51,8 @@ defmodule QuantumBillingWeb.ErrorHTMLTest do
       refute body =~ ~p"/invoices"
       refute body =~ ~p"/clients"
 
-      # Deliberately NOT asserted: the absence of "QuantumBillingWeb.". In dev,
-      # `debug_heex_annotations` (config/dev.exs) wraps every component in an
-      # HTML comment naming its module and source file — on this page and every
-      # other one. Asserting it here would pass only because the test env turns
-      # annotations off, which is false confidence rather than a real guarantee.
+      # "QuantumBillingWeb." is not refuted: dev's debug_heex_annotations add it
+      # to every page, and only the test env turns them off.
     end
 
     test "handles non-GET verbs too", %{conn: conn} do

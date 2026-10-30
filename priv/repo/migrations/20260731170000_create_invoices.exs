@@ -67,8 +67,6 @@ defmodule QuantumBilling.Repo.Migrations.CreateInvoices do
       add :round_off, :integer, null: false, default: 0
       add :grand_total, :integer, null: false, default: 0
 
-      # "Draft" already has a badge clause and is already one of the list
-      # page's filter options, so nothing there needs changing.
       add :status, :string, null: false, default: "Draft"
 
       timestamps(type: :utc_datetime)

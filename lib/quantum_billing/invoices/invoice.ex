@@ -31,6 +31,7 @@ defmodule QuantumBilling.Invoices.Invoice do
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
 
   @invoice_types [
     "Tax Invoice",
@@ -40,8 +41,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     "Debit Note"
   ]
 
-  # Label to days. "Due on Receipt" is same-day; "Custom" leaves the due date
-  # alone so it can be set by hand.
+  # Label to days. "Custom" leaves the due date to be set by hand.
   @payment_terms [
     {"Due on Receipt", 0},
     {"Net 7 Days", 7},
@@ -69,16 +69,13 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :payment_terms, :string
     field :place_of_supply, :string
 
-    # Snapshotted at issue. See the migration for why these are copied rather
-    # than read live through the association.
+    # Snapshotted at issue.
     field :client_name, :string
     field :client_gstin, :string
     field :client_pan, :string
     field :client_billing_address, :string
     field :client_email, :string
     field :client_state, :string
-    # Snapshotted beside the address blob, which is what prints. These are what
-    # the e-invoice export needs as their own fields.
     field :client_city, :string
     field :client_pincode, :string
 
@@ -91,7 +88,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :terms, :string
 
     field :total_items, :integer, default: 0
-    field :total_quantity, :integer, default: 0
+    field :total_quantity, :decimal, default: Decimal.new(0)
     field :taxable_value, :integer, default: 0
     field :cgst_amount, :integer, default: 0
     field :sgst_amount, :integer, default: 0
@@ -108,10 +105,9 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :ack_date, :utc_datetime
     field :signed_qr_code, :string
     field :signed_invoice, :string
+    # "live" when the IRP registered the IRN; "demo" when it was simulated.
+    field :irn_mode, :string
 
-    # E-Way Bills. These used to be eight columns here, which let an invoice
-    # carry exactly one bill for ever — no cancellation under Rule 138(9) and
-    # nowhere to put a Part-B vehicle change. They are rows now.
     has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
     # Multi-Currency & LUT Export Details
@@ -128,12 +124,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     # Public Client Portal Access Token
     field :public_token, :string
 
-    # The design this was issued under, frozen at issue. See the migration for
-    # why the structure is snapshotted while the accent and logo stay live.
+    # The design this was issued under, frozen at issue.
     field :layout_xml, :string
 
-    # Set when the invoice is moved to the Bin. Never cast: it is written by
-    # `bin_changeset/1` and `restore_changeset/1`, not by any form.
+    # Set only by bin_changeset/1 and restore_changeset/1.
     field :deleted_at, :utc_datetime
 
     belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
@@ -143,15 +137,16 @@ defmodule QuantumBilling.Invoices.Invoice do
     timestamps(type: :utc_datetime)
   end
 
+  # No IRN/acknowledgement or Razorpay fields: those are written only from the
+  # IRP's and Razorpay's answers (einvoice_changeset/2, Payments), never from a
+  # form, so a crafted submission cannot plant a fake IRN or payment.
   @castable ~w(invoice_number invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
                client_city client_pincode
                company_name company_address company_gstin company_state
                remarks terms status template_id layout_xml
-               irn ack_number ack_date signed_qr_code signed_invoice
-               currency exchange_rate export_type lut_number
-               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
+               currency exchange_rate export_type lut_number)a
 
   @doc """
   Builds an invoice changeset, including its line items.
@@ -176,9 +171,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> validate_due_date()
     |> validate_has_items()
     |> recalculate()
-    # The transaction is what stops two saves being handed the same number.
-    # This makes anything that still slips past it surface as a changeset error
-    # rather than an unhandled Ecto.ConstraintError.
+    # Backstop for the numbering transaction: a clash becomes a changeset error.
     |> unique_constraint(:invoice_number,
       message: "has already been used — check the numbering series in Settings"
     )
@@ -210,8 +203,24 @@ defmodule QuantumBilling.Invoices.Invoice do
   @doc "Takes an invoice back out of the Bin."
   def restore_changeset(invoice), do: change(invoice, deleted_at: nil)
 
-  # A due date before the invoice date is a data entry error, not a business
-  # case worth supporting.
+  @doc "True when the invoice carries an IRN that was simulated, not registered with the IRP."
+  def demo_irn?(%__MODULE__{irn: irn, irn_mode: mode}), do: is_binary(irn) and mode != "live"
+
+  @doc """
+  Records the IRP's answer on the invoice.
+
+  Not part of `changeset/2`: `irn_mode` is set from the IRP client, never from
+  form input.
+  """
+  def einvoice_changeset(invoice, attrs) do
+    invoice
+    |> change(
+      Map.take(attrs, [:irn, :ack_number, :ack_date, :signed_qr_code, :signed_invoice, :status])
+    )
+    |> put_change(:irn_mode, Map.fetch!(attrs, :irn_mode))
+    |> validate_inclusion(:irn_mode, ["demo", "live"])
+  end
+
   defp validate_due_date(changeset) do
     invoice_date = get_field(changeset, :invoice_date)
     due_date = get_field(changeset, :due_date)
@@ -223,7 +232,6 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  # An invoice with nothing on it is not an invoice.
   defp validate_has_items(changeset) do
     case get_field(changeset, :items) do
       [] -> add_error(changeset, :items, "add at least one item")
@@ -264,26 +272,26 @@ defmodule QuantumBilling.Invoices.Invoice do
     items = Enum.reject(items, &is_nil/1)
 
     taxable_value = Enum.reduce(items, 0, &(InvoiceItem.amount(&1) + &2))
-    total_quantity = Enum.reduce(items, 0, &((&1.quantity || 0) + &2))
+
+    total_quantity =
+      Enum.reduce(items, Decimal.new(0), &Decimal.add(Money.quantity(&1.quantity) || 0, &2))
+
     tax = Enum.reduce(items, 0, &(InvoiceItem.tax(&1) + &2))
 
     {cgst, sgst, igst} =
       if intra_state? do
         cgst = div(tax, 2)
-        # Deliberately not div(tax, 2) a second time: an odd tax amount would
-        # lose a rupee, and the halves would not add back to the total.
+        # Not div(tax, 2) twice: an odd amount would lose a paisa.
         {cgst, tax - cgst, 0}
       else
         {0, 0, tax}
       end
 
-    # Nothing on this form feeds a cess rate, so this is always zero for now.
-    # The column exists so the summary can show the line the design has.
+    # No cess rate is entered yet, so this is always zero.
     cess = 0
 
-    # Exact under integer arithmetic — there is nothing to round. Kept so the
-    # column is correct if fractional pricing is ever introduced.
-    round_off = 0
+    # The total is billed in whole rupees; the difference is printed, not lost.
+    {grand_total, round_off} = Money.round_to_rupee(taxable_value + cgst + sgst + igst + cess)
 
     %{
       total_items: length(items),
@@ -294,7 +302,7 @@ defmodule QuantumBilling.Invoices.Invoice do
       igst_amount: igst,
       cess_amount: cess,
       round_off: round_off,
-      grand_total: taxable_value + cgst + sgst + igst + cess + round_off
+      grand_total: grand_total
     }
   end
 

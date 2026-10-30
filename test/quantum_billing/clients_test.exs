@@ -45,7 +45,6 @@ defmodule QuantumBilling.ClientsTest do
     end
 
     test "an unregistered client or a consumer does not" do
-      # The whole reason the screenshot's unconditional asterisk was wrong:
       # B2C invoicing needs these.
       for type <- ["Unregistered", "Consumer", "Overseas"] do
         assert {:ok, client} =
@@ -282,8 +281,6 @@ defmodule QuantumBilling.ClientsTest do
 
       options = Clients.picker_options()
 
-      # The invoice form used to render every client as an `<option>`, so the
-      # form's payload grew with the customer directory without bound.
       assert length(options) == Clients.picker_limit()
       assert %{id: _, name: "Client 001"} = hd(options)
     end

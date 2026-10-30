@@ -1,17 +1,21 @@
 defmodule QuantumBilling.CreditNotes.CreditNote do
   @moduledoc """
   Schema for GST Credit and Debit Notes.
+
+  Amounts are cast from rupees and held in paise, like invoice rates.
   """
   use Ecto.Schema
   import Ecto.Changeset
+
+  alias QuantumBilling.Money.Paise
 
   schema "credit_notes" do
     field :note_number, :string
     field :note_type, :string, default: "Credit"
     field :reason, :string
-    field :subtotal, :decimal, default: Decimal.new("0.0")
-    field :tax_total, :decimal, default: Decimal.new("0.0")
-    field :grand_total, :decimal, default: Decimal.new("0.0")
+    field :subtotal, Paise, default: 0
+    field :tax_total, Paise, default: 0
+    field :grand_total, Paise, default: 0
     field :status, :string, default: "Issued"
 
     belongs_to :invoice, QuantumBilling.Invoices.Invoice
@@ -37,6 +41,7 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
       :status
     ])
     |> validate_required([:note_number, :note_type, :invoice_id, :client_id, :grand_total])
+    |> validate_number(:grand_total, greater_than_or_equal_to: 0)
     |> validate_inclusion(:note_type, @types)
     |> validate_inclusion(:status, @statuses)
     |> foreign_key_constraint(:invoice_id)

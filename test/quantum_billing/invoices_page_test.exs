@@ -20,10 +20,10 @@ defmodule QuantumBilling.InvoicesPageTest do
           place_of_supply: "Maharashtra",
           company_state: "Maharashtra",
           client_name: "Acme Corp",
-          taxable_value: 10_000,
-          cgst_amount: 900,
-          sgst_amount: 900,
-          grand_total: 11_800,
+          taxable_value: 1_000_000,
+          cgst_amount: 90_000,
+          sgst_amount: 90_000,
+          grand_total: 1_180_000,
           status: "Draft"
         },
         attrs
@@ -32,6 +32,8 @@ defmodule QuantumBilling.InvoicesPageTest do
   end
 
   describe "page/1" do
+    defp matches(opts), do: length(Invoices.page([per_page: 100] ++ opts).rows)
+
     setup do
       for n <- 1..25 do
         insert_invoice(%{
@@ -40,20 +42,42 @@ defmodule QuantumBilling.InvoicesPageTest do
           client_name: if(rem(n, 2) == 0, do: "Acme Corp", else: "Globex Ltd"),
           client_gstin: if(rem(n, 2) == 0, do: "27AAACA1234A1Z5", else: "29AAACG5678B1Z2"),
           status: if(rem(n, 5) == 0, do: "Paid", else: "Draft"),
-          grand_total: n * 1_000
+          grand_total: n * 100_000
         })
       end
 
       :ok
     end
 
-    test "reads one page and counts the rest" do
+    test "reads one page and looks one row ahead" do
       result = Invoices.page(page: 1, per_page: 10)
 
       assert length(result.rows) == 10
+      assert result.has_next?
+      assert result.page == 1
+      refute Map.has_key?(result, :total)
+    end
+
+    test "has a next page only while a row is left over" do
+      assert Invoices.page(page: 1, per_page: 24).has_next?
+      refute Invoices.page(page: 1, per_page: 25).has_next?
+      refute Invoices.page(page: 3, per_page: 10).has_next?
+    end
+
+    test "counts only when asked to" do
+      result = Invoices.page(page: 1, per_page: 10, count: true)
+
       assert result.total == 25
       assert result.total_pages == 3
-      assert result.page == 1
+      assert result.has_next?
+    end
+
+    test "a forged page number lands on the last real page" do
+      result = Invoices.page(page: 10_000_000, per_page: 10)
+
+      assert result.page == 3
+      assert length(result.rows) == 5
+      refute result.has_next?
     end
 
     test "clamps a page beyond the end rather than returning nothing" do
@@ -61,19 +85,20 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       assert result.page == 3
       assert length(result.rows) == 5
+      refute result.has_next?
     end
 
     test "searches the number, the client and the GSTIN" do
-      assert Invoices.page(search: "INV-0007").total == 1
-      assert Invoices.page(search: "globex").total == 13
-      assert Invoices.page(search: "27AAACA1234A1Z5").total == 12
-      assert Invoices.page(search: "nothing matches this").total == 0
+      assert matches(search: "INV-0007") == 1
+      assert matches(search: "globex") == 13
+      assert matches(search: "27AAACA1234A1Z5") == 12
+      assert matches(search: "nothing matches this") == 0
     end
 
     test "filters by status, and 'All Status' means no filter" do
-      assert Invoices.page(status: "Paid").total == 5
-      assert Invoices.page(status: "All Status").total == 25
-      assert Invoices.page(status: nil).total == 25
+      assert matches(status: "Paid") == 5
+      assert matches(status: "All Status") == 25
+      assert matches(status: nil) == 25
     end
 
     test "sorts on the allowlisted columns in both directions" do
@@ -84,7 +109,7 @@ defmodule QuantumBilling.InvoicesPageTest do
       assert hd(oldest.rows).number == "INV-0001"
 
       largest = Invoices.page(sort_field: :amount, sort_dir: :desc, per_page: 1)
-      assert hd(largest.rows).amount == 25_000
+      assert hd(largest.rows).amount == 2_500_000
     end
 
     test "an unknown sort field falls back rather than reaching the query" do
@@ -118,18 +143,18 @@ defmodule QuantumBilling.InvoicesPageTest do
 
   describe "totals/0 and status_counts/0" do
     test "are computed by the database, not by loading every row" do
-      insert_invoice(%{invoice_number: "INV-A", grand_total: 1_000, status: "Draft"})
-      insert_invoice(%{invoice_number: "INV-B", grand_total: 2_000, status: "Paid"})
-      insert_invoice(%{invoice_number: "INV-C", grand_total: 4_000, status: "Cancelled"})
+      insert_invoice(%{invoice_number: "INV-A", grand_total: 100_000, status: "Draft"})
+      insert_invoice(%{invoice_number: "INV-B", grand_total: 200_000, status: "Paid"})
+      insert_invoice(%{invoice_number: "INV-C", grand_total: 400_000, status: "Cancelled"})
 
       totals = Invoices.totals()
 
       assert totals.count == 3
-      assert totals.revenue == 7_000
+      assert totals.revenue == 700_000
       assert totals.paid_count == 1
       # Paid and cancelled invoices are not owed.
-      assert totals.outstanding == 1_000
-      assert totals.tax == 3 * 1_800
+      assert totals.outstanding == 100_000
+      assert totals.tax == 3 * 180_000
 
       assert %{"Draft" => 1, "Paid" => 1, "Cancelled" => 1} = Invoices.status_counts()
     end
@@ -143,10 +168,10 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-CN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
-      assert Invoices.totals().outstanding == 10_000
+      assert Invoices.totals().outstanding == 1_000_000
 
       {:ok, _note} =
         CreditNotes.create_credit_note_for_invoice(invoice, %{
@@ -154,9 +179,8 @@ defmodule QuantumBilling.InvoicesPageTest do
           "grand_total" => Decimal.new("4000")
         })
 
-      # An invoice partly credited is partly owed. The figure used to be the
-      # full invoice value however much of it had been credited back.
-      assert Invoices.totals().outstanding == 6_000
+      # A partly credited invoice is partly owed.
+      assert Invoices.totals().outstanding == 600_000
     end
 
     test "adds debit notes to what is owed" do
@@ -164,7 +188,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-DN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
       {:ok, _note} =
@@ -173,7 +197,7 @@ defmodule QuantumBilling.InvoicesPageTest do
           "grand_total" => Decimal.new("2500")
         })
 
-      assert Invoices.totals().outstanding == 12_500
+      assert Invoices.totals().outstanding == 1_250_000
     end
 
     test "ignores notes against invoices that are no longer owed" do
@@ -181,11 +205,11 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-PAID",
-          grand_total: 10_000,
+          grand_total: 1_000_000,
           status: "Paid"
         })
 
-      owed = insert_invoice(%{invoice_number: "INV-OWED", grand_total: 3_000})
+      owed = insert_invoice(%{invoice_number: "INV-OWED", grand_total: 300_000})
 
       {:ok, _note} =
         CreditNotes.create_credit_note_for_invoice(paid, %{
@@ -195,8 +219,8 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       # Crediting a settled invoice is a refund, not a reduction in
       # receivables, and must not eat into what other customers still owe.
-      assert Invoices.totals().outstanding == 3_000
-      assert owed.grand_total == 3_000
+      assert Invoices.totals().outstanding == 300_000
+      assert owed.grand_total == 300_000
     end
 
     test "never reports a negative receivable" do
@@ -204,7 +228,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-OVER",
-          grand_total: 5_000
+          grand_total: 500_000
         })
 
       {:ok, _note} =
@@ -221,7 +245,7 @@ defmodule QuantumBilling.InvoicesPageTest do
         insert_invoice(%{
           client_id: billed_client().id,
           invoice_number: "INV-VOIDCN",
-          grand_total: 10_000
+          grand_total: 1_000_000
         })
 
       {:ok, note} =
@@ -232,7 +256,7 @@ defmodule QuantumBilling.InvoicesPageTest do
 
       Repo.update!(Ecto.Changeset.change(note, status: "Cancelled"))
 
-      assert Invoices.totals().outstanding == 10_000
+      assert Invoices.totals().outstanding == 1_000_000
     end
   end
 

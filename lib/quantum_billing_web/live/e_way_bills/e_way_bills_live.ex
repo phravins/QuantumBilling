@@ -12,6 +12,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
+  alias QuantumBilling.EWayBills.NICClient
 
   @per_page 10
 
@@ -27,28 +28,29 @@ defmodule QuantumBillingWeb.EWayBillsLive do
      |> assign(:sort_field, :issued_on)
      |> assign(:sort_dir, :desc)
      |> assign(:page, 1)
+     |> assign(:per_page, @per_page)
      |> assign(:action, nil)
      |> assign(:action_bill, nil)
      |> load_page()}
   end
 
   defp load_page(socket) do
-    %{rows: rows, total: total, page: page, total_pages: total_pages} =
+    %{rows: rows, page: page, has_next?: has_next} =
       EWayBills.page(
         search: socket.assigns.search,
         status: socket.assigns.status_filter,
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
-        per_page: @per_page
+        per_page: socket.assigns.per_page
       )
 
     socket
     |> assign(:rows, rows)
-    |> assign(:total, total)
+    |> assign(:empty?, rows == [])
     |> assign(:page, page)
-    |> assign(:total_pages, total_pages)
-    |> assign(:row_offset, (page - 1) * @per_page)
+    |> assign(:has_next, has_next)
+    |> assign(:row_offset, (page - 1) * socket.assigns.per_page)
   end
 
   def handle_event("search", %{"q" => q}, socket) do
@@ -75,12 +77,26 @@ defmodule QuantumBillingWeb.EWayBillsLive do
      |> load_page()}
   end
 
+  # The pager's measured fit; keeps the row at the top of the current page on screen.
+  def handle_event("fit_rows", %{"rows" => rows}, socket) do
+    case fit_rows_per_page(rows) do
+      {:ok, per_page} when per_page != socket.assigns.per_page ->
+        first_row = (socket.assigns.page - 1) * socket.assigns.per_page
+
+        {:noreply,
+         socket
+         |> assign(per_page: per_page, page: div(first_row, per_page) + 1)
+         |> load_page()}
+
+      _unchanged_or_invalid ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("paginate", %{"page" => page_str}, socket) do
     {:noreply, socket |> assign(:page, String.to_integer(page_str)) |> load_page()}
   end
 
-  # The row carries only what the table renders, so the bill is loaded here
-  # rather than held for every row on screen.
   def handle_event("open_action", %{"action" => action, "id" => id}, socket)
       when action in ["cancel", "part_b"] do
     case EWayBills.get_e_way_bill(id) do
@@ -130,9 +146,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     end
   end
 
-  # Moves the bill to the Bin. Not a cancellation — see
-  # `EWayBills.delete_e_way_bill/2` — which is why it is offered for a bill in
-  # any state, and why the confirmation for an Active one says so.
+  # Bins the bill; this is not a cancellation.
   def handle_event("delete", %{"id" => id}, socket) do
     case EWayBills.get_e_way_bill(id) do
       nil ->
@@ -157,13 +171,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     {:noreply, load_page(socket)}
   end
 
-  # Rule 138(9) and the portal's own refusals, said in a sentence. A changeset
-  # reaching here means the reason was blank or too short, which the form
-  # requires but a crafted submit can still skip.
-  # The modal may have been open for a while, and what it holds is the bill as
-  # it was when it opened. Both actions are refused on state — cancelled,
-  # expired, out of its twenty-four hours — so they are decided against the row
-  # as it is now, not as it was on screen.
+  # Re-read: the modal may hold a stale copy, and both actions depend on current state.
   defp with_fresh_bill(%{assigns: %{action_bill: nil}}, _action), do: {:error, :gone}
 
   defp with_fresh_bill(%{assigns: %{action_bill: bill}}, action) do
@@ -173,8 +181,6 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     end
   end
 
-  # Binning an Active bill is the one place this could be mistaken for the
-  # button beside it, so the confirmation spells the difference out.
   defp delete_confirmation(%{status: "Active", ewb_no: number}) do
     "Move e-way bill #{number} to the Bin? This only takes it off this list — it is NOT " <>
       "cancelled on the e-way bill portal and stays valid there. It can be restored from the Bin."
@@ -194,7 +200,11 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   end
 
   defp cancel_error(%Ecto.Changeset{}), do: "Enter a reason for the cancellation."
-  defp cancel_error(reason), do: "The portal refused the cancellation: #{inspect(reason)}"
+
+  defp cancel_error(reason) do
+    NICClient.error_message(reason) ||
+      "The portal refused the cancellation: #{inspect(reason)}"
+  end
 
   defp part_b_error(:gone), do: "That e-way bill no longer exists."
   defp part_b_error(:already_cancelled), do: "A cancelled e-way bill cannot be updated."
@@ -203,7 +213,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     do: "This e-way bill has expired. The vehicle can only be updated while it is valid."
 
   defp part_b_error(%Ecto.Changeset{}), do: "Enter the new vehicle number."
-  defp part_b_error(reason), do: "The portal refused the update: #{inspect(reason)}"
+
+  defp part_b_error(reason) do
+    NICClient.error_message(reason) || "The portal refused the update: #{inspect(reason)}"
+  end
 
   def render(assigns) do
     assigns = assign(assigns, :status_options, EWayBills.status_options())
@@ -227,7 +240,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </:actions>
       </.header>
 
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <form
           id="ewb-search"
           phx-change="search"
@@ -265,10 +278,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             </ul>
           </div>
 
-          <%!-- Carries the filters the user is looking at, so the file matches
-          the table. It used to point at the reports endpoint with an unknown
-          `report_type`, which fell through to the default and handed back a
-          GST tax summary. --%>
+          <%!-- Carries the current filters so the export matches the table. --%>
           <.link
             href={~p"/e-way-bills/export?#{[q: @search, status: @status_filter]}"}
             class={filter_button_class()}
@@ -278,9 +288,9 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </div>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <.empty_state
-          :if={@total == 0}
+          :if={@empty?}
           class="flex-1 justify-center"
           icon="hero-truck"
           title={
@@ -294,22 +304,22 @@ defmodule QuantumBillingWeb.EWayBillsLive do
               else: "Try a different search term or status."
           }
         />
-        <div :if={@total > 0}>
-          <table class="table table-fixed">
+        <div :if={not @empty?}>
+          <table id="e-way-bills" class="table table-fixed">
             <thead>
               <tr class={table_head_class()}>
                 <th class="w-12">S.No</th>
 
-                <th>
+                <th class="w-36">
                   <.sortable_th
                     label="EWB No."
                     field={:ewb_no}
                   />
                 </th>
 
-                <th>Document No.</th>
+                <th class="w-32">Document No.</th>
 
-                <th>
+                <th class="w-28">
                   <.sortable_th
                     label="Issued On"
                     field={:issued_on}
@@ -318,18 +328,18 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
                 <th>To</th>
 
-                <th>Route</th>
+                <th class="w-60">Route</th>
 
-                <th>
+                <th class="w-32">
                   <.sortable_th
                     label="Value"
                     field={:value}
                   />
                 </th>
 
-                <th>Status</th>
+                <th class="w-28">Status</th>
 
-                <th class="text-right">Actions</th>
+                <th class="w-52">Actions</th>
               </tr>
             </thead>
 
@@ -339,30 +349,44 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                 id={"ewb-#{row.ewb_no}"}
                 class={table_row_class()}
               >
-                <td class="text-base-content/45">{@row_offset + index + 1}</td>
+                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                  {@row_offset + index + 1}
+                </td>
 
-                <td class="font-medium">{row.ewb_no}</td>
+                <td class="truncate whitespace-nowrap font-medium tabular-nums">
+                  {row.ewb_no}
+                  <.portal_mode_badge
+                    :if={row.portal_mode != "live"}
+                    id={"ewb-mode-#{row.id}"}
+                    mode={row.portal_mode}
+                    compact
+                  />
+                </td>
 
-                <td class="text-base-content/60">{row.document_no}</td>
+                <td class="truncate whitespace-nowrap text-base-content/60" title={row.document_no}>
+                  {row.document_no}
+                </td>
 
-                <td class="text-base-content/60">{format_date(row.issued_on)}</td>
+                <td class="whitespace-nowrap text-base-content/60">{format_date(row.issued_on)}</td>
 
-                <td>{row.to_party}</td>
+                <td class="truncate whitespace-nowrap" title={row.to_party}>{row.to_party}</td>
 
-                <td class="text-base-content/60">{row.from_place} &rarr; {row.to_place}</td>
+                <td
+                  class="truncate whitespace-nowrap text-base-content/60"
+                  title={"#{row.from_place} → #{row.to_place}"}
+                >
+                  {place_name(row.from_place)} &rarr; {place_name(row.to_place)}
+                </td>
 
-                <td class="font-medium">{rupees(row.value, decimals: 2, space: true)}</td>
+                <td class="whitespace-nowrap font-medium tabular-nums">
+                  {rupees(row.value, decimals: 2, space: true)}
+                </td>
 
-                <td><.status_badge status={row.status} /></td>
+                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
 
                 <td>
-                  <%!-- All three open the official EWB-01 the controller
-                  renders. These used to point at `/invoices?q=<doc no>`, a
-                  filtered invoice list, and the third was a button that did
-                  nothing at all — so the one document a driver has to carry
-                  could not be opened, printed or saved from the page that
-                  lists it. --%>
-                  <div class="flex justify-end gap-1">
+                  <%!-- Open the official EWB-01 rendered by the controller. --%>
+                  <div class="flex gap-1">
                     <.link
                       href={~p"/e-way-bills/#{row.id}/print"}
                       target="_blank"
@@ -389,13 +413,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
                       <.icon name="hero-arrow-down-tray" class="size-4" />
                     </.link>
 
-                    <%!-- Part-B and cancellation are what the table was
-                    missing: the EWB-01 itself tells the driver Part-B must be
-                    updated before the vehicle changes, and Rule 138(9) gives
-                    twenty-four hours to cancel. Neither is offered once the
-                    bill is cancelled or expired, because the portal refuses
-                    both and an enabled button that always fails is worse than
-                    no button. --%>
+                    <%!-- Not offered once cancelled or expired: the portal refuses both. --%>
                     <button
                       :if={row.status == "Active"}
                       type="button"
@@ -439,8 +457,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
           </table>
         </div>
 
-        <div :if={@total > 0} class="mt-auto flex items-center justify-end pt-4">
-          <.pagination current_page={@page} total_pages={@total_pages} />
+        <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">
+          <.pagination current_page={@page} has_next={@has_next} fit_rows />
         </div>
       </.card>
 
@@ -563,12 +581,10 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   attr :title, :string, required: true
   slot :inner_block, required: true
 
-  # A shell shared by both row actions: the same dialog chrome, and the bill it
-  # is about named at the top so the user can see which row they clicked.
   defp action_modal(assigns) do
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div class="w-full max-w-md space-y-4 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl">
+      <div class="w-full max-w-md space-y-3 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl">
         <div class="flex items-start justify-between border-b border-base-200 pb-3">
           <div>
             <h3 class="text-base font-bold">{@title}</h3>
@@ -593,10 +609,12 @@ defmodule QuantumBillingWeb.EWayBillsLive do
     """
   end
 
-  # Compared against the allowlist rather than turned into an atom first:
-  # `String.to_existing_atom/1` raises on anything unrecognised, which is a
-  # crashed page for a stale or hand-edited sort link.
+  # Allowlisted without String.to_existing_atom/1, which raises on stale links.
   defp sort_field(field_str) do
     Enum.find(EWayBills.sortable_fields(), &(Atom.to_string(&1) == field_str))
   end
+
+  # "Maharashtra (27)" reads as "Maharashtra" in the list; the code stays in the tooltip.
+  defp place_name(place) when is_binary(place), do: String.replace(place, ~r/\s*\(\d+\)\s*$/, "")
+  defp place_name(place), do: place
 end

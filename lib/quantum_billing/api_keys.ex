@@ -3,10 +3,14 @@ defmodule QuantumBilling.ApiKeys do
   Keys for the external API, and the idempotency records that make its writes
   safe to retry.
 
-  Keys are issued by an owner only — see `QuantumBillingWeb.ApiKeysLive` — and
-  every issue and revocation is audited. Every account on this installation
-  shares one set of books, so a key is a credential onto all of it within its
-  scopes, and it is treated with that weight.
+  Keys are issued by a business's owner only — see
+  `QuantumBillingWeb.SettingsLive.ApiKeys` — and every issue and revocation is
+  audited. A key belongs to one business and is a credential onto all of that
+  business's books within its scopes, so it is treated with that weight.
+
+  Every function that lists or changes keys takes the business, and only ever
+  sees that business's keys: an owner of one firm on a shared installation must
+  not be able to read, or revoke, another firm's.
   """
 
   import Ecto.Query, warn: false
@@ -14,6 +18,7 @@ defmodule QuantumBilling.ApiKeys do
   alias QuantumBilling.Accounts.User
   alias QuantumBilling.ApiKeys.{ApiKey, IdempotencyKey}
   alias QuantumBilling.Audit
+  alias QuantumBilling.Businesses.Business
   alias QuantumBilling.Repo
 
   # `last_used_at` is for an owner deciding whether a key is still in use, so a
@@ -27,15 +32,23 @@ defmodule QuantumBilling.ApiKeys do
 
   ## Keys
 
-  @doc "Every key, newest first."
-  def list_keys do
+  @doc "Every key of `business`, newest first."
+  def list_keys(%Business{id: business_id}) do
     Repo.all(
-      from k in ApiKey, order_by: [desc: k.inserted_at, desc: k.id], preload: [:created_by]
+      from k in ApiKey,
+        where: k.business_id == ^business_id,
+        order_by: [desc: k.inserted_at, desc: k.id],
+        preload: [:created_by]
     )
   end
 
-  @doc "A key by id, or `nil`."
-  def get_key(id), do: Repo.get(ApiKey, id)
+  @doc "A key of `business` by id, or `nil` — also when the id is another business's key."
+  def get_key(%Business{id: business_id}, id) do
+    case Integer.parse(to_string(id)) do
+      {id, ""} -> Repo.get_by(ApiKey, id: id, business_id: business_id)
+      _not_an_id -> nil
+    end
+  end
 
   @doc "A changeset for the new-key form."
   def change_key(attrs \\ %{}) do
@@ -49,8 +62,8 @@ defmodule QuantumBilling.ApiKeys do
   `raw` is the only time the full key exists outside the system it is given to.
   It is returned to be shown once and is never logged or stored.
   """
-  def create_key(attrs, %User{} = owner) do
-    {raw, changeset} = ApiKey.build(attrs, owner)
+  def create_key(attrs, %User{} = owner, %Business{} = business) do
+    {raw, changeset} = ApiKey.build(attrs, owner, business)
 
     with {:ok, key} <- Repo.insert(changeset) do
       Audit.log_event(:api_key_created, "ApiKey", key.id,
@@ -83,9 +96,19 @@ defmodule QuantumBilling.ApiKeys do
   key. Telling those apart to the caller would tell an attacker which guesses
   were close.
   """
+  #
+  # The key comes back with its business, which must still be active: archiving
+  # a business takes it off every picker and out of every sweep, and its keys
+  # stop with it.
   def authenticate(raw) do
     with true <- ApiKey.well_formed?(raw),
-         %ApiKey{} = key <- Repo.get_by(ApiKey, hashed_key: ApiKey.hash(raw)),
+         %ApiKey{} = key <-
+           Repo.one(
+             from k in ApiKey,
+               join: b in assoc(k, :business),
+               where: k.hashed_key == ^ApiKey.hash(raw) and is_nil(b.archived_at),
+               preload: [business: b]
+           ),
          true <- ApiKey.usable?(key) do
       {:ok, key}
     else
@@ -181,10 +204,20 @@ defmodule QuantumBilling.ApiKeys do
     )
   end
 
-  @doc "Deletes idempotency records past their lifetime. Run daily."
-  def prune_idempotency_keys do
+  @doc """
+  Deletes `business`'s idempotency records past their lifetime. Run daily, by
+  the per-business sweep.
+  """
+  def prune_idempotency_keys(%Business{id: business_id}) do
     cutoff = DateTime.add(DateTime.utc_now(), -@idempotency_ttl_seconds, :second)
-    {count, _} = Repo.delete_all(from i in IdempotencyKey, where: i.inserted_at < ^cutoff)
+    keys = from k in ApiKey, where: k.business_id == ^business_id, select: k.id
+
+    {count, _} =
+      Repo.delete_all(
+        from i in IdempotencyKey,
+          where: i.inserted_at < ^cutoff and i.api_key_id in subquery(keys)
+      )
+
     {:ok, count}
   end
 end

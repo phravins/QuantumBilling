@@ -39,6 +39,7 @@ defmodule QuantumBilling.EInvoice do
   alias QuantumBilling.EInvoice.Payload
   alias QuantumBilling.GST
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
@@ -67,7 +68,7 @@ defmodule QuantumBilling.EInvoice do
   Converts the invoice into the official NIC JSON payload format for the IRP API.
   """
   def to_json(%Invoice{} = invoice) do
-    organization = Settings.get_organization() || %Organization{}
+    organization = Settings.get_organization()
 
     %{
       "Version" => "1.1",
@@ -104,24 +105,35 @@ defmodule QuantumBilling.EInvoice do
             "SlNo" => to_string(item.position || 1),
             "PrdDesc" => item.description,
             "HsnCd" => item.hsn_sac,
-            "Qty" => item.quantity,
+            "Qty" => quantity(item.quantity),
             "Unit" => item.unit,
-            "UnitPrice" => item.rate,
-            "TotAmt" => item.amount,
+            "UnitPrice" => rupees(item.rate),
+            "TotAmt" => rupees(item.amount),
             "GstRt" => item.tax_rate,
-            "TotItemVal" => item.amount
+            "TotItemVal" => rupees(item.amount)
           }
         end),
       "ValDetails" => %{
-        "AssVal" => invoice.taxable_value,
-        "CgstVal" => invoice.cgst_amount,
-        "SgstVal" => invoice.sgst_amount,
-        "IgstVal" => invoice.igst_amount,
-        "CesVal" => invoice.cess_amount,
-        "RndOffAmt" => invoice.round_off,
-        "TotInvVal" => invoice.grand_total
+        "AssVal" => rupees(invoice.taxable_value),
+        "CgstVal" => rupees(invoice.cgst_amount),
+        "SgstVal" => rupees(invoice.sgst_amount),
+        "IgstVal" => rupees(invoice.igst_amount),
+        "CesVal" => rupees(invoice.cess_amount),
+        "RndOffAmt" => rupees(invoice.round_off),
+        "TotInvVal" => rupees(invoice.grand_total)
       }
     }
+  end
+
+  # The IRP takes rupees and quantities as JSON numbers; amounts are stored in paise.
+  defp rupees(nil), do: 0
+  defp rupees(paise) when is_integer(paise), do: paise / 100
+
+  defp quantity(quantity) do
+    case Money.quantity(quantity) do
+      nil -> 0
+      decimal -> Decimal.to_float(decimal)
+    end
   end
 
   @doc """
@@ -150,10 +162,7 @@ defmodule QuantumBilling.EInvoice do
 
   defp status(_invoice), do: nil
 
-  # Not coerced to INV. A bill of supply is issued precisely because no tax is
-  # charged, and an export invoice needs shipping details the schema asks for and
-  # this application does not collect — calling either a tax invoice would be a
-  # misstatement, not a formatting choice.
+  # Not coerced to INV: calling either a tax invoice would misstate it.
   defp document_type(%Invoice{invoice_type: type}) do
     if Payload.type_code(type) do
       nil
@@ -180,8 +189,7 @@ defmodule QuantumBilling.EInvoice do
     ]
   end
 
-  # A buyer without a GSTIN is a B2C supply, which is legitimate — so the GSTIN
-  # is only checked when one is present. The address parts are needed either way.
+  # GSTIN checked only when present; B2C buyers have none.
   defp buyer(%Invoice{} = invoice) do
     [
       unless(present?(invoice.client_name), do: "The client's name is missing."),
@@ -205,15 +213,7 @@ defmodule QuantumBilling.EInvoice do
     end
   end
 
-  # HSN is mandatory in INV-01 and optional on a line item here, so this is the
-  # failure most people will actually hit. The message points at the tool the
-  # application already has for finding one.
-  # Before the `is_list` clause below, which an empty list also matches: a
-  # preloaded invoice with nothing on it arrives here as `[]`, took that
-  # clause, found no lines missing an HSN and reported no problem at all. The
-  # message below was unreachable for every invoice the application could
-  # actually load, and an invoice with no goods or services on it went to the
-  # portal as a valid supply.
+  # Must come before the is_list clause, which [] also matches.
   defp items(%Invoice{items: []}), do: "This invoice has no line items."
 
   defp items(%Invoice{items: items}) when is_list(items) do

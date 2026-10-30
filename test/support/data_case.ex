@@ -34,10 +34,16 @@ defmodule QuantumBilling.DataCase do
 
   @doc """
   Sets up the sandbox based on the test tags.
+
+  The test then works in business 1, the one every installation has, so code
+  under test reads and writes its tables as the application would after a user
+  has chosen it. A test about several businesses switches with
+  `QuantumBilling.Repo.with_business/2` or `put_business/1`.
   """
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(QuantumBilling.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    QuantumBilling.Repo.put_business(QuantumBilling.Businesses.default!())
   end
 
   @doc """

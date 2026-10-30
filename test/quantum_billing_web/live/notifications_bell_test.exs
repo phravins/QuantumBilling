@@ -79,9 +79,7 @@ defmodule QuantumBillingWeb.NotificationsBellTest do
 
       {:ok, view, _html} = live(conn, ~p"/clients")
 
-      # `query/2`, not `filter/2`: filter narrows the set of nodes it is given,
-      # so against a single root element it matches nothing. query searches
-      # descendants, which is what reading the panel's rows in order needs.
+      # `query/2` searches descendants; `filter/2` only narrows the nodes it is given.
       ids =
         render(view)
         |> LazyHTML.from_fragment()
@@ -92,9 +90,7 @@ defmodule QuantumBillingWeb.NotificationsBellTest do
     end
   end
 
-  # The whole reason the bell is a hook with a PubSub subscription rather than
-  # something assigned once on mount. Nothing reloads and nothing polls: the
-  # write happens in another process and the open page changes.
+  # Updated over PubSub, with no reload or polling.
   describe "in real time" do
     test "a notification written elsewhere arrives without a reload", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/clients")
@@ -107,9 +103,7 @@ defmodule QuantumBillingWeb.NotificationsBellTest do
       assert has_element?(view, ~s(#notifications-bell[aria-label="Notifications, 1 unread"]))
     end
 
-    # The live feed is built from the broadcasts themselves rather than re-read,
-    # so the cap that `Notifications.recent/1` applies on mount has to be
-    # applied here too — otherwise a busy morning grows the list without bound.
+    # The live feed applies the same cap as `Notifications.recent/1`.
     test "the feed stays capped however many arrive", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/clients")
 
@@ -124,9 +118,7 @@ defmodule QuantumBillingWeb.NotificationsBellTest do
 
       assert length(rows) == limit
 
-      # The newest is kept and the oldest is the one dropped. By id, because
-      # "Notice 1" is a substring of "Notice 10" and a text match would find it
-      # in a feed it had properly fallen out of.
+      # By id: "Notice 1" is a substring of "Notice 10".
       assert has_element?(view, "#notification-#{List.last(sent).id}")
       refute has_element?(view, "#notification-#{List.first(sent).id}")
 

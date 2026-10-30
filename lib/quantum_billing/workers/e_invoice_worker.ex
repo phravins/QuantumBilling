@@ -14,7 +14,7 @@ defmodule QuantumBilling.Workers.EInvoiceWorker do
   retried request, must not attempt to register the same invoice twice. A
   duplicate registration is a compliance problem, not a harmless repeat.
   """
-  use Oban.Worker,
+  use QuantumBilling.Worker,
     queue: :default,
     max_attempts: 5,
     unique: [period: 900, fields: [:worker, :args], states: [:available, :scheduled, :executing]]
@@ -25,21 +25,19 @@ defmodule QuantumBilling.Workers.EInvoiceWorker do
 
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}) do
-    # 1, 4, 9, 16 minutes — quadratic, so a portal outage is waited out rather
-    # than polled.
+    # 1, 4, 9, 16 minutes.
     trunc(:math.pow(attempt, 2) * 60)
   end
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"invoice_id" => invoice_id}}) do
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{args: %{"invoice_id" => invoice_id}}) do
     case Invoices.get_invoice(invoice_id) do
       nil ->
         Logger.warning("[EInvoiceWorker] invoice #{invoice_id} no longer exists")
         :discard
 
       %{irn: irn} when is_binary(irn) and irn != "" ->
-        # Already registered — by an earlier attempt whose reply was lost, or
-        # by hand. Asking again would be a duplicate registration.
+        # Already registered, by an earlier attempt or by hand.
         :ok
 
       invoice ->
@@ -53,7 +51,7 @@ defmodule QuantumBilling.Workers.EInvoiceWorker do
     end
   end
 
-  def perform(%Oban.Job{}), do: :discard
+  def process(%Oban.Job{}), do: :discard
 
   defp reason_message(reason) when is_binary(reason), do: reason
   defp reason_message(reason), do: inspect(reason)

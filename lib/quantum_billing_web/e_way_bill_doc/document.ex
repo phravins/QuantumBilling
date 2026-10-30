@@ -287,10 +287,48 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           .ewb-sign { text-align: center; font-size: 9.5px; color: var(--ewb-muted); }
           .ewb-sign span { display: block; width: 190px; margin-bottom: 3px; padding-top: 26px; border-bottom: 1px solid var(--ewb-line); }
 
+          /* Demo bills: a number minted locally must not pass for a filed one,
+             on screen, on paper or in the emailed PDF. */
+          .ewb-sheet { position: relative; }
+
+          .ewb-demo-watermark {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 1;
+          }
+
+          .ewb-demo-watermark span {
+            transform: rotate(-30deg);
+            font-size: 64px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: rgba(217, 119, 6, 0.16);
+            white-space: nowrap;
+          }
+
+          .ewb-demo-banner {
+            margin-top: 10px;
+            padding: 7px 10px;
+            border: 1.5px solid #d97706;
+            background: #fffbeb;
+            color: #92400e;
+            font-size: 11px;
+            font-weight: 600;
+          }
+
+          .ewb-demo-banner small { display: block; font-weight: 400; font-size: 10px; }
+
           @media print {
             body { padding: 0; background: #ffffff; }
             .ewb-screen-only { display: none !important; }
             .ewb-sheet { max-width: none; border: none; box-shadow: none; padding: 0; }
+            /* Fixed repeats it on every printed page. */
+            .ewb-demo-watermark { position: fixed; }
           }
         </style>
       </head>
@@ -298,16 +336,18 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
       <body>
         <div :if={@toolbar} class="ewb-screen-only">
           <div>
-            <h1>E-Way Bill {grouped(@bill.ewb_number)}</h1>
+            <h1>
+              {if EWayBill.demo?(@bill), do: "Demo e-way bill", else: "E-Way Bill"} {grouped(
+                @bill.ewb_number
+              )}
+            </h1>
             <p>Form GST EWB-01 &middot; {status_line(@bill)}</p>
           </div>
 
           <div class="ewb-actions">
             <a class="ewb-btn" href={~p"/e-way-bills"}>Back to e-way bills</a>
             <a class="ewb-btn" href={~p"/e-way-bills/#{@bill.id}/print/download"}>Download PDF</a>
-            <%!-- A raw handler rather than a colocated hook: this document is
-            rendered by a controller, outside the LiveSocket, so there is no
-            hook to colocate onto. --%>
+            <%!-- Raw handler: controller-rendered, outside the LiveSocket. --%>
             <button type="button" class="ewb-btn ewb-btn--primary" onclick="window.print()">
               Print
             </button>
@@ -315,6 +355,10 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
         </div>
 
         <main class="ewb-sheet">
+          <div :if={EWayBill.demo?(@bill)} class="ewb-demo-watermark" aria-hidden="true">
+            <span>DEMO – NOT FILED</span>
+          </div>
+
           <header class="ewb-head">
             <div>
               <h1 class="ewb-title">e-Way Bill</h1>
@@ -326,9 +370,19 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
             <figure class="ewb-qr">
               {raw(qr_svg(@bill))}
-              <figcaption>Scan to verify</figcaption>
+              <figcaption>
+                {if EWayBill.demo?(@bill), do: "Demo – not verifiable", else: "Scan to verify"}
+              </figcaption>
             </figure>
           </header>
+
+          <div :if={EWayBill.demo?(@bill)} id="ewb-demo-banner" class="ewb-demo-banner">
+            Demo e-way bill – not filed with the government
+            <small>
+              This number was generated locally in demo mode. It is not valid for moving goods
+              and will not verify at a checkpost.
+            </small>
+          </div>
 
           <dl class="ewb-band">
             <div>
@@ -372,9 +426,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             </div>
           </dl>
 
-          <%!-- No heading, and plain serial numbers rather than A.1 to A.10:
-          the rows are read top to bottom as one list, and the statutory
-          lettering meant nothing to the driver the page is handed to. --%>
           <section class="ewb-part">
             <table class="ewb-rows">
               <tbody>
@@ -460,10 +511,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
               </thead>
 
               <tbody>
-                <%!-- Every leg the consignment has travelled, oldest first.
-                The first row is the vehicle the bill was filed with; each later
-                row is a vehicle change recorded before it happened, which is
-                what Rule 138 requires and what the portal prints. --%>
+                <%!-- Every vehicle leg, oldest first, as Rule 138 requires. --%>
                 <tr :for={entry <- @part_b}>
                   <td>{blank(entry.mode_of_transport)}</td>
                   <td><strong>{blank(entry.vehicle_number)}</strong></td>
@@ -493,7 +541,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
                 <tr :for={item <- @items}>
                   <td>{blank(item.hsn_sac)}</td>
                   <td>{blank(item.description)}</td>
-                  <td>{item.quantity || 0} {item.unit || "Nos"}</td>
+                  <td>{quantity(item.quantity || 0)} {item.unit || "Nos"}</td>
                   <td class="ewb-num">{rupees(item.amount || 0, decimals: 2, space: true)}</td>
                   <td class="ewb-num">{tax_split(@invoice, item)}</td>
                 </tr>
@@ -506,7 +554,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
               <tfoot>
                 <tr>
                   <td colspan="2">Total</td>
-                  <td>{@invoice.total_quantity || 0}</td>
+                  <td>{quantity(@invoice.total_quantity || 0)}</td>
                   <td class="ewb-num">
                     {rupees(@invoice.taxable_value || 0, decimals: 2, space: true)}
                   </td>
@@ -604,12 +652,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
   defp qr_svg(_no_bill_yet), do: ""
 
-  # Every leg the consignment has travelled, oldest first.
-  #
-  # Once a vehicle has ever changed, the history holds the whole journey —
-  # including the vehicle the bill was raised with, which the context writes
-  # down before overwriting it. A bill that has never changed vehicle has no
-  # history at all, and its one leg is the bill itself.
+  # Every leg, oldest first. With no vehicle change, the bill itself is the one leg.
   defp part_b_entries(%EWayBill{} = bill) do
     case bill.part_b_updates do
       [_ | _] = legs ->
@@ -627,9 +670,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # Sorted through `DateTime.compare/2` rather than by term: two `%DateTime{}`
-  # structs compared as maps sort by day before month, which reorders a journey
-  # that crosses a month boundary. The id breaks a tie within the same second.
+  # DateTime.compare/2, not term order; the id breaks ties.
   defp leg_before?(a, b) do
     case DateTime.compare(a.updated_on, b.updated_on) do
       :lt -> true
@@ -638,8 +679,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # An e-way bill printed off an invoice whose items were never loaded would
-  # otherwise raise on the goods table — the one table an officer reads.
   defp items(%Invoice{items: items}) when is_list(items), do: items
   defp items(_not_loaded), do: []
 
@@ -702,8 +741,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     end
   end
 
-  # An unregistered recipient is not a blank on an e-way bill, it is "URP" —
-  # the portal's own marker, and what an officer expects to read.
+  # "URP" is the portal's marker for an unregistered recipient.
   defp recipient_gstin(%Invoice{client_gstin: gstin}) when is_binary(gstin) and gstin != "",
     do: gstin
 
@@ -765,9 +803,6 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
 
   defp transport_reason(_domestic), do: "Supply"
 
-  # The rate an officer reads off the goods table is the split, not the total:
-  # an inter-state consignment carries all of it as IGST, an intra-state one
-  # halves it between the centre and the state.
   defp tax_split(%Invoice{igst_amount: igst}, item) when is_integer(igst) and igst > 0 do
     rate = item.tax_rate || 0
     "0.00 + 0.00 + #{decimal(rate)} + 0.00"

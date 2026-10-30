@@ -1,8 +1,8 @@
 defmodule QuantumBilling.Settings do
   @moduledoc """
-  The organisation's settings.
+  The current business's settings.
 
-  There is exactly one settings row. `get_organization/0` returns it, or an
+  Each business has exactly one settings row. `get_organization/0` returns it, or an
   unsaved struct carrying the schema defaults when the table is still empty, so
   the Settings page renders on a fresh database rather than crashing on `nil`.
   """
@@ -11,6 +11,7 @@ defmodule QuantumBilling.Settings do
 
   alias QuantumBilling.Compliance
   alias QuantumBilling.Events
+  alias QuantumBilling.InstallationSettings
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings.Organization
 
@@ -48,9 +49,7 @@ defmodule QuantumBilling.Settings do
         |> Ecto.Changeset.change(%{})
         |> Repo.insert(on_conflict: :nothing, conflict_target: :singleton)
 
-        # Re-read rather than trusting the insert's return: on a conflict it
-        # comes back without an id, because the row that exists is someone
-        # else's.
+        # Re-read: on a conflict the insert comes back without an id.
         Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1)
 
       organization ->
@@ -61,11 +60,6 @@ defmodule QuantumBilling.Settings do
   @doc """
   Builds a changeset for one section of the settings.
   """
-  # No default for `attrs`. With one, the two-argument form meant
-  # `(organization, section)` rather than the `(organization, attrs)` every
-  # reader assumes, and getting it wrong raised `FunctionClauseError` deep
-  # inside `Organization.changeset/3` instead of at the call site. Requiring
-  # all three makes a wrong call a compile error.
   def change_organization(%Organization{} = organization, attrs, section) do
     Organization.changeset(organization, attrs, section)
   end
@@ -79,16 +73,42 @@ defmodule QuantumBilling.Settings do
     result =
       organization
       |> Organization.changeset(attrs, section)
-      |> Repo.insert_or_update()
+      |> save(section)
 
-    # Broadcast from, not to: the window that saved has already re-rendered
-    # with its own result, and handling its own echo would rebuild the form it
-    # is still sitting in.
+    # Broadcast from the saving window, which has already re-rendered.
     with {:ok, saved} <- result do
       Events.broadcast_from(Events.settings_topic(), {:settings_updated, saved})
     end
 
     result
+  end
+
+  # The Security section also holds the installation's sign-in rules, which
+  # apply to every business: saved with the business's own fields, or neither.
+  defp save(changeset, :security) do
+    Repo.transaction(fn ->
+      with {:ok, saved} <- Repo.insert_or_update(changeset),
+           {:ok, _rules} <-
+             InstallationSettings.update(
+               InstallationSettings.get(),
+               Map.take(saved, InstallationSettings.fields())
+             ) do
+        saved
+      else
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  defp save(changeset, _section), do: Repo.insert_or_update(changeset)
+
+  @doc """
+  `organization` with the installation's sign-in rules filled in, for the
+  Security section's form. They are not stored with a business; see
+  `QuantumBilling.InstallationSettings`.
+  """
+  def with_installation_rules(%Organization{} = organization) do
+    Map.merge(organization, Map.take(InstallationSettings.get(), InstallationSettings.fields()))
   end
 
   @doc """

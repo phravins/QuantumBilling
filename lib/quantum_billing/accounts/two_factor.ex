@@ -33,8 +33,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
   @issuer "QuantumBilling"
   @recovery_code_count 10
 
-  # Roughly 40 bits of entropy per code. Ambiguous characters are left out so a
-  # code read off a screen and typed back in does not fail on 0 versus O.
+  # Ambiguous characters (0/O, 1/I) are left out.
   @recovery_alphabet ~c"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
   @recovery_code_length 8
 
@@ -198,8 +197,6 @@ defmodule QuantumBilling.Accounts.TwoFactor do
   # ── Internals ──────────────────────────────────────────────────────────────
 
   defp valid_totp?(secret, code, last_used_at) when is_binary(secret) and is_binary(code) do
-    # A six-digit check first: NimbleTOTP would return false anyway, but this
-    # keeps a recovery code from being pointlessly compared against the secret.
     if Regex.match?(~r/^\d{6}$/, code) do
       NimbleTOTP.valid?(secret, code, since: last_used_at)
     else
@@ -215,9 +212,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
     |> Repo.update()
   end
 
-  # Each code is hashed, so finding the match means checking the candidate
-  # against every stored hash. `Pbkdf2.no_user_verify/0` on the empty case keeps
-  # the timing similar whether or not codes exist.
+  # no_user_verify/0 keeps the timing similar when no codes exist.
   defp consume_recovery_code(%User{recovery_codes: []}, _code) do
     Pbkdf2.no_user_verify()
     {:error, :invalid_code}
@@ -248,8 +243,6 @@ defmodule QuantumBilling.Accounts.TwoFactor do
     |> to_string()
   end
 
-  # Accepts the code however it was typed back: lower case, with the hyphen a
-  # user might add, or with stray spaces.
   defp normalise_recovery_code(code) do
     code
     |> to_string()

@@ -42,8 +42,6 @@ defmodule QuantumBillingWeb.BinLive do
   alias QuantumBilling.Templates
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  # The chips, in the order they are drawn. The keys are also the `type` a row
-  # carries, which is what a click sends back.
   @filters [
     {"all", "All"},
     {"invoice", "Invoices"},
@@ -55,9 +53,7 @@ defmodule QuantumBillingWeb.BinLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      # So a record binned, restored or purged in another window shows here
-      # without a reload. Recurring profiles have no topic; they change only
-      # from their own page, and are re-read whenever this one does anything.
+      # Recurring profiles have no topic; they are re-read after each action.
       Invoices.subscribe()
       Clients.subscribe()
       EWayBills.subscribe()
@@ -74,7 +70,6 @@ defmodule QuantumBillingWeb.BinLive do
   end
 
   def handle_event("filter", %{"type" => type}, socket) do
-    # Matched against the page's own list rather than trusted.
     if Enum.any?(@filters, fn {key, _label} -> key == type end) do
       {:noreply, socket |> assign(:filter, type) |> load_entries()}
     else
@@ -107,13 +102,11 @@ defmodule QuantumBillingWeb.BinLive do
     {:noreply, load_entries(socket)}
   end
 
-  # The clients topic also carries new clients, which cannot be in the Bin.
   def handle_info({:client_created, %Client{}}, socket), do: {:noreply, socket}
 
   # ── Actions ───────────────────────────────────────────────────────────────
 
-  # Looked up among the binned records only, so an id for something that is
-  # not in the Bin — or never existed — is simply not found.
+  # Binned records only.
   defp fetch("invoice", id), do: Invoices.get_deleted_invoice(id)
   defp fetch("client", id), do: Clients.get_deleted_client(id)
   defp fetch("e_way_bill", id), do: EWayBills.get_deleted_e_way_bill(id)
@@ -122,7 +115,6 @@ defmodule QuantumBillingWeb.BinLive do
   defp fetch(_unknown_type, _id), do: nil
 
   defp act(socket, nil, _action) do
-    # Most likely restored or purged in another window a moment ago.
     put_flash(socket, :error, "That item is no longer in the Bin.")
   end
 
@@ -182,8 +174,7 @@ defmodule QuantumBillingWeb.BinLive do
       {:ok, %InvoiceTemplate{name: ^old_name}} ->
         {:ok, "Design “#{old_name}” restored."}
 
-      # Its name was taken while it was in the Bin, and saying what it is
-      # called now is the only way anyone would find it again.
+      # Renamed because its name was taken while binned.
       {:ok, %InvoiceTemplate{name: new_name}} ->
         {:ok, "Design “#{old_name}” restored as “#{new_name}”."}
 
@@ -260,13 +251,10 @@ defmodule QuantumBillingWeb.BinLive do
     shown =
       entries
       |> Enum.filter(&(socket.assigns.filter in ["all", &1.type]))
-      # Newest first across every kind, which the separate queries cannot do
-      # between themselves.
       |> Enum.sort_by(& &1.deleted_at, {:desc, DateTime})
 
     socket
-    # Streams cannot be counted, so the numbers the chips and the empty state
-    # need are kept beside the stream rather than read off it.
+    # Streams cannot be counted, so counts are kept beside them.
     |> assign(:counts, counts)
     |> assign(:shown, length(shown))
     |> stream(:entries, shown, reset: true)
@@ -390,7 +378,7 @@ defmodule QuantumBillingWeb.BinLive do
         </:subtitle>
       </.header>
 
-      <div id="bin-filters" class="mb-4 flex flex-wrap items-center gap-2">
+      <div id="bin-filters" class="mb-3 flex flex-wrap items-center gap-2">
         <button
           :for={{key, label} <- @filters}
           type="button"
@@ -421,7 +409,7 @@ defmodule QuantumBillingWeb.BinLive do
         </button>
       </div>
 
-      <.card class="flex flex-1 flex-col">
+      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
         <div :if={@shown == 0} id="bin-empty" class="flex flex-1 flex-col justify-center">
           <.empty_state
             icon="hero-trash"
@@ -438,8 +426,7 @@ defmodule QuantumBillingWeb.BinLive do
           />
         </div>
 
-        <%!-- Hidden rather than left out while empty: the stream's container
-        has to stay in the page for the rows to have somewhere to arrive. --%>
+        <%!-- Hidden rather than removed: the stream container must stay in the DOM. --%>
         <div class={[@shown == 0 && "hidden"]}>
           <table class="table table-fixed">
             <thead>
@@ -452,7 +439,7 @@ defmodule QuantumBillingWeb.BinLive do
 
                 <th class="w-36">Deleted on</th>
 
-                <th class="w-64 text-right">Actions</th>
+                <th class="w-24">Actions</th>
               </tr>
             </thead>
 
@@ -474,23 +461,26 @@ defmodule QuantumBillingWeb.BinLive do
 
                 <td class="truncate text-base-content/60">{entry.details}</td>
 
-                <td class="text-base-content/60">
-                  <p>{format_date(DateTime.to_date(entry.deleted_at))}</p>
-
-                  <p class="text-xs text-base-content/45">{relative_time(entry.deleted_at)}</p>
+                <td
+                  class="whitespace-nowrap text-base-content/60"
+                  title={Calendar.strftime(entry.deleted_at, "%d %b %Y, %H:%M UTC")}
+                >
+                  {format_date(DateTime.to_date(entry.deleted_at))}
                 </td>
 
                 <td>
-                  <div class="flex items-center justify-end gap-1.5">
+                  <div class="flex items-center gap-1">
                     <button
                       type="button"
                       id={"bin-restore-#{entry.id}"}
                       phx-click="restore"
                       phx-value-type={entry.type}
                       phx-value-id={entry.record_id}
-                      class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
+                      title="Restore"
+                      aria-label={"Restore #{entry.title}"}
+                      class={row_action_class()}
                     >
-                      <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Restore
+                      <.icon name="hero-arrow-uturn-left" class="size-4" />
                     </button>
 
                     <button
@@ -501,21 +491,21 @@ defmodule QuantumBillingWeb.BinLive do
                       phx-value-type={entry.type}
                       phx-value-id={entry.record_id}
                       data-confirm={entry.purge_confirm}
-                      class={[
-                        secondary_button_class(),
-                        "h-8 px-2.5 text-xs text-error hover:border-error/40 hover:bg-error/10"
-                      ]}
+                      title="Delete permanently"
+                      aria-label={"Delete #{entry.title} permanently"}
+                      class={row_delete_class()}
                     >
-                      <.icon name="hero-trash" class="size-3.5" /> Delete permanently
+                      <.icon name="hero-trash" class="size-4" />
                     </button>
 
                     <span
                       :if={entry.locked}
                       id={"bin-locked-#{entry.id}"}
                       title={entry.locked}
-                      class="inline-flex h-8 items-center gap-1.5 px-2.5 text-xs text-base-content/45"
+                      aria-label={"In use: #{entry.locked}"}
+                      class="flex size-7 cursor-help items-center justify-center text-base-content/30"
                     >
-                      <.icon name="hero-lock-closed" class="size-3.5" /> In use
+                      <.icon name="hero-lock-closed" class="size-4" />
                     </span>
                   </div>
                 </td>

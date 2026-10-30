@@ -49,7 +49,6 @@ defmodule QuantumBillingWeb.UserLive.Settings do
      |> assign(:active_nav, :settings)
      |> assign(:current_email, user.email)
      |> assign(:trigger_submit, false)
-     # Shown once, immediately after enrolment or regeneration, then dropped.
      |> assign(:new_recovery_codes, nil)
      |> assign(:totp_error, nil)
      |> assign_forms(user)}
@@ -78,8 +77,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     )
   end
 
-  # ── Profile ────────────────────────────────────────────────────────────────
-  # Display details, not identity — no re-authentication needed.
+  # ── Profile ──
 
   @impl true
   def handle_event("validate_profile", %{"user" => params}, socket) do
@@ -104,8 +102,8 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     end
   end
 
-  # ── Email ──────────────────────────────────────────────────────────────────
-  # Never applied directly: a link goes to the new address and must be clicked.
+  # ── Email ──
+  # Never applied directly: the new address must confirm a link.
 
   def handle_event("validate_email", %{"user" => params}, socket) do
     changeset =
@@ -170,9 +168,8 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     end
   end
 
-  # ── Two factor ─────────────────────────────────────────────────────────────
-  # Enrolling, disabling and reissuing codes are all account-security actions,
-  # so they sit behind the same recent-sign-in check as the password and email.
+  # ── Two factor ──
+  # Behind the same recent-sign-in check as password and email.
 
   def handle_event("start_totp_enrolment", _params, socket) do
     user = socket.assigns.user
@@ -252,15 +249,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     {:noreply, assign(socket, :new_recovery_codes, nil)}
   end
 
-  # Ten minutes, matching the window `UserAuth.on_mount(:require_sudo_mode)`
-  # used before the gate moved here. `Accounts.sudo_mode?/2` defaults to twenty,
-  # so relying on the default would quietly have doubled how long a stale
-  # session could still change a password.
+  # Ten minutes; the sudo_mode?/2 default is twenty.
   defp recently_signed_in?(user), do: Accounts.sudo_mode?(user, -10)
 
-  # Previously this was `true = Accounts.sudo_mode?(user)` behind a page-level
-  # gate. With the gate moved onto the action, a bare match would crash the
-  # LiveView instead of telling the user what to do about it.
   defp refuse_stale(socket) do
     put_flash(
       socket,
@@ -292,6 +283,11 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <.header>
         Account Settings
         <:subtitle>Manage your personal information and sign-in security</:subtitle>
+        <:actions>
+          <.link id="view-profile" navigate={~p"/users/profile"} class={secondary_button_class()}>
+            <.icon name="hero-user-circle" class="size-4" /> View profile
+          </.link>
+        </:actions>
       </.header>
 
       <.card padding="p-0" class="flex flex-1 flex-col">
@@ -332,9 +328,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       id="profile_form"
       phx-change="validate_profile"
       phx-submit="save_profile"
-      class="mt-5"
+      class="mt-4"
     >
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field field={@profile_form[:full_name]} label="Full Name" placeholder="Your name" />
         <.field
           field={@profile_form[:designation]}
@@ -343,17 +339,16 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         /> <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
       </div>
 
-      <button type="submit" class={[action_button_class(), "mt-5"]}>
+      <button type="submit" class={[action_button_class(), "mt-4"]}>
         <.icon name="hero-check" class="size-4" /> Save Changes
       </button>
     </.form>
 
-    <div class="mt-8 border-t border-base-300 pt-6">
+    <div class="mt-4 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Profile Picture</h2>
 
-      <div class="mt-3 flex flex-wrap items-center gap-4">
-        <%!-- current_scope, not the page's own copy: the on_mount hook keeps it in
-        step when the profile is edited in another window. --%>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <%!-- current_scope, kept in step by the on_mount hook. --%>
         <span class={[avatar_class(), "size-14 bg-base-300 text-base text-base-content"]}>
           {initials(@current_scope.user)}
         </span>
@@ -370,7 +365,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </div>
     </div>
 
-    <div class="mt-8 border-t border-base-300 pt-6">
+    <div class="mt-4 border-t border-base-300 pt-6">
       <h2 class="text-sm font-semibold tracking-tight">Email Address</h2>
 
       <p class="mt-1 text-sm text-base-content/60">
@@ -385,7 +380,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         phx-submit="update_email"
         class="mt-4"
       >
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <.field
             field={@email_form[:email]}
             label="Email Address"
@@ -420,7 +415,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       phx-change="validate_password"
       phx-submit="update_password"
       phx-trigger-action={@trigger_submit}
-      class="mt-5"
+      class="mt-4"
     >
       <input
         name={@password_form[:email].name}
@@ -429,7 +424,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         spellcheck="false"
         value={@current_email}
       />
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={@password_form[:password]}
           label="New password"
@@ -446,7 +441,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         />
       </div>
 
-      <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-5"]}>
+      <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-4"]}>
         <.icon name="hero-lock-closed" class="size-4" /> Update Password
       </button>
     </.form>
@@ -461,10 +456,9 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       Add an extra layer of security to your account.
     </p>
 
-    <%!-- Shown once. There is no way to display them again, by design: they are
-    stored hashed, exactly like passwords. --%>
-    <div :if={@new_recovery_codes} class="mt-5 rounded-box border border-base-300 bg-base-200 p-4">
-      <div class="flex items-start justify-between gap-4">
+    <%!-- Shown once: they are stored hashed. --%>
+    <div :if={@new_recovery_codes} class="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
+      <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold tracking-tight">Save your recovery codes</p>
 
@@ -491,7 +485,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </ul>
     </div>
 
-    <div :if={TwoFactor.enabled?(@user)} class="mt-5">
+    <div :if={TwoFactor.enabled?(@user)} class="mt-4">
       <div class="flex flex-wrap items-center gap-3 rounded-field border border-base-300 px-4 py-3">
         <.status_badge status="Active" />
         <p class="text-sm text-base-content/60">
@@ -515,8 +509,8 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </div>
     </div>
 
-    <div :if={TwoFactor.pending?(@user)} class="mt-5">
-      <ol class="space-y-5">
+    <div :if={TwoFactor.pending?(@user)} class="mt-4">
+      <ol class="space-y-4">
         <li>
           <p class="text-sm font-medium">1. Scan this with your authenticator app</p>
 
@@ -524,9 +518,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
             Google Authenticator, Microsoft Authenticator, 1Password and others all work.
           </p>
 
-          <%!-- Literally white, not `bg-base-100`: the QR modules are black, so
-          on a dark theme a themed surface would leave nothing for a camera to
-          read. --%>
+          <%!-- Literally white so the QR stays readable on a dark theme. --%>
           <div class="mt-3 w-fit rounded-box border border-base-300 bg-white p-3">
             {Phoenix.HTML.raw(TwoFactor.qr_svg(@user))}
           </div>
@@ -573,7 +565,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       </ol>
     </div>
 
-    <div :if={not TwoFactor.enabled?(@user) and not TwoFactor.pending?(@user)} class="mt-5">
+    <div :if={not TwoFactor.enabled?(@user) and not TwoFactor.pending?(@user)} class="mt-4">
       <p class="text-sm text-base-content/60">
         With this on, signing in asks for a code from your phone as well as your password.
       </p>
@@ -585,8 +577,6 @@ defmodule QuantumBillingWeb.UserLive.Settings do
     """
   end
 
-  # Initials from the name when there is one, otherwise from the email — the
-  # same fallback the sidebar uses.
   defp initials(%{full_name: name}) when is_binary(name) and name != "" do
     case String.split(name, ~r/\s+/, trim: true) do
       [single] -> single |> String.slice(0, 2) |> String.upcase()

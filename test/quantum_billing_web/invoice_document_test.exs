@@ -13,11 +13,8 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
   organisation's `doc_*` columns, so the helpers below edit the layout and
   re-save the draft — which is the path a user takes through the design pad.
   """
-  # Not async: these seed a default design, and the partial unique index over
-  # `invoice_templates.is_default` makes two transactions inserting one block
-  # each other until the first ends. In production that wait is milliseconds and
-  # is exactly what the index is for; a sandbox transaction lasts the whole test,
-  # so concurrent seeders deadlock instead.
+  # Not async: concurrent default-template seeders deadlock on the partial unique
+  # index inside sandbox transactions.
   use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
@@ -53,10 +50,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     %{invoice: invoice}
   end
 
-  # Edits the default template's layout, then re-saves the draft so it picks the
-  # change up. A non-draft would deliberately keep the document it was issued
-  # with — `QuantumBilling.TemplatesTest` covers that rule; these are about what
-  # the two surfaces do once a change has landed.
+  # Re-saves the draft so it picks up the change; non-drafts are covered in TemplatesTest.
   defp relayout(invoice, fun) do
     template = Templates.ensure_default()
     document = fun.(Templates.document_of(template))
@@ -68,8 +62,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     invoice
   end
 
-  # Branding is read live, so it needs no re-save — which is the whole point of
-  # keeping it off the layout.
+  # Branding is read live, so no re-save is needed.
   defp recolour(accent) do
     {:ok, template} = Templates.update_template(Templates.ensure_default(), %{"accent" => accent})
     template
@@ -79,8 +72,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     %{document | blocks: Enum.reject(document.blocks, &(&1.type == type))}
   end
 
-  # What the palette does. The stock layout carries no footer block until one is
-  # added, because an organisation with no footer text has never printed one.
+  # The stock layout has no footer block until one is added.
   defp add_block(document, type) do
     block = Catalog.new(type, Document.next_id(document))
     %{document | blocks: document.blocks ++ [block]}
@@ -123,9 +115,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     %{screen: screen, printed: printed}
   end
 
-  # The item table's column headers, in render order. Order is the thing a
-  # renderer rewrite reshuffles silently — every column can still be present
-  # while the document has become unreadable.
+  # The item table's column headers, in render order.
   defp item_columns(html) do
     html
     |> LazyHTML.from_document()
@@ -201,10 +191,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       assert printed =~ "Thank you for your business."
     end
 
-    # Counts the mark the *document* draws. The app sidebar carries its own,
-    # which is why this looks for the document's element rather than the icon:
-    # both surfaces now draw the fallback as an inline SVG, because the `hero-*`
-    # classes are CSS masks from a stylesheet the print page does not load.
+    # Counts the document's own mark, not the sidebar's.
     defp marks(html), do: html |> String.split("qb-doc__brand\"") |> length() |> Kernel.-(1)
 
     test "the fallback mark shows while no logo is uploaded", %{conn: conn, invoice: invoice} do
@@ -231,8 +218,6 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
   end
 
   describe "optional blocks" do
-    # Remarks used to render on screen but not in print. The toggle would have
-    # been a switch that only worked in one direction.
     test "remarks render on both, and hide on both", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
       assert screen =~ "Delivered against PO-8842."
@@ -257,9 +242,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       refute printed =~ "Amount in Words"
     end
 
-    # Presence in the layout is not enough: an always-zero cess row would teach
-    # the reader nothing, so a figure has to exist too. The stock layout carries
-    # the line already, at `when="non-zero"`.
+    # A zero cess row stays hidden even though the layout carries the line.
     test "cess stays hidden when the figure is zero", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
 
@@ -269,10 +252,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
   end
 
-  # The assertions above check that a *setting* reaches both documents. These
-  # check that the documents agree about everything else too — the parts no
-  # toggle governs, which is exactly what a rewrite of the markup can reshuffle
-  # without any test noticing.
+  # The parts no setting governs must match across both documents too.
   describe "parity of the parts no setting governs" do
     test "the item columns render in the same order on both", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
@@ -337,9 +317,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       end
     end
 
-    # Which tax applies is decided by the supply, not by the template. Printing
-    # IGST on an intra-state supply is a compliance error, so neither document
-    # may be the one that gets it wrong.
+    # The tax type follows the supply, not the template.
     test "an intra-state supply shows CGST and SGST and no IGST on both",
          %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
@@ -380,9 +358,8 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       end
     end
 
-    # HEEx does not interpolate inside a `<style>` element, and escaping the CSS
-    # as ordinary content turns the child combinator into `&gt;` and drops the
-    # rule. Both mistakes are silent — the page still renders, just unstyled.
+    # HEEx does not interpolate inside <style>, and escaping breaks the `>`
+    # combinator; both fail silently.
     test "the stylesheet reaches both surfaces unescaped", %{conn: conn, invoice: invoice} do
       %{screen: screen, printed: printed} = both(conn, invoice)
 

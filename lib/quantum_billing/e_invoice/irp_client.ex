@@ -12,6 +12,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
 
   alias QuantumBilling.EInvoice
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Money
 
   @default_endpoint "https://einv-apisandbox.nic.in"
 
@@ -19,7 +20,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   Generates an IRN for the given invoice by posting to the IRP API or sandbox emulator.
   """
   def generate_irn(%Invoice{} = invoice, opts \\ []) do
-    if sandbox_mode?() or Keyword.get(opts, :force_sandbox, false) do
+    if not live?() or Keyword.get(opts, :force_sandbox, false) do
       simulate_irp_response(invoice)
     else
       do_live_generate_irn(invoice)
@@ -53,7 +54,8 @@ defmodule QuantumBilling.EInvoice.IRPClient do
            ack_no: to_string(data["AckNo"]),
            ack_date: parse_ack_date(data["AckDt"]),
            signed_qr_code: data["SignedQRCode"],
-           signed_invoice: data["SignedInvoice"]
+           signed_invoice: data["SignedInvoice"],
+           mode: "live"
          }}
 
       {:ok, %{status: 200, body: %{"error" => errors}}} ->
@@ -70,7 +72,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   defp simulate_irp_response(%Invoice{} = invoice) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    # Generate a deterministic 64-char hex IRN based on invoice number and company gstin
+    # Deterministic 64-char hex IRN from GSTIN and invoice number.
     raw_key = "#{invoice.company_gstin}:#{invoice.invoice_number}:#{invoice.grand_total}"
     irn = :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)
     ack_no = "1" <> to_string(:erlang.phash2(raw_key, 900_000_000) + 100_000_000)
@@ -83,7 +85,7 @@ defmodule QuantumBilling.EInvoice.IRPClient do
         "DocNo" => invoice.invoice_number,
         "DocTyp" => "INV",
         "DocDt" => to_string(invoice.invoice_date),
-        "TotVal" => invoice.grand_total,
+        "TotVal" => Money.to_rupees_decimal(invoice.grand_total),
         "ItemCnt" => invoice.total_items,
         "MainHsnCode" => main_hsn_code(invoice),
         "Irn" => irn,
@@ -97,28 +99,25 @@ defmodule QuantumBilling.EInvoice.IRPClient do
        ack_no: ack_no,
        ack_date: now,
        signed_qr_code: qr_data,
-       signed_invoice: "MOCK_SIGNED_JWT_#{irn}"
+       signed_invoice: "MOCK_SIGNED_JWT_#{irn}",
+       mode: "demo"
      }}
   end
 
-  # The QR carries the HSN of the invoice's principal supply, which is the
-  # first line. `hd(items || [...])` looked like it handled the empty case, but
-  # a preloaded invoice with no lines is `[]` rather than `nil`, so the
-  # fallback never fired and this raised `ArgumentError` — inside an Oban job,
-  # which then retried the same crash five times over half an hour.
-  #
-  # `EInvoice.validate/2` now refuses such an invoice before it reaches here.
-  # This stays defensive rather than inventing a code: a fabricated HSN in a
-  # signed QR is worse than an absent one.
+  # The HSN of the first line. No fallback code: a made-up HSN in a signed QR is worse.
   defp main_hsn_code(%Invoice{items: [%{hsn_sac: hsn} | _rest]}) when is_binary(hsn), do: hsn
   defp main_hsn_code(_invoice), do: nil
 
-  defp sandbox_mode? do
+  @doc """
+  True when IRN requests go to the IRP: credentials are set and `IRP_SANDBOX`
+  is off. Otherwise IRNs are simulated and recorded as `"demo"`.
+  """
+  def live? do
     client_id = System.get_env("IRP_CLIENT_ID")
     client_secret = System.get_env("IRP_CLIENT_SECRET")
     force_sandbox = System.get_env("IRP_SANDBOX", "true") in ["true", "1"]
 
-    force_sandbox or is_nil(client_id) or is_nil(client_secret)
+    not (force_sandbox or is_nil(client_id) or is_nil(client_secret))
   end
 
   defp parse_ack_date(nil), do: DateTime.utc_now() |> DateTime.truncate(:second)

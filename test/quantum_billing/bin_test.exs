@@ -30,12 +30,12 @@ defmodule QuantumBilling.BinTest do
       company_state: "Maharashtra (27)",
       client_name: "Delta Retailers",
       client_gstin: "27CCCDE1234F1Z5",
-      taxable_value: 100_000,
-      cgst_amount: 9_000,
-      sgst_amount: 9_000,
+      taxable_value: 10_000_000,
+      cgst_amount: 900_000,
+      sgst_amount: 900_000,
       igst_amount: 0,
       cess_amount: 0,
-      grand_total: 118_000,
+      grand_total: 11_800_000,
       status: "E-Invoice Generated",
       public_token: "tok-#{System.unique_integer([:positive])}"
     }
@@ -48,9 +48,9 @@ defmodule QuantumBilling.BinTest do
       hsn_sac: "998313",
       quantity: 1,
       unit: "Nos",
-      rate: 100_000,
+      rate: 10_000_000,
       tax_rate: 18,
-      amount: 100_000,
+      amount: 10_000_000,
       position: 0
     })
 
@@ -97,7 +97,7 @@ defmodule QuantumBilling.BinTest do
       gone = binned(invoice_fixture())
 
       assert Enum.map(Invoices.list_invoices(), & &1.id) == [kept.id]
-      assert %{total: 1, rows: [%{id: id}]} = Invoices.page()
+      assert %{rows: [%{id: id}]} = Invoices.page()
       assert id == kept.id
       assert Enum.map(Invoices.recent_invoices(), & &1.id) == [kept.id]
 
@@ -115,13 +115,15 @@ defmodule QuantumBilling.BinTest do
       invoice_fixture()
       binned(invoice_fixture())
 
-      assert %{count: 1, revenue: 118_000, tax: 18_000, outstanding: 118_000} = Invoices.totals()
-      assert %{count: 1, invoice_value: 118_000} = Invoices.month_totals()
+      assert %{count: 1, revenue: 11_800_000, tax: 1_800_000, outstanding: 11_800_000} =
+               Invoices.totals()
+
+      assert %{count: 1, invoice_value: 11_800_000} = Invoices.month_totals()
       assert Invoices.status_counts() == %{"E-Invoice Generated" => 1}
 
       assert Invoices.monthly_tax_split()
              |> Enum.map(&(&1.cgst_sgst + &1.igst))
-             |> Enum.sum() == 18_000
+             |> Enum.sum() == 1_800_000
     end
 
     test "takes the invoice out of the e-way bill prompts" do
@@ -137,7 +139,7 @@ defmodule QuantumBilling.BinTest do
       gone = invoice_with_client_fixture()
       credit_note_fixture(gone)
 
-      assert Invoices.totals().outstanding == 118_000 * 2 - 18_000
+      assert Invoices.totals().outstanding == 11_800_000 * 2 - 1_800_000
 
       binned(gone)
 
@@ -172,7 +174,7 @@ defmodule QuantumBilling.BinTest do
   end
 
   describe "the reports and returns" do
-    test "a binned invoice is out of the Reports page" do
+    test "a binned invoice is out of the report figures" do
       kept = invoice_fixture()
       binned(invoice_fixture(%{client_name: "Withdrawn Traders"}))
 
@@ -180,7 +182,7 @@ defmodule QuantumBilling.BinTest do
 
       assert Enum.map(Reports.invoices(), & &1.id) == [kept.id]
       assert Enum.map(Reports.invoices(filters), & &1.id) == [kept.id]
-      assert %{count: 1, taxable_value: 100_000} = Reports.totals(filters)
+      assert %{count: 1, taxable_value: 10_000_000} = Reports.totals(filters)
       assert Reports.aggregate(filters).total_count == 1
       refute "Withdrawn Traders" in Reports.client_names()
     end
@@ -194,7 +196,7 @@ defmodule QuantumBilling.BinTest do
       assert {:ok, json} = GSTNExporter.generate_gstr1_json(period)
       assert for(party <- json["b2b"], inv <- party["inv"], do: inv["inum"]) == ["KEPT-1"]
 
-      assert {:ok, %{count: 1, value: 118_000}} = GSTNExporter.period_summary(period)
+      assert {:ok, %{count: 1, value: 11_800_000}} = GSTNExporter.period_summary(period)
     end
 
     test "a note against a binned invoice is out of the GSTR-1 export" do
@@ -220,7 +222,7 @@ defmodule QuantumBilling.BinTest do
 
       binned(gone)
 
-      assert %{total: 1, rows: [row]} = EWayBills.page()
+      assert %{rows: [row]} = EWayBills.page()
       assert row.id == kept_bill.id
       assert length(EWayBills.export_rows()) == 1
 
@@ -236,7 +238,14 @@ defmodule QuantumBilling.BinTest do
       payload = %{
         "event" => "payment_link.paid",
         "payload" => %{
-          "payment_link" => %{"entity" => %{"id" => "plink_1", "reference_id" => "INV-7701"}},
+          "payment_link" => %{
+            "entity" => %{
+              "id" => "plink_1",
+              "reference_id" => "INV-7701",
+              "amount_paid" => gone.grand_total,
+              "currency" => "INR"
+            }
+          },
           "payment" => %{"entity" => %{"id" => "pay_1"}}
         }
       }

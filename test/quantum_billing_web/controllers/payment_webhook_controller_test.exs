@@ -33,7 +33,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
       place_of_supply: "Maharashtra",
       company_state: "Maharashtra",
       client_name: "Acme Corp",
-      grand_total: 11_800,
+      grand_total: 1_180_000,
       status: "Draft"
     })
   end
@@ -42,7 +42,14 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
     %{
       "event" => "payment_link.paid",
       "payload" => %{
-        "payment_link" => %{"entity" => %{"reference_id" => number, "id" => "plink_1"}},
+        "payment_link" => %{
+          "entity" => %{
+            "reference_id" => number,
+            "id" => "plink_1",
+            "amount_paid" => 1_180_000,
+            "currency" => "INR"
+          }
+        },
         "payment" => %{"entity" => %{"id" => "pay_123"}}
       }
     }
@@ -63,7 +70,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
         id -> put_req_header(conn, "x-razorpay-event-id", id)
       end
     end)
-    |> post(~p"/api/webhooks/razorpay", body)
+    |> post(Keyword.get(opts, :path, ~p"/api/webhooks/razorpay"), body)
   end
 
   test "a signed delivery reconciles the invoice", %{conn: conn} do
@@ -109,8 +116,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
     conn = post_signed(conn, body)
 
-    # The old behaviour was to accept unverified deliveries when no secret was
-    # set, which let anyone mark any invoice paid.
+    # Without a secret, unverified deliveries are refused.
     assert json_response(conn, 503)
     assert Repo.get(Invoice, invoice.id).status == "Draft"
   end
@@ -146,7 +152,8 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
     # parsed params would produce different bytes and a different HMAC.
     body = """
     { "event" : "payment_link.paid" ,
-      "payload" : { "payment_link" : { "entity" : { "reference_id" : "INV-7006" } } ,
+      "payload" : { "payment_link" : { "entity" : { "reference_id" : "INV-7006" ,
+                                                  "amount_paid" : 1180000 , "currency" : "INR" } } ,
                     "payment" : { "entity" : { "id" : "pay_7006" } } } }
     """
 
@@ -160,6 +167,111 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
     assert json_response(conn, 200)["status"] == "success"
     assert Repo.get(Invoice, invoice.id).status == "Paid"
+  end
+
+  test "an under-payment is refused and the invoice stays unpaid", %{conn: conn} do
+    invoice = invoice_fixture("INV-7010")
+
+    body =
+      invoice.invoice_number
+      |> payload()
+      |> put_in(["payload", "payment_link", "entity", "amount_paid"], 100)
+      |> Jason.encode!()
+
+    conn = post_signed(conn, body, event_id: "evt_7010")
+
+    assert json_response(conn, 422)["reason"] == "amount_mismatch"
+    assert Repo.get(Invoice, invoice.id).status == "Draft"
+  end
+
+  test "the ledger keeps no payer details, and stores the event encrypted", %{conn: conn} do
+    invoice = invoice_fixture("INV-7011")
+
+    body =
+      invoice.invoice_number
+      |> payload()
+      |> put_in(["payload", "payment", "entity"], %{
+        "id" => "pay_7011",
+        "email" => "payer@example.com",
+        "contact" => "+919999999999",
+        "vpa" => "payer@okaxis",
+        "card" => %{"last4" => "4242"}
+      })
+      |> Jason.encode!()
+
+    conn = post_signed(conn, body, event_id: "evt_7011")
+    assert json_response(conn, 200)["status"] == "success"
+
+    {:duplicate, event} = Webhooks.claim("razorpay", "evt_7011")
+    assert event.payload["payment"] == %{"id" => "pay_7011"}
+    assert event.payload["payment_link"]["amount_paid"] == 1_180_000
+
+    %{rows: [[raw]]} =
+      Repo.query!("SELECT payload FROM biz_1.webhook_events WHERE event_id = $1", ["evt_7011"])
+
+    refute String.contains?(raw, "pay_7011")
+    refute String.contains?(raw, "payer@example.com")
+  end
+
+  describe "with several businesses" do
+    setup do
+      {:ok, other} =
+        QuantumBilling.Businesses.create(
+          QuantumBilling.AccountsFixtures.owner_fixture(),
+          %{"name" => "Firm Two"}
+        )
+
+      %{other: other}
+    end
+
+    test "the slugged URL reconciles the invoice in the business it names", %{
+      conn: conn,
+      other: other
+    } do
+      first = invoice_fixture("INV-7101")
+      second = Repo.with_business(other, fn -> invoice_fixture("INV-7101") end)
+      body = Jason.encode!(payload("INV-7101"))
+
+      conn =
+        post_signed(conn, body,
+          event_id: "evt_7101",
+          path: ~p"/api/webhooks/razorpay/#{other.slug}"
+        )
+
+      assert json_response(conn, 200)["status"] == "success"
+      assert Repo.with_business(other, fn -> Repo.get(Invoice, second.id).status end) == "Paid"
+      assert Repo.get(Invoice, first.id).status == "Draft"
+    end
+
+    test "the same event id is processed once in each business", %{conn: conn, other: other} do
+      invoice_fixture("INV-7102")
+      Repo.with_business(other, fn -> invoice_fixture("INV-7102") end)
+      body = Jason.encode!(payload("INV-7102"))
+
+      post_signed(conn, body, event_id: "evt_7102")
+
+      conn =
+        post_signed(build_conn(), body,
+          event_id: "evt_7102",
+          path: ~p"/api/webhooks/razorpay/#{other.slug}"
+        )
+
+      assert json_response(conn, 200)["status"] == "success"
+
+      assert Repo.with_business(other, fn ->
+               Repo.get_by!(Invoice, invoice_number: "INV-7102").status
+             end) == "Paid"
+    end
+
+    test "an unknown slug is a 404 and touches nothing", %{conn: conn} do
+      invoice = invoice_fixture("INV-7103")
+      body = Jason.encode!(payload(invoice.invoice_number))
+
+      conn = post_signed(conn, body, path: ~p"/api/webhooks/razorpay/no-such-firm")
+
+      assert json_response(conn, 404)["status"] == "error"
+      assert Repo.get(Invoice, invoice.id).status == "Draft"
+    end
   end
 
   test "verify_webhook_signature/3 rejects anything but an exact match" do

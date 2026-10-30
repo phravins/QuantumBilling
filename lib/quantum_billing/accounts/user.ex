@@ -2,6 +2,7 @@ defmodule QuantumBilling.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @schema_prefix "public"
   schema "users" do
     field :username, :string
     field :email, :string
@@ -10,54 +11,19 @@ defmodule QuantumBilling.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
-    # What this account is allowed to do. Deliberately absent from every
-    # `cast/3` list below: a role is granted by an owner, never submitted from
-    # a form, and casting it would let anyone post `role=owner` alongside their
-    # display name. `Accounts.set_role/2` is the only way it changes.
-    field :role, :string, default: "staff"
-
-    # Display details, shown on Account Settings and in the sidebar. None of
-    # these is part of identity — that stays the email address.
     field :full_name, :string
     field :phone, :string
     field :designation, :string
+    # Seeds the profile page's generated landscape; nil falls back to the id.
+    field :banner_seed, :integer
 
-    # Two factor authentication. The secret is encrypted at rest; see
-    # `QuantumBilling.Encrypted.Binary` for why that matters more here than it
-    # would for a password.
+    # The secret is encrypted at rest.
     field :totp_secret, QuantumBilling.Encrypted.Binary, redact: true
     field :totp_confirmed_at, :utc_datetime
     field :totp_last_used_at, :utc_datetime
     field :recovery_codes, {:array, :string}, default: [], redact: true
 
     timestamps(type: :utc_datetime)
-  end
-
-  @roles ~w(owner staff)
-
-  @doc "The roles an account can hold."
-  def roles, do: @roles
-
-  @doc """
-  Whether this account owns the installation.
-
-  Owners administer the application itself — they hold the other accounts, the
-  stored credentials for SMTP and the payment gateway, and the full database
-  export. Staff do the billing.
-  """
-  def owner?(%__MODULE__{role: "owner"}), do: true
-  def owner?(_user), do: false
-
-  @doc """
-  A changeset for an account's role.
-
-  Separate from every other changeset precisely so that granting a role is a
-  deliberate call and cannot ride along on a profile or email update.
-  """
-  def role_changeset(user, role) when is_binary(role) do
-    user
-    |> cast(%{role: role}, [:role])
-    |> validate_inclusion(:role, @roles)
   end
 
   @doc """
@@ -76,6 +42,16 @@ defmodule QuantumBilling.Accounts.User do
     |> validate_format(:phone, ~r/^[\d\s+()-]*$/,
       message: "may only contain digits, spaces and + ( ) -"
     )
+  end
+
+  @doc """
+  A changeset for the profile banner's scene seed, and nothing else.
+  """
+  def banner_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:banner_seed])
+    |> validate_required([:banner_seed])
+    |> validate_number(:banner_seed, greater_than: 0)
   end
 
   @doc """
@@ -195,10 +171,6 @@ defmodule QuantumBilling.Accounts.User do
     changeset
     |> validate_required([:password])
     |> validate_length(:password, min: 8, max: 72)
-    # Examples of additional password validation:
-    # |> validate_format(:password, ~r/[a-z]/, message: "at least one lower case character")
-    # |> validate_format(:password, ~r/[A-Z]/, message: "at least one upper case character")
-    # |> validate_format(:password, ~r/[!?@#$%^&*_0-9]/, message: "at least one digit or punctuation character")
     |> maybe_hash_password(opts)
   end
 

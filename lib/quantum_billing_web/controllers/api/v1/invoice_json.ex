@@ -41,7 +41,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
   def index(%{page: page, api_key: key}) do
     %{
       data: Enum.map(page.rows, &invoice(&1, key)),
-      meta: Map.take(page, [:page, :per_page, :total, :total_pages])
+      meta: QuantumBillingWeb.API.Pagination.meta(page)
     }
   end
 
@@ -66,8 +66,8 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
         gstin: invoice.client_gstin,
         state: invoice.client_state
       },
-      # Whole rupees, as stored. Integers, so no client has to guess at float
-      # rounding on a tax figure.
+      # Paise, as stored: integers, so no client has to guess at float rounding
+      # on a tax figure. 118000 is ₹1,180.00.
       amounts: %{
         taxable_value: invoice.taxable_value,
         cgst: invoice.cgst_amount,
@@ -88,7 +88,10 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
 
   defp maybe_payment_url(json, invoice, key) do
     if ApiKey.has_scope?(key, "invoices:payment_links") and is_binary(invoice.public_token) do
-      Map.put(json, :payment_url, url(~p"/pay/#{invoice.public_token}"))
+      # The slugged link: it names the business, which the bare `/pay/` form
+      # (kept for links sent before there were several) cannot.
+      slug = QuantumBilling.Repo.business().slug
+      Map.put(json, :payment_url, url(~p"/p/#{slug}/#{invoice.public_token}"))
     else
       json
     end
@@ -102,8 +105,11 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
         position: item.position,
         description: item.description,
         hsn_sac: item.hsn_sac,
+        # A decimal, as a string ("2.5"): quantities can be fractional, and a
+        # JSON float would round them.
         quantity: item.quantity,
         unit: item.unit,
+        # Paise, like every amount.
         rate: item.rate,
         tax_rate: item.tax_rate,
         amount: item.amount

@@ -51,6 +51,40 @@ defmodule QuantumBilling.InvoicesTest do
     )
   end
 
+  # These are written only from the IRP's and Razorpay's answers. A form that
+  # could set them could plant a fake registration or a fake payment.
+  describe "portal and payment fields from form input" do
+    setup :setup_company
+
+    @forged %{
+      "irn" => "forged-irn",
+      "ack_number" => "999",
+      "ack_date" => "2026-01-01T00:00:00Z",
+      "signed_qr_code" => "forged-qr",
+      "signed_invoice" => "forged-jwt",
+      "irn_mode" => "live",
+      "razorpay_payment_link_id" => "plink_forged",
+      "razorpay_payment_url" => "https://evil.example/pay",
+      "razorpay_payment_id" => "pay_forged"
+    }
+
+    @fields ~w(irn ack_number ack_date signed_qr_code signed_invoice irn_mode
+               razorpay_payment_link_id razorpay_payment_url razorpay_payment_id)a
+
+    test "are ignored on create" do
+      {:ok, invoice} = Invoices.create_invoice(attrs(@forged))
+
+      for field <- @fields, do: assert(is_nil(Map.fetch!(invoice, field)), "#{field} was set")
+    end
+
+    test "are ignored on update" do
+      {:ok, invoice} = Invoices.create_invoice(attrs())
+      {:ok, updated} = Invoices.update_invoice(invoice, @forged)
+
+      for field <- @fields, do: assert(is_nil(Map.fetch!(updated, field)), "#{field} was set")
+    end
+  end
+
   describe "create_invoice/1" do
     setup :setup_company
 
@@ -73,12 +107,13 @@ defmodule QuantumBilling.InvoicesTest do
       assert {:ok, invoice} = Invoices.create_invoice(attrs)
 
       assert invoice.total_items == 2
-      assert invoice.total_quantity == 2
-      assert invoice.taxable_value == 60_000
-      assert invoice.cgst_amount == 5_400
-      assert invoice.sgst_amount == 5_400
+      assert Decimal.equal?(invoice.total_quantity, 2)
+      assert invoice.taxable_value == 6_000_000
+      assert invoice.cgst_amount == 540_000
+      assert invoice.sgst_amount == 540_000
       assert invoice.igst_amount == 0
-      assert invoice.grand_total == 70_800
+      assert invoice.round_off == 0
+      assert invoice.grand_total == 7_080_000
     end
 
     test "a mixed-rate invoice taxes each line at its own rate" do
@@ -94,18 +129,65 @@ defmodule QuantumBilling.InvoicesTest do
 
       assert {:ok, invoice} = Invoices.create_invoice(attrs)
 
-      assert invoice.taxable_value == 60_000
-      assert invoice.cgst_amount + invoice.sgst_amount == 9_500
+      assert invoice.taxable_value == 6_000_000
+      assert invoice.cgst_amount + invoice.sgst_amount == 950_000
     end
 
-    test "splits an odd tax without losing a rupee" do
-      # 5% of 999 is 49 — halving twice would give 24 + 24 and quietly drop one.
-      attrs = attrs(%{"items" => %{"0" => item(%{"rate" => "999", "tax_rate" => "5"})}})
+    test "splits an odd tax without losing a paisa" do
+      # 5% of ₹10.10 is 50.5 paise, rounded to 51 — halving twice would give 25 + 25.
+      attrs = attrs(%{"items" => %{"0" => item(%{"rate" => "10.10", "tax_rate" => "5"})}})
 
       assert {:ok, invoice} = Invoices.create_invoice(attrs)
 
-      assert invoice.cgst_amount + invoice.sgst_amount == 49
-      assert invoice.grand_total == invoice.taxable_value + 49
+      assert invoice.cgst_amount + invoice.sgst_amount == 51
+      assert invoice.grand_total == invoice.taxable_value + 51 + invoice.round_off
+    end
+
+    test "a fractional quantity at a rate with paise is worked out to the paisa" do
+      # 2.5 × ₹99.99 = ₹249.975, rounded half-up; 18% of that is ₹44.9964.
+      attrs =
+        attrs(%{"items" => %{"0" => item(%{"quantity" => "2.5", "rate" => "99.99"})}})
+
+      assert {:ok, invoice} = Invoices.create_invoice(attrs)
+      [item] = invoice.items
+
+      assert Decimal.equal?(item.quantity, Decimal.new("2.5"))
+      assert item.amount == 24_998
+      assert invoice.taxable_value == 24_998
+      assert invoice.cgst_amount + invoice.sgst_amount == 4_500
+    end
+
+    test "the grand total rounds to the rupee and shows the difference as round off" do
+      # ₹10,000.34 + 18% (₹1,800.06) = ₹11,800.40, billed as ₹11,800.
+      attrs = attrs(%{"items" => %{"0" => item(%{"rate" => "10000.34"})}})
+
+      assert {:ok, invoice} = Invoices.create_invoice(attrs)
+
+      assert invoice.taxable_value == 1_000_034
+      assert invoice.cgst_amount + invoice.sgst_amount == 180_006
+      assert invoice.grand_total == 1_180_000
+      assert invoice.round_off == -40
+    end
+
+    test "an invoice above ₹2.1 crore saves, so the columns hold more than 32 bits of paise" do
+      attrs = attrs(%{"items" => %{"0" => item(%{"rate" => "25000000"})}})
+
+      assert {:ok, invoice} = Invoices.create_invoice(attrs)
+
+      assert invoice.taxable_value == 2_500_000_000
+      assert Invoices.get_invoice!(invoice.id).grand_total == 2_950_000_000
+    end
+
+    test "a rate with more than two decimal places is refused" do
+      attrs = attrs(%{"items" => %{"0" => item(%{"rate" => "10.005"})}})
+
+      assert {:error, _changeset} = Invoices.create_invoice(attrs)
+    end
+
+    test "a quantity with more than three decimal places is refused" do
+      attrs = attrs(%{"items" => %{"0" => item(%{"quantity" => "1.0005"})}})
+
+      assert {:error, _changeset} = Invoices.create_invoice(attrs)
     end
 
     test "the grand total always equals its parts" do
@@ -130,8 +212,8 @@ defmodule QuantumBilling.InvoicesTest do
 
       assert {:ok, invoice} = Invoices.create_invoice(attrs)
 
-      assert invoice.taxable_value == 3_000
-      assert invoice.total_quantity == 3
+      assert invoice.taxable_value == 300_000
+      assert Decimal.equal?(invoice.total_quantity, 3)
     end
   end
 
@@ -141,8 +223,8 @@ defmodule QuantumBilling.InvoicesTest do
     test "the company's own state splits into CGST and SGST" do
       assert {:ok, invoice} = Invoices.create_invoice(attrs())
 
-      assert invoice.cgst_amount == 4_500
-      assert invoice.sgst_amount == 4_500
+      assert invoice.cgst_amount == 450_000
+      assert invoice.sgst_amount == 450_000
       assert invoice.igst_amount == 0
     end
 
@@ -152,7 +234,7 @@ defmodule QuantumBilling.InvoicesTest do
 
       assert invoice.cgst_amount == 0
       assert invoice.sgst_amount == 0
-      assert invoice.igst_amount == 9_000
+      assert invoice.igst_amount == 900_000
     end
 
     test "either way the grand total is the same" do
@@ -417,9 +499,7 @@ defmodule QuantumBilling.InvoicesTest do
       assert ids(Invoices.page(client: acme)) == [mine.id]
     end
 
-    # `client_id` is optional — the invoice form's name field can be filled
-    # without touching the client picker — so an id-only match would show a
-    # client with a dozen typed invoices an empty history.
+    # `client_id` is optional, so invoices are also matched by name.
     test "also returns an unlinked invoice that names the client", %{acme: acme} do
       {:ok, typed} = Invoices.create_invoice(attrs(%{"client_name" => acme.name}))
       assert is_nil(typed.client_id)
@@ -427,22 +507,20 @@ defmodule QuantumBilling.InvoicesTest do
       assert ids(Invoices.page(client: acme)) == [typed.id]
     end
 
-    # The other half of that rule. `clients.name` has no unique index, so two
-    # clients may share a name; without this, each would claim invoices
-    # explicitly linked to the other.
+    # `clients.name` is not unique, so an explicit link wins over a name match.
     test "never claims an invoice linked to someone else", %{acme: acme, other: other} do
       {:ok, _theirs} =
         Invoices.create_invoice(attrs(%{"client_id" => other.id, "client_name" => acme.name}))
 
       assert Invoices.page(client: acme).rows == []
-      assert Invoices.page(client: acme).total == 0
+      refute Invoices.page(client: acme).has_next?
     end
 
     test "counts and pages over the narrowed set", %{acme: acme, other: other} do
       for _ <- 1..3, do: Invoices.create_invoice(attrs(%{"client_id" => acme.id}))
       for _ <- 1..5, do: Invoices.create_invoice(attrs(%{"client_id" => other.id}))
 
-      page = Invoices.page(client: acme, per_page: 2)
+      page = Invoices.page(client: acme, per_page: 2, count: true)
 
       assert page.total == 3
       assert page.total_pages == 2
@@ -464,8 +542,8 @@ defmodule QuantumBilling.InvoicesTest do
       assert {:ok, invoice} = Invoices.create_invoice(attrs())
 
       assert invoice.invoice_number == "INV-0001"
-      assert invoice.cgst_amount == 4_500
-      assert invoice.sgst_amount == 4_500
+      assert invoice.cgst_amount == 450_000
+      assert invoice.sgst_amount == 450_000
     end
   end
 end

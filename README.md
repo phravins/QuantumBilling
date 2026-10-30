@@ -1,136 +1,68 @@
-# QuantumBilling 
+# QuantumBilling
 
-> **Next-Generation GST Invoicing, E-Invoicing, and Tax Compliance Software for Indian Businesses.**
+QuantumBilling is a Phoenix LiveView application for Indian business billing: clients, GST invoices, document templates, credit/debit notes, e-way bills, recurring billing, payment links, reports, and compliance reminders.
 
-QuantumBilling is an all-in-one financial billing and compliance platform designed specifically for Indian enterprises, SMEs, accountants, and freelancers. It automates complex GST computations, eliminates manual filing errors, and empowers businesses to issue beautiful, legally compliant invoices in seconds.
+It uses Elixir, Phoenix, PostgreSQL, and Oban. Business data is being separated into PostgreSQL schemas, with shared accounts and business memberships in `public`.
 
----
+## Documentation
 
-## Why Business Owners Choose QuantumBilling
+All detailed guides live in [`docs/`](docs/README.md).
 
-Running a business in India requires strict adherence to GST regulations. Mistakes in tax classification, inaccurate calculations, or missed return deadlines lead to hefty penalties, blocked Input Tax Credit (ITC), and strained vendor relationships.
+| Guide | Contents |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Local setup, migrations, seed account, login, troubleshooting |
+| [Business guide](docs/Business.md) | Business ownership, roles, billing workflows, features, and limits |
+| [Database structure](docs/database.md) | Public/business schemas, tables, relationships, money, indexes, migrations |
+| [Technical architecture](docs/technical-architecture.md) | Supervision, requests, LiveViews, contexts, jobs, integrations, security |
+| [Tech stack](docs/tech-stack.md) | Languages, dependency versions, tools, and their responsibilities |
+| [Configuration](docs/configuration.md) | Environment variables, secrets, email, payments, and government portals |
+| [Deployment and operations](docs/deployment.md) | Releases, migrations, storage, health, jobs, backup, recovery |
+| [Development](docs/development.md) | Repository map, Mix commands, testing, and contribution conventions |
 
-QuantumBilling simplifies the entire process into a seamless, automated workflow:
+## Run locally
 
-- **100% Tax Accuracy**: Never worry about tax math again. The platform automatically determines whether an invoice is **Intra-State (CGST + SGST)** or **Inter-State (IGST)** based on the buyer's and seller's locations.
-- **GST 2.0 Ready**: Built directly on the restructured tax slabs (0%, 5%, 18%, and 40% rates under Notification No. 9/2025).
-- **Audit-Proof Records**: Financial figures are locked at the moment of invoice issuance, guaranteeing that historical records and past tax filings remain permanent and tamper-free.
-- **Save Time & Accountant Fees**: Export complete, CA-ready Sales Registers and Tax Liability summaries with a single click.
+Use Elixir 1.18.3 / Erlang OTP 27, PostgreSQL 16, and Chromium for PDF generation. The project declares Elixir `~> 1.17`; see the [stack guide](docs/tech-stack.md).
 
----
+Copy the template **only if `.env` does not already exist**:
 
-## Core Business Features
-
-### 1. Smart GST Invoicing & Documents
-- **Complete Document Suite**: Create **Tax Invoices**, **Bills of Supply**, **Export Invoices**, **Credit Notes**, and **Debit Notes**.
-- **Automated Tax Splitting**: Enter items and rates; the software automatically splits taxes into CGST, SGST, IGST, and Cess according to statutory rules.
-- **Customer Directory**: Store and manage client GSTINs, PANs, billing addresses, state codes, and contact details for instant lookup.
-- **Print & PDF Generation**: Deliver polished, branded invoices directly to clients or save them as PDFs with print-ready layouts.
-
-### 2. Interactive Invoice Design Pad
-- **Custom Brand Identity**: Transform standard, boring invoices into high-end, branded documents that impress your clients.
-- **Visual Drag & Drop Customizer**: Customize invoice layout blocks, logos, fonts, payment terms, and color palettes with a live WYSIWYG canvas.
-- **Real-Time Autosave**: Edits are preserved automatically as you design.
-
-### 3. Government-Standard E-Invoicing (INV-01)
-- **Official IRP Format**: Generate standard **INV-01 XML** e-invoice payloads ready for direct submission to the Invoice Registration Portal (IRP) or your GSP.
-- **Pre-Submission Validator**: The software validates buyer GSTINs, HSN codes, and mandatory tax totals before file creation, preventing IRP rejection.
-
-### 4. E-Way Bills & Transit Documentation
-- Generate statutory E-Way bills for moving goods across state lines or exceeding invoice value thresholds.
-- Tracks vehicle numbers, transport document numbers, and validity periods.
-
-### 5. Statutory GST Compliance Calendar
-- **Automated Deadlines**: Tracks statutory filing schedules calculated for the Indian financial year (April 1 – March 31):
-  - **GSTR-1**: Monthly outward supplies return (due 11th of every month)
-  - **GSTR-3B**: Monthly summary return & tax payment (due 20th of every month)
-  - **CMP-08**: Quarterly statement for Composition taxpayers (due 18th following quarter)
-  - **GSTR-9 & GSTR-9C**: Annual returns and reconciliation audits
-- **Filing Status Tracker**: Instant visual tracking of what is **Pending**, **Filed**, or **Overdue**.
-
-### 6. Built-in HSN / SAC Code Finder
-- Quickly search through hundreds of goods (HSN) and services (SAC) codes.
-- View verified, up-to-date GST tax slabs and descriptions before adding items to an invoice.
-
-### 7. Financial Reports & Sales Registers
-- **Executive Dashboard**: Track monthly sales trends, total revenue, tax collections, and top clients by billing volume.
-- **One-Click CSV Exports**:
-  - **Sales Register**: Detailed, itemized sales breakdown formatted for your Chartered Accountant.
-  - **Tax Liability Summary**: Comprehensive breakdown of CGST, SGST, IGST, and Cess liabilities across customizable date ranges.
-
-### 8. Enterprise-Grade Security
-- **Two-Factor Authentication (2FA)**: Secure staff accounts using Google Authenticator, Microsoft Authenticator, or 1Password.
-- **AES-256-GCM Encryption**: Sensitive portal secrets and 2FA credentials are encrypted at rest using military-grade encryption.
-- **Brute-Force Protection**: Integrated rate limiting shields login and verification portals against automated dictionary and credential attacks.
-- **Secure File Storage**: Deep SVG inspection blocks cross-site scripting (XSS) vectors during company logo uploads.
-
----
-
-## How It Works (The Business Workflow)
-
-```mermaid
-graph LR
-    A[1. Setup Organization] --> B[2. Add Client]
-    B --> C[3. Create GST Invoice]
-    C --> D[4. Auto-Calculate Tax]
-    D --> E[5. Print / E-Invoice XML]
-    E --> F[6. Export Reports & Track Deadlines]
-```
-
-1. **Setup Organization**: Add your company name, GSTIN, registered address, bank details, and logo in Settings.
-2. **Issue Invoices**: Select a client, pick your items/HSN codes, and let QuantumBilling automatically calculate the exact GST.
-3. **Send to Clients**: Download instant print-styled PDFs or export e-invoices for portal upload.
-4. **Stay Compliant**: Check the Compliance calendar for upcoming return dates and export your monthly Sales Register for filing.
-
----
-
-## Getting Started & Technical Setup
-
-For technical documentation, local environment setup, and deployment guides, please see:
-
-- **[Local Running & Setup Guide (RUN.md)](file:///d:/QUANTUM_BILLING/QuantumBilling/RUN.md)** — Step-by-step instructions for running via **Docker Compose** or native **Elixir & PostgreSQL**.
-
-### Quick Start with Docker
 ```bash
-docker compose up --build
+cp .env.example .env
 ```
-Open [http://localhost:4000](http://localhost:4000) in your browser.
 
----
+Set `DB_USERNAME` and `DB_PASSWORD` for PostgreSQL, and fill `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, and `SECRETS_ENCRYPTION_KEY`. Generate a separate value for each key with `openssl rand -base64 48`. Preserve encryption keys on an existing installation.
 
-## Technology Stack
+```bash
+mix deps.get
+mix ecto.create
+mix ecto.migrate
+mix assets.setup
+mix assets.build
+mix phx.server
+```
 
-- **Backend**: [Elixir](https://elixir-lang.org/) & [Phoenix Framework 1.8](https://phoenixframework.org/) on Erlang/OTP
-- **Real-Time UI**: [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view/) over Phoenix PubSub
-- **Database**: [PostgreSQL](https://www.postgresql.org/) with [Ecto](https://hexdocs.pm/ecto/)
-- **Background jobs**: [Oban](https://hexdocs.pm/oban) — durable, retried, scheduled
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) & [daisyUI](https://daisyui.com/)
-- **Server**: [Bandit](https://github.com/mtrudel/bandit) HTTP/2 server
+Open [http://localhost:4000/users/log-in](http://localhost:4000/users/log-in). See the [setup guide](docs/getting-started.md) for registration and seeding.
 
----
+`mix ecto.migrate` applies public migrations, then tenant migrations to every business schema. See the [database guide](docs/database.md) before migrating an existing installation.
 
-## How It Holds Up Under Load
+## Seed login
 
-- **The database does the work.** Lists, reports and the audit trail are
-  searched, filtered, sorted, counted and paged in SQL, so a page costs the same
-  whether the business has issued a thousand invoices or a million. Report
-  exports stream from a database cursor rather than being built in memory.
-- **Slow work is queued, not waited on.** Sending an invoice, registering it
-  with the government portal, billing a recurring profile and posting a webhook
-  are all background jobs: they survive a restart, retry with backoff, and are
-  recorded whether they succeed or fail. Nothing is lost because a mail server
-  or a government API was briefly unavailable.
-- **Scheduled work runs once.** Recurring billing and data retention are driven
-  by Oban's leader election, so running several application nodes does not bill
-  a customer twice.
-- **Everything is visible.** Outgoing mail has a delivery history in Settings,
-  jobs and their errors are in the database, and queries slower than a threshold
-  are logged with the table they hit.
+There is no shared hardcoded password. Set these in your local `.env` before seeding:
 
-See [RUN.md](RUN.md) for the queue layout, the schedule and the security notes.
+```dotenv
+SEED_ADMIN_EMAIL=demo@example.test
+SEED_ADMIN_USERNAME=demo
+SEED_ADMIN_PASSWORD=
+```
 
----
+Fill the password with your own value (8–72 characters). Login uses the configured **email and password**, not the username. Seeds confirm a newly created account directly and do not reset an existing password. The [setup guide](docs/getting-started.md#seed-account-and-login) gives the seed commands and rerun behavior.
 
-## License & Legal
+## Checks and implementation status
 
-Built for modern Indian commerce. All rights reserved. See [`/terms`](http://localhost:4000/terms) and [`/privacy`](http://localhost:4000/privacy) when running the application.
+```bash
+mix test
+mix precommit
+```
+
+This checkout contains business-schema changes: browser business selection, memberships, repository scoping, public links with business identity, and business-specific live updates. Run checks against your checkout before treating the setup as verified. [Architecture](docs/technical-architecture.md) and [Business](docs/Business.md) explain entry-point ownership and remaining workflow limits.
+
+IRP and e-way-bill clients include simulated behavior, the HSN finder uses bundled data, and compliance calendars are not proof of tax filing. See the business guide for each workflow's limits.

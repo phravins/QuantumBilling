@@ -20,6 +20,13 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     * **Delivery is rate limited by source.** A signature check is cheap but
       not free, and this is a public endpoint.
 
+    * **Payer details are not kept.** The ledger stores only what reconciliation
+      needs (`Payments.webhook_record/1`), encrypted at rest.
+
+  The URL names the business by its slug (`/api/webhooks/razorpay/:slug`);
+  the bare path, which existing Razorpay dashboards point at, delivers to the
+  first business. An unknown slug is a 404 before anything else is looked at.
+
   Successfully handled duplicates return 200: a provider that is told "already
   done" with a 4xx will simply keep retrying.
   """
@@ -27,20 +34,30 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
 
   require Logger
 
+  alias QuantumBilling.Businesses
   alias QuantumBilling.Payments
   alias QuantumBilling.Payments.RazorpayClient
   alias QuantumBilling.RateLimiter
+  alias QuantumBilling.Repo
   alias QuantumBilling.Webhooks
 
   @rate_limit 120
   @rate_limit_window_seconds 60
 
   def handle_razorpay(conn, params) do
+    {slug, params} = Map.pop(params, "slug")
+
     with :ok <- check_rate_limit(conn),
+         %{} = business <- Businesses.from_link(slug),
          {:ok, raw_body} <- raw_body(conn),
          :ok <- verify_signature(conn, raw_body) do
+      # The endpoint clears this again before the next request on the connection.
+      Repo.put_business(business)
       process(conn, params)
     else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{status: "error", message: "Unknown business"})
+
       {:error, :rate_limited, retry_after} ->
         conn
         |> put_resp_header("retry-after", to_string(retry_after))
@@ -67,13 +84,13 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
   defp process(conn, params) do
     event_id = event_id(conn, params)
 
+    # Trimmed of payer details, and encrypted at rest by the ledger itself.
     case Webhooks.claim("razorpay", event_id, %{
            event_type: params["event"],
-           payload: params
+           payload: Payments.webhook_record(params)
          }) do
       {:duplicate, _event} ->
-        # Already handled. Acknowledged rather than reprocessed — and
-        # acknowledged rather than refused, or the provider retries for ever.
+        # Acknowledged, or the provider retries for ever.
         conn |> put_status(:ok) |> json(%{status: "ok", message: "Already processed"})
 
       {:ok, event} ->
@@ -98,9 +115,7 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     end
   end
 
-  # The provider's own event id when it sends one. Otherwise a digest of the
-  # body, which is the same for a redelivery of the same event and different
-  # for a genuinely new one — so deduplication still holds.
+  # The provider's event id, or a digest of the body.
   defp event_id(conn, params) do
     case get_req_header(conn, "x-razorpay-event-id") do
       [id | _] when byte_size(id) > 0 ->

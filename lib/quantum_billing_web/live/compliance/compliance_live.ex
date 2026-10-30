@@ -24,9 +24,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
   def mount(_params, _session, socket) do
     today = Date.utc_today()
 
-    # The organisation's registration is what decides which returns are owed —
-    # a composition dealer and a regular taxpayer do not file the same forms —
-    # so the calendar is resolved against it rather than shown in full.
+    # Which returns are owed depends on the registration type.
     obligations = Compliance.tracked_obligations(today, Settings.get_organization())
 
     {:ok,
@@ -72,10 +70,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
     {:noreply, assign(socket, :selected, nil)}
   end
 
-  # A day in the calendar narrows the task list to that date, which is what a
-  # calendar is for — the grid used to mark the deadlines and then refuse to
-  # say anything about them. Clicking the same day again, or an empty one,
-  # clears the narrowing rather than stranding the page on one date.
+  # Clicking the selected day or an empty one clears the filter.
   def handle_event("select_day", %{"date" => date}, socket) do
     date = Date.from_iso8601!(date)
     already_selected? = socket.assigns.selected_date == date
@@ -90,8 +85,6 @@ defmodule QuantumBillingWeb.ComplianceLive do
     {:noreply, assign(socket, :selected_date, nil)}
   end
 
-  # "View All" and "View Filing Calendar" both clear any narrowing so the whole
-  # year is visible, which is what both controls promise.
   def handle_event("show_all", _params, socket) do
     {:noreply,
      socket
@@ -188,7 +181,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
       <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
 
             <div class="dropdown dropdown-end">
@@ -199,7 +192,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
               <ul
                 tabindex="0"
-                class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                class="dropdown-content menu z-30 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
               >
                 <li :for={status <- Compliance.statuses()}>
                   <a phx-click="filter_status" phx-value-status={status}>{status}</a>
@@ -209,9 +202,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </div>
           <.tabs categories={Compliance.categories()} active={@category} />
 
-          <%!-- Says which day the calendar narrowed the list to, and offers the
-          way back out. A filter applied from another card is invisible
-          otherwise, and an empty table reads as a bug. --%>
+          <%!-- Shows the calendar's day filter and a way to clear it. --%>
           <div :if={@selected_date} class="mt-4 flex items-center gap-2">
             <span class="inline-flex items-center gap-2 rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-medium">
               <.icon name="hero-calendar-days" class="size-3.5 text-base-content/60" />
@@ -231,10 +222,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
             <.obligation_detail obligation={@selected} />
           </div>
 
-          <%!-- Two different empty states: nothing tracked at all is not the
-          same as a filter that excluded everything, and telling someone with
-          no data to "try another status" sends them chasing rows that do not
-          exist. --%>
+          <%!-- Separate empty states: no data at all vs. a filter that excluded everything. --%>
           <.empty_state
             :if={@obligations == []}
             icon="hero-shield-check"
@@ -251,22 +239,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 else: "Try another category or status."
             }
           />
-          <%!-- A financial year of returns is two dozen rows, which used to
-          run the card down past the calendar beside it and leave half a page
-          of nothing next to it. The list scrolls inside its own box now, and
-          the heading row stays put while it does.
-
-          The box takes whatever height the card has left rather than stopping
-          at a fixed one. A `max-h` here meant the table gave up at two thirds
-          of the card and left a band of empty white beneath it whenever the
-          calendar column next to it was taller — which, at a full financial
-          year, it always is.
-
-          Absolutely positioned inside a `flex-1` shell so the rows cannot push
-          that height back out: the shell claims the leftover space, the rows
-          scroll within it, and twenty-six of them size the card no differently
-          from three. `min-h` is the floor for the single-column layout, where
-          there is no calendar beside it to stretch against. --%>
+          <%!-- Scrolls inside an absolutely positioned flex-1 shell, so the rows fill the card's leftover height without growing it. --%>
           <div :if={@rows != []} class="relative min-h-[26rem] flex-1">
             <div class="absolute inset-0 overflow-y-auto overflow-x-auto">
               <table class="w-full">
@@ -323,10 +296,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           <.icon name="hero-eye" class="size-4" />
                         </button>
 
-                        <%!-- The GSTR-1 JSON for *this* period, which is what the
-                        offline tool uploads. Only GSTR-1 has an export: the other
-                        returns are summaries derived from it, and a button that
-                        downloads the wrong return is worse than no button. --%>
+                        <%!-- GSTR-1 only: the other returns are summaries derived from it. --%>
                         <.link
                           :if={row.type == "GSTR-1"}
                           href={~p"/reports/gstr1/export?#{[period: row.period_key]}"}
@@ -348,9 +318,9 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </p>
         </.card>
 
-        <div class="space-y-4">
+        <div class="space-y-3">
           <.card>
-            <div class="mb-4 flex items-center justify-between">
+            <div class="mb-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold tracking-tight">Upcoming Due Dates</h2>
 
               <button
@@ -362,7 +332,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
               </button>
             </div>
 
-            <ul :if={@upcoming != []} class="space-y-4">
+            <ul :if={@upcoming != []} class="space-y-3">
               <.due_date_row :for={obligation <- @upcoming} obligation={obligation} />
             </ul>
 
@@ -379,7 +349,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </.card>
 
           <.card id="filing-calendar">
-            <h2 class="mb-4 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
+            <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
             <.month_calendar
               weeks={@weeks}

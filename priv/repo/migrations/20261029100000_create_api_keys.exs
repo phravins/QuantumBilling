@@ -1,7 +1,16 @@
 defmodule QuantumBilling.Repo.Migrations.CreateApiKeys do
   @moduledoc """
-  Keys for the external API, idempotency records for its writes, and a way to
-  attribute an audit entry to a key rather than a person.
+  Keys for the external API and idempotency records for its writes.
+
+  ## In `public`, with the business named
+
+  A request arrives with nothing but a key, so the key has to be found before
+  anyone knows which business it is for — it cannot live in a business's own
+  schema. Each key names its business instead, and authenticating it is what
+  makes that business current for the request.
+
+  The audit trail is per business, so the column that attributes an entry to a
+  key is added by a tenant migration.
 
   ## Keys are hashed, never stored
 
@@ -23,6 +32,7 @@ defmodule QuantumBilling.Repo.Migrations.CreateApiKeys do
 
   def change do
     create table(:api_keys) do
+      add :business_id, references(:businesses, on_delete: :delete_all), null: false
       add :name, :string, null: false
       add :prefix, :string, null: false
       add :hashed_key, :binary, null: false
@@ -38,6 +48,7 @@ defmodule QuantumBilling.Repo.Migrations.CreateApiKeys do
 
     create unique_index(:api_keys, [:hashed_key])
     create unique_index(:api_keys, [:prefix])
+    create index(:api_keys, [:business_id])
 
     create table(:api_idempotency_keys) do
       add :api_key_id, references(:api_keys, on_delete: :delete_all), null: false
@@ -52,11 +63,5 @@ defmodule QuantumBilling.Repo.Migrations.CreateApiKeys do
 
     create unique_index(:api_idempotency_keys, [:api_key_id, :key])
     create index(:api_idempotency_keys, [:inserted_at])
-
-    alter table(:audit_logs) do
-      add :api_key_id, references(:api_keys, on_delete: :nilify_all)
-    end
-
-    create index(:audit_logs, [:api_key_id])
   end
 end

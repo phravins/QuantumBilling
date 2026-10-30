@@ -45,7 +45,6 @@ defmodule QuantumBilling.DashboardFiguresTest do
 
       assert totals.count == 2
       assert totals.taxable_value == 30_000
-      # The card used to read ₹0 no matter how much had been billed.
       assert totals.tax == 900 + 900 + 3_600
       assert totals.invoice_value == 35_400
     end

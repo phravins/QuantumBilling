@@ -50,9 +50,7 @@ defmodule QuantumBillingWeb.TransportErrorFilter do
   reports for expected behaviour is how real errors get overlooked.
   """
 
-  # Peer/transport failures. Deliberately excludes `:timeout`, which
-  # ThousandIsland already reports as `{:shutdown, :read_timeout}` and which
-  # could plausibly indicate something worth seeing.
+  # Excludes :timeout, which may be worth seeing.
   @transport_reasons [
     :econnaborted,
     :econnreset,
@@ -83,9 +81,7 @@ defmodule QuantumBillingWeb.TransportErrorFilter do
     end
   end
 
-  # Anything that is not a report is none of this filter's business. A logger
-  # filter that raises takes the handler down with it, so the catch-all is not
-  # optional.
+  # A raising filter takes the handler down, so this catch-all is required.
   def filter(_event, _extra), do: :ignore
 
   @doc "The reasons treated as a peer hanging up rather than a fault."

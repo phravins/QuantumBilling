@@ -107,9 +107,7 @@ defmodule QuantumBilling.ComplianceTest do
   end
 
   describe "tracked_obligations/2" do
-    # The statutory calendar above is the same for every business in the
-    # country. Which of its rows a given business owes is decided by that
-    # business's own GST registration.
+    # Which returns a business owes depends on its own GST registration.
     test "is empty without a GSTIN, because an unregistered business owes nothing" do
       assert Compliance.tracked_obligations(@today, nil) == []
       assert Compliance.tracked_obligations(@today, %{}) == []
