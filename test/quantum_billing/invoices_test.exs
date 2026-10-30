@@ -83,6 +83,40 @@ defmodule QuantumBilling.InvoicesTest do
 
       for field <- @fields, do: assert(is_nil(Map.fetch!(updated, field)), "#{field} was set")
     end
+
+    # Fields the application sets: a crafted form post could otherwise mark an
+    # invoice Paid with no payment, renumber it, or reissue it under another
+    # company's name.
+    @server_set %{
+      "status" => "Paid",
+      "invoice_number" => "FORGED-1",
+      "company_name" => "Impostor Pvt Ltd",
+      "company_gstin" => "29AAAAA0000A1Z5",
+      "company_state" => "Karnataka (29)",
+      "company_address" => "Elsewhere",
+      "layout_xml" => "<invoice-template version=\"1\"/>"
+    }
+
+    test "status, number, company and layout are ignored on create" do
+      {:ok, invoice} = Invoices.create_invoice(attrs(@server_set))
+
+      assert invoice.status == "Draft"
+      refute invoice.invoice_number == "FORGED-1"
+      refute invoice.company_name == "Impostor Pvt Ltd"
+      refute invoice.company_gstin == "29AAAAA0000A1Z5"
+      refute invoice.layout_xml == @server_set["layout_xml"]
+    end
+
+    test "status, number, company and layout are ignored on update" do
+      {:ok, invoice} = Invoices.create_invoice(attrs())
+      {:ok, updated} = Invoices.update_invoice(invoice, @server_set)
+
+      assert updated.status == invoice.status
+      assert updated.invoice_number == invoice.invoice_number
+      assert updated.company_name == invoice.company_name
+      assert updated.company_gstin == invoice.company_gstin
+      refute updated.layout_xml == @server_set["layout_xml"]
+    end
   end
 
   describe "create_invoice/1" do

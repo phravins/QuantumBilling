@@ -314,7 +314,7 @@ defmodule QuantumBilling.TemplatesTest do
 
     test "editing the template does not change an invoice already issued",
          %{template: template, invoice: invoice} do
-      {:ok, invoice} = Invoices.update_invoice(invoice, %{"status" => "E-Invoice Generated"})
+      invoice = Repo.update!(Ecto.Changeset.change(invoice, status: "E-Invoice Generated"))
 
       trimmed = template |> Templates.document_of() |> drop(:amount_in_words)
 
@@ -330,7 +330,7 @@ defmodule QuantumBilling.TemplatesTest do
     # The other half of the rule: a rebrand is meant to reach everything.
     test "recolouring the template does reach an invoice already issued",
          %{template: template, invoice: invoice} do
-      {:ok, invoice} = Invoices.update_invoice(invoice, %{"status" => "E-Invoice Generated"})
+      invoice = Repo.update!(Ecto.Changeset.change(invoice, status: "E-Invoice Generated"))
       {:ok, _template} = Templates.update_template(template, %{"accent" => "#B91C1C"})
 
       {_document, accent, _logo} = Templates.document_for(Repo.reload!(invoice))
@@ -356,7 +356,7 @@ defmodule QuantumBilling.TemplatesTest do
     # re-freeze the document.
     test "a non-draft snapshot cannot be rewritten even when sent explicitly",
          %{invoice: invoice} do
-      {:ok, invoice} = Invoices.update_invoice(invoice, %{"status" => "E-Invoice Generated"})
+      invoice = Repo.update!(Ecto.Changeset.change(invoice, status: "E-Invoice Generated"))
       original = invoice.layout_xml
 
       {:ok, invoice} =

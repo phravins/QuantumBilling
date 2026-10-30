@@ -789,6 +789,23 @@ defmodule QuantumBillingWeb.InvoiceNewLiveTest do
       assert invoice.amount == 5_900_000
     end
 
+    test "a crafted post cannot set the status or the number", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices/new")
+
+      # Not through `form/3`, which only allows fields the page renders: this
+      # is the request a hand-edited form would send.
+      view
+      |> element("#invoice-form")
+      |> render_submit(%{
+        "invoice" => valid_params(%{"status" => "Paid", "invoice_number" => "FORGED-9"})
+      })
+
+      [row] = Invoices.list_invoices()
+      invoice = Invoices.get_invoice!(row.id)
+      assert invoice.status == "Draft"
+      assert invoice.invoice_number == "INV-0001"
+    end
+
     test "stores the company snapshot", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/invoices/new")
 

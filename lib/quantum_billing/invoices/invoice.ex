@@ -140,23 +140,36 @@ defmodule QuantumBilling.Invoices.Invoice do
   # No IRN/acknowledgement or Razorpay fields: those are written only from the
   # IRP's and Razorpay's answers (einvoice_changeset/2, Payments), never from a
   # form, so a crafted submission cannot plant a fake IRN or payment.
-  @castable ~w(invoice_number invoice_type invoice_date due_date payment_terms
+  # What a person (through the form) or an integration (through the API) may set.
+  @castable ~w(invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
                client_city client_pincode
-               company_name company_address company_gstin company_state
-               remarks terms status template_id layout_xml
+               remarks terms template_id
                currency exchange_rate export_type lut_number)a
+
+  # What only the application sets: the number from the series, the issuing
+  # company as it stood, the frozen layout, the status. Passed to `changeset/3`
+  # as `trusted`, never read from params — a crafted form post could otherwise
+  # mark an invoice Paid with no payment behind it, renumber it out of series,
+  # or issue it under another company's GSTIN.
+  @trusted ~w(invoice_number company_name company_address company_gstin company_state
+              status template_id layout_xml)a
 
   @doc """
   Builds an invoice changeset, including its line items.
 
   `sort_param` and `drop_param` are what let the form add and remove item rows
   before anything is saved.
+
+  `attrs` is what the caller sent and is cast against the fields a person may
+  set. `trusted` is what the application decided — see `@trusted` — and is
+  applied as-is, after `attrs`, so it wins.
   """
-  def changeset(invoice, attrs) do
+  def changeset(invoice, attrs, trusted \\ %{}) do
     invoice
     |> cast(attrs, @castable)
+    |> change(Map.take(trusted, @trusted))
     |> ensure_public_token()
     |> cast_assoc(:items,
       with: &InvoiceItem.changeset/2,

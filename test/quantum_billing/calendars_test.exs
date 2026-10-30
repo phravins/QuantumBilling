@@ -377,7 +377,7 @@ defmodule QuantumBilling.CalendarsTest do
       assert_received {:google, "POST", "www.googleapis.com",
                        "/calendar/v3/calendars/primary/events", body}
 
-      event = JSON.decode!(body)
+      event = Jason.decode!(body)
       assert event["id"] =~ ~r/\A[0-9a-v]+\z/
       assert event["start"]["date"]
       assert event["end"]["date"]

@@ -352,7 +352,6 @@ defmodule QuantumBilling.Recurring do
       place_of_supply: client.billing_state,
       invoice_date: today,
       due_date: Date.add(today, client.payment_terms_days || 30),
-      status: "Draft",
       remarks: "Generated automatically from recurring profile: #{profile.title}",
       items: items(profile)
     }

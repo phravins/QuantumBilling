@@ -59,11 +59,15 @@ defmodule QuantumBilling.EInvoiceTest do
             "client_pincode" => "400002",
             "items" => %{"0" => item}
           },
-          attrs
+          Map.delete(attrs, "status")
         )
       )
 
-    invoice
+    # Status is set by the application, never through create_invoice/1.
+    case attrs do
+      %{"status" => status} -> Repo.update!(Ecto.Changeset.change(invoice, status: status))
+      _no_status -> invoice
+    end
   end
 
   # The tree, so assertions are about structure rather than about a string that
