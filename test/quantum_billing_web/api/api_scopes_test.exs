@@ -12,31 +12,45 @@ defmodule QuantumBillingWeb.API.ScopesTest do
 
   alias QuantumBilling.ApiKeys.ApiKey
 
-  # {method, path builder, the scope it needs (nil = any key)}
-  defp routes(%{invoice: invoice, client: client, bill: bill}) do
+  # {method, route template, path, the scope it needs (nil = any key)}
+  defp routes(%{invoice: invoice, client: client, bill: bill, note: note}) do
+    i = invoice.id
+
     [
-      {:get, "/api/v1/me", nil},
-      {:get, "/api/v1/invoices", "invoices:read"},
-      {:get, "/api/v1/invoices/#{invoice.id}", "invoices:read"},
-      {:post, "/api/v1/invoices", "invoices:write"},
-      {:get, "/api/v1/clients", "clients:read"},
-      {:get, "/api/v1/clients/#{client.id}", "clients:read"},
-      {:post, "/api/v1/clients", "clients:write"},
-      {:get, "/api/v1/e-way-bills", "e_way_bills:read"},
-      {:get, "/api/v1/e-way-bills/#{bill.id}", "e_way_bills:read"}
+      {:get, "/api/v1/me", "/api/v1/me", nil},
+      {:get, "/api/v1/invoices", "/api/v1/invoices", "invoices:read"},
+      {:get, "/api/v1/invoices/:id", "/api/v1/invoices/#{i}", "invoices:read"},
+      {:post, "/api/v1/invoices", "/api/v1/invoices", "invoices:write"},
+      {:post, "/api/v1/invoices/:id/cancel", "/api/v1/invoices/#{i}/cancel", "invoices:write"},
+      {:post, "/api/v1/invoices/:id/payments", "/api/v1/invoices/#{i}/payments",
+       "invoices:payments"},
+      {:post, "/api/v1/invoices/:id/e-invoice", "/api/v1/invoices/#{i}/e-invoice",
+       "invoices:e_invoice"},
+      {:post, "/api/v1/invoices/:invoice_id/credit-notes", "/api/v1/invoices/#{i}/credit-notes",
+       "credit_notes:write"},
+      {:get, "/api/v1/credit-notes", "/api/v1/credit-notes", "credit_notes:read"},
+      {:get, "/api/v1/credit-notes/:id", "/api/v1/credit-notes/#{note.id}", "credit_notes:read"},
+      {:get, "/api/v1/clients", "/api/v1/clients", "clients:read"},
+      {:get, "/api/v1/clients/:id", "/api/v1/clients/#{client.id}", "clients:read"},
+      {:post, "/api/v1/clients", "/api/v1/clients", "clients:write"},
+      {:get, "/api/v1/e-way-bills", "/api/v1/e-way-bills", "e_way_bills:read"},
+      {:get, "/api/v1/e-way-bills/:id", "/api/v1/e-way-bills/#{bill.id}", "e_way_bills:read"}
     ]
   end
 
   setup do
-    invoice = invoice_fixture()
-    %{invoice: invoice, client: client_fixture(), bill: e_way_bill_fixture(invoice_fixture())}
+    client = client_fixture()
+    invoice = invoice_fixture(%{client_id: client.id})
+    {:ok, note} = QuantumBilling.CreditNotes.create_credit_note_for_invoice(invoice, %{})
+
+    %{invoice: invoice, client: client, bill: e_way_bill_fixture(invoice_fixture()), note: note}
   end
 
   test "each scope opens exactly its own routes", records do
     for scope <- ApiKey.scopes() do
       {raw, _key} = api_key_fixture([scope])
 
-      for {method, path, needed} <- routes(records) do
+      for {method, _template, path, needed} <- routes(records) do
         conn =
           case method do
             :get -> raw |> api_conn() |> get(path)
@@ -46,7 +60,8 @@ defmodule QuantumBillingWeb.API.ScopesTest do
           end
 
         if is_nil(needed) or needed == scope do
-          assert conn.status in [200, 422],
+          # 202: the e-invoice action queues; 404 never, the records exist.
+          assert conn.status in [200, 202, 422],
                  "#{scope} should reach #{method} #{path}, got #{conn.status}"
         else
           assert conn.status == 403,
@@ -70,9 +85,7 @@ defmodule QuantumBillingWeb.API.ScopesTest do
     covered =
       records
       |> routes()
-      |> Enum.map(fn {method, path, _scope} ->
-        {method, String.replace(path, ~r{/\d+$}, "/:id")}
-      end)
+      |> Enum.map(fn {method, template, _path, _scope} -> {method, template} end)
       |> Enum.sort()
 
     assert api_routes == covered

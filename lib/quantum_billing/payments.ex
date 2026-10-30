@@ -201,6 +201,28 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
+  Records a payment made outside the gateway — a bank transfer an accounting
+  system has matched, say — against `invoice`.
+
+  `amount` is paise and must cover the invoice: there is no partial-payment
+  ledger, so anything less is refused rather than recorded as paid in full.
+  `reference` is the payer's or bank's reference, kept as the payment id with
+  an `ext:` prefix so it is never mistaken for a Razorpay one.
+
+  Refused for an invoice already paid or cancelled. Otherwise the same as a
+  gateway payment: receipt, notification, `invoice.paid` webhook.
+  """
+  def record_payment(%Invoice{} = invoice, reference, amount, audit_opts \\ [])
+      when is_binary(reference) and is_integer(amount) do
+    cond do
+      invoice.status == "Paid" -> {:error, :already_paid}
+      invoice.status == "Cancelled" -> {:error, :cancelled}
+      amount < (invoice.grand_total || 0) -> {:error, :partial_payment}
+      true -> reconcile_payment(invoice, "ext:" <> reference, audit_opts)
+    end
+  end
+
+  @doc """
   Marks an invoice paid and tells everyone who needs to know.
 
   Already-paid invoices are left alone and reported as `{:ok, invoice}`: a
@@ -209,9 +231,12 @@ defmodule QuantumBilling.Payments do
   re-audit the payment or send the customer another receipt. The webhook ledger
   catches most repeats; this catches the rest.
   """
-  def reconcile_payment(%Invoice{status: "Paid"} = invoice, _payment_id), do: {:ok, invoice}
+  def reconcile_payment(invoice, payment_id, audit_opts \\ [])
 
-  def reconcile_payment(%Invoice{} = invoice, payment_id) do
+  def reconcile_payment(%Invoice{status: "Paid"} = invoice, _payment_id, _audit_opts),
+    do: {:ok, invoice}
+
+  def reconcile_payment(%Invoice{} = invoice, payment_id, audit_opts) do
     changeset =
       Ecto.Changeset.change(invoice, %{
         status: "Paid",
@@ -220,12 +245,18 @@ defmodule QuantumBilling.Payments do
 
     case Repo.update(changeset) do
       {:ok, updated} ->
-        Audit.log_event(:payment_received, "Invoice", updated.id,
-          details: %{
-            payment_id: payment_id,
-            # Whole rupees, as older entries in the log hold.
-            amount: div(updated.grand_total || 0, 100)
-          }
+        Audit.log_event(
+          :payment_received,
+          "Invoice",
+          updated.id,
+          Keyword.take(audit_opts, [:user_id, :api_key_id, :ip_address]) ++
+            [
+              details: %{
+                payment_id: payment_id,
+                # Whole rupees, as older entries in the log hold.
+                amount: div(updated.grand_total || 0, 100)
+              }
+            ]
         )
 
         # Queued: this runs inside a timed webhook request.

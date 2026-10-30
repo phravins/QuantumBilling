@@ -77,7 +77,14 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
         round_off: invoice.round_off,
         grand_total: invoice.grand_total
       },
-      e_invoice: %{irn: invoice.irn, ack_number: invoice.ack_number, ack_date: invoice.ack_date},
+      # `mode` is "demo" for an IRN made by the sandbox, which was never filed
+      # with the government; "live" for a real one; nil before registration.
+      e_invoice: %{
+        irn: invoice.irn,
+        ack_number: invoice.ack_number,
+        ack_date: invoice.ack_date,
+        mode: invoice.irn && invoice.irn_mode
+      },
       remarks: invoice.remarks,
       terms: invoice.terms,
       created_at: invoice.inserted_at,

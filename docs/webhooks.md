@@ -30,6 +30,7 @@ was when the event was queued.
 | `invoice.created` | `invoice` | An invoice is created (in the app, by the API, or by a recurring profile) |
 | `invoice.updated` | `invoice` | An invoice is edited |
 | `invoice.paid` | `invoice` | A payment is reconciled against an invoice |
+| `invoice.cancelled` | `invoice` | An invoice is cancelled |
 | `invoice.e_invoice_generated` | `invoice` | An IRN is registered |
 | `invoice.e_invoice_failed` | `invoice` | E-invoice registration fails |
 | `client.created` | `client` | A client is added |

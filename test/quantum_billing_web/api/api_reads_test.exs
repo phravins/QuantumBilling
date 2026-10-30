@@ -65,6 +65,21 @@ defmodule QuantumBillingWeb.API.ReadsTest do
     end
   end
 
+  describe "e-way bill status" do
+    test "a lapsed bill is reported Expired, not the stored Active" do
+      {raw, _key} = api_key_fixture(["e_way_bills:read"])
+      bill = e_way_bill_fixture()
+
+      bill
+      |> Ecto.Changeset.change(valid_until: ~N[2020-01-01 23:59:00])
+      |> QuantumBilling.Repo.update!()
+
+      body = raw |> api_conn() |> get(~p"/api/v1/e-way-bills/#{bill.id}") |> json_response(200)
+
+      assert body["data"]["status"] == "Expired"
+    end
+  end
+
   describe "paging" do
     test "defaults to 25 a page and refuses more than 100" do
       {raw, _key} = api_key_fixture(["invoices:read"])

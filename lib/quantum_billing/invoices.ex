@@ -92,22 +92,30 @@ defmodule QuantumBilling.Invoices do
     * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
     * `:page` / `:per_page`
     * `:count` — also count the matching invoices
+    * `:keyset` / `:before_id` — newest-created first, below `:before_id`,
+      instead of numbered pages; see `QuantumBilling.Paging.keyset/3`
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
     sort_field = Keyword.get(opts, :sort_field, :invoice_date)
     sort_dir = Keyword.get(opts, :sort_dir, :desc)
 
-    result =
+    query =
       Invoice.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
       |> client_where(Keyword.get(opts, :client))
-      |> Paging.page(&order(&1, sort_field, sort_dir),
-        page: Keyword.get(opts, :page, 1),
-        per_page: per_page,
-        count: Keyword.get(opts, :count, false)
-      )
+
+    result =
+      if Keyword.get(opts, :keyset, false) do
+        Paging.keyset(query, Keyword.get(opts, :before_id), per_page)
+      else
+        Paging.page(query, &order(&1, sort_field, sort_dir),
+          page: Keyword.get(opts, :page, 1),
+          per_page: per_page,
+          count: Keyword.get(opts, :count, false)
+        )
+      end
 
     shape(result, Keyword.get(opts, :records, false))
   end
@@ -827,6 +835,55 @@ defmodule QuantumBilling.Invoices do
     with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
       broadcast_change(failed, :invoice_changed)
       Webhooks.publish("invoice.e_invoice_failed", failed.id)
+    end
+  end
+
+  @doc """
+  Cancels an invoice: it keeps its number, leaves GSTR-1, and can no longer be
+  paid.
+
+  Refused, with the reason, when cancelling here would not be the whole story:
+
+    * `:already_cancelled`;
+    * `:paid` — money has moved; that needs a credit note, not a cancellation;
+    * `:irn_registered` — a live IRN has to be cancelled on the IRP, which this
+      application does not do;
+    * `:live_e_way_bill` — the goods are on a live e-way bill, which has to be
+      cancelled first.
+
+  `opts` takes `:user_id`, `:api_key_id` and `:ip_address` for the audit entry.
+  """
+  def cancel_invoice(%Invoice{} = invoice, reason, opts \\ []) when is_binary(reason) do
+    cond do
+      invoice.status == "Cancelled" ->
+        {:error, :already_cancelled}
+
+      invoice.status == "Paid" ->
+        {:error, :paid}
+
+      is_binary(invoice.irn) and not Invoice.demo_irn?(invoice) ->
+        {:error, :irn_registered}
+
+      QuantumBilling.EWayBills.live_bill_for_invoice(invoice.id) ->
+        {:error, :live_e_way_bill}
+
+      true ->
+        with {:ok, cancelled} <-
+               invoice |> Ecto.Changeset.change(status: "Cancelled") |> Repo.update() do
+          QuantumBilling.Audit.log_event(
+            :invoice_cancelled,
+            "Invoice",
+            cancelled.id,
+            Keyword.put(opts, :details, %{
+              "reason" => reason,
+              "number" => cancelled.invoice_number
+            })
+          )
+
+          broadcast_change(cancelled, :invoice_changed)
+          Webhooks.publish("invoice.cancelled", cancelled.id)
+          {:ok, cancelled}
+        end
     end
   end
 

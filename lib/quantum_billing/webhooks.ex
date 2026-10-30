@@ -52,6 +52,7 @@ defmodule QuantumBilling.Webhooks do
     "invoice.created" => "invoice",
     "invoice.updated" => "invoice",
     "invoice.paid" => "invoice",
+    "invoice.cancelled" => "invoice",
     "invoice.e_invoice_generated" => "invoice",
     "invoice.e_invoice_failed" => "invoice",
     "client.created" => "client",

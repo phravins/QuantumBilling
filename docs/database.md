@@ -13,9 +13,11 @@ One PostgreSQL database holds shared account data in `public` and separate busin
 | `public` | `users`, `users_tokens` | An account and its sign-in state are shared across businesses. |
 | `public` | `businesses`, `memberships`, `invitations` | Defines each business and who may access it. Roles belong to a membership. |
 | `public` | `installation_settings` | Sign-in policy for the whole installation. |
+| `public` | `api_keys`, `api_idempotency_keys` | External API keys (each names its business) and replayable write responses. Shared because a request finds its key before it knows its business. |
+| `public` | `rate_limits` | Rate-limit counters shared by every server (UNLOGGED). |
 | `public` | `oban_jobs`, `oban_peers` | Shared background-job storage and leader coordination. |
 | `public` | `schema_migrations` | Ecto's record of shared/public migrations. |
-| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events` | The selected business's operational data. |
+| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events`, `webhook_endpoints`, `webhook_deliveries`, `compliance_tasks`, `calendar_connections`, `calendar_event_links` | The selected business's operational data. |
 | Each `biz_N` | `schema_migrations` | Ecto's record of tenant migrations for that schema. |
 
 Business tables do not carry a `business_id` column. Their schema establishes ownership. Consequently, invoice ID `42` in `biz_1` and invoice ID `42` in `biz_2` are different invoices. Invoice numbers, GSTIN uniqueness, public invoice tokens, and webhook event uniqueness are enforced within each business schema.
@@ -168,6 +170,27 @@ Indexes cover `token` (unique), `email`, and `business_id`. The partial unique i
 | `singleton` | `boolean` | Required; `true` | Identifies the single policy row. |
 
 A unique index on `singleton` plus `CHECK (singleton)` allows at most one row, and `installation_settings_timeout_positive` requires a positive timeout. An empty table is permitted; the context returns in-memory defaults until settings are saved. Sign-in policy is shared because it applies before a user chooses a business.
+
+### `api_keys`
+
+| Columns | SQL type | Required/default | Meaning |
+| --- | --- | --- | --- |
+| `business_id` | `bigint` FK → `businesses` | Required | The one business the key reaches. |
+| `name` | `varchar(255)` | Required | The owner's label for the integration. |
+| `prefix` | `varchar(255)` | Required; unique | First characters of the key, for telling keys apart. |
+| `hashed_key` | `bytea` | Required; unique | SHA-256 of the key; the key itself is never stored. |
+| `scopes` | `varchar[]` | Required; `{}` | Granted scopes. |
+| `created_by_id` | `bigint` FK → `users` | Nullable; delete sets `NULL` | The owner who issued it. |
+| `last_used_at`, `last_used_ip` | timestamp, `varchar` | Nullable | Written at most once a minute. |
+| `expires_at`, `revoked_at` | timestamps | Nullable | Either makes the key unusable. |
+
+### `api_idempotency_keys`
+
+One row per `(api_key_id, key)` (unique): the request's SHA-256, then the response `status` and `response_body` once it finishes (`status` is `NULL` while it runs). Rows older than a day are ignored and pruned by the daily sweep. Deleted with their key.
+
+### `rate_limits`
+
+`key` (`bytea` primary key: SHA-256 of the limiter key, which holds IPs and emails), `count`, `reset_at`. UNLOGGED: counters are worthless after a crash and rewritten constantly. Expired rows are swept every minute.
 
 Sources: [account schema](../lib/quantum_billing/accounts/user.ex), [token schema and expiry rules](../lib/quantum_billing/accounts/user_token.ex), [invitation schema](../lib/quantum_billing/accounts/invitation.ex), [installation settings](../lib/quantum_billing/installation_settings.ex), [authentication migrations](../priv/repo/migrations/20260725171317_create_users_auth_tables.exs), [business-schema migration](../priv/repo/migrations/20261015115410_move_business_tables_into_their_own_schema.exs).
 
@@ -441,6 +464,8 @@ Source: [delivery schema](../lib/quantum_billing/mail/delivery.ex), [mail contex
 | `ip_address` | `varchar(255)` | Nullable |
 | `inserted_at` | timestamp | Required; no `updated_at` |
 
+`api_key_id` (FK → **`public.api_keys.id`**, nullable, delete sets `NULL`, indexed) names the API key when the change came through the API rather than a person.
+
 Indexes cover `user_id`, `action`, `(resource_type, resource_id)`, and `inserted_at`. This is the business-table foreign key that crosses into the shared account schema. `resource_id` is not a foreign key to every resource type. Audit details are not encrypted by the encrypted Ecto types. Audit pruning uses the business's configured retention; this is an application audit trail, not a database-wide immutable change log.
 
 Source: [audit schema](../lib/quantum_billing/audit/audit_log.ex), [audit context](../lib/quantum_billing/audit.ex).
@@ -458,6 +483,33 @@ Source: [audit schema](../lib/quantum_billing/audit/audit_log.ex), [audit contex
 The unique `(provider, event_id)` index provides an idempotency boundary within the business. `inserted_at` is indexed. Application statuses are processed/ignored/failed, with no status SQL check in the baseline. There is no invoice FK here; provider payload/reference reconciliation resolves the invoice.
 
 Source: [webhook-event schema](../lib/quantum_billing/webhooks/webhook_event.ex), [payment processing](../lib/quantum_billing/payments.ex), [encrypted payload migration](../priv/repo/migrations/20261010062124_encrypt_webhook_event_payloads.exs).
+
+### `webhook_endpoints`
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `url` | `text` | Required; https, checked against internal addresses |
+| `description` | `varchar(255)` | Nullable |
+| `events` | `varchar[]` | Required; subscribed event types |
+| `format` | `varchar(255)` | Required; `thin`, or `legacy` for the endpoint carried over from the old single setting (`CHECK`) |
+| `secret`, `previous_secret` | `bytea` | Encrypted; the previous one co-signs until `previous_secret_expires_at` |
+| `enabled` | `boolean` | Required; `true` |
+| `consecutive_failures` | `integer` | Required; `0`; ten switch the endpoint off |
+| `disabled_reason`, `disabled_at` | `varchar`, timestamp | Nullable |
+| `created_by_id` | `bigint` FK → **`public.users.id`** | Nullable; delete sets `NULL` |
+
+### `webhook_deliveries`
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `endpoint_id` | `bigint` FK → `webhook_endpoints` | Required; deleted with the endpoint |
+| `event_id` | `varchar(255)` | Required; shared by every endpoint for one event; unique per endpoint |
+| `event_type` | `varchar(255)` | Required |
+| `body` | `text` | Required; the exact bytes sent, frozen at publish time |
+| `status` | `varchar(255)` | `pending`, `succeeded`, `failed`, `cancelled` |
+| `attempts`, `last_status_code`, `last_error`, `last_attempt_at`, `delivered_at` | | Outcome of the latest try; the receiver's response body is never stored |
+
+Pruned after 90 days with the other ledgers. Source: [webhooks context](../lib/quantum_billing/webhooks.ex), [delivery worker](../lib/quantum_billing/workers/webhook_delivery_worker.ex).
 
 ### `compliance_tasks`
 
@@ -586,6 +638,9 @@ Source: [Oban migration entrypoint](../priv/repo/migrations/20260912112206_add_o
 | TOTP secret | AES-256-GCM encrypted `bytea` | `TOTP_ENCRYPTION_KEY`. |
 | SMTP password, Razorpay key secret, IRP password, outgoing webhook secret, Google Calendar refresh token, CalDAV password | AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`. |
 | Calendar feed token | SHA-256 hash | Raw token is shown once to the owner. |
+| API key | SHA-256 hash (`api_keys.hashed_key`) | Raw key is shown once to the owner. |
+| Webhook endpoint signing secrets | AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`; shown once to the owner. |
+| Rate-limit keys | SHA-256 hash | Keys hold IP and email addresses. |
 | Incoming webhook payload | JSON encoded, then AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`. |
 | Public invoice token | Plain random bearer token in `varchar(255)` | No encrypted Ecto type. |
 

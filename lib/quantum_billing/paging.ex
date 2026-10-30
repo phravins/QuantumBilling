@@ -58,6 +58,27 @@ defmodule QuantumBilling.Paging do
     end
   end
 
+  @doc """
+  Reads `per_page` rows of `query` with ids below `before_id` (or the newest,
+  for `nil`), newest id first. Returns `%{rows:, per_page:, has_next?:}`.
+
+  Keyset paging, for the API: it costs the same at any depth, and a row
+  inserted while a caller is paging cannot shift the next page. The id
+  compared is the query's first binding's.
+  """
+  def keyset(query, before_id, per_page) when is_integer(per_page) and per_page > 0 do
+    query = if before_id, do: where(query, [row], row.id < ^before_id), else: query
+
+    rows =
+      query
+      |> exclude(:order_by)
+      |> order_by([row], desc: row.id)
+      |> limit(^(per_page + 1))
+      |> Repo.all()
+
+    %{rows: Enum.take(rows, per_page), per_page: per_page, has_next?: length(rows) > per_page}
+  end
+
   defp look_ahead_page(query, order, page, per_page) do
     case read(query, order, page, per_page, per_page + 1) do
       [] when page > 1 ->

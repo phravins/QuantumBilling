@@ -13,9 +13,10 @@ defmodule QuantumBillingWeb.API.V1.EWayBillController do
     case Pagination.parse(params) do
       {:ok, page, per_page} ->
         opts =
-          [records: true, page: page, per_page: per_page]
+          [records: true]
           |> put_filter(:status, params["status"])
           |> put_filter(:search, params["search"])
+          |> then(&Pagination.context_opts(page, per_page, &1))
 
         json(
           conn,

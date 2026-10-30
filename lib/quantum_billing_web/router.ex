@@ -173,6 +173,12 @@ defmodule QuantumBillingWeb.Router do
     get "/invoices", InvoiceController, :index
     post "/invoices", InvoiceController, :create
     get "/invoices/:id", InvoiceController, :show
+    post "/invoices/:id/payments", InvoiceController, :record_payment
+    post "/invoices/:id/cancel", InvoiceController, :cancel
+    post "/invoices/:id/e-invoice", InvoiceController, :register_e_invoice
+    post "/invoices/:invoice_id/credit-notes", CreditNoteController, :create
+    get "/credit-notes", CreditNoteController, :index
+    get "/credit-notes/:id", CreditNoteController, :show
     get "/clients", ClientController, :index
     post "/clients", ClientController, :create
     get "/clients/:id", ClientController, :show

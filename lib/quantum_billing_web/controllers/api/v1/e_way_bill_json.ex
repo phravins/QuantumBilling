@@ -28,7 +28,9 @@ defmodule QuantumBillingWeb.API.V1.EWayBillJSON do
       number: bill.ewb_number,
       date: bill.ewb_date,
       valid_until: bill.valid_until,
-      status: bill.status,
+      # Derived, not stored: "Expired" is worked out from `valid_until`, so the
+      # column alone would call a lapsed bill "Active".
+      status: QuantumBilling.EWayBills.status(bill),
       distance_km: bill.distance_km,
       mode_of_transport: bill.mode_of_transport,
       vehicle_number: bill.vehicle_number,
