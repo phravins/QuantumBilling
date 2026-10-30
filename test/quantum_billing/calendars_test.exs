@@ -141,6 +141,18 @@ defmodule QuantumBilling.CalendarsTest do
       end
     end
 
+    test "a CalDAV name that rebinds inside the network is never connected to" do
+      QuantumBilling.FakeDNS.put("rebind-dav.example.test", [{10, 1, 2, 3}])
+
+      assert CaldavClient.put_event(
+               "https://rebind-dav.example.test/dav/",
+               "me",
+               @password,
+               "uid",
+               "ics"
+             ) == {:error, :blocked}
+    end
+
     test "the guard runs again before each request" do
       assert CaldavClient.put_event("https://127.0.0.1/dav/", "me", @password, "uid", "ics") ==
                {:error, :blocked}

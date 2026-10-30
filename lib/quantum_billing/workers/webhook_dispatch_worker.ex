@@ -42,21 +42,24 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
       is_nil(url) or url == "" ->
         :discard
 
-      # Re-checked here against DNS rebinding.
-      match?({:error, _}, UrlGuard.check(url)) ->
-        {:error, reason} = UrlGuard.check(url)
-        Logger.warning("[WebhookDispatchWorker] refusing #{event}: endpoint #{reason}")
-        :discard
-
       true ->
-        body = Jason.encode!(%{event: event, payload: args["payload"] || %{}, sent_at: now()})
-        post(url, body, organization.webhook_secret, event)
+        # Resolved, checked and pinned here, at send time: the request goes to
+        # the address that passed, so DNS cannot change its answer in between.
+        case UrlGuard.pin(url) do
+          {:ok, pinned_url, pin_options} ->
+            body = Jason.encode!(%{event: event, payload: args["payload"] || %{}, sent_at: now()})
+            post(pinned_url, pin_options, body, organization.webhook_secret, event)
+
+          {:error, reason} ->
+            Logger.warning("[WebhookDispatchWorker] refusing #{event}: endpoint #{reason}")
+            :discard
+        end
     end
   end
 
   def process(%Oban.Job{}), do: :discard
 
-  defp post(url, body, secret, event) do
+  defp post(url, pin_options, body, secret, event) do
     headers =
       [
         {"content-type", "application/json"},
@@ -65,15 +68,18 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorker do
         {"x-quantumbilling-timestamp", now()}
       ] ++ signature_header(body, secret)
 
-    case Req.post(url,
-           body: body,
-           headers: headers,
-           receive_timeout: @request_timeout_ms,
-           retry: false,
-           # Not followed: a redirect target never went through UrlGuard.
-           redirect: false,
-           decode_body: false
-         ) do
+    options =
+      [
+        body: body,
+        headers: headers,
+        receive_timeout: @request_timeout_ms,
+        retry: false,
+        # Not followed: a redirect target never went through UrlGuard.
+        redirect: false,
+        decode_body: false
+      ] ++ pin_options
+
+    case Req.post(url, options) do
       {:ok, %{status: status}} when status in 200..299 ->
         :ok
 

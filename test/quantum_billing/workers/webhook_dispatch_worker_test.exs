@@ -149,6 +149,32 @@ defmodule QuantumBilling.Workers.WebhookDispatchWorkerTest do
       assert :discard = run(%{"event" => "invoice.created", "payload" => %{}})
     end
 
+    test "a name that rebinds to an internal address is never connected to" do
+      QuantumBilling.FakeDNS.put("rebind-hook.example.test", [{169, 254, 169, 254}])
+
+      Settings.get_organization()
+      |> Ecto.Changeset.change(%{webhook_url: "https://rebind-hook.example.test/in"})
+      |> Repo.update!()
+
+      Req.Test.stub(__MODULE__, fn _conn -> flunk("a request followed the rebound name") end)
+
+      assert :discard = run(%{"event" => "invoice.created", "payload" => %{}})
+    end
+
+    test "the request goes to the address that was checked, under the original name" do
+      test_pid = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        send(test_pid, {:connected_to, conn.host})
+        Plug.Conn.send_resp(conn, 200, "ok")
+      end)
+
+      assert :ok = run(%{"event" => "invoice.created", "payload" => %{}})
+
+      # Req.Test sees the URL Req was given: the pinned address, not the name.
+      assert_receive {:connected_to, "203.0.113.10"}
+    end
+
     test "loopback is refused too" do
       Settings.get_organization()
       |> Ecto.Changeset.change(%{webhook_url: "http://127.0.0.1:5432/"})
