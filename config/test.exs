@@ -42,6 +42,10 @@ config :quantum_billing, :tenant_migration_lock, false
 # Calendar requests go to a stub instead of Google or a CalDAV server.
 config :quantum_billing, :calendar_req_options, plug: {Req.Test, QuantumBilling.Calendars}
 
+# In memory: sandboxed transactions would make async tests sharing a key wait
+# on each other. The Postgres backend has tests of its own.
+config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
+
 # Outbound URLs are resolved by a fake, so tests never depend on real DNS.
 config :quantum_billing, :url_guard_resolver, QuantumBilling.FakeDNS
 

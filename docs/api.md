@@ -88,8 +88,9 @@ validation errors. Error responses never repeat the values you sent.
 
 ## Rate limits
 
-Per key, per minute: **600 reads** and **60 writes**. Every response carries
-`x-ratelimit-limit` and `x-ratelimit-remaining`; a 429 carries `retry-after`.
+Per key, per minute: **600 reads** and **60 writes**, counted across every
+server the installation runs on. Every response carries `x-ratelimit-limit` and
+`x-ratelimit-remaining`; a 429 carries `retry-after`.
 
 ## Pagination
 
