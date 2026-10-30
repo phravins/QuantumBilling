@@ -9,9 +9,14 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   """
   use Phoenix.Component
 
-  import QuantumBillingWeb.CoreComponents, only: [icon: 1]
+  import QuantumBillingWeb.CoreComponents, only: [icon: 1, input: 1]
   import QuantumBillingWeb.DashboardComponents, only: [compliance_date_badge: 1]
 
+  import QuantumBillingWeb.SharedComponents,
+    only: [action_button_class: 0, secondary_button_class: 0]
+
+  alias Phoenix.LiveView.JS
+  alias QuantumBilling.Compliance
   alias QuantumBillingWeb.Format
 
   @doc """
@@ -59,7 +64,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
       />
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium">
-          {@obligation.type} - {@obligation.period_label}
+          {@obligation.type}<span :if={!@obligation[:task]}> - {@obligation.period_label}</span>
         </p>
 
         <p class={["text-xs", countdown_class(@obligation.days_until)]}>
@@ -95,7 +100,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   defp badge_tone(_days), do: :neutral
 
   # Literal class strings so Tailwind emits them.
-  defp status_tone("Filed"),
+  defp status_tone(status) when status in ["Filed", "Done"],
     do:
       "border-emerald-200 bg-emerald-50 text-emerald-700 " <>
         "dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
@@ -112,7 +117,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
 
   defp status_tone(_other), do: "border-base-300 bg-base-200 text-base-content/60"
 
-  defp dot_tone("Filed"), do: "bg-emerald-500"
+  defp dot_tone(status) when status in ["Filed", "Done"], do: "bg-emerald-500"
   defp dot_tone("Pending"), do: "bg-amber-500"
   defp dot_tone("Overdue"), do: "bg-rose-500"
   defp dot_tone(_other), do: "bg-base-content/30"
@@ -197,10 +202,16 @@ defmodule QuantumBillingWeb.ComplianceComponents do
 
       <div class="mt-3 flex items-center justify-center gap-3 border-t border-base-300 pt-3">
         <span
-          :for={status <- ~w(Filed Pending Overdue)}
+          :for={
+            {label, status} <- [
+              {"Filed or done", "Filed"},
+              {"Pending", "Pending"},
+              {"Overdue", "Overdue"}
+            ]
+          }
           class="flex items-center gap-1.5 text-xs text-base-content/60"
         >
-          <span class={["size-2 rounded-full", dot_tone(status)]} />{status}
+          <span class={["size-2 rounded-full", dot_tone(status)]} />{label}
         </span>
       </div>
     </div>
@@ -262,6 +273,108 @@ defmodule QuantumBillingWeb.ComplianceComponents do
           <dd class="mt-0.5 text-sm">{rule(@obligation.type)}</dd>
         </div>
       </dl>
+    </div>
+    """
+  end
+
+  @doc """
+  The dialog that adds or edits a task or reminder.
+  """
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :kind, :string, required: true
+  attr :editing?, :boolean, required: true
+
+  def task_dialog(assigns) do
+    ~H"""
+    <div
+      id="task-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-dialog-title"
+      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
+      phx-window-keydown="cancel_task"
+      phx-key="escape"
+    >
+      <div class="fixed inset-0 bg-base-content/30 backdrop-blur-sm" phx-click="cancel_task" />
+
+      <div class="relative w-full max-w-md rounded-box border border-base-300 bg-base-100 p-5 shadow-xl">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 id="task-dialog-title" class="text-sm font-semibold tracking-tight">
+              {if @editing?, do: "Edit", else: "Add"} {@kind}
+            </h2>
+
+            <p class="mt-0.5 text-xs text-base-content/60">
+              It appears with your filing deadlines and in any connected calendar.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            phx-click="cancel_task"
+            class="flex size-7 items-center justify-center rounded-field text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
+            aria-label="Close"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
+        </div>
+
+        <.form for={@form} id="task-form" phx-change="validate_task" phx-submit="save_task">
+          <div class="space-y-3">
+            <.input
+              field={@form[:title]}
+              type="text"
+              label="Title"
+              maxlength="200"
+              phx-debounce="300"
+              phx-mounted={JS.focus()}
+              required
+            />
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <.input field={@form[:due_date]} type="date" label="Due date" required />
+              <.input
+                field={@form[:category]}
+                type="select"
+                label="Category"
+                options={Compliance.task_categories()}
+              />
+            </div>
+            <.input
+              field={@form[:remind_days_before]}
+              type="number"
+              label="Remind me this many days before"
+              min="0"
+              max="365"
+            />
+            <.input
+              field={@form[:notes]}
+              type="textarea"
+              label="Notes"
+              maxlength="2000"
+              phx-debounce="300"
+            />
+          </div>
+
+          <div class="mt-4 flex justify-end gap-2">
+            <button
+              id="task-cancel"
+              type="button"
+              phx-click="cancel_task"
+              class={secondary_button_class()}
+            >
+              Cancel
+            </button>
+            <button
+              id="task-save"
+              type="submit"
+              phx-disable-with="Saving..."
+              class={action_button_class()}
+            >
+              {if @editing?, do: "Save changes", else: "Add #{@kind}"}
+            </button>
+          </div>
+        </.form>
+      </div>
     </div>
     """
   end

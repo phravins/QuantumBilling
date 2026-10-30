@@ -2,7 +2,9 @@ defmodule QuantumBilling.BackupTest do
   use QuantumBilling.DataCase, async: false
 
   alias QuantumBilling.Backup
+  alias QuantumBilling.Calendars.Connection
   alias QuantumBilling.Clients
+  alias QuantumBilling.Compliance.Task
   alias QuantumBilling.EWayBills
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
@@ -138,6 +140,54 @@ defmodule QuantumBilling.BackupTest do
       assert item.description == "Consulting"
       assert restored.grand_total == invoice.grand_total
       assert restored.client_id
+    end
+
+    test "brings back compliance tasks, without saying who made them" do
+      user = QuantumBilling.AccountsFixtures.user_fixture()
+
+      task =
+        Repo.insert!(%Task{
+          title: "Renew licence",
+          notes: "Ask the accountant",
+          category: "other",
+          kind: "reminder",
+          due_date: ~D[2026-11-20],
+          remind_days_before: 3,
+          created_by_id: user.id
+        })
+
+      json = Backup.export_json()
+      Repo.delete_all(Task)
+
+      assert {:ok, counts} = Backup.restore_json(json)
+      assert counts.compliance_tasks == 1
+
+      restored = Repo.get!(Task, task.id)
+      assert restored.title == "Renew licence"
+      assert restored.kind == "reminder"
+      assert restored.remind_days_before == 3
+      assert restored.created_by_id == nil
+    end
+
+    test "calendar logins stay out of the file, and survive a restore" do
+      secret = "calendar-password-not-real"
+
+      connection =
+        Repo.insert!(%Connection{
+          provider: "caldav",
+          secret: secret,
+          username: "calendar-login-name",
+          url: "https://calendar.example.com/dav/"
+        })
+
+      json = Backup.export_json()
+
+      refute json =~ secret
+      refute json =~ "calendar-login-name"
+      refute json =~ "calendar_connections"
+
+      assert {:ok, _counts} = Backup.restore_json(json)
+      assert Repo.get!(Connection, connection.id).secret == secret
     end
 
     # What is in the Bin is still data the business holds. A restore that

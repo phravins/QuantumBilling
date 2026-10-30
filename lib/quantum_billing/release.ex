@@ -38,6 +38,29 @@ defmodule QuantumBilling.Release do
     end
   end
 
+  @doc """
+  The business schemas with tenant migrations still to run, as
+  `[{schema, [version, ...]}]`.
+
+  `Phoenix.Ecto.CheckRepoStatus` only knows the public migrations, so a schema
+  left behind otherwise surfaces later as a "column does not exist" error on
+  whichever page reads the missing column first.
+  """
+  def pending_business_migrations(repo) do
+    for schema <- business_schemas(repo),
+        pending = pending_versions(repo, schema),
+        pending != [] do
+      {schema, pending}
+    end
+  end
+
+  defp pending_versions(repo, schema) do
+    for {:down, version, _name} <-
+          Ecto.Migrator.migrations(repo, [tenant_migrations_path()], prefix: schema) do
+      version
+    end
+  end
+
   @doc "Where the migrations that run in each business's schema live."
   def tenant_migrations_path do
     Application.app_dir(@app, "priv/repo/tenant_migrations")

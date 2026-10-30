@@ -32,6 +32,13 @@ defmodule QuantumBillingWeb.Router do
     plug QuantumBillingWeb.Plugs.ApiRateLimit
   end
 
+  # Calendar apps send no cookies and ask for `text/calendar`, so this has neither
+  # a session nor the `accepts` check of `:api`. The token in the URL is the access
+  # control, and the rate limit makes guessing it pointless.
+  pipeline :calendar_feed do
+    plug QuantumBillingWeb.Plugs.CalendarFeedRateLimit
+  end
+
   # Public legal pages, linked from sign-in and sign-up.
   scope "/", QuantumBillingWeb do
     pipe_through :browser
@@ -67,8 +74,42 @@ defmodule QuantumBillingWeb.Router do
       # owner's call, like handing out accounts.
       live "/settings/api-keys", SettingsLive.ApiKeys, :index
     end
+  end
+
+  # Controllers, because they write the OAuth state to the session and redirect
+  # off-site. Connecting a calendar is an owner's call inside a chosen business.
+  scope "/", QuantumBillingWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_business, :require_owner]
+
+    get "/integrations/google/connect", GoogleCalendarController, :connect
+    get "/integrations/google/callback", GoogleCalendarController, :callback
+  end
+
+  # Files get the Forbidden page instead of a redirect when nobody is signed in.
+  scope "/", QuantumBillingWeb do
+    pipe_through [:browser, :require_user_or_forbid, :require_business, :require_owner]
 
     get "/settings/backup/download", BackupController, :download
+  end
+
+  scope "/", QuantumBillingWeb do
+    pipe_through [:browser, :require_user_or_forbid, :require_business]
+
+    get "/reports/export", ReportsController, :export
+    get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
+    get "/invoices/:id/pdf", InvoicePdfController, :show
+    get "/invoices/:id/pdf/download", InvoicePdfController, :download
+    get "/e-way-bills/export", EWayBillExportController, :export
+    get "/e-way-bills/:id/print", EWayBillPdfController, :show
+    get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
+    get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
+  end
+
+  # Decides for itself: the answer depends on whose logo the file is.
+  scope "/", QuantumBillingWeb do
+    pipe_through :browser
+
+    get "/uploads/:file", UploadController, :show
   end
 
   # Before "/settings/:section", which would otherwise match "/settings/team".
@@ -105,16 +146,6 @@ defmodule QuantumBillingWeb.Router do
       live "/settings/:section", SettingsLive, :section
       live "/invoice-templates/:id", InvoiceTemplateDesignLive, :design
     end
-
-    # Outside the live_session: it takes only live routes.
-    get "/reports/export", ReportsController, :export
-    get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
-    get "/invoices/:id/pdf", InvoicePdfController, :show
-    get "/invoices/:id/pdf/download", InvoicePdfController, :download
-    get "/e-way-bills/export", EWayBillExportController, :export
-    get "/e-way-bills/:id/print", EWayBillPdfController, :show
-    get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
-    get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
   end
 
   # On :api, not :browser: a probe needs no session. Must stay above the catch-all.
@@ -122,6 +153,12 @@ defmodule QuantumBillingWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :index
+  end
+
+  scope "/", QuantumBillingWeb do
+    pipe_through :calendar_feed
+
+    get "/calendar/:slug/:token", CalendarFeedController, :show
   end
 
   # Before the "/api" scope below and the catch-all at the bottom, so that

@@ -32,8 +32,8 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     test "renders the four summary cards for the current financial year", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/compliance")
 
-      assert html =~ "Total Returns"
-      assert html =~ "Filed On Time"
+      assert html =~ "Total Tracked"
+      assert html =~ "Completed"
       assert html =~ "Pending"
       assert html =~ "Overdue"
       assert html =~ Compliance.financial_year_label(Date.utc_today())

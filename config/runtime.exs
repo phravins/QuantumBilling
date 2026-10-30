@@ -115,6 +115,11 @@ config :quantum_billing,
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
 
+# Google Calendar. Without both, Settings > Integrations says it is not configured.
+config :quantum_billing, :google_calendar,
+  client_id: System.get_env("GOOGLE_CALENDAR_CLIENT_ID"),
+  client_secret: System.get_env("GOOGLE_CALENDAR_CLIENT_SECRET")
+
 # Never in tests: it would replace the test adapter and send real mail.
 if (smtp_host = System.get_env("SMTP_HOST")) && config_env() != :test do
   smtp_port = String.to_integer(System.get_env("SMTP_PORT", "587"))

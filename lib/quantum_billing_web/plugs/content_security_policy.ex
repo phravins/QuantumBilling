@@ -50,8 +50,7 @@ defmodule QuantumBillingWeb.Plugs.ContentSecurityPolicy do
       # data: for the inlined logo.
       "img-src 'self' data:",
       "font-src 'self' data:",
-      # The LiveView socket; 'self' does not cover ws:.
-      "connect-src 'self' ws: wss:",
+      connect_src(QuantumBillingWeb.Endpoint.config(:url)),
       "frame-ancestors 'none'",
       "frame-src 'none'",
       "object-src 'none'",
@@ -59,5 +58,20 @@ defmodule QuantumBillingWeb.Plugs.ContentSecurityPolicy do
       "form-action 'self'"
     ]
     |> Enum.join("; ")
+  end
+
+  @doc """
+  Where the page may connect: itself and the LiveView socket, which `'self'` does
+  not cover in every browser.
+
+  Served over https, that is this host's `wss:` alone, so an injected script has
+  nowhere else to send what it reads. Development and test run on plain http,
+  often under another hostname, and keep the wider form.
+  """
+  def connect_src(url) do
+    case {url[:scheme], url[:host]} do
+      {"https", host} when is_binary(host) -> "connect-src 'self' wss://#{host}"
+      _not_https -> "connect-src 'self' ws: wss:"
+    end
   end
 end

@@ -289,3 +289,23 @@ a.btn:focus-visible {
     transform: translate(-50%, -50%);
   }
 }
+
+/* The Forbidden page's bar, timed to its 10-second refresh. */
+@keyframes qb-forbidden-countdown {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0;
+  }
+}
+
+.qb-forbidden-countdown {
+  animation: qb-forbidden-countdown 10s linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-forbidden-countdown {
+    animation: none;
+  }
+}

@@ -276,6 +276,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Blocked"), do: @negative
   defp status_badge_class("Expired"), do: @pending
   defp status_badge_class("Filed"), do: @positive
+  defp status_badge_class("Done"), do: @positive
   defp status_badge_class("Pending"), do: @pending
   defp status_badge_class("Overdue"), do: @negative
   defp status_badge_class(_other), do: @neutral

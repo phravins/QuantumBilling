@@ -459,6 +459,59 @@ The unique `(provider, event_id)` index provides an idempotency boundary within 
 
 Source: [webhook-event schema](../lib/quantum_billing/webhooks/webhook_event.ex), [payment processing](../lib/quantum_billing/payments.ex), [encrypted payload migration](../priv/repo/migrations/20261010062124_encrypt_webhook_event_payloads.exs).
 
+### `compliance_tasks`
+
+Tasks and reminders added by hand on the Compliance page. GST obligations are calculated from the rules and are not stored here.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `title` | `varchar(255)` | Required |
+| `notes` | `text` | Nullable |
+| `category` | `varchar(255)` | Required; `other` |
+| `due_date` | `date` | Required |
+| `kind` | `varchar(255)` | Required; `task` (or `reminder`) |
+| `status` | `varchar(255)` | Required; `open` (or `done`) |
+| `completed_at`, `reminded_at` | `timestamp(0)` | Nullable |
+| `remind_days_before` | `integer` | Required; `1` |
+| `created_by_id` | `bigint` FK to `public.users` | Nullable; set to null when the user is deleted |
+
+`due_date` and `status` are indexed. `reminded_at` is what makes a reminder post once.
+
+Source: [task schema](../lib/quantum_billing/compliance/task.ex), [compliance context](../lib/quantum_billing/compliance.ex).
+
+### `calendar_connections`
+
+One row per provider (`google`, `caldav`, `feed`), enforced by a unique index on `provider`.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `provider` | `varchar(255)` | Required |
+| `secret` | `bytea` | Nullable; encrypted Google refresh token or CalDAV password |
+| `url` | `text` | Nullable; CalDAV collection URL |
+| `username` | `varchar(255)` | Nullable; CalDAV login |
+| `calendar_id` | `varchar(255)` | Required; `primary` |
+| `feed_token_hash` | `bytea` | Nullable; hash of the private feed token, whose raw value is shown once |
+| `last_synced_at` | `timestamp(0)` | Nullable |
+| `last_error` | `varchar(255)` | Nullable; a fixed sentence, never provider response text |
+| `connected_by_id` | `bigint` FK to `public.users` | Nullable; set to null when the user is deleted |
+
+Source: [connection schema](../lib/quantum_billing/calendars/connection.ex), [calendars context](../lib/quantum_billing/calendars.ex).
+
+### `calendar_event_links`
+
+Maps each task or deadline to the event created for it, so a change updates that event instead of adding a second one.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `connection_id` | `bigint` FK to `calendar_connections` | Required; deleted with the connection |
+| `item_key` | `varchar(255)` | Required; unique per connection |
+| `external_id` | `text` | Required |
+| `etag` | `text` | Nullable |
+| `fingerprint` | `varchar(255)` | Required; unchanged items are not sent again |
+| `due_date` | `date` | Required |
+
+Source: [event link schema](../lib/quantum_billing/calendars/event_link.ex).
+
 ## 5. Relationship and deletion map
 
 ```mermaid
@@ -531,7 +584,8 @@ Source: [Oban migration entrypoint](../priv/repo/migrations/20260912112206_add_o
 | Email and invitation tokens | SHA-256 hash | Raw token is delivered to the recipient. |
 | Session tokens | Random bytes in `users_tokens.token` | Signed session/cookie handling protects transport. |
 | TOTP secret | AES-256-GCM encrypted `bytea` | `TOTP_ENCRYPTION_KEY`. |
-| SMTP password, Razorpay key secret, IRP password, outgoing webhook secret | AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`. |
+| SMTP password, Razorpay key secret, IRP password, outgoing webhook secret, Google Calendar refresh token, CalDAV password | AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`. |
+| Calendar feed token | SHA-256 hash | Raw token is shown once to the owner. |
 | Incoming webhook payload | JSON encoded, then AES-256-GCM encrypted `bytea` | `SECRETS_ENCRYPTION_KEY`. |
 | Public invoice token | Plain random bearer token in `varchar(255)` | No encrypted Ecto type. |
 
@@ -552,7 +606,7 @@ Sources: [cipher envelope](../lib/quantum_billing/encrypted/cipher.ex), [TOTP ty
 | `priv/repo/migrations` | `public`, with historical migrations that created the original business tables before their move | Shared account, membership, installation, and infrastructure changes. |
 | `priv/repo/tenant_migrations` | Every business schema using an Ecto prefix | Future changes to business-owned tables. |
 
-The tenant directory currently holds two migrations: `20261015115500_tenant_baseline` (creates the 13 business tables with their indexes, foreign keys and checks; already recorded as applied in `biz_1`, which received its tables by the schema transfer) and `20261015121215_drop_installation_rules_from_business_settings` (removes the sign-in rule columns from `organization_settings`). A new business runs both, so it ends with the same structure as `biz_1`; a test compares the two schemas' columns, indexes and constraints.
+The tenant directory starts with `20261015115500_tenant_baseline` (creates the 13 original business tables with their indexes, foreign keys and checks; already recorded as applied in `biz_1`, which received its tables by the schema transfer). Later migrations each make one change, such as `20261030120747_create_compliance_tasks` and `20261030120748_create_calendar_integrations`. A new business runs all of them, so it ends with the same structure as `biz_1`; a test compares the two schemas' columns, indexes and constraints.
 
 `mix ecto.migrate` is a project alias: it runs standard public migrations first, then `mix quantum_billing.migrate_businesses`. The latter enumerates every business, including archived ones. `QuantumBilling.Release.migrate/0` performs both phases in a release. See [setup](getting-started.md) and [deployment](deployment.md) for complete commands and environment setup.
 
@@ -590,7 +644,7 @@ Sources: [schema-transfer migration](../priv/repo/migrations/20261015115410_move
 
 The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.0` stores money in paise and can upgrade the supported older `2.0`/`2.1` files on restore.
 
-The export includes selected organization settings plus clients, templates, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, and audit logs. It retains deleted/archived markers. It omits protected credentials, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo bytes are not embedded; a path reference alone is not an asset backup.
+The export includes selected organization settings plus clients, templates, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, and audit logs. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo bytes are not embedded; a path reference alone is not an asset backup.
 
 Export streams explicit field maps inside one transaction. Restore replaces the listed business tables in one transaction, inserts parents before children in batches, and resynchronizes primary-key sequences. A failure rolls back the transaction. Omitted credentials must be configured separately; the file is not a copy of the application's encryption-key environment.
 

@@ -363,6 +363,10 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert build_conn() |> get(~p"/pay/#{invoice.public_token}/pdf") |> response(200)
     end
 
+    test "the calendar feed answers for an unknown token" do
+      assert build_conn() |> get("/calendar/main/not-a-real-token") |> response(404)
+    end
+
     test "the legal pages answer" do
       assert {:ok, _view, _html} = live(build_conn(), ~p"/terms")
       assert {:ok, _view, _html} = live(build_conn(), ~p"/privacy")

@@ -10,10 +10,8 @@ defmodule QuantumBillingWeb.SettingsLive do
   in Tax never trips over a blank field on General. Settings persist to
   `organization_settings` — the first business table in the app.
 
-  Two sections are honestly unbuilt: Backup & Restore needs backup tooling and
-  somewhere durable to put the archives, and Integrations needs real
-  third-party credentials. They render a panel saying so rather than offering
-  buttons that cannot work.
+  Integrations shows which government portal mode is in use and connects the
+  calendars that compliance deadlines are sent to, through `Calendars`.
 
   Customization is the one panel that is not purely a form: it carries a logo
   upload, so `save` consumes the uploaded entry before handing the params to
@@ -21,10 +19,13 @@ defmodule QuantumBillingWeb.SettingsLive do
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CalendarComponents, only: [calendar_cards: 1]
   import QuantumBillingWeb.SettingsComponents
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Calendars
+  alias QuantumBilling.Calendars.GoogleClient
   alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.EWayBills.NICClient
@@ -101,7 +102,8 @@ defmodule QuantumBillingWeb.SettingsLive do
        |> assign(:page_title, section(section).title)
        |> assign_form(section)
        |> assign_templates(section)
-       |> assign_deliveries(section)}
+       |> assign_deliveries(section)
+       |> assign_calendars(section)}
     end
   end
 
@@ -128,6 +130,20 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp assign_deliveries(socket) do
     assign(socket, :deliveries, Mail.list_recent_deliveries(8))
+  end
+
+  defp assign_calendars(socket, :integrations) do
+    socket
+    |> assign(:calendar_connections, Calendars.connections(socket.assigns.current_scope))
+    |> assign(:google_configured, GoogleClient.configured?())
+    |> assign(:new_feed_url, nil)
+    |> assign_caldav_form(Calendars.change_caldav())
+  end
+
+  defp assign_calendars(socket, _section), do: socket
+
+  defp assign_caldav_form(socket, changeset) do
+    assign(socket, :caldav_form, to_form(changeset, as: :caldav))
   end
 
   # Only here: ensure_default/0 writes.
@@ -307,11 +323,80 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # Like the events around them, these check the owner themselves: the section
+  # is guarded on navigation, but an event can be sent from any of them.
+  def handle_event("connect_caldav", %{"caldav" => params}, socket) do
+    owner_only(socket, fn ->
+      case Calendars.connect_caldav(socket.assigns.current_scope, params) do
+        {:ok, _connection} ->
+          socket
+          |> put_flash(:info, "CalDAV calendar connected. Your deadlines are on their way.")
+          |> assign_calendars(:integrations)
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          assign_caldav_form(socket, changeset)
+      end
+    end)
+  end
+
+  def handle_event("disconnect_calendar", %{"provider" => provider}, socket) do
+    owner_only(socket, fn ->
+      case Calendars.disconnect(socket.assigns.current_scope, provider) do
+        {:ok, _connection} ->
+          socket
+          |> put_flash(:info, "Disconnected. Events already in that calendar stay there.")
+          |> assign_calendars(:integrations)
+
+        {:error, _reason} ->
+          socket
+          |> put_flash(:error, "That calendar is already disconnected.")
+          |> assign_calendars(:integrations)
+      end
+    end)
+  end
+
+  def handle_event("sync_calendars", _params, socket) do
+    owner_only(socket, fn ->
+      _ = Calendars.enqueue_sync()
+
+      socket
+      |> put_flash(:info, "Sync started. Reload this page in a moment to see how it went.")
+      |> assign(
+        :calendar_connections,
+        Calendars.connections(socket.assigns.current_scope)
+      )
+    end)
+  end
+
+  def handle_event("regenerate_feed", _params, socket) do
+    owner_only(socket, fn ->
+      scope = socket.assigns.current_scope
+
+      case Calendars.regenerate_feed(scope) do
+        {:ok, token} ->
+          socket
+          |> assign_calendars(:integrations)
+          |> assign(:new_feed_url, url(~p"/calendar/#{scope.business.slug}/#{token <> ".ics"}"))
+
+        {:error, _changeset} ->
+          put_flash(socket, :error, "The calendar link could not be created. Try again.")
+      end
+    end)
+  end
+
   # A restore replaces every record in the business. The section is owner-only,
   # but an event can be sent from any section, so this checks again.
   def handle_event("restore_backup", _params, socket) do
     if Scope.owner?(socket.assigns.current_scope) do
       restore_backup(socket)
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
+  defp owner_only(socket, action) do
+    if Scope.owner?(socket.assigns.current_scope) do
+      {:noreply, action.()}
     else
       {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
     end
@@ -1116,6 +1201,13 @@ defmodule QuantumBillingWeb.SettingsLive do
         </li>
       </ul>
     </section>
+
+    <.calendar_cards
+      connections={@calendar_connections}
+      google_configured={@google_configured}
+      caldav_form={@caldav_form}
+      new_feed_url={@new_feed_url}
+    />
 
     <.form
       :let={f}

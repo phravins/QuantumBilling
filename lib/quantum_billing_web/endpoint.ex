@@ -17,9 +17,6 @@ defmodule QuantumBillingWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
-  # Before Plug.Static: uploaded content needs its own headers.
-  plug QuantumBillingWeb.Plugs.StaticHardening
-
   plug Plug.Static,
     at: "/",
     from: :quantum_billing,
@@ -32,6 +29,7 @@ defmodule QuantumBillingWeb.Endpoint do
     plug Phoenix.LiveReloader
     plug Phoenix.CodeReloader
     plug Phoenix.Ecto.CheckRepoStatus, otp_app: :quantum_billing
+    plug QuantumBillingWeb.Plugs.CheckBusinessMigrations
   end
 
   plug Phoenix.LiveDashboard.RequestLogger,
@@ -39,7 +37,7 @@ defmodule QuantumBillingWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
-  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: {__MODULE__, :log_level, []}
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
@@ -53,6 +51,17 @@ defmodule QuantumBillingWeb.Endpoint do
   plug Plug.Session, @session_options
   plug :forget_business
   plug QuantumBillingWeb.Router
+
+  @doc """
+  The level to log a request at. These paths carry a bearer token, so writing
+  them to the request log would hand access to anyone who can read the log.
+  """
+  def log_level(%Plug.Conn{path_info: ["calendar" | _rest]}), do: false
+  def log_level(%Plug.Conn{path_info: ["p" | _rest]}), do: false
+  def log_level(%Plug.Conn{path_info: ["pay" | _rest]}), do: false
+  def log_level(%Plug.Conn{path_info: ["users", "log-in", _token]}), do: false
+  def log_level(%Plug.Conn{path_info: ["users", "settings", "confirm-email", _token]}), do: false
+  def log_level(%Plug.Conn{}), do: :info
 
   # Bandit serves every request on a keep-alive connection from one process, so
   # the business chosen for the last request would otherwise still be set for

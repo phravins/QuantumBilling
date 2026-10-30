@@ -23,8 +23,16 @@ defmodule QuantumBillingWeb.ErrorHTMLTest do
       assert html =~ "QuantumBilling"
     end
 
+    test "renders the branded 403, sending people to sign in" do
+      html = render_to_string(QuantumBillingWeb.ErrorHTML, "403", "html", [])
+
+      assert html =~ "forbidden-illustration"
+      assert html =~ ~s(content="10;url=/users/log-in")
+    end
+
     test "falls back to the plain status message for other statuses" do
-      assert render_to_string(QuantumBillingWeb.ErrorHTML, "403", "html", []) == "Forbidden"
+      assert render_to_string(QuantumBillingWeb.ErrorHTML, "503", "html", []) ==
+               "Service Unavailable"
     end
   end
 

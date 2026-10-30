@@ -9,6 +9,10 @@ defmodule QuantumBillingWeb.ComplianceLive do
   yet — that needs the filings table — so obligations resolve to Pending or
   Overdue on dates alone.
 
+  Tasks and reminders added by hand join the same list as rows carrying `:task`,
+  so the table, calendar and rail need no second code path. Owners and staff can
+  both manage them.
+
   `mount/3` assigns raw filter and calendar state; `handle_event/3` only ever
   updates that state; `render/1` re-derives the visible rows on every pass, so
   there is a single source of truth.
@@ -19,20 +23,19 @@ defmodule QuantumBillingWeb.ComplianceLive do
   import QuantumBillingWeb.DashboardComponents, only: [stat_card: 1]
 
   alias QuantumBilling.Compliance
+  alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Settings
 
   def mount(_params, _session, socket) do
     today = Date.utc_today()
-
-    # Which returns are owed depends on the registration type.
-    obligations = Compliance.tracked_obligations(today, Settings.get_organization())
 
     {:ok,
      socket
      |> assign(:page_title, "Compliance")
      |> assign(:active_nav, :compliance)
      |> assign(:today, today)
-     |> assign(:obligations, obligations)
+     |> load_rows()
+     |> close_task_form()
      |> assign(:category, :all)
      |> assign(:status_filter, "All Status")
      |> assign(:calendar_year, today.year)
@@ -42,11 +45,69 @@ defmodule QuantumBillingWeb.ComplianceLive do
   end
 
   def handle_event("filter_category", %{"category" => category}, socket) do
-    {:noreply, assign(socket, :category, String.to_existing_atom(category))}
+    {:noreply, assign(socket, :category, Compliance.category_key(category))}
   end
 
   def handle_event("filter_status", %{"status" => status}, socket) do
+    status = if status in Compliance.statuses(), do: status, else: "All Status"
+
     {:noreply, assign(socket, :status_filter, status)}
+  end
+
+  def handle_event("new_task", %{"kind" => kind}, socket) when kind in ["task", "reminder"] do
+    {:noreply, open_task_form(socket, %Task{kind: kind}, kind)}
+  end
+
+  def handle_event("new_task", _params, socket), do: {:noreply, socket}
+
+  def handle_event("edit_task", %{"id" => id}, socket) do
+    case Compliance.get_task(socket.assigns.current_scope, id) do
+      nil -> {:noreply, task_gone(socket)}
+      task -> {:noreply, open_task_form(socket, task, task.kind)}
+    end
+  end
+
+  def handle_event("cancel_task", _params, socket) do
+    {:noreply, close_task_form(socket)}
+  end
+
+  def handle_event("validate_task", %{"task" => params}, socket) do
+    form =
+      socket.assigns.editing_task
+      |> Compliance.change_task(params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, :task_form, form)}
+  end
+
+  def handle_event("save_task", %{"task" => params}, socket) do
+    case save_task(socket, params) do
+      {:ok, _task} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Saved.")
+         |> close_task_form()
+         |> load_rows()}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :task_form, to_form(changeset))}
+
+      {:error, :not_open} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("complete_task", %{"id" => id}, socket) do
+    change_task(socket, id, &Compliance.complete_task/2)
+  end
+
+  def handle_event("reopen_task", %{"id" => id}, socket) do
+    change_task(socket, id, &Compliance.reopen_task/2)
+  end
+
+  def handle_event("delete_task", %{"id" => id}, socket) do
+    change_task(socket, id, &Compliance.delete_task/2)
   end
 
   def handle_event("prev_month", _params, socket) do
@@ -58,10 +119,17 @@ defmodule QuantumBillingWeb.ComplianceLive do
   end
 
   def handle_event("show_detail", %{"due" => due, "type" => type}, socket) do
-    due = Date.from_iso8601!(due)
-
     selected =
-      Enum.find(socket.assigns.obligations, &(&1.due_date == due and &1.type == type))
+      case Date.from_iso8601(due) do
+        {:ok, due} ->
+          Enum.find(
+            socket.assigns.obligations,
+            &(&1.due_date == due and &1.type == type and is_nil(&1[:task]))
+          )
+
+        {:error, _invalid} ->
+          nil
+      end
 
     {:noreply, assign(socket, :selected, selected)}
   end
@@ -72,11 +140,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
   # Clicking the selected day or an empty one clears the filter.
   def handle_event("select_day", %{"date" => date}, socket) do
-    date = Date.from_iso8601!(date)
-    already_selected? = socket.assigns.selected_date == date
-    carries_obligations? = Compliance.on_date(socket.assigns.obligations, date) != []
-
-    selected = if already_selected? or not carries_obligations?, do: nil, else: date
+    selected =
+      with {:ok, date} <- Date.from_iso8601(date),
+           false <- socket.assigns.selected_date == date,
+           [_ | _] <- Compliance.on_date(socket.assigns.obligations, date) do
+        date
+      else
+        _nothing_to_filter_by -> nil
+      end
 
     {:noreply, socket |> assign(:selected_date, selected) |> assign(:selected, nil)}
   end
@@ -92,6 +163,63 @@ defmodule QuantumBillingWeb.ComplianceLive do
      |> assign(:status_filter, "All Status")
      |> assign(:selected_date, nil)}
   end
+
+  # Which returns are owed depends on the registration type.
+  defp load_rows(socket) do
+    today = socket.assigns.today
+    scope = socket.assigns.current_scope
+
+    obligations = Compliance.tracked_obligations(today, Settings.get_organization())
+    tasks = scope |> Compliance.list_tasks() |> Enum.map(&Compliance.task_row(&1, today))
+
+    assign(socket, :obligations, Enum.sort_by(obligations ++ tasks, & &1.due_date, Date))
+  end
+
+  defp open_task_form(socket, task, kind) do
+    socket
+    |> assign(:editing_task, task)
+    |> assign(:task_kind, kind)
+    |> assign(:task_form, to_form(Compliance.change_task(task)))
+  end
+
+  defp close_task_form(socket) do
+    socket
+    |> assign(:editing_task, nil)
+    |> assign(:task_kind, nil)
+    |> assign(:task_form, nil)
+  end
+
+  defp save_task(%{assigns: %{editing_task: nil}}, _params), do: {:error, :not_open}
+
+  defp save_task(%{assigns: %{editing_task: %Task{id: nil} = task}} = socket, params) do
+    Compliance.create_task(socket.assigns.current_scope, task.kind, params)
+  end
+
+  defp save_task(%{assigns: %{editing_task: task}} = socket, params) do
+    Compliance.update_task(socket.assigns.current_scope, task, params)
+  end
+
+  defp change_task(socket, id, action) do
+    scope = socket.assigns.current_scope
+
+    case Compliance.get_task(scope, id) do
+      nil ->
+        {:noreply, task_gone(socket)}
+
+      task ->
+        {:ok, _task} = action.(scope, task)
+        {:noreply, socket |> assign(:selected, nil) |> load_rows()}
+    end
+  end
+
+  defp task_gone(socket) do
+    socket
+    |> put_flash(:error, "That item no longer exists.")
+    |> load_rows()
+  end
+
+  defp row_id(%{task: %Task{id: id}}), do: "task-#{id}"
+  defp row_id(row), do: "obligation-#{row.type}-#{row.due_date}"
 
   defp shift_calendar(socket, months) do
     shifted =
@@ -138,15 +266,42 @@ defmodule QuantumBillingWeb.ComplianceLive do
         <:subtitle>Track your GST compliance and filing status</:subtitle>
 
         <:actions>
-          <a href="#filing-calendar" phx-click="show_all" class={action_button_class()}>
-            <.icon name="hero-calendar-days" class="size-4" /> View Filing Calendar
-          </a>
+          <div class="flex flex-wrap items-center gap-2">
+            <a href="#filing-calendar" phx-click="show_all" class={secondary_button_class()}>
+              <.icon name="hero-calendar-days" class="size-4" /> View Filing Calendar
+            </a>
+            <button
+              id="add-reminder"
+              type="button"
+              phx-click="new_task"
+              phx-value-kind="reminder"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-bell" class="size-4" /> Add reminder
+            </button>
+            <button
+              id="add-task"
+              type="button"
+              phx-click="new_task"
+              phx-value-kind="task"
+              class={action_button_class()}
+            >
+              <.icon name="hero-plus" class="size-4" /> Add task
+            </button>
+          </div>
         </:actions>
       </.header>
 
+      <.task_dialog
+        :if={@task_form}
+        form={@task_form}
+        kind={@task_kind}
+        editing?={@editing_task.id != nil}
+      />
+
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <.stat_card
-          label="Total Returns"
+          label="Total Tracked"
           value={Integer.to_string(@summary.total)}
           icon="hero-document-text"
           tone={:info}
@@ -154,7 +309,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           delta_class="text-base-content/45"
         />
         <.stat_card
-          label="Filed On Time"
+          label="Completed"
           value={Integer.to_string(@summary.filed)}
           icon="hero-check-circle"
           tone={:success}
@@ -227,7 +382,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
             :if={@obligations == []}
             icon="hero-shield-check"
             title="No GST registration on file"
-            description="Add your GSTIN under Settings › Organization and the filing calendar for your registration will be tracked here."
+            description="Add your GSTIN under Settings › Organization and the filing calendar for your registration will be tracked here. You can add your own tasks and reminders at any time."
           />
           <.empty_state
             :if={@obligations != [] and @rows == []}
@@ -257,7 +412,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
                     <th class="pr-4 text-left">Status</th>
 
-                    <th class="pr-4 text-left">Filed Date</th>
+                    <th class="pr-4 text-left">Filed / Done</th>
 
                     <th class="text-left">Actions</th>
                   </tr>
@@ -266,13 +421,28 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 <tbody>
                   <tr
                     :for={row <- @rows}
-                    id={"obligation-#{row.type}-#{row.due_date}"}
+                    id={row_id(row)}
                     class={table_row_class()}
                   >
                     <td class="py-2.5 pr-4">
-                      <p class="font-medium">{row.type}</p>
+                      <p class="flex items-center gap-1.5 font-medium">
+                        <span class="truncate">{row.type}</span>
+                        <span
+                          :if={row[:task]}
+                          class="shrink-0 rounded-full border border-base-300 bg-base-200 px-1.5 text-2xs font-medium text-base-content/60"
+                        >
+                          Manual
+                        </span>
+                      </p>
 
                       <p class="text-xs text-base-content/60">{row.subtitle}</p>
+
+                      <p
+                        :if={row[:task] && row.task.notes}
+                        class="mt-0.5 line-clamp-2 max-w-xs text-xs text-base-content/45"
+                      >
+                        {row.task.notes}
+                      </p>
                     </td>
 
                     <td class="py-2.5 pr-4 text-base-content/60">{row.period_label}</td>
@@ -284,7 +454,53 @@ defmodule QuantumBillingWeb.ComplianceLive do
                     <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.filed_on)}</td>
 
                     <td class="py-2.5">
-                      <div class="flex gap-1">
+                      <div :if={row[:task]} class="flex gap-1">
+                        <button
+                          :if={row.status != "Done"}
+                          id={"task-complete-#{row.task.id}"}
+                          type="button"
+                          phx-click="complete_task"
+                          phx-value-id={row.task.id}
+                          class={row_action_class()}
+                          aria-label={"Mark #{row.type} done"}
+                        >
+                          <.icon name="hero-check" class="size-4" />
+                        </button>
+                        <button
+                          :if={row.status == "Done"}
+                          id={"task-reopen-#{row.task.id}"}
+                          type="button"
+                          phx-click="reopen_task"
+                          phx-value-id={row.task.id}
+                          class={row_action_class()}
+                          aria-label={"Reopen #{row.type}"}
+                        >
+                          <.icon name="hero-arrow-uturn-left" class="size-4" />
+                        </button>
+                        <button
+                          id={"task-edit-#{row.task.id}"}
+                          type="button"
+                          phx-click="edit_task"
+                          phx-value-id={row.task.id}
+                          class={row_action_class()}
+                          aria-label={"Edit #{row.type}"}
+                        >
+                          <.icon name="hero-pencil-square" class="size-4" />
+                        </button>
+                        <button
+                          id={"task-delete-#{row.task.id}"}
+                          type="button"
+                          phx-click="delete_task"
+                          phx-value-id={row.task.id}
+                          data-confirm={"Delete #{row.type}?"}
+                          class={row_action_class()}
+                          aria-label={"Delete #{row.type}"}
+                        >
+                          <.icon name="hero-trash" class="size-4" />
+                        </button>
+                      </div>
+
+                      <div :if={!row[:task]} class="flex gap-1">
                         <button
                           type="button"
                           phx-click="show_detail"

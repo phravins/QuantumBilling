@@ -89,7 +89,7 @@ config :tailwind,
 # also blanking `hsn_code` and `country_code`, which is the safer side to err on.
 config :phoenix,
        :filter_parameters,
-       ~w(password secret token code recovery api_key authorization)
+       ~w(password secret token code state recovery api_key authorization)
 
 # Configure Elixir's Logger
 config :logger, :default_formatter,
@@ -124,7 +124,8 @@ config :quantum_billing, Oban,
        {"0 2 * * *", QuantumBilling.Workers.AuditPruneWorker},
        # After the prune, and before the working day: a filing reminder is only
        # useful if it is already in the feed when somebody opens the app.
-       {"30 2 * * *", QuantumBilling.Workers.ComplianceReminderWorker}
+       {"30 2 * * *", QuantumBilling.Workers.ComplianceReminderWorker},
+       {"0 3 * * *", QuantumBilling.Workers.CalendarSyncWorker}
      ]}
   ]
 

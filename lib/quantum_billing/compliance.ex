@@ -23,7 +23,24 @@ defmodule QuantumBilling.Compliance do
 
   Every function takes the reference date explicitly so callers — and tests —
   never depend on when they run.
+
+  ## Tasks added by hand
+
+  `QuantumBilling.Compliance.Task` holds whatever the rules do not cover. A task
+  becomes a row of the same shape as an obligation through `task_row/2`, with
+  the record itself under `:task`, so the table, calendar and rail treat both
+  alike. Only the rows carrying `:task` can be edited.
   """
+  import Ecto.Query, warn: false
+
+  alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Audit
+  alias QuantumBilling.Calendars
+  alias QuantumBilling.Compliance.Task
+  alias QuantumBilling.Notifications
+  alias QuantumBilling.Repo
+
+  @max_id 9_223_372_036_854_775_807
 
   @monthly [
     {"GSTR-1", "Monthly Return", :returns, 11},
@@ -42,7 +59,7 @@ defmodule QuantumBilling.Compliance do
     {:other, "Other Compliances"}
   ]
 
-  @statuses ["All Status", "Filed", "Pending", "Overdue"]
+  @statuses ["All Status", "Filed", "Done", "Pending", "Overdue"]
 
   @doc """
   The financial year containing `date`, as `{first_day, last_day}`.
@@ -222,7 +239,7 @@ defmodule QuantumBilling.Compliance do
     total = length(obligations)
     counts = Enum.frequencies_by(obligations, & &1.status)
 
-    filed = Map.get(counts, "Filed", 0)
+    filed = Map.get(counts, "Filed", 0) + Map.get(counts, "Done", 0)
     pending = Map.get(counts, "Pending", 0)
     overdue = Map.get(counts, "Overdue", 0)
 
@@ -256,7 +273,7 @@ defmodule QuantumBilling.Compliance do
   """
   def upcoming(obligations, today \\ Date.utc_today(), limit \\ 5) do
     obligations
-    |> Enum.reject(&(&1.status == "Filed"))
+    |> Enum.reject(&(&1.status in ["Filed", "Done"]))
     |> Enum.map(&Map.put(&1, :days_until, Date.diff(&1.due_date, today)))
     |> Enum.sort_by(&{abs(&1.days_until), &1.days_until})
     |> Enum.take(limit)
@@ -330,9 +347,171 @@ defmodule QuantumBilling.Compliance do
   def categories, do: @categories
   def statuses, do: @statuses
 
+  @doc """
+  The category a client names, or `:all` for one that does not exist.
+
+  A closed list, so a forged value can neither create an atom nor crash the page.
+  """
+  def category_key(value) do
+    Enum.find_value(@categories, :all, fn {key, _label} ->
+      if to_string(key) == value, do: key
+    end)
+  end
+
   @doc "Human label for a category key."
   def category_label(key) do
     {_key, label} = Enum.find(@categories, {key, to_string(key)}, fn {k, _l} -> k == key end)
     label
   end
+
+  @doc "The categories a task can be filed under, as select options."
+  def task_categories do
+    for {key, label} <- @categories, key != :all, do: {label, to_string(key)}
+  end
+
+  @doc "The business's tasks, soonest first."
+  def list_tasks(%Scope{} = scope) do
+    in_business(scope, fn -> Repo.all(from t in Task, order_by: [asc: t.due_date, asc: t.id]) end)
+  end
+
+  @doc """
+  One task of this business, or `nil`.
+
+  Takes the raw id from a client, so a forged or oversized one finds nothing
+  rather than crashing the page.
+  """
+  def get_task(%Scope{} = scope, raw_id) do
+    case Ecto.Type.cast(:id, raw_id) do
+      {:ok, id} when is_integer(id) and id > 0 and id <= @max_id ->
+        in_business(scope, fn -> Repo.get(Task, id) end)
+
+      _invalid ->
+        nil
+    end
+  end
+
+  def change_task(%Task{} = task, attrs \\ %{}), do: Task.changeset(task, attrs)
+
+  @doc "Adds a task or reminder. `kind` and the author are set here, not by the form."
+  def create_task(%Scope{} = scope, kind, attrs) when kind in ["task", "reminder"] do
+    in_business(scope, fn ->
+      %Task{kind: kind, created_by_id: scope.user.id}
+      |> Task.changeset(attrs)
+      |> Repo.insert()
+      |> after_change(scope, :create_compliance_task)
+    end)
+  end
+
+  def update_task(%Scope{} = scope, %Task{} = task, attrs) do
+    in_business(scope, fn ->
+      task
+      |> Task.changeset(attrs)
+      |> Repo.update()
+      |> after_change(scope, :update_compliance_task)
+    end)
+  end
+
+  def complete_task(%Scope{} = scope, %Task{} = task) do
+    set_status(scope, task, "done", DateTime.utc_now(:second), :complete_compliance_task)
+  end
+
+  def reopen_task(%Scope{} = scope, %Task{} = task) do
+    set_status(scope, task, "open", nil, :reopen_compliance_task)
+  end
+
+  def delete_task(%Scope{} = scope, %Task{} = task) do
+    in_business(scope, fn ->
+      task
+      |> Repo.delete()
+      |> after_change(scope, :delete_compliance_task)
+    end)
+  end
+
+  defp set_status(scope, task, status, completed_at, action) do
+    in_business(scope, fn ->
+      task
+      |> Ecto.Changeset.change(status: status, completed_at: completed_at)
+      |> Repo.update()
+      |> after_change(scope, action)
+    end)
+  end
+
+  defp after_change({:ok, task} = result, scope, action) do
+    Audit.log_event(action, "ComplianceTask", task.id,
+      user_id: scope.user.id,
+      details: %{title: task.title, due_date: task.due_date}
+    )
+
+    # A task already inside its window should not wait for tomorrow's sweep.
+    remind_due_tasks(Date.utc_today())
+    _ = Calendars.enqueue_sync()
+
+    result
+  end
+
+  defp after_change(error, _scope, _action), do: error
+
+  defp in_business(%Scope{business: business}, fun), do: Repo.with_business(business, fun)
+
+  @doc "A task as a row of the same shape as an obligation."
+  def task_row(%Task{} = task, %Date{} = today) do
+    %{
+      type: task.title,
+      subtitle: if(task.kind == "reminder", do: "Reminder", else: "Task"),
+      category: category_key(task.category),
+      period_label: Calendar.strftime(task.due_date, "%b %Y"),
+      period_key: nil,
+      due_date: task.due_date,
+      status: task_status(task, today),
+      filed_on: task.completed_at && DateTime.to_date(task.completed_at),
+      task: task
+    }
+  end
+
+  defp task_status(%Task{status: "done"}, _today), do: "Done"
+
+  defp task_status(%Task{due_date: due_date}, today) do
+    if Date.compare(due_date, today) == :lt, do: "Overdue", else: "Pending"
+  end
+
+  @doc """
+  Posts to the feed, once, every open task inside its reminder window.
+
+  Returns how many were written. Runs inside the current business.
+  """
+  def remind_due_tasks(%Date{} = today) do
+    Task
+    |> where([t], t.status == "open" and is_nil(t.reminded_at))
+    |> Repo.all()
+    |> Enum.filter(&(Date.diff(&1.due_date, today) <= &1.remind_days_before))
+    |> Enum.map(&announce_task(&1, today))
+    |> Enum.count(&match?({:ok, %{}}, &1))
+  end
+
+  defp announce_task(%Task{} = task, today) do
+    days_until = Date.diff(task.due_date, today)
+
+    result =
+      Notifications.notify(%{
+        kind: "compliance",
+        severity: if(days_until < 0, do: "error", else: "warning"),
+        title: "#{task.title} #{due_phrase(days_until)}",
+        body: "Due #{Calendar.strftime(task.due_date, "%d %b %Y")}",
+        path: "/compliance",
+        dedupe_key: "compliance_task:#{task.id}:#{task.due_date}"
+      })
+
+    with {:ok, _written_or_duplicate} <- result do
+      task
+      |> Ecto.Changeset.change(reminded_at: DateTime.utc_now(:second))
+      |> Repo.update!()
+    end
+
+    result
+  end
+
+  defp due_phrase(0), do: "is due today"
+  defp due_phrase(1), do: "is due tomorrow"
+  defp due_phrase(days) when days < 0, do: "is overdue"
+  defp due_phrase(days), do: "is due in #{days} days"
 end

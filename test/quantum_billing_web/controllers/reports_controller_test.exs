@@ -87,7 +87,7 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
     test "requires authentication" do
       conn = get(build_conn(), ~p"/reports/export")
 
-      assert redirected_to(conn) == ~p"/users/log-in"
+      assert response(conn, 403)
     end
   end
 end

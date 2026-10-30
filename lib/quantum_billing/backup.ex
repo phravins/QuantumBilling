@@ -47,6 +47,7 @@ defmodule QuantumBilling.Backup do
 
   alias QuantumBilling.Audit.AuditLog
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Compliance.Task, as: ComplianceTask
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.PartBUpdate
@@ -120,6 +121,10 @@ defmodule QuantumBilling.Backup do
 
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
+  # No author: the file may be restored on an installation without that user.
+  @compliance_task_fields ~w(id title notes category due_date kind status completed_at
+                             remind_days_before reminded_at inserted_at)a
+
   # Parents before children, so foreign keys resolve on restore.
   @sections [
     {:clients, Client, @client_fields},
@@ -130,6 +135,7 @@ defmodule QuantumBilling.Backup do
     {:e_way_bill_part_b_updates, PartBUpdate, @part_b_fields},
     {:recurring_profiles, RecurringProfile, @profile_fields},
     {:credit_notes, CreditNote, @credit_note_fields},
+    {:compliance_tasks, ComplianceTask, @compliance_task_fields},
     {:audit_logs, AuditLog, @audit_fields}
   ]
 
@@ -237,6 +243,7 @@ defmodule QuantumBilling.Backup do
         fn ->
           # Children first.
           Repo.delete_all(AuditLog)
+          Repo.delete_all(ComplianceTask)
           Repo.delete_all(CreditNote)
           Repo.delete_all(InvoiceItem)
           Repo.delete_all(PartBUpdate)
@@ -256,7 +263,7 @@ defmodule QuantumBilling.Backup do
           # Rows keep their ids, so move every sequence past them.
           Enum.each(
             ~w(clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
-               invoice_templates recurring_profiles credit_notes audit_logs),
+               invoice_templates recurring_profiles credit_notes compliance_tasks audit_logs),
             &resync_sequence/1
           )
 

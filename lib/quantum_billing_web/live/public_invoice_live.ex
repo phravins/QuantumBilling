@@ -12,6 +12,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
   alias QuantumBilling.Payments
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Renderer
+  alias QuantumBillingWeb.InvoicePdfGenerator
 
   @doc """
   The customer's link to `invoice`. Named with the current business's slug, so
@@ -36,6 +37,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
       invoice ->
         {doc, accent, logo} = Templates.document_for(invoice)
+        # A visitor has no session, so /uploads refuses them.
+        logo = InvoicePdfGenerator.inline_logo(logo)
 
         if connected?(socket) do
           # This invoice only. The global topic put every invoice in the
@@ -117,6 +120,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
       invoice ->
         {doc, accent, logo} = Templates.document_for(invoice)
+        # A visitor has no session, so /uploads refuses them.
+        logo = InvoicePdfGenerator.inline_logo(logo)
 
         socket
         |> assign(:invoice, invoice)

@@ -91,7 +91,7 @@ defmodule QuantumBillingWeb.EInvoiceControllerTest do
     test "requires authentication" do
       assert build_conn()
              |> get(~p"/invoices/1/e-invoice.xml")
-             |> redirected_to() == ~p"/users/log-in"
+             |> response(403)
     end
   end
 end

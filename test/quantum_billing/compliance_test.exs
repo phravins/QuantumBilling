@@ -313,7 +313,7 @@ defmodule QuantumBilling.ComplianceTest do
       assert {:payments, "Payments"} in Compliance.categories()
       assert {:other, "Other Compliances"} in Compliance.categories()
 
-      assert Compliance.statuses() == ["All Status", "Filed", "Pending", "Overdue"]
+      assert Compliance.statuses() == ["All Status", "Filed", "Done", "Pending", "Overdue"]
     end
 
     test "category_label/1 names a key" do

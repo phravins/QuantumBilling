@@ -104,14 +104,17 @@ defmodule QuantumBillingWeb.InvoicePdfController do
 
           {:error, _reason} ->
             # No renderer: send the print page for the browser to save as PDF.
+            {doc, accent, logo} = Templates.document_for(invoice)
+
             conn
             |> put_root_layout(false)
             |> put_layout(false)
             |> render(:show,
               invoice: invoice,
-              doc: elem(Templates.document_for(invoice), 0),
-              accent: elem(Templates.document_for(invoice), 1),
-              logo: elem(Templates.document_for(invoice), 2)
+              doc: doc,
+              accent: accent,
+              # A visitor has no session, so /uploads refuses them.
+              logo: InvoicePdfGenerator.inline_logo(logo)
             )
         end
     end

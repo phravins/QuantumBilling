@@ -77,7 +77,7 @@ Settings are divided into independently saved sections. A change in one section 
 | Customization | Company logo and invoice design templates. |
 | Notifications | Invoice-created, e-way-bill-generated, and filing-reminder preferences, plus the reminder lead window. |
 | SMTP | Mail host, port, credentials, SSL setting, sender address/name, test delivery, and recent delivery results. |
-| Integrations | UPI details, Razorpay keys, IRP-related settings, and an outbound webhook URL/secret. |
+| Integrations | Calendar connections (Google Calendar, CalDAV, private feed), UPI details, Razorpay keys, IRP-related settings, and an outbound webhook URL/secret. |
 | Security | Allowed IP addresses/CIDRs, idle session timeout, mandatory two-factor preference, and audit retention. |
 | Preferences | Language and list page-size preferences. These settings should not be read as a promise that every screen is translated or consumes every preference. |
 | Backup & Restore | JSON business data export and restore. |
@@ -252,6 +252,10 @@ The compliance page generates a calendar from code-defined rules for GSTR-1, GST
 The tracked set depends on organization registration settings: no GSTIN yields an empty tracked set; composition settings select the quarterly composition row instead of monthly regular returns; annual rows are also generated. The dashboard currently uses the broader calendar function, so it can display obligations different from the registration-filtered page/reminder set.
 
 There is no persisted filing table or filing-status integration. `Compliance.filings/0` returns an empty list, so obligations become Pending or Overdue from dates alone and never Filed. A return already filed externally can still appear overdue here. Reminders are calendar prompts, not proof that a return is unfiled.
+
+Owners and staff can add their own tasks and reminders to the page. These are stored, can be edited, completed and deleted, and post one notification when their reminder falls due, whatever the filing-reminder setting says. Calculated GST obligations stay read-only.
+
+Owners can send tasks and deadlines to Google Calendar or a CalDAV server, or publish a private feed URL that any calendar app can subscribe to. This is one way: changes made in the calendar do not come back, and disconnecting leaves events already sent in place. The feed URL works without signing in, so treat it like a password and regenerate it if it leaks.
 
 The HSN finder searches a compiled, curated set of goods/service codes by keyword or code prefix and displays its stored rates, category, effective date, and source label. It is not a live government master lookup, and a missing result does not establish that a code does not exist. Application format validation and reference data should be reviewed against the requirements applicable to the actual transaction.
 

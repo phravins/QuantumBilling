@@ -75,9 +75,9 @@ The supervisor restarts a failed child independently. `config_change/3` forwards
 
 ## HTTP and LiveView lifecycle
 
-[`Endpoint`](../lib/quantum_billing_web/endpoint.ex) exposes the `/live` LiveView socket with WebSocket and long-poll transports. It serves static assets and uploads, optionally installs development reloaders, assigns request ids, emits telemetry, parses form/multipart/JSON bodies, loads the cookie session and dispatches to the router.
+[`Endpoint`](../lib/quantum_billing_web/endpoint.ex) exposes the `/live` LiveView socket with WebSocket and long-poll transports. It serves static assets, optionally installs development reloaders, assigns request ids, emits telemetry, parses form/multipart/JSON bodies, loads the cookie session and dispatches to the router.
 
-The JSON parser uses `RawBodyReader` to preserve raw callback bytes for signature verification. Uploaded content passes through `StaticHardening` before `Plug.Static` so its response headers can be tightened. Before router dispatch, the endpoint clears process-local business selection to prevent a keep-alive connection's previous request from carrying its schema into the next request.
+The JSON parser uses `RawBodyReader` to preserve raw callback bytes for signature verification. Uploads are not static assets: `UploadController` serves them after checking who is asking, with hardened response headers. Before router dispatch, the endpoint clears process-local business selection to prevent a keep-alive connection's previous request from carrying its schema into the next request.
 
 For a normal browser page:
 
@@ -235,7 +235,7 @@ If no PDF renderer is installed, mail attachment code can fall back to an accura
 - `Compliance.GSTNExporter` assembles GSTR-1 JSON sections from invoice items and credit notes, using database streaming/batched item preloads.
 - Report and e-way bill controllers generate downloadable CSV data; report rows are streamed rather than loading the entire dataset at once.
 - `Backup` version `3.0` streams explicit field maps in a transaction and accepts legacy `2.0`/`2.1` files through conversion. Restore replaces covered business tables transactionally in batches. It excludes credentials and does not restore users, login sessions or TOTP enrolments. It is a logical business export, not a replacement for a full PostgreSQL and upload-volume backup.
-- `Uploads` stores PNG, JPEG, GIF and WebP images under `priv/static/uploads`, with a 2 MB limit, magic-byte validation and content-derived filenames. SVG uploads are rejected. Current storage is a local filesystem, not S3.
+- `Uploads` stores PNG, JPEG, GIF and WebP images under `priv/static/uploads`, with a 2 MB limit, magic-byte validation and content-derived filenames. SVG uploads are rejected. Current storage is a local filesystem, not S3. These files are not served statically: `UploadController` serves a file only to a member of the business using it, and anyone else gets the 403 page.
 
 ## External integrations
 

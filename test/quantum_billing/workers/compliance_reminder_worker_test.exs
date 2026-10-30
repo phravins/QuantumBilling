@@ -1,6 +1,7 @@
 defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
   use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Notifications
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
@@ -112,6 +113,22 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
 
       assert {:ok, :disabled} = perform_job(%{"today" => Date.to_iso8601(@today)})
       assert Notifications.recent(50) == []
+    end
+
+    # Someone asked for these by hand, so the filing switch does not silence them.
+    test "a manual task still reminds when filing reminders are off" do
+      store(%{gstin: @gstin, notify_filing_reminders: false})
+
+      Repo.insert!(%Task{
+        title: "Renew licence",
+        category: "other",
+        due_date: ~D[2024-05-29],
+        remind_days_before: 3
+      })
+
+      assert {:ok, :disabled} = perform_job(%{"today" => Date.to_iso8601(@today)})
+      assert [title] = titles()
+      assert title =~ "Renew licence"
     end
 
     test "falls back to today rather than failing on an unusable date" do

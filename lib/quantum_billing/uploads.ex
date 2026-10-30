@@ -4,7 +4,8 @@ defmodule QuantumBilling.Uploads do
   from.
 
   Files land in `priv/static/uploads`, which `QuantumBillingWeb.static_paths/0`
-  lists so the endpoint will serve them. The stored name is derived from the
+  leaves out on purpose: `QuantumBillingWeb.UploadController` serves them, after
+  checking who is asking. The stored name is derived from the
   file's own contents rather than the name it arrived with: a user-supplied
   filename has no business reaching the filesystem, and hashing means uploading
   the same image twice costs one file instead of two.
@@ -93,6 +94,23 @@ defmodule QuantumBilling.Uploads do
   end
 
   def delete(_other), do: {:error, "not a stored upload"}
+
+  @doc """
+  The file on disk and its content type for a stored upload's name, or `:error`
+  for a name that is not one. A name comes from the URL, so one with a path in
+  it, or a type `store/2` would never have written, stops here.
+  """
+  def locate(name) when is_binary(name) do
+    with false <- String.contains?(name, ["/", "\\", "..", <<0>>]),
+         {content_type, _extension} <-
+           Enum.find(@content_types, fn {_type, ext} -> Path.extname(name) == ext end),
+         file = Path.join(directory(), name),
+         true <- File.regular?(file) do
+      {:ok, file, content_type}
+    else
+      _not_a_stored_upload -> :error
+    end
+  end
 
   @doc "Where uploads are written. Public so tests can clean up after themselves."
   def directory do

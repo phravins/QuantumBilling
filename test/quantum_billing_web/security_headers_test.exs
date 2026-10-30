@@ -12,6 +12,8 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
 
   import Phoenix.LiveViewTest
 
+  alias QuantumBillingWeb.Plugs.ContentSecurityPolicy
+
   setup :register_and_log_in_user
 
   defp csp(conn) do
@@ -49,6 +51,11 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
       # One nonce per response, so a script injected into a stored field
       # cannot carry a valid one.
       assert html |> String.split(~s(nonce="#{nonce}")) |> length() == 2
+    end
+
+    test "over https, the socket may only reach this host" do
+      assert ContentSecurityPolicy.connect_src(scheme: "https", host: "billing.example.com") ==
+               "connect-src 'self' wss://billing.example.com"
     end
 
     test "give a different nonce to every response", %{conn: conn} do
@@ -147,6 +154,13 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
       path = Path.join(uploads, name)
       File.write!(path, <<0x89, "PNG\r\n", 0x1A, "\n", 0, 0, 0, 0>>)
       on_exit(fn -> File.rm(path) end)
+
+      {:ok, _} =
+        QuantumBilling.Settings.update_section(
+          QuantumBilling.Settings.get_organization(),
+          %{"doc_logo_path" => "/uploads/#{name}"},
+          :customization
+        )
 
       %{name: name}
     end

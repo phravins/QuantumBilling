@@ -17,10 +17,9 @@ defmodule QuantumBillingWeb do
   those modules here.
   """
 
-  # `uploads` is user-supplied content (company logos), served from
-  # `priv/static/uploads`. Without it listed here the endpoint refuses to serve
-  # anything written there, so an uploaded logo 404s.
-  def static_paths, do: ~w(assets fonts images uploads favicon.ico robots.txt)
+  # `uploads` is deliberately absent: Plug.Static runs before the session, so
+  # anyone holding a URL could read the file. UploadController serves them.
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 
   def router do
     quote do

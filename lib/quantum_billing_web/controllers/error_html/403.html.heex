@@ -1,0 +1,90 @@
+<%!-- Standalone document, like 404. The refresh needs no script, so the policy allows it. --%>
+<% redirect_to = assigns[:redirect_to] || ~p"/users/log-in" %> <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content={"10;url=#{redirect_to}"} />
+    <title>Access forbidden · QuantumBilling</title>
+    <link rel="stylesheet" href={~p"/assets/css/app.css"} />
+  </head>
+
+  <body class="antialiased">
+    <div class="relative flex min-h-screen flex-col items-center justify-center bg-base-100 px-4 py-20">
+      <div class="absolute left-4 top-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-base-content md:left-8 md:top-8">
+        <.icon name="hero-receipt-percent" class="size-6" /> QuantumBilling
+      </div>
+
+      <div id="forbidden" class="mx-auto flex w-full max-w-md flex-col items-center text-center">
+        <svg
+          id="forbidden-illustration"
+          viewBox="0 0 240 180"
+          class="w-56 text-primary"
+          fill="none"
+          role="img"
+          aria-label="A locked document"
+        >
+          <ellipse cx="120" cy="164" rx="84" ry="9" fill="currentColor" opacity="0.08" />
+          <path
+            d="M72 22h64l32 32v96a8 8 0 0 1-8 8H72a8 8 0 0 1-8-8V30a8 8 0 0 1 8-8Z"
+            fill="currentColor"
+            opacity="0.08"
+            stroke="currentColor"
+            stroke-width="3"
+          />
+          <path d="M136 22v24a8 8 0 0 0 8 8h24" stroke="currentColor" stroke-width="3" />
+          <path
+            d="M82 62h36M82 76h60"
+            stroke="currentColor"
+            stroke-width="4"
+            stroke-linecap="round"
+            opacity="0.35"
+          />
+          <path
+            d="M100 104V90a20 20 0 0 1 40 0v14"
+            stroke="currentColor"
+            stroke-width="6"
+            stroke-linecap="round"
+          />
+          <rect x="88" y="102" width="64" height="46" rx="9" fill="currentColor" />
+          <circle cx="120" cy="121" r="6" class="fill-base-100" />
+          <path d="M120 125v10" class="stroke-base-100" stroke-width="4" stroke-linecap="round" />
+        </svg>
+
+        <p class="mt-6 text-5xl font-semibold tracking-tight text-base-content/20">403</p>
+
+        <h1 class="mt-4 text-2xl font-semibold tracking-tight text-base-content">
+          You don't have access to this file
+        </h1>
+
+        <p class="mt-2 text-sm text-base-content/60">
+          <%= if assigns[:signed_in?] do %>
+            This file doesn't belong to the business you have open.
+          <% else %>
+            Files in QuantumBilling are private. Sign in to see the ones that are yours.
+          <% end %>
+        </p>
+
+        <div
+          class="mt-8 h-1 w-full overflow-hidden rounded-full bg-base-content/10"
+          aria-hidden="true"
+        >
+          <div id="forbidden-countdown" class="qb-forbidden-countdown h-full bg-primary"></div>
+        </div>
+
+        <p class="mt-3 text-xs text-base-content/60">
+          Taking you {if(assigns[:signed_in?], do: "back", else: "to sign in")} in 10 seconds.
+        </p>
+
+        <a
+          id="forbidden-continue"
+          href={redirect_to}
+          class="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-content transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          {if(assigns[:signed_in?], do: "Go back now", else: "Sign in now")}
+          <.icon name="hero-arrow-right" class="size-4" />
+        </a>
+      </div>
+    </div>
+  </body>
+</html>

@@ -81,6 +81,15 @@ Port 465 uses implicit TLS; other ports require STARTTLS. Verification normally 
 | `RAZORPAY_WEBHOOK_SECRET` | Unset | Verify incoming signatures; absent value causes deliveries to be rejected |
 
 UPI VPA and payee name are business settings and are printed on invoice/payment documents. They are payment instructions, not authentication secrets. Simulated payment URLs do not establish payment collection. Incoming Razorpay requests go to `/api/webhooks/razorpay/:slug` for the named business; the legacy `/api/webhooks/razorpay` path selects business 1. The verification secret is currently installation-level. See [Business](Business.md) for status transitions and [architecture](technical-architecture.md) for validation.
+## Calendars
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GOOGLE_CALENDAR_CLIENT_ID` | Unset | OAuth client ID. Without both Google values, the Google card says it is not configured and everything else keeps working |
+| `GOOGLE_CALENDAR_CLIENT_SECRET` | Unset | OAuth client secret |
+
+Create a web application OAuth client in Google Cloud, enable the Google Calendar API, and register `https://<your-site>/integrations/google/callback` as the redirect URI. The app asks only for the `calendar.events` scope. CalDAV and the private feed need no installation configuration: owners set them up in Settings → Integrations. CalDAV addresses must use HTTPS and cannot point inside the server's own network.
+
 ## Government portal clients
 
 | Variable | Default | Meaning |

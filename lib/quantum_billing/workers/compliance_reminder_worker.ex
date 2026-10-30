@@ -30,6 +30,11 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   filed at the GST portal will still be reminded about here. Stating it plainly
   rather than hiding it: the reminder is honest about being a deadline, not a
   status, and it stops being a nuisance the moment filing records land.
+
+  ## Tasks added by hand
+
+  These are reminded about whatever the filing-reminder switch says: somebody
+  asked for each one individually, with its own lead time.
   """
   use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
@@ -42,6 +47,8 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   @impl QuantumBilling.Worker
   def process(%Oban.Job{args: args}) do
     organization = Settings.get_organization()
+
+    Compliance.remind_due_tasks(today(args))
 
     if organization.notify_filing_reminders == false do
       {:ok, :disabled}

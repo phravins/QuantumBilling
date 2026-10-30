@@ -17,6 +17,8 @@ flowchart LR
 
 The reverse proxy is an external deployment component that the repository does not configure. The release listens on `PORT` (default 4000). Production URLs use HTTPS/port 443, and `force_ssl` honors `x-forwarded-proto`; localhost is excluded.
 
+Run the app only behind that proxy, and do not expose `PORT` directly. The app trusts `x-forwarded-proto`, so the proxy must overwrite that header on every request. If clients can reach the app directly, they can send the header themselves and be treated as if they were on HTTPS.
+
 No Redis, proxy, object store, or separate worker service is needed. Each running app release supervises its own Oban instance.
 
 ## OTP release
@@ -83,7 +85,7 @@ Queues share the Repo connection pool with web requests:
 | `mailers` | 5 | Document construction and mail delivery |
 | `recurring` | 5 | Recurring invoice generation |
 | `webhooks` | 10 | Outgoing endpoint delivery |
-| `maintenance` | 2 | Retention and compliance reminders |
+| `maintenance` | 2 | Retention, compliance reminders and calendar sync |
 
 Cron is evaluated in UTC:
 
@@ -92,6 +94,7 @@ Cron is evaluated in UTC:
 | Daily 01:30 | Recurring billing sweep |
 | Daily 02:00 | Audit/delivery/webhook retention |
 | Daily 02:30 | Compliance reminder sweep |
+| Daily 03:00 | Calendar sync sweep |
 | Weekly | Oban job-table reindexing |
 
 Oban leader election coordinates Cron across nodes. The pruner removes completed job history after seven days; Lifeline rescues jobs stuck executing after 30 minutes. Audit retention comes from settings, and email/webhook ledger retention is 90 days in the maintenance worker. See individual worker modules for retry/backoff and uniqueness rules.

@@ -8,10 +8,6 @@ defmodule QuantumBillingWeb.ErrorHTML do
 
   embed_templates "error_html/*"
 
-  def render("403.html", %{message: message}) when is_binary(message) do
-    message
-  end
-
   def render(template, _assigns) do
     Phoenix.Controller.status_message_from_template(template)
   end

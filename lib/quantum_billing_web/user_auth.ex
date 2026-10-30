@@ -531,6 +531,45 @@ defmodule QuantumBillingWeb.UserAuth do
     end
   end
 
+  @doc """
+  Plug for routes that serve a file. Someone not signed in gets the Forbidden
+  page, which sends them to sign in, rather than an immediate redirect.
+  """
+  def require_user_or_forbid(conn, _opts) do
+    if conn.assigns.current_scope && conn.assigns.current_scope.user do
+      conn
+    else
+      forbidden(conn)
+    end
+  end
+
+  @doc """
+  Answers with the Forbidden page and halts.
+
+  Its refresh goes to sign-in, and sign-in comes back to this URL. Someone
+  already signed in goes to the business picker instead: the log-in page would
+  only bounce them back into the application.
+  """
+  def forbidden(conn) do
+    signed_in? = match?(%{user: %{}}, conn.assigns[:current_scope])
+
+    conn =
+      if signed_in?, do: conn, else: maybe_store_return_to(conn)
+
+    conn
+    |> put_status(:forbidden)
+    |> put_resp_header("cache-control", "no-store")
+    |> put_format("html")
+    |> put_view(html: QuantumBillingWeb.ErrorHTML)
+    |> put_root_layout(html: false)
+    |> put_layout(html: false)
+    |> render(:"403",
+      signed_in?: signed_in?,
+      redirect_to: if(signed_in?, do: ~p"/businesses", else: ~p"/users/log-in")
+    )
+    |> halt()
+  end
+
   # Only when the visitor asked for a specific page.
   defp maybe_explain_redirect(conn) do
     if current_path(conn) == "/" do

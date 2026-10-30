@@ -39,6 +39,9 @@ config :quantum_billing, razorpay_sandbox: true
 # test would wait on itself.
 config :quantum_billing, :tenant_migration_lock, false
 
+# Calendar requests go to a stub instead of Google or a CalDAV server.
+config :quantum_billing, :calendar_req_options, plug: {Req.Test, QuantumBilling.Calendars}
+
 # Configure Oban for inline testing
 config :quantum_billing, Oban, testing: :inline
 
