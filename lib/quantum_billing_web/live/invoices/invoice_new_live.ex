@@ -206,19 +206,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
+  # `client_id` stays as the form sent it — a string — so the form's own
+  # comparisons against the picker keep working; everything else is the shared
+  # snapshot the API uses too.
   defp copy_client(params, client) do
-    Map.merge(params, %{
-      "client_name" => client.name,
-      "client_gstin" => client.gstin,
-      # Every GSTIN contains the PAN.
-      "client_pan" => present(client.pan) || GST.pan_from_gstin(client.gstin),
-      "client_email" => client.email,
-      "client_state" => client.billing_state,
-      "client_billing_address" => billing_address(client),
-      # Separate fields for the e-invoice export.
-      "client_city" => client.billing_city,
-      "client_pincode" => client.billing_pin
-    })
+    Map.merge(params, Map.delete(Invoices.client_snapshot(client), "client_id"))
   end
 
   # A typed name that exactly matches a client selects that client,
@@ -269,18 +261,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     })
   end
 
-  defp billing_address(client) do
-    [
-      client.name,
-      client.billing_line1,
-      client.billing_line2,
-      [client.billing_city, client.billing_state] |> Enum.reject(&is_nil/1) |> Enum.join(", "),
-      client.billing_pin
-    ]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join("\n")
-  end
-
+  # A named term implies the due date; "Custom" leaves whatever is in the box.
   defp apply_payment_term(params) do
     with {:ok, invoice_date} <- Date.from_iso8601(params["invoice_date"] || ""),
          %Date{} = due <- Invoice.due_date_for(invoice_date, params["payment_terms"]) do

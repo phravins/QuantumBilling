@@ -362,7 +362,10 @@ defmodule QuantumBilling.EWayBills do
         per_page: per_page
       )
 
-    %{result | rows: Enum.map(result.rows, &to_row/1)}
+    # `records: true` hands back the bills themselves, for the API.
+    if Keyword.get(opts, :records, false),
+      do: result,
+      else: %{result | rows: Enum.map(result.rows, &to_row/1)}
   end
 
   @doc """
@@ -471,6 +474,20 @@ defmodule QuantumBilling.EWayBills do
           "updated_on" => bill.inserted_at
         })
       )
+    end
+  end
+
+  @doc """
+  A bill by id, visible on exactly the terms `page/1` lists it: not binned
+  itself, and not raised against an invoice that is binned.
+
+  `get_e_way_bill/1` checks only the bill, so a fetch by id could return what
+  the list hides. The API uses this so the two cannot disagree.
+  """
+  def get_listed_e_way_bill(id) do
+    case Integer.parse(to_string(id)) do
+      {id, ""} -> Repo.one(from [bill: b] in base_query(), where: b.id == ^id)
+      _not_an_id -> nil
     end
   end
 

@@ -109,8 +109,14 @@ defmodule QuantumBilling.Invoices do
         count: Keyword.get(opts, :count, false)
       )
 
-    %{result | rows: Enum.map(result.rows, &to_row/1)}
+    shape(result, Keyword.get(opts, :records, false))
   end
+
+  # `records: true` hands back the invoices themselves, for callers that shape
+  # their own output — the API. Same query either way, so what is visible (the
+  # Bin excluded, the filters applied) is decided in exactly one place.
+  defp shape(result, true), do: result
+  defp shape(result, _rows), do: %{result | rows: Enum.map(result.rows, &to_row/1)}
 
   @doc """
   The most recently issued invoices, as list rows.
@@ -561,6 +567,57 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
+  The client details an invoice records about whom it was issued to.
+
+  A snapshot, copied onto the invoice rather than read live through the
+  association: a GST invoice has to keep saying what it said when it was
+  issued, whatever later happens to the client record.
+
+  One function for both the invoice form and the API, so the two cannot
+  disagree about what an invoice records — and so the API never takes a
+  client's name, GSTIN or address from the request body, where a caller could
+  put an invoice in one customer's name and another's GSTIN.
+  """
+  def client_snapshot(%QuantumBilling.Clients.Client{} = client) do
+    %{
+      "client_id" => client.id,
+      "client_name" => client.name,
+      "client_gstin" => client.gstin,
+      # Not every client has a PAN typed in, but every GSTIN contains one.
+      "client_pan" => present(client.pan) || QuantumBilling.GST.pan_from_gstin(client.gstin),
+      "client_email" => client.email,
+      "client_state" => client.billing_state,
+      "client_billing_address" => billing_address(client),
+      # Copied as their own fields as well as into the printed blob: the
+      # e-invoice export needs the city and the PIN separately, and reading
+      # them back out of the blob would mean parsing an address.
+      "client_city" => client.billing_city,
+      "client_pincode" => client.billing_pin
+    }
+  end
+
+  defp billing_address(client) do
+    [
+      client.name,
+      client.billing_line1,
+      client.billing_line2,
+      [client.billing_city, client.billing_state] |> Enum.reject(&is_nil/1) |> Enum.join(", "),
+      client.billing_pin
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n")
+  end
+
+  defp present(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present(_value), do: nil
+
+  @doc """
   Creates an invoice, assigning it the next number in the series.
 
   The number is read and advanced in the same transaction as the insert, so
@@ -903,10 +960,29 @@ defmodule QuantumBilling.Invoices do
   def subscribe, do: Events.subscribe(Events.invoices_topic())
 
   @doc """
+  Subscribes the caller to one invoice's changes only.
+
+  What an unauthenticated page must use: see `Events.invoice_topic/1`.
+  """
+  def subscribe(invoice_id), do: Events.subscribe(Events.invoice_topic(invoice_id))
+
+  @doc """
   Announces an invoice change to every listening page.
+
+  On two topics: the list, dashboard and report pages want every change, and
+  the public payment page wants exactly one invoice and has no business
+  receiving the rest.
   """
   def broadcast_change(invoice, event \\ :invoice_changed) do
     Events.broadcast(Events.invoices_topic(), {event, invoice})
+
+    case invoice do
+      %{id: id} when not is_nil(id) ->
+        Events.broadcast(Events.invoice_topic(id), {event, invoice})
+
+      _no_id ->
+        :ok
+    end
   end
 
   defdelegate invoice_types(), to: Invoice

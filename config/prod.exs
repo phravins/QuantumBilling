@@ -15,9 +15,15 @@ config :quantum_billing, QuantumBillingWeb.Endpoint,
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
     exclude: [
-      hosts: ["localhost", "127.0.0.1"]
+      hosts: ["localhost", "127.0.0.1"],
+      # The API is refused over http rather than redirected — see
+      # `QuantumBillingWeb.Plugs.ApiRequireHttps` for why. Excluded here so that
+      # the refusal, not a redirect, is what an http API call gets.
+      conn: {QuantumBillingWeb.Plugs.ApiRequireHttps, :api_request?, []}
     ]
   ]
+
+config :quantum_billing, :api_require_https, true
 
 # The session cookie is marked Secure; read at compile time by the endpoint.
 config :quantum_billing, secure_session_cookie: true

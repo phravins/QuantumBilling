@@ -20,6 +20,18 @@ defmodule QuantumBillingWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # The external API. No session, no cookies, no CSRF token and no CORS: it is
+  # for server-to-server calls with a bearer key, and a browser has no business
+  # making them. Order matters — https before the key is looked at, the key
+  # before the rate limit (which is per key), and the scope check per action in
+  # each controller.
+  pipeline :api_v1 do
+    plug :accepts, ["json"]
+    plug QuantumBillingWeb.Plugs.ApiRequireHttps
+    plug QuantumBillingWeb.Plugs.ApiAuth
+    plug QuantumBillingWeb.Plugs.ApiRateLimit
+  end
+
   # Public legal pages, linked from sign-in and sign-up.
   scope "/", QuantumBillingWeb do
     pipe_through :browser
@@ -51,6 +63,9 @@ defmodule QuantumBillingWeb.Router do
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
       live "/settings/team", SettingsLive.Team, :index
+      # Keys reach the books without anyone signing in, so issuing them is the
+      # owner's call, like handing out accounts.
+      live "/settings/api-keys", SettingsLive.ApiKeys, :index
     end
 
     get "/settings/backup/download", BackupController, :download
@@ -107,6 +122,25 @@ defmodule QuantumBillingWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :index
+  end
+
+  # Before the "/api" scope below and the catch-all at the bottom, so that
+  # every /api/v1 path — including ones that do not exist — is answered in
+  # JSON, and only after the key has been checked.
+  scope "/api/v1", QuantumBillingWeb.API.V1 do
+    pipe_through :api_v1
+
+    get "/me", MeController, :show
+    get "/invoices", InvoiceController, :index
+    post "/invoices", InvoiceController, :create
+    get "/invoices/:id", InvoiceController, :show
+    get "/clients", ClientController, :index
+    post "/clients", ClientController, :create
+    get "/clients/:id", ClientController, :show
+    get "/e-way-bills", EWayBillController, :index
+    get "/e-way-bills/:id", EWayBillController, :show
+
+    match :*, "/*path", FallbackController, :not_found
   end
 
   scope "/api", QuantumBillingWeb do
