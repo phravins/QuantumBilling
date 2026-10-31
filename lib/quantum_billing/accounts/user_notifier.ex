@@ -44,6 +44,14 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   end
 
   @doc """
+  A security notice: something happened that the recipient should know about
+  and may need to act on. Sent now and recorded in the delivery ledger.
+  """
+  def deliver_security_alert(recipient, subject, body) when is_binary(recipient) do
+    deliver(recipient, "[QuantumBilling security] " <> subject, body)
+  end
+
+  @doc """
   Invites someone to create an account on this installation.
 
   Says plainly what the account is for and that the link expires, because an

@@ -626,6 +626,19 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc """
+  Every session token `user` currently holds, for disconnecting their open
+  windows when their access changes. Returned as `%{token: binary}` maps, the
+  shape `QuantumBillingWeb.UserAuth.disconnect_sessions/1` takes.
+  """
+  def list_user_session_tokens(%User{id: user_id}) do
+    Repo.all(
+      from t in UserToken,
+        where: t.user_id == ^user_id and t.context == "session",
+        select: %{token: t.token}
+    )
+  end
+
+  @doc """
   Gets the user with the given signed token.
 
   If the token is valid `{user, token_inserted_at}` is returned, otherwise `nil` is returned.

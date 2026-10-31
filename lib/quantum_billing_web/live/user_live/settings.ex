@@ -234,6 +234,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
 
     if recently_signed_in?(user) do
       {:ok, user} = TwoFactor.disable(user)
+      QuantumBilling.SecurityAlerts.two_factor_disabled(user)
 
       {:noreply,
        socket

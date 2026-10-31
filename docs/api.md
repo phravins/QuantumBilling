@@ -34,8 +34,12 @@ where.
 | Scope | Allows |
 |---|---|
 | `invoices:read` | `GET /invoices`, `GET /invoices/:id` |
-| `invoices:write` | `POST /invoices` |
+| `invoices:write` | `POST /invoices`, `POST /invoices/:id/cancel` |
 | `invoices:payment_links` | adds `payment_url` (the customer's payment page) to invoices. That URL lets anyone who has it view the invoice and pay it, so grant this only to a system that is meant to send it to the customer |
+| `invoices:payments` | `POST /invoices/:id/payments` — mark an invoice paid. Separate from `invoices:write`: creating invoices and declaring them paid are different trust |
+| `invoices:e_invoice` | `POST /invoices/:id/e-invoice` — register with the government IRP |
+| `credit_notes:read` | `GET /credit-notes`, `GET /credit-notes/:id` |
+| `credit_notes:write` | `POST /invoices/:id/credit-notes` |
 | `clients:read` | `GET /clients`, `GET /clients/:id` — including contact details |
 | `clients:write` | `POST /clients` |
 | `e_way_bills:read` | `GET /e-way-bills`, `GET /e-way-bills/:id` |
@@ -81,15 +85,18 @@ validation errors. Error responses never repeat the values you sent.
 | 403 | `insufficient_scope` | The key lacks the scope this route needs |
 | 403 | `https_required` | The request was made over http |
 | 404 | `not_found` | No such record — or one that is in the Bin; the two look identical |
+| 400 | `invalid_parameters` (`cursor`) | A cursor this API did not issue |
 | 409 | `idempotency_in_progress` | The first request with this key has not finished |
+| 409 | `already_paid`, `cancelled`, `already_cancelled`, `paid`, `irn_registered`, `live_e_way_bill` | The action conflicts with the invoice's state; see the action below |
 | 422 | `validation_failed` | The body was rejected; see `fields` |
 | 422 | `idempotency_mismatch` | The key was already used for a different request |
 | 429 | `rate_limited` | Too many requests; wait `retry-after` seconds |
 
 ## Rate limits
 
-Per key, per minute: **600 reads** and **60 writes**. Every response carries
-`x-ratelimit-limit` and `x-ratelimit-remaining`; a 429 carries `retry-after`.
+Per key, per minute: **600 reads** and **60 writes**, counted across every
+server the installation runs on. Every response carries `x-ratelimit-limit` and
+`x-ratelimit-remaining`; a 429 carries `retry-after`.
 
 ## Pagination
 
@@ -102,8 +109,22 @@ and return:
 
 Keep requesting the next page while `has_next` is true. Lists are not counted —
 counting a large table on every page is what made the screens slow — so there
-is no total. A page past the end returns `"data": []`. Pages stop at 1000; to
-reach further, narrow the list with `status` or `search`.
+is no total. A page past the end returns `"data": []`. Pages stop at 1000.
+
+### Cursor paging — for syncing
+
+Add `paginate=cursor` to the first request. Records come newest-created first,
+and `meta` carries a cursor instead of a page number:
+
+```json
+{"data": [ … ], "meta": {"per_page": 100, "has_next": true, "next_cursor": "djE6MTIzNDU"}}
+```
+
+Pass it back as `cursor=…` for the next page, until `has_next` is false and
+`next_cursor` is null. There is no depth limit, every request costs the same
+however far in you are, and records created while you page don't shift the
+pages after them. Treat the cursor as opaque. Credit notes are cursor-paged
+only.
 
 Lists also accept `status` (exact match, e.g. `Draft`, `Paid`) and `search`.
 
@@ -214,7 +235,68 @@ and no opening balance — those are set in the application.
 `id`, `number`, `date`, `valid_until`, `status`, `distance_km`,
 `mode_of_transport`, `vehicle_number`, `transporter_id`, `transporter_name`,
 `cancelled_at`, `cancellation_reason`, `invoice` (`{id, number}`),
-`created_at`, `updated_at`. Read-only.
+`created_at`, `updated_at`. Read-only. `status` is `Active`, `Expired` (past
+`valid_until`) or `Cancelled`.
+
+### `POST /api/v1/invoices/:id/payments`
+
+Records a payment received outside the payment gateway — a bank transfer your
+accounting system has matched, for example. Needs `invoices:payments`.
+
+```json
+{"reference": "NEFT-HDFC-0042", "amount": 1180000}
+```
+
+`amount` is paise and must cover the invoice's `grand_total`; partial payments
+are refused (422) rather than recorded as paid in full. The invoice becomes
+**Paid**, the customer gets a receipt, and `invoice.paid` is sent to webhooks,
+exactly as for a gateway payment. 409 `already_paid` or `cancelled` if it can't
+be paid. Returns the invoice.
+
+### `POST /api/v1/invoices/:id/cancel`
+
+```json
+{"reason": "Duplicate order"}
+```
+
+The invoice keeps its number and leaves GSTR-1. Refused with 409 when
+cancelling here would not be the whole story:
+
+- `paid` — raise a credit note instead;
+- `irn_registered` — a live IRN must be cancelled on the IRP first;
+- `live_e_way_bill` — cancel the e-way bill first;
+- `already_cancelled`.
+
+Sends `invoice.cancelled`. Returns the invoice.
+
+### `POST /api/v1/invoices/:id/e-invoice`
+
+Queues registration with the IRP; the body is `{}`. Answers **202**
+`{"data": {"status": "queued", …}}`, or 200 `already_registered`. Refused with
+409 `cancelled` for a cancelled invoice and `paid` for a paid one: registering
+would overwrite that status. The outcome
+arrives as `invoice.e_invoice_generated` / `invoice.e_invoice_failed`, or by
+fetching the invoice: `e_invoice.irn` is set, and `e_invoice.mode` says `live`
+or `demo` (made by the sandbox, never filed with the government). Needs
+`invoices:e_invoice`.
+
+### `POST /api/v1/invoices/:id/credit-notes` · `GET /api/v1/credit-notes` · `GET /api/v1/credit-notes/:id`
+
+```json
+{"type": "credit", "reason": "Damaged goods", "subtotal": 100000, "tax_total": 18000, "grand_total": 118000}
+```
+
+`type` is `credit` or `debit`; amounts are paise, and any left out default to
+the invoice's own. A note reads back as `id`, `number`, `type`, `reason`,
+`status`, `amounts` (`subtotal`, `tax_total`, `grand_total`), `invoice`
+(`{id, number}`), `client_id`, `created_at`, `updated_at`. Notes on an invoice
+in the Bin are hidden.
+
+## OpenAPI
+
+[`openapi.json`](openapi.json) describes every endpoint, scope and response
+shape, for generating a client. A test keeps it identical to the routes and
+serializers.
 
 ## The Bin
 
@@ -224,6 +306,6 @@ one from the Bin makes it visible again.
 
 ## Webhooks
 
-Outgoing webhooks are being reworked to send thin, signed events (`{id, type,
-created_at, data: {object, id}}`) that you then fetch through this API. This
-section will describe them when they ship.
+Webhooks tell you that something happened, with the event's id and the record
+it concerns; you then fetch the record through this API. See
+[webhooks.md](webhooks.md) for the events, the signature and the retry rules.

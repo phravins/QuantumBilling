@@ -66,6 +66,12 @@ defmodule QuantumBilling.ApiKeys do
     {raw, changeset} = ApiKey.build(attrs, owner, business)
 
     with {:ok, key} <- Repo.insert(changeset) do
+      QuantumBilling.SecurityAlerts.admin_event(
+        business,
+        owner,
+        "created the API key \"#{key.name}\" (#{Enum.join(key.scopes, ", ")})"
+      )
+
       Audit.log_event(:api_key_created, "ApiKey", key.id,
         user_id: owner.id,
         details: %{name: key.name, prefix: key.prefix, scopes: key.scopes}

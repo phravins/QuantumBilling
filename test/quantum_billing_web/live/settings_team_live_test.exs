@@ -8,6 +8,7 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
   """
   use QuantumBillingWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import QuantumBilling.AccountsFixtures
 
@@ -115,6 +116,49 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
 
       assert html =~ "withdrawn"
       refute Accounts.registration_open?(token)
+    end
+  end
+
+  describe "a change of access takes effect in open windows" do
+    # Membership is checked when a LiveView mounts, so the member's open pages
+    # are disconnected; they reconnect at once and are held to the new role.
+    defp watch_sessions(user) do
+      token = QuantumBilling.Accounts.generate_user_session_token(user)
+
+      Phoenix.PubSub.subscribe(
+        QuantumBilling.PubSub,
+        "users_sessions:#{Base.url_encode64(token)}"
+      )
+    end
+
+    test "demoting an owner disconnects their sessions, and is audited", %{conn: conn, user: me} do
+      other = owner_fixture()
+      watch_sessions(other)
+      {:ok, view, _html} = live(conn, ~p"/settings/team")
+
+      render_click(view, "set_role", %{"id" => to_string(other.id), "role" => "staff"})
+
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+
+      assert QuantumBilling.Repo.exists?(
+               from l in QuantumBilling.Audit.AuditLog,
+                 where: l.action == "member_role_changed" and l.user_id == ^me.id
+             )
+    end
+
+    test "removing a member disconnects their sessions, and is audited", %{conn: conn, user: me} do
+      other = user_fixture()
+      watch_sessions(other)
+      {:ok, view, _html} = live(conn, ~p"/settings/team")
+
+      render_click(view, "remove", %{"id" => to_string(other.id)})
+
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+
+      assert QuantumBilling.Repo.exists?(
+               from l in QuantumBilling.Audit.AuditLog,
+                 where: l.action == "member_removed" and l.user_id == ^me.id
+             )
     end
   end
 

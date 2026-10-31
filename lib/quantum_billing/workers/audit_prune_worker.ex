@@ -49,16 +49,19 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
     audit = prune(AuditLog, audit_days)
     deliveries = prune(Delivery, @ledger_retention_days)
     webhooks = prune(WebhookEvent, @ledger_retention_days)
+    # Outgoing delivery log: kept as long as the incoming one.
+    deliveries_out = prune(QuantumBilling.Webhooks.Delivery, @ledger_retention_days)
     # Through the context: only read notifications may be pruned.
     notifications = Notifications.prune(@ledger_retention_days)
     # Stored API responses for replay. A day's lifetime, not 90: they hold
     # whole response bodies, and nothing replays them after that anyway.
     {:ok, idempotency} = ApiKeys.prune_idempotency_keys(Repo.business())
 
-    if audit + deliveries + webhooks + notifications + idempotency > 0 do
+    if audit + deliveries + webhooks + deliveries_out + notifications + idempotency > 0 do
       Logger.info(
         "[AuditPruneWorker] pruned #{audit} audit logs, #{deliveries} deliveries, " <>
-          "#{webhooks} webhook events, #{notifications} notifications, " <>
+          "#{webhooks} webhook events, #{deliveries_out} webhook deliveries, " <>
+          "#{notifications} notifications, " <>
           "#{idempotency} API idempotency records"
       )
     end
@@ -68,6 +71,7 @@ defmodule QuantumBilling.Workers.AuditPruneWorker do
        audit_logs: audit,
        email_deliveries: deliveries,
        webhook_events: webhooks,
+       webhook_deliveries: deliveries_out,
        notifications: notifications,
        api_idempotency_keys: idempotency
      }}

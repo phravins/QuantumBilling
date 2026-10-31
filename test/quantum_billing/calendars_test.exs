@@ -141,6 +141,18 @@ defmodule QuantumBilling.CalendarsTest do
       end
     end
 
+    test "a CalDAV name that rebinds inside the network is never connected to" do
+      QuantumBilling.FakeDNS.put("rebind-dav.example.test", [{10, 1, 2, 3}])
+
+      assert CaldavClient.put_event(
+               "https://rebind-dav.example.test/dav/",
+               "me",
+               @password,
+               "uid",
+               "ics"
+             ) == {:error, :blocked}
+    end
+
     test "the guard runs again before each request" do
       assert CaldavClient.put_event("https://127.0.0.1/dav/", "me", @password, "uid", "ics") ==
                {:error, :blocked}
@@ -377,7 +389,7 @@ defmodule QuantumBilling.CalendarsTest do
       assert_received {:google, "POST", "www.googleapis.com",
                        "/calendar/v3/calendars/primary/events", body}
 
-      event = JSON.decode!(body)
+      event = Jason.decode!(body)
       assert event["id"] =~ ~r/\A[0-9a-v]+\z/
       assert event["start"]["date"]
       assert event["end"]["date"]

@@ -63,6 +63,83 @@ The schema-transfer migration moves thirteen business tables to `biz_1`, creates
 
 Do not use `mix ecto.reset` or drop the database as an upgrade procedure. They delete data.
 
+## Security hardening
+
+The application enforces what it can: HTTPS (HSTS, Secure cookies, API refused
+over http), per-request membership checks, owner-only administration with
+mandatory 2FA for owners, CSP and the other browser headers, upload type and
+size checks, rate limits shared across servers, and signed, pinned outbound
+webhooks. These steps belong to the host and network, and the application
+cannot do them for you.
+
+### Database
+
+- **Not on the internet.** PostgreSQL must listen only on a private network
+  (or `localhost` when it shares the host). Do not publish port 5432; in
+  `postgresql.conf` set `listen_addresses` to the private interface, and in
+  `pg_hba.conf` allow only the application hosts' addresses, with
+  `scram-sha-256`.
+- **Encrypted.** Set `DATABASE_SSL=true` whenever the database is on another
+  host, with `DATABASE_SSL_CACERTFILE` for a private CA. Boot prints a
+  `[security]` warning when it is off for a remote host.
+- **Least privilege.** The application role needs to own the schemas it
+  migrates (`public` and every `biz_<id>`), not superuser. Use a separate role
+  for backups and reporting.
+- **Backups** are full copies of every business: encrypt them at rest and keep
+  them apart from the encryption keys.
+
+### Host and network
+
+- Firewall: allow inbound 443 (and 80 for the redirect) to the reverse proxy
+  only; the release's `PORT` must be reachable from the proxy alone. Deny
+  everything else by default.
+- SSH: keys only (`PasswordAuthentication no`), no root login
+  (`PermitRootLogin no`), restricted to an admin network or a bastion, and
+  `fail2ban` or equivalent.
+- Run the release as an unprivileged user that owns only its install
+  directory and `priv/static/uploads`.
+- The reverse proxy must set `x-forwarded-proto`, and the application must be
+  told the proxy's address (see `QuantumBillingWeb.ClientIP`) so that the IP
+  allowlist, rate limits and audit log see real client addresses. Strip any
+  client-supplied `x-forwarded-for` at the proxy.
+- Keep the OS, Erlang/OTP and the proxy patched. `mix deps.get` after pulling
+  a dependency upgrade, and run the test suite: `DependencyFloorTest` fails
+  if a dependency is below its last known-vulnerable version.
+
+### Secrets
+
+- `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY`,
+  `DATABASE_URL` and provider secrets come from the host's secret manager or
+  service environment — never a file in the release, the repository, a
+  ticket or a chat.
+- Generate each key with `mix phx.gen.secret`; never reuse one between
+  installations or environments.
+- Restrict who can read the service environment; rotate `SECRET_KEY_BASE`
+  (signs sessions — rotating signs everyone out) and provider credentials
+  after anyone with access leaves. The two encryption keys cannot simply be
+  rotated: existing values were encrypted with them (see
+  [database](database.md#7-encryption-hashes-and-secrets)).
+
+### Monitoring
+
+`QuantumBilling.SecurityAlerts` emails whoever can act, and writes the same
+event to the log with a `[security]` prefix:
+
+| Event | Emailed to |
+|---|---|
+| Sign-in from an address the account has not used in 180 days | The account holder |
+| Five wrong passwords (sign-in locked), or wrong 2FA codes after a correct password | The account holder |
+| 2FA switched off | The account holder |
+| Role changed, member removed, invited or added | Every owner of the business |
+| API key created; webhook endpoint added, changed or its secret rotated | Every owner |
+| Full backup downloaded or restored | Every owner |
+| 30 report / GSTR-1 / e-way bill exports by one person within an hour | Every owner |
+
+Mail is only as good as the relay: make sure SMTP is configured, and also
+forward the application log to your log system and alert on `[security]`
+lines, so an event is seen even when mail is not read. Every one of these is
+also in the business's audit log.
+
 ## Health and logs
 
 ```bash

@@ -86,6 +86,10 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # Anything else — a broadcast for another page, a library's reply — is not
+  # this page's business, and must not take it down.
+  def handle_info(_message, socket), do: {:noreply, socket}
+
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
@@ -282,29 +286,9 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # Synchronous: reports what the relay said.
   def handle_event("send_test_email", _params, socket) do
-    recipient = test_recipient(socket.assigns)
-
-    case recipient && Mail.send_test(recipient) do
-      {:ok, _metadata} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, test_sent_message(recipient))
-         |> assign_deliveries()}
-
-      {:error, message} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "The relay refused it: #{message}")
-         |> assign_deliveries()}
-
-      nil ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Set a contact email address first — there is nobody to send a test to."
-         )}
-    end
+    if Scope.owner?(socket.assigns.current_scope),
+      do: send_test_email(socket),
+      else: {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
   end
 
   # The section is checked on navigation, but an event can be sent from any of them.
@@ -394,6 +378,32 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  defp send_test_email(socket) do
+    recipient = test_recipient(socket.assigns)
+
+    case recipient && Mail.send_test(recipient) do
+      {:ok, _metadata} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, test_sent_message(recipient))
+         |> assign_deliveries()}
+
+      {:error, message} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "The relay refused it: #{message}")
+         |> assign_deliveries()}
+
+      nil ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Set a contact email address first — there is nobody to send a test to."
+         )}
+    end
+  end
+
   defp owner_only(socket, action) do
     if Scope.owner?(socket.assigns.current_scope) do
       {:noreply, action.()}
@@ -412,6 +422,12 @@ defmodule QuantumBillingWeb.SettingsLive do
       [json_content] ->
         case QuantumBilling.Backup.restore_json(json_content) do
           {:ok, counts} ->
+            QuantumBilling.SecurityAlerts.admin_event(
+              socket.assigns.current_scope.business,
+              socket.assigns.current_scope.user,
+              "restored a backup into the business"
+            )
+
             {:noreply,
              socket
              |> put_flash(:info, "Restored #{restored_summary(counts)}.")
@@ -1296,24 +1312,18 @@ defmodule QuantumBillingWeb.SettingsLive do
       <hr class="border-base-300" />
 
       <div>
-        <h3 class="text-sm font-semibold tracking-tight">Custom Event Webhooks</h3>
+        <h3 class="text-sm font-semibold tracking-tight">Event webhooks</h3>
         <p class="mt-1 text-xs text-base-content/60">
-          Stream realtime webhooks on invoice creation, payment completion, e-invoicing, and e-way bill events.
+          Send signed events — invoices created, updated and paid, e-invoicing, e-way bills,
+          clients and credit notes — to your own systems.
         </p>
-
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <.field
-            field={f[:webhook_url]}
-            label="Webhook Payload Endpoint URL"
-            placeholder="https://api.yourcompany.com/webhooks"
-          />
-          <.field
-            field={f[:webhook_secret]}
-            label="Webhook Signing Secret (HMAC SHA256)"
-            type="password"
-            placeholder="whsec_..."
-          />
-        </div>
+        <.link
+          id="webhooks-settings-link"
+          navigate={~p"/settings/webhooks"}
+          class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        >
+          <.icon name="hero-arrow-right" class="size-3.5" /> Manage webhook endpoints
+        </.link>
       </div>
     </.form>
     """

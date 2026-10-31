@@ -25,6 +25,17 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
 
   Redirects are refused by the worker rather than followed, since a redirect is
   a second destination this never got to check.
+
+  ## Pinned at send time
+
+  Checking a name and then handing the URL to the HTTP client still leaves a
+  gap: the client resolves the name again when it connects, and a DNS server
+  that answers with a public address for the check and `127.0.0.1` for the
+  connection — a rebinding attack — gets the request inside. So the senders do
+  not check and then connect; they call `pin/1`, which resolves once, checks
+  every address, and returns the URL rewritten to the address that passed, with
+  the original name kept for the `Host` header, TLS SNI and certificate
+  verification. The connection then goes exactly where the check looked.
   """
 
   @doc """
@@ -44,6 +55,38 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   end
 
   def check(_url), do: {:error, "must be a full http:// or https:// URL"}
+
+  @doc """
+  Resolves `url` once and fixes the connection to an address that passed.
+
+  Returns `{:ok, pinned_url, req_options}`: the URL with its host replaced by
+  the checked address, and the `Req` options that keep the original name for
+  the `Host` header, SNI and certificate verification. Pass both to `Req`.
+
+  Stricter than `check/1` about one thing: a name that does not resolve is
+  refused here, since there is nothing to pin it to.
+  """
+  def pin(url) when is_binary(url) do
+    with {:ok, %URI{scheme: scheme, host: host, port: port} = uri} <- parse(url),
+         :ok <- check_scheme(scheme),
+         :ok <- check_host(host),
+         {:ok, addresses} <- resolve(host, port),
+         :ok <- check_addresses(addresses),
+         {:ok, address} <- first_address(addresses) do
+      pinned = %{uri | host: address |> :inet.ntoa() |> to_string()}
+      {:ok, URI.to_string(pinned), [connect_options: [hostname: host]]}
+    end
+  end
+
+  def pin(_url), do: {:error, "must be a full http:// or https:// URL"}
+
+  # IPv4 first: an address that passed is an address that passed, and IPv4 is
+  # the one most hosts actually serve on.
+  defp first_address([]), do: {:error, "could not be resolved"}
+
+  defp first_address(addresses) do
+    {:ok, Enum.find(addresses, &(tuple_size(&1) == 4)) || hd(addresses)}
+  end
 
   defp parse(url) do
     case URI.new(url) do
@@ -70,17 +113,27 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
 
   # An unresolvable name is allowed: it cannot be connected to either, and the worker
   # re-checks against live DNS before connecting.
+  #
+  # The resolver can be swapped by configuration so tests do not depend on the
+  # DNS of whatever machine runs them; see `resolve_with_dns/1`.
   defp resolve(host, _port) do
+    resolver = Application.get_env(:quantum_billing, :url_guard_resolver, __MODULE__)
+    {:ok, resolver.resolve_with_dns(host)}
+  end
+
+  @doc false
+  # Every address `host` resolves to, IPv4 and IPv6; `[]` when it resolves to none.
+  def resolve_with_dns(host) do
     charlist = String.to_charlist(host)
 
     v4 = :inet.getaddrs(charlist, :inet, @resolve_timeout_ms)
     v6 = :inet.getaddrs(charlist, :inet6, @resolve_timeout_ms)
 
     case {v4, v6} do
-      {{:ok, a}, {:ok, b}} -> {:ok, a ++ b}
-      {{:ok, a}, _} -> {:ok, a}
-      {_, {:ok, b}} -> {:ok, b}
-      _unresolvable -> {:ok, []}
+      {{:ok, a}, {:ok, b}} -> a ++ b
+      {{:ok, a}, _} -> a
+      {_, {:ok, b}} -> b
+      _unresolvable -> []
     end
   end
 

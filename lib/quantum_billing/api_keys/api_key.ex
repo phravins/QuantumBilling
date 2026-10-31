@@ -36,8 +36,14 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   # link is a bearer URL — anyone holding it can open the customer's payment
   # page. An accounting system that reads invoices has no need of it; a CRM
   # that sends invoices to customers does.
-  @scopes ~w(invoices:read invoices:write invoices:payment_links
-             clients:read clients:write e_way_bills:read)
+  #
+  # `invoices:payments` and `invoices:e_invoice` are separate from
+  # `invoices:write` for the same reason: marking an invoice paid and
+  # registering it with the government are not things every system that
+  # creates invoices should be able to do.
+  @scopes ~w(invoices:read invoices:write invoices:payment_links invoices:payments
+             invoices:e_invoice clients:read clients:write e_way_bills:read
+             credit_notes:read credit_notes:write)
 
   @schema_prefix "public"
   schema "api_keys" do

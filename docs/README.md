@@ -14,6 +14,8 @@ These guides describe the application and code in this repository: product workf
 | 6 | [Tech stack](tech-stack.md) | Understand dependency versions and the purpose of each technology |
 | 7 | [Development](development.md) | Change the code and run checks |
 | 8 | [Deployment and operations](deployment.md) | Build releases, monitor jobs, and back up an installation |
+| 9 | [API](api.md) | Connect your own systems with API keys: endpoints, scopes, errors, idempotency |
+| 10 | [Webhooks](webhooks.md) | Receive signed events: catalogue, verification, retries, secret rotation |
 
 ## Several businesses on one installation
 

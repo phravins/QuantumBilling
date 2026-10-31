@@ -19,6 +19,7 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Invoices
   alias QuantumBilling.Paging
   alias QuantumBilling.Repo
+  alias QuantumBilling.Webhooks
 
   @doc """
   Subscribes the caller to client changes.
@@ -66,14 +67,21 @@ defmodule QuantumBilling.Clients do
     sort_field = Keyword.get(opts, :sort_field)
     sort_dir = Keyword.get(opts, :sort_dir, :asc)
 
-    result =
+    query =
       Client.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
-      |> Paging.page(&order(&1, sort_field, sort_dir),
-        page: Keyword.get(opts, :page, 1),
-        per_page: per_page
-      )
+
+    # `:keyset` pages newest-created first below `:before_id`, for the API.
+    result =
+      if Keyword.get(opts, :keyset, false) do
+        Paging.keyset(query, Keyword.get(opts, :before_id), per_page)
+      else
+        Paging.page(query, &order(&1, sort_field, sort_dir),
+          page: Keyword.get(opts, :page, 1),
+          per_page: per_page
+        )
+      end
 
     %{result | rows: put_outstanding(result.rows)}
   end
@@ -280,6 +288,13 @@ defmodule QuantumBilling.Clients do
 
   defp announce({:ok, client} = result, event) do
     Events.broadcast(Events.clients_topic(), {event, client})
+
+    case event do
+      :client_created -> Webhooks.publish("client.created", client.id)
+      :client_updated -> Webhooks.publish("client.updated", client.id)
+      _other -> :ok
+    end
+
     result
   end
 

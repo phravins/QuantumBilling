@@ -16,6 +16,8 @@ defmodule QuantumBillingWeb.EWayBillExportController do
   """
   use QuantumBillingWeb, :controller
 
+  plug QuantumBillingWeb.Plugs.RecordExport, "e-way bill export" when action in [:export]
+
   alias QuantumBilling.EWayBills
   alias QuantumBilling.Money
 

@@ -92,22 +92,30 @@ defmodule QuantumBilling.Invoices do
     * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
     * `:page` / `:per_page`
     * `:count` — also count the matching invoices
+    * `:keyset` / `:before_id` — newest-created first, below `:before_id`,
+      instead of numbered pages; see `QuantumBilling.Paging.keyset/3`
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
     sort_field = Keyword.get(opts, :sort_field, :invoice_date)
     sort_dir = Keyword.get(opts, :sort_dir, :desc)
 
-    result =
+    query =
       Invoice.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
       |> client_where(Keyword.get(opts, :client))
-      |> Paging.page(&order(&1, sort_field, sort_dir),
-        page: Keyword.get(opts, :page, 1),
-        per_page: per_page,
-        count: Keyword.get(opts, :count, false)
-      )
+
+    result =
+      if Keyword.get(opts, :keyset, false) do
+        Paging.keyset(query, Keyword.get(opts, :before_id), per_page)
+      else
+        Paging.page(query, &order(&1, sort_field, sort_dir),
+          page: Keyword.get(opts, :page, 1),
+          per_page: per_page,
+          count: Keyword.get(opts, :count, false)
+        )
+      end
 
     shape(result, Keyword.get(opts, :records, false))
   end
@@ -562,8 +570,8 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Builds a changeset for the invoice form.
   """
-  def change_invoice(%Invoice{} = invoice \\ %Invoice{}, attrs \\ %{}) do
-    Invoice.changeset(invoice, attrs)
+  def change_invoice(%Invoice{} = invoice \\ %Invoice{}, attrs \\ %{}, trusted \\ %{}) do
+    Invoice.changeset(invoice, attrs, trusted)
   end
 
   @doc """
@@ -639,11 +647,13 @@ defmodule QuantumBilling.Invoices do
       end
     end)
     |> Multi.insert(:invoice, fn %{organization: locked} ->
-      attrs
-      |> with_number(locked)
-      |> with_company_snapshot(locked)
-      |> with_layout_snapshot(template, organization)
-      |> then(&Invoice.changeset(%Invoice{}, &1))
+      trusted =
+        %{}
+        |> with_number(locked)
+        |> with_company_snapshot(locked)
+        |> with_layout_snapshot(template, organization)
+
+      Invoice.changeset(%Invoice{}, attrs, trusted)
     end)
     |> Multi.run(:advance_number, fn repo, %{organization: organization} ->
       # A new installation has no settings row; without one every invoice would get number 1.
@@ -658,7 +668,7 @@ defmodule QuantumBilling.Invoices do
       {:ok, %{invoice: invoice}} ->
         broadcast_change(invoice, :invoice_changed)
 
-        Webhooks.dispatch("invoice.created", %{
+        Webhooks.publish("invoice.created", invoice.id, %{
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name,
@@ -706,11 +716,12 @@ defmodule QuantumBilling.Invoices do
   def update_invoice(%Invoice{} = invoice, attrs) do
     invoice
     |> Repo.preload(:items)
-    |> Invoice.changeset(refresh_layout(attrs, invoice))
+    |> Invoice.changeset(drop_layout_unless_draft(attrs, invoice), refresh_layout(attrs, invoice))
     |> Repo.update()
     |> case do
       {:ok, invoice} ->
         broadcast_change(invoice, :invoice_changed)
+        Webhooks.publish("invoice.updated", invoice.id)
         {:ok, Repo.preload(invoice, :items, force: true)}
 
       {:error, changeset} ->
@@ -776,7 +787,7 @@ defmodule QuantumBilling.Invoices do
       submit_einvoice(invoice)
     else
       {:error, problems} when is_list(problems) ->
-        _ = Repo.update(Ecto.Changeset.change(invoice, %{status: "E-Invoice Failed"}))
+        mark_einvoice_failed(invoice)
         {:error, Enum.join(problems, " ")}
     end
   end
@@ -806,6 +817,7 @@ defmodule QuantumBilling.Invoices do
         |> case do
           {:ok, invoice} ->
             broadcast_change(invoice, :invoice_changed)
+            Webhooks.publish("invoice.e_invoice_generated", invoice.id)
             {:ok, Repo.preload(invoice, :items, force: true)}
 
           {:error, changeset} ->
@@ -813,8 +825,65 @@ defmodule QuantumBilling.Invoices do
         end
 
       {:error, reason} ->
-        _ = update_invoice(invoice, %{status: "E-Invoice Failed"})
+        mark_einvoice_failed(invoice)
         {:error, reason}
+    end
+  end
+
+  # Directly, like the other status stamps: status is not a form field.
+  defp mark_einvoice_failed(invoice) do
+    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
+      broadcast_change(failed, :invoice_changed)
+      Webhooks.publish("invoice.e_invoice_failed", failed.id)
+    end
+  end
+
+  @doc """
+  Cancels an invoice: it keeps its number, leaves GSTR-1, and can no longer be
+  paid.
+
+  Refused, with the reason, when cancelling here would not be the whole story:
+
+    * `:already_cancelled`;
+    * `:paid` — money has moved; that needs a credit note, not a cancellation;
+    * `:irn_registered` — a live IRN has to be cancelled on the IRP, which this
+      application does not do;
+    * `:live_e_way_bill` — the goods are on a live e-way bill, which has to be
+      cancelled first.
+
+  `opts` takes `:user_id`, `:api_key_id` and `:ip_address` for the audit entry.
+  """
+  def cancel_invoice(%Invoice{} = invoice, reason, opts \\ []) when is_binary(reason) do
+    cond do
+      invoice.status == "Cancelled" ->
+        {:error, :already_cancelled}
+
+      invoice.status == "Paid" ->
+        {:error, :paid}
+
+      is_binary(invoice.irn) and not Invoice.demo_irn?(invoice) ->
+        {:error, :irn_registered}
+
+      QuantumBilling.EWayBills.live_bill_for_invoice(invoice.id) ->
+        {:error, :live_e_way_bill}
+
+      true ->
+        with {:ok, cancelled} <-
+               invoice |> Ecto.Changeset.change(status: "Cancelled") |> Repo.update() do
+          QuantumBilling.Audit.log_event(
+            :invoice_cancelled,
+            "Invoice",
+            cancelled.id,
+            Keyword.put(opts, :details, %{
+              "reason" => reason,
+              "number" => cancelled.invoice_number
+            })
+          )
+
+          broadcast_change(cancelled, :invoice_changed)
+          Webhooks.publish("invoice.cancelled", cancelled.id)
+          {:ok, cancelled}
+        end
     end
   end
 
@@ -883,16 +952,28 @@ defmodule QuantumBilling.Invoices do
 
   defp announce({:error, _changeset} = result, _action, _opts), do: result
 
-  defp with_number(attrs, organization) do
-    put_attr(attrs, "invoice_number", Settings.next_invoice_number(organization))
+  # These build the `trusted` half of the changeset: values the application
+  # decides, which no params can override.
+  defp with_number(trusted, organization) do
+    Map.put(trusted, :invoice_number, Settings.next_invoice_number(organization))
   end
 
-  defp with_company_snapshot(attrs, organization) do
-    attrs
-    |> put_attr("company_name", organization.company_name)
-    |> put_attr("company_address", organization.address)
-    |> put_attr("company_gstin", organization.gstin)
-    |> put_attr("company_state", organization.state)
+  defp with_company_snapshot(trusted, organization) do
+    Map.merge(trusted, company_snapshot(organization))
+  end
+
+  @doc """
+  The issuing company as `organization` describes it now, as trusted invoice
+  fields. For the form's live preview, which needs the company's state to split
+  the tax; `create_invoice/1` takes its own snapshot under the numbering lock.
+  """
+  def company_snapshot(%Organization{} = organization) do
+    %{
+      company_name: organization.company_name,
+      company_address: organization.address,
+      company_gstin: organization.gstin,
+      company_state: organization.state
+    }
   end
 
   defp resolve_template(attrs) do
@@ -902,29 +983,28 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  defp with_layout_snapshot(attrs, %{id: id, layout_xml: xml}, _organization) do
-    attrs |> put_attr("template_id", id) |> put_attr("layout_xml", xml)
+  defp with_layout_snapshot(trusted, %{id: id, layout_xml: xml}, _organization) do
+    Map.merge(trusted, %{template_id: id, layout_xml: xml})
   end
 
   # No design exists yet; freeze the default layout so later edits don't change this invoice.
-  defp with_layout_snapshot(attrs, nil, _organization) do
-    xml = Catalog.classic() |> Layout.to_xml()
-
-    attrs |> put_attr("template_id", nil) |> put_attr("layout_xml", xml)
+  defp with_layout_snapshot(trusted, nil, _organization) do
+    Map.merge(trusted, %{template_id: nil, layout_xml: Catalog.classic() |> Layout.to_xml()})
   end
 
   # Judged by the stored status, not the params, so a sent document is never re-frozen.
   defp refresh_layout(attrs, %Invoice{status: "Draft"}) do
-    with_layout_snapshot(attrs, resolve_template(attrs), Settings.get_organization())
+    with_layout_snapshot(%{}, resolve_template(attrs), Settings.get_organization())
   end
 
-  defp refresh_layout(attrs, %Invoice{}), do: drop_layout_attrs(attrs)
+  defp refresh_layout(_attrs, %Invoice{}), do: %{}
 
-  defp drop_layout_attrs(attrs) do
-    Enum.reduce(["layout_xml", "template_id"], attrs, fn key, acc ->
-      Map.drop(acc, [key, String.to_existing_atom(key)])
-    end)
-  end
+  # A sent invoice keeps the design it went out with, so its template cannot be
+  # switched from the form either.
+  defp drop_layout_unless_draft(attrs, %Invoice{status: "Draft"}), do: attrs
+
+  defp drop_layout_unless_draft(attrs, %Invoice{}),
+    do: Map.drop(attrs, ["template_id", :template_id])
 
   defp template_id_from(attrs) do
     case Map.get(attrs, "template_id", Map.get(attrs, :template_id)) do
@@ -942,15 +1022,6 @@ defmodule QuantumBilling.Invoices do
           {n, ""} -> n
           _other -> nil
         end
-    end
-  end
-
-  # Match the map's key style; cast/3 rejects mixed keys.
-  defp put_attr(attrs, key, value) do
-    if Enum.any?(Map.keys(attrs), &is_atom/1) do
-      Map.put(attrs, String.to_existing_atom(key), value)
-    else
-      Map.put(attrs, key, value)
     end
   end
 

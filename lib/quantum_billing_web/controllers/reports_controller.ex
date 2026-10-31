@@ -7,6 +7,8 @@ defmodule QuantumBillingWeb.ReportsController do
   """
   use QuantumBillingWeb, :controller
 
+  plug QuantumBillingWeb.Plugs.RecordExport, "report export" when action in [:export]
+
   alias QuantumBilling.Money
   alias QuantumBilling.Reports
 

@@ -123,4 +123,43 @@ defmodule QuantumBilling.Webhooks.UrlGuardTest do
       assert :ok = UrlGuard.check("https://hooks.example.test/incoming")
     end
   end
+
+  describe "pin/1" do
+    alias QuantumBilling.FakeDNS
+
+    test "rewrites the URL to the checked address and keeps the name for Host, SNI and TLS" do
+      assert {:ok, pinned, options} = UrlGuard.pin("https://hooks.example.test:8443/in?x=1")
+
+      assert pinned == "https://203.0.113.10:8443/in?x=1"
+      assert options == [connect_options: [hostname: "hooks.example.test"]]
+    end
+
+    # The rebinding attack: the name is public when it is saved and private by
+    # the time anything is sent. pin/1 resolves at send time and connects to
+    # what it resolved, so there is no later lookup to win.
+    test "refuses a name that now resolves inside the network" do
+      FakeDNS.put("rebound.example.test", [{127, 0, 0, 1}])
+
+      assert {:error, message} = UrlGuard.pin("https://rebound.example.test/in")
+      assert message =~ "inside"
+    end
+
+    test "refuses a name with any private address among public ones" do
+      FakeDNS.put("mixed.example.test", [FakeDNS.public_address(), {10, 0, 0, 7}])
+
+      assert {:error, _} = UrlGuard.pin("https://mixed.example.test/in")
+    end
+
+    test "refuses a name that does not resolve, since there is nothing to pin" do
+      FakeDNS.put("gone.example.test", [])
+
+      assert {:error, "could not be resolved"} = UrlGuard.pin("https://gone.example.test/in")
+    end
+
+    test "brackets an IPv6 address" do
+      FakeDNS.put("v6.example.test", [{0x2001, 0xDB8, 0, 0, 0, 0, 0, 1}])
+
+      assert {:ok, "https://[2001:db8::1]/in", _} = UrlGuard.pin("https://v6.example.test/in")
+    end
+  end
 end

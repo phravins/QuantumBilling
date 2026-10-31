@@ -18,6 +18,42 @@ defmodule QuantumBilling.CreditNotes do
     |> Repo.preload([:invoice, :client])
   end
 
+  @doc """
+  One page of notes for the API, newest first, keyset-paged below
+  `:before_id` (see `QuantumBilling.Paging.keyset/3`). Notes on binned invoices
+  are left out, as from `list_credit_notes/0`.
+
+  Options: `:before_id`, `:per_page` (1..100), `:invoice_id`.
+  """
+  def page(opts \\ []) do
+    per_page = opts |> Keyword.get(:per_page, 25) |> max(1) |> min(100)
+
+    listed_query()
+    |> invoice_where(Keyword.get(opts, :invoice_id))
+    |> QuantumBilling.Paging.keyset(Keyword.get(opts, :before_id), per_page)
+    |> then(fn result -> %{result | rows: Repo.preload(result.rows, :invoice)} end)
+  end
+
+  @doc "A note by id, on the same terms as `page/1` lists it, or `nil`."
+  def get_listed_credit_note(id) do
+    case Integer.parse(to_string(id)) do
+      {id, ""} ->
+        listed_query() |> where([n], n.id == ^id) |> Repo.one() |> Repo.preload(:invoice)
+
+      _not_an_id ->
+        nil
+    end
+  end
+
+  defp listed_query do
+    from n in CreditNote,
+      left_join: i in assoc(n, :invoice),
+      where: is_nil(i.deleted_at)
+  end
+
+  defp invoice_where(query, nil), do: query
+  defp invoice_where(query, invoice_id), do: where(query, [n], n.invoice_id == ^invoice_id)
+
   def get_credit_note!(id) do
     CreditNote
     |> Repo.get!(id)
@@ -70,5 +106,13 @@ defmodule QuantumBilling.CreditNotes do
     %CreditNote{}
     |> CreditNote.changeset(params)
     |> Repo.insert()
+    |> case do
+      {:ok, note} = result ->
+        QuantumBilling.Webhooks.publish("credit_note.created", note.id)
+        result
+
+      error ->
+        error
+    end
   end
 end

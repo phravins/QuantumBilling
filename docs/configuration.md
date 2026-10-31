@@ -42,6 +42,8 @@ Seeds do not update an existing password. See [getting started](getting-started.
 | `DB_QUEUE_INTERVAL_MS` | `1000` in production | Queue measurement interval |
 | `DB_TIMEOUT_MS` | `15000` in production | Default query timeout |
 | `ECTO_IPV6` | Disabled | `true` or `1` enables production IPv6 socket option |
+| `DATABASE_SSL` | Off | `true` encrypts the PostgreSQL connection and verifies the server certificate and hostname. Use it whenever the database is not on the application host; boot warns when it is off for a remote host |
+| `DATABASE_SSL_CACERTFILE` | System CA store | CA bundle that signed the database certificate, for a private CA (most managed PostgreSQL services) |
 | `PORT` | `4000` | Runtime HTTP listener |
 | `PHX_HOST` | `example.com` in production | Host for generated production HTTPS URLs |
 | `PHX_SERVER` | Unset | A present value enables endpoint server; release `bin/server` sets it |

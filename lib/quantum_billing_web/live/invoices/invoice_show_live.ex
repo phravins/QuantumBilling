@@ -346,11 +346,15 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 Payment Received ({# {@invoice.razorpay_payment_id}})
               </span>
             </div>
-            <p class="text-xs text-base-content/70">
+            <p
+              :if={QuantumBilling.Payments.safe_payment_url(@invoice.razorpay_payment_url)}
+              class="text-xs text-base-content/70"
+            >
               Payment URL:
               <a
-                href={@invoice.razorpay_payment_url}
+                href={QuantumBilling.Payments.safe_payment_url(@invoice.razorpay_payment_url)}
                 target="_blank"
+                rel="noopener noreferrer"
                 class="text-blue-400 underline font-mono"
               >{@invoice.razorpay_payment_url}</a>
             </p>

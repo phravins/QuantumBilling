@@ -1,109 +1,51 @@
 defmodule QuantumBilling.RateLimiter do
   @moduledoc """
-  An in-memory sliding window rate limiter backed by ETS.
+  Counts attempts per key in fixed windows, and says when a key is over its
+  limit.
 
-  Tracks attempt counts against configurable thresholds and windows (in seconds).
-  Prunes expired entries periodically so memory usage remains bounded.
+  The work is done by a backend chosen in configuration:
+
+    * `QuantumBilling.RateLimiter.Postgres` — the default. One row per key in
+      `public.rate_limits`, so every server counts against the same numbers: a
+      password-guessing script spread across nodes is limited as one, and an
+      API key's allowance does not grow with the cluster.
+    * `QuantumBilling.RateLimiter.ETS` — in memory, per node. The test suite
+      uses it; see that module for why.
+
+      config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
   """
-  use GenServer
-
-  @table :quantum_billing_rate_limiter
-  @sweep_interval_ms :timer.seconds(60)
-
-  # Client API
-
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
 
   @doc """
   Registers a hit for `key`.
 
-  Returns `{:ok, remaining_attempts}` when within `limit`.
-  Returns `{:error, :rate_limited, retry_after_seconds}` when limit is exceeded.
+  `{:ok, remaining}` within `limit`, `{:error, :rate_limited, retry_after_seconds}`
+  over it.
   """
-  def hit(key, limit, window_seconds) do
-    now = System.system_time(:second)
-    reset_at = now + window_seconds
+  @callback hit(key :: term(), limit :: pos_integer(), window_seconds :: pos_integer()) ::
+              {:ok, non_neg_integer()} | {:error, :rate_limited, pos_integer()}
 
-    # Atomic increment, so parallel attempts are all counted.
-    count = :ets.update_counter(@table, key, {2, 1}, {key, 0, reset_at})
+  @doc "Whether `key` is at or over `limit` right now, without counting a hit."
+  @callback limited?(key :: term(), limit :: pos_integer()) :: boolean()
 
-    case :ets.lookup(@table, key) do
-      [{^key, _count, stored_reset}] when stored_reset > now ->
-        if count > limit do
-          {:error, :rate_limited, max(1, stored_reset - now)}
-        else
-          {:ok, limit - count}
-        end
+  @doc "Forgets `key`, e.g. after a successful sign-in."
+  @callback reset(key :: term()) :: :ok
 
-      _expired_or_swept ->
-        :ets.insert(@table, {key, 1, reset_at})
-        {:ok, limit - 1}
-    end
+  @doc "Forgets every key. For tests."
+  @callback clear_all() :: :ok
+
+  @doc false
+  def child_spec(opts) do
+    # The ETS table and the expiry sweep live in a process either way: the
+    # Postgres backend's sweep keeps the table from growing.
+    backend().child_spec(opts)
   end
 
-  @doc """
-  Checks if `key` is currently rate limited without incrementing the counter.
-  """
-  def limited?(key, limit) do
-    now = System.system_time(:second)
+  def hit(key, limit, window_seconds), do: backend().hit(key, limit, window_seconds)
+  def limited?(key, limit), do: backend().limited?(key, limit)
+  def reset(key), do: backend().reset(key)
+  def clear_all, do: backend().clear_all()
 
-    case :ets.lookup(@table, key) do
-      [{^key, count, stored_reset}] when count >= limit and now < stored_reset ->
-        true
-
-      _ ->
-        false
-    end
-  end
-
-  @doc """
-  Resets attempts for `key` (e.g. upon successful authentication).
-  """
-  def reset(key) do
-    :ets.delete(@table, key)
-    :ok
-  end
-
-  @doc """
-  Clears all rate limit entries (primarily for testing).
-  """
-  def clear_all do
-    :ets.delete_all_objects(@table)
-    :ok
-  end
-
-  # Server Callbacks
-
-  @impl true
-  def init(_opts) do
-    :ets.new(@table, [
-      :set,
-      :public,
-      :named_table,
-      read_concurrency: true,
-      write_concurrency: true
-    ])
-
-    schedule_sweep()
-    {:ok, %{}}
-  end
-
-  @impl true
-  def handle_info(:sweep, state) do
-    prune_expired()
-    schedule_sweep()
-    {:noreply, state}
-  end
-
-  defp prune_expired do
-    now = System.system_time(:second)
-    ms = [{{:_, :_, :"$1"}, [{:"=<", :"$1", now}], [true]}]
-    :ets.select_delete(@table, ms)
-  end
-
-  defp schedule_sweep do
-    Process.send_after(self(), :sweep, @sweep_interval_ms)
-  end
+  @doc "The backend in use."
+  def backend,
+    do: Application.get_env(:quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.Postgres)
 end

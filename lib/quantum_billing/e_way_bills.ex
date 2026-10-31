@@ -35,6 +35,7 @@ defmodule QuantumBilling.EWayBills do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Paging
   alias QuantumBilling.Repo
+  alias QuantumBilling.Webhooks
   alias QuantumBilling.Settings
 
   # Allowlisted sort columns; `value` lives on the invoice.
@@ -100,6 +101,7 @@ defmodule QuantumBilling.EWayBills do
           end
 
           broadcast_change(bill)
+          Webhooks.publish("e_way_bill.generated", bill.id)
           {:ok, bill}
 
         {:error, changeset} ->
@@ -148,6 +150,7 @@ defmodule QuantumBilling.EWayBills do
           })
 
           broadcast_change(cancelled)
+          Webhooks.publish("e_way_bill.cancelled", cancelled.id)
           {:ok, cancelled}
 
         {:error, changeset} ->
@@ -353,14 +356,21 @@ defmodule QuantumBilling.EWayBills do
     sort_field = Keyword.get(opts, :sort_field, :issued_on)
     sort_dir = Keyword.get(opts, :sort_dir, :desc)
 
-    result =
+    query =
       base_query()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
-      |> Paging.page(&order(&1, sort_field, sort_dir),
-        page: Keyword.get(opts, :page, 1),
-        per_page: per_page
-      )
+
+    # `:keyset` pages newest-created first below `:before_id`, for the API.
+    result =
+      if Keyword.get(opts, :keyset, false) do
+        Paging.keyset(query, Keyword.get(opts, :before_id), per_page)
+      else
+        Paging.page(query, &order(&1, sort_field, sort_dir),
+          page: Keyword.get(opts, :page, 1),
+          per_page: per_page
+        )
+      end
 
     # `records: true` hands back the bills themselves, for the API.
     if Keyword.get(opts, :records, false),

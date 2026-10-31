@@ -14,6 +14,8 @@ defmodule QuantumBillingWeb.GSTR1ExportController do
   """
   use QuantumBillingWeb, :controller
 
+  plug QuantumBillingWeb.Plugs.RecordExport, "GSTR-1 export" when action in [:export_gstr1]
+
   alias QuantumBilling.Compliance.GSTNExporter
 
   def export_gstr1(conn, params) do

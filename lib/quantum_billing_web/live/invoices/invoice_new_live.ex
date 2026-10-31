@@ -74,7 +74,9 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     socket
     |> assign(:page_title, "Create New GST Invoice")
     |> assign(:invoice, %Invoice{})
-    |> assign_form(Invoices.change_invoice(%Invoice{}, with_company(params, organization)))
+    |> assign_form(
+      Invoices.change_invoice(%Invoice{}, params, Invoices.company_snapshot(organization))
+    )
   end
 
   defp mount_edit(id, _organization, socket) do
@@ -131,15 +133,13 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       |> match_typed_client(event["_target"])
       |> apply_client_choice(socket)
 
-    params =
-      params
-      |> pan_from_gstin()
-      |> apply_payment_term()
-      |> with_company(socket.assigns.organization)
+    params = params |> pan_from_gstin() |> apply_payment_term()
 
+    # The company goes in as trusted, so the live preview splits the tax
+    # correctly; the save takes its own snapshot.
     changeset =
       socket.assigns.invoice
-      |> Invoices.change_invoice(params)
+      |> Invoices.change_invoice(params, Invoices.company_snapshot(socket.assigns.organization))
       |> Map.put(:action, :validate)
 
     {:noreply, assign_form(socket, changeset)}
@@ -249,16 +249,6 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     socket
     |> assign(:clients, options)
     |> assign(:client_options_truncated?, length(options) >= Clients.picker_limit())
-  end
-
-  # So the live preview picks CGST/SGST or IGST correctly; create_invoice/1 sets it again.
-  defp with_company(params, %Organization{} = organization) do
-    Map.merge(params, %{
-      "company_name" => organization.company_name,
-      "company_address" => organization.address,
-      "company_gstin" => organization.gstin,
-      "company_state" => organization.state
-    })
   end
 
   # A named term implies the due date; "Custom" leaves whatever is in the box.

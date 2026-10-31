@@ -14,9 +14,10 @@ defmodule QuantumBillingWeb.API.V1.ClientController do
     case Pagination.parse(params) do
       {:ok, page, per_page} ->
         opts =
-          [page: page, per_page: per_page]
+          []
           |> put_filter(:status, params["status"])
           |> put_filter(:search, params["search"])
+          |> then(&Pagination.context_opts(page, per_page, &1))
 
         json(conn, ClientJSON.index(%{page: opts |> Clients.page() |> Pagination.settle(page)}))
 

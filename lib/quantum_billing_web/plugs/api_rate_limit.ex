@@ -10,8 +10,8 @@ defmodule QuantumBillingWeb.Plugs.ApiRateLimit do
   number in a statutory series; a runaway loop doing that is worse than one
   reading.
 
-  The counters are per node (`QuantumBilling.RateLimiter` is ETS), so on a
-  cluster the effective limit is this times the number of nodes.
+  The counters are shared by every server (`QuantumBilling.RateLimiter`'s
+  Postgres backend), so the limit holds however many nodes serve the API.
   """
 
   import Plug.Conn

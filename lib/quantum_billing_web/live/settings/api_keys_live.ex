@@ -26,11 +26,15 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
 
   @scope_descriptions %{
     "invoices:read" => "List and fetch invoices",
-    "invoices:write" => "Create invoices",
+    "invoices:write" => "Create and cancel invoices",
     "invoices:payment_links" => "See each invoice's customer payment link",
+    "invoices:payments" => "Record payments received outside the gateway",
+    "invoices:e_invoice" => "Register invoices with the IRP for an IRN",
     "clients:read" => "List and fetch clients, including contact details",
     "clients:write" => "Create clients",
-    "e_way_bills:read" => "List and fetch e-way bills"
+    "e_way_bills:read" => "List and fetch e-way bills",
+    "credit_notes:read" => "List and fetch credit and debit notes",
+    "credit_notes:write" => "Raise credit and debit notes against invoices"
   }
 
   def mount(_params, _session, socket) do

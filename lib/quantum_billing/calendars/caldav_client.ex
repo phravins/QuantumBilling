@@ -2,7 +2,7 @@ defmodule QuantumBilling.Calendars.CaldavClient do
   @moduledoc """
   CalDAV: one `.ics` resource per event, under the calendar's collection URL.
 
-  The URL is typed by an owner, so `UrlGuard` checks it before every request and
+  The URL is typed by an owner, so `UrlGuard` checks and pins it before every request and
   redirects are refused, for the same reasons as webhooks. A URL that is not
   https is refused too, because the password goes with every request. Errors are
   plain atoms, so neither the password nor a server's reply can reach a log.
@@ -68,28 +68,30 @@ defmodule QuantumBilling.Calendars.CaldavClient do
   defp failure(_other), do: {:error, :unavailable}
 
   defp request(method, url, username, password, options) do
-    with :ok <- check(url) do
+    with {:ok, pinned_url, pin_options} <- pin(url) do
       [
         method: method,
-        url: url,
+        url: pinned_url,
         auth: {:basic, username <> ":" <> password},
         receive_timeout: 10_000,
         retry: false,
         redirect: false,
         decode_body: false
       ]
+      |> Keyword.merge(pin_options)
       |> Keyword.merge(options)
       |> Keyword.merge(Application.get_env(:quantum_billing, :calendar_req_options, []))
       |> Req.request()
     end
   end
 
-  defp check("https://" <> _rest = url) do
-    case UrlGuard.check(url) do
-      :ok -> :ok
+  # Resolved once and connected to the address that passed; see `UrlGuard.pin/1`.
+  defp pin("https://" <> _rest = url) do
+    case UrlGuard.pin(url) do
+      {:ok, pinned_url, pin_options} -> {:ok, pinned_url, pin_options}
       {:error, _reason} -> {:error, :blocked}
     end
   end
 
-  defp check(_url), do: {:error, :blocked}
+  defp pin(_url), do: {:error, :blocked}
 end

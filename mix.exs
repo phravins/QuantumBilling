@@ -67,7 +67,10 @@ defmodule QuantumBilling.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
+      # 1.14.1 fixes the HTTP/1.1, HTTP/2 and WebSocket denial-of-service and
+      # smuggling advisories published in October 2026 (GHSA-pxjf-g536-7r93,
+      # GHSA-jwh3-j29h-qfmw, GHSA-fmr8-qrvr-4ww5, GHSA-w5wc-g2hc-g7m2 and others).
+      {:bandit, "~> 1.14 and >= 1.14.1"},
       # Invoice layouts and the e-invoice export are both XML. Saxy is pure
       # Elixir with no transitive dependencies, and — unlike `:xmerl` — it has
       # no DTD or external entity support at all, so entity-expansion attacks

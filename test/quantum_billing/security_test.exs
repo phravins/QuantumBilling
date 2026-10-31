@@ -82,9 +82,7 @@ defmodule QuantumBilling.SecurityTest do
             "razorpay_key_id" => "rzp_live_visible",
             "razorpay_key_secret" => "rzp_secret_hidden",
             "irp_username" => "irp_visible",
-            "irp_password" => "irp_secret_hidden",
-            "webhook_url" => "https://example.test/hooks",
-            "webhook_secret" => "whsec_hidden"
+            "irp_password" => "irp_secret_hidden"
           },
           :integrations
         )
@@ -92,27 +90,23 @@ defmodule QuantumBilling.SecurityTest do
       %{rows: [row]} =
         Repo.query!(
           """
-          SELECT razorpay_key_id, razorpay_key_secret, irp_username, irp_password,
-                 webhook_url, webhook_secret
+          SELECT razorpay_key_id, razorpay_key_secret, irp_username, irp_password
           FROM biz_1.organization_settings LIMIT 1
           """,
           []
         )
 
-      [key_id, key_secret, irp_username, irp_password, webhook_url, webhook_secret] = row
+      [key_id, key_secret, irp_username, irp_password] = row
 
       # Configuration stays readable; credentials do not.
       assert key_id == "rzp_live_visible"
       assert irp_username == "irp_visible"
-      assert webhook_url == "https://example.test/hooks"
 
       refute key_secret =~ "rzp_secret_hidden"
       refute irp_password =~ "irp_secret_hidden"
-      refute webhook_secret =~ "whsec_hidden"
 
       organization = Settings.get_organization()
       assert organization.razorpay_key_secret == "rzp_secret_hidden"
-      assert organization.webhook_secret == "whsec_hidden"
     end
   end
 

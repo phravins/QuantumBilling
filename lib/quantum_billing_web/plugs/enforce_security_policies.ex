@@ -4,7 +4,11 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
 
     * the IP allowlist, if one is set;
     * the inactivity timeout on a signed-in session;
-    * mandatory two-factor enrolment, if the organisation requires it.
+    * mandatory two-factor enrolment — for everyone when the installation
+      requires it, and always for anyone who owns a business: an owner can
+      hand out accounts, issue API keys and export everything, so their
+      password alone must not be enough. (`:require_owner_2fa`, on unless
+      configured off.)
 
   All three read from `installation_settings`, so they are policy the owners
   set rather than constants in the code. They belong to the installation, not to
@@ -110,7 +114,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
 
   defp check_mandatory_2fa(%{halted: true} = conn, _organization), do: conn
 
-  defp check_mandatory_2fa(conn, %{enforce_2fa: true} = _organization) do
+  defp check_mandatory_2fa(conn, organization) do
     user = current_user(conn)
 
     cond do
@@ -124,22 +128,34 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
       exempt_path?(conn.request_path) ->
         conn
 
+      not required?(organization, user) ->
+        conn
+
       true ->
         conn
         |> fetch_flash()
         |> put_flash(
           :error,
-          "Your organization requires Two-Factor Authentication (2FA). " <>
-            "Please configure 2FA in your account settings."
+          "Two-factor authentication is required for your account. " <>
+            "Set it up in your account settings to continue."
         )
         |> redirect(to: "/users/settings")
         |> halt()
     end
   end
 
-  defp check_mandatory_2fa(conn, _organization), do: conn
+  # Asked only of someone not enrolled, so the query is not on every request.
+  defp required?(%{enforce_2fa: true}, _user), do: true
 
-  defp enrolled?(%{totp_secret: secret}), do: is_binary(secret) and secret != ""
+  defp required?(_organization, user) do
+    Application.get_env(:quantum_billing, :require_owner_2fa, true) and
+      QuantumBilling.Businesses.owns_any?(user)
+  end
+
+  # Confirmed, not merely started: opening the enrolment screen stores a secret
+  # before any code has been checked, and counting that would let anyone meet
+  # the requirement by starting enrolment and walking away.
+  defp enrolled?(user), do: QuantumBilling.Accounts.TwoFactor.enabled?(user)
 
   defp exempt_path?(path) do
     String.starts_with?(path, "/users/settings") or

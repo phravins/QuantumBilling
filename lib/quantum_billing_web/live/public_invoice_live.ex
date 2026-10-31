@@ -82,13 +82,13 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
       nil ->
         {:noreply, invoice_gone(socket)}
 
-      %{razorpay_payment_url: url} when is_binary(url) and url != "" ->
-        {:noreply, redirect(socket, external: url)}
+      %{razorpay_payment_url: url} = invoice when is_binary(url) and url != "" ->
+        pay_at(socket, invoice, url)
 
       invoice ->
         case Payments.generate_payment_link(invoice) do
           {:ok, updated_invoice} ->
-            {:noreply, redirect(socket, external: updated_invoice.razorpay_payment_url)}
+            pay_at(socket, updated_invoice, updated_invoice.razorpay_payment_url)
 
           {:error, reason} ->
             # The customer gets a sentence; the business gets the reason. This
@@ -110,6 +110,24 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
                  "or contact the business that sent this invoice."
              )}
         end
+    end
+  end
+
+  # Only ever an https URL with a host: see `Payments.safe_payment_url/1`.
+  defp pay_at(socket, invoice, url) do
+    case Payments.safe_payment_url(url) do
+      nil ->
+        Logger.error("[PublicInvoice] refused an unsafe payment URL on invoice #{invoice.id}")
+
+        {:noreply,
+         assign(
+           socket,
+           :payment_error,
+           "Online payment is not available right now. Please contact the business that sent this invoice."
+         )}
+
+      safe ->
+        {:noreply, redirect(socket, external: safe)}
     end
   end
 

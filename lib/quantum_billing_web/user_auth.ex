@@ -16,10 +16,13 @@ defmodule QuantumBillingWeb.UserAuth do
   # Should match the session validity in UserToken.
   @max_cookie_age_in_days 14
   @remember_me_cookie "_quantum_billing_web_user_remember_me"
+  # Secure in production, like the session cookie: it is a fourteen-day sign-in
+  # and must never cross plain http. Encrypted, and HttpOnly by default.
   @remember_me_options [
     encrypt: true,
     max_age: @max_cookie_age_in_days * 24 * 60 * 60,
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Application.compile_env(:quantum_billing, :secure_session_cookie, false)
   ]
 
   # Tokens older than this are reissued.
@@ -33,6 +36,16 @@ defmodule QuantumBillingWeb.UserAuth do
   """
   def log_in_user(conn, user, params \\ %{}) do
     user_return_to = get_session(conn, :user_return_to)
+
+    # Recorded, and the holder told when it is from somewhere new.
+    QuantumBilling.SecurityAlerts.signed_in(
+      user,
+      conn
+      |> QuantumBillingWeb.ClientIP.client_ip_tuple()
+      |> QuantumBillingWeb.ClientIP.to_string_ip(),
+      conn |> get_req_header("user-agent") |> List.first(),
+      :browser
+    )
 
     conn
     |> create_or_extend_session(user, params)
@@ -292,6 +305,20 @@ defmodule QuantumBillingWeb.UserAuth do
     Enum.each(tokens, fn %{token: token} ->
       QuantumBillingWeb.Endpoint.broadcast(user_session_topic(token), "disconnect", %{})
     end)
+  end
+
+  @doc """
+  Disconnects every open LiveView `user` has, in every browser.
+
+  For a change to what they may do — removed from a business, an owner made
+  staff. Membership is checked when a LiveView mounts, so an already-open page
+  would otherwise go on acting with the access it mounted with. Disconnected,
+  it reconnects at once, mounts again, and is held to the new rules. Their
+  sessions themselves survive: they stay signed in to whatever else they may
+  still use.
+  """
+  def disconnect_user(%Accounts.User{} = user) do
+    user |> Accounts.list_user_session_tokens() |> disconnect_sessions()
   end
 
   defp user_session_topic(token), do: "users_sessions:#{Base.url_encode64(token)}"

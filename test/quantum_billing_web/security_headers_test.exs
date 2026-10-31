@@ -20,6 +20,91 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
     conn |> get_resp_header("content-security-policy") |> List.first()
   end
 
+  describe "the other browser headers" do
+    test "forbid framing, powerful features and cross-window access", %{conn: conn} do
+      conn = get(conn, ~p"/dashboard")
+
+      assert get_resp_header(conn, "x-frame-options") == ["DENY"]
+      assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      assert [policy] = get_resp_header(conn, "permissions-policy")
+      assert policy =~ "camera=()"
+      assert policy =~ "geolocation=()"
+      assert get_resp_header(conn, "cross-origin-opener-policy") == ["same-origin"]
+      assert [_referrer] = get_resp_header(conn, "referrer-policy")
+    end
+
+    test "JSON responses are not cached, sniffed or framed" do
+      for path <- ["/health", "/api/v1/me"] do
+        conn = get(build_conn(), path)
+
+        assert get_resp_header(conn, "x-content-type-options") == ["nosniff"], path
+        assert get_resp_header(conn, "cache-control") == ["no-store"], path
+        assert [csp] = get_resp_header(conn, "content-security-policy")
+        assert csp =~ "default-src 'none'"
+      end
+    end
+
+    test "an oversized body is refused before it reaches a route" do
+      body = Jason.encode!(%{"padding" => String.duplicate("x", 2_100_000)})
+
+      assert_raise Plug.Parsers.RequestTooLargeError, fn ->
+        build_conn()
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/v1/invoices", body)
+      end
+    end
+
+    test "multipart bodies are not parsed, so nothing is spooled to disk" do
+      # Left unread, the body never becomes params — and never a temp file. The
+      # route then sees no params at all (in production, a 400).
+      error =
+        assert_raise Phoenix.ActionClauseError, fn ->
+          build_conn()
+          |> put_req_header("content-type", "multipart/form-data; boundary=x")
+          |> post(
+            "/users/log-in",
+            "--x\r\nContent-Disposition: form-data; name=\"f\"; filename=\"a.bin\"\r\n\r\nAAAA\r\n--x--\r\n"
+          )
+        end
+
+      assert [%Plug.Conn{body_params: %Plug.Conn.Unfetched{}}, params | _] = error.args
+      assert params == %{}
+    end
+
+    test "the remember-me cookie is HttpOnly and SameSite" do
+      user =
+        QuantumBilling.AccountsFixtures.user_fixture()
+        |> QuantumBilling.AccountsFixtures.set_password()
+
+      conn =
+        post(build_conn(), ~p"/users/log-in", %{
+          "user" => %{
+            "email" => user.email,
+            "password" => QuantumBilling.AccountsFixtures.valid_user_password(),
+            "remember_me" => "true"
+          }
+        })
+
+      [cookie] =
+        for c <- get_resp_header(conn, "set-cookie"),
+            c =~ "_quantum_billing_web_user_remember_me",
+            do: c
+
+      assert cookie =~ "HttpOnly"
+      assert cookie =~ "SameSite=Lax"
+      # `secure` follows :secure_session_cookie, which production sets; see
+      # config/prod.exs. Plain-http test requests cannot carry it.
+    end
+
+    test "the session cookie is HttpOnly, SameSite and encrypted", %{conn: conn} do
+      conn = conn |> recycle() |> get(~p"/users/log-in")
+      [cookie] = for c <- get_resp_header(conn, "set-cookie"), c =~ "_quantum_billing_key", do: c
+
+      assert cookie =~ "HttpOnly"
+      assert cookie =~ "SameSite=Lax"
+    end
+  end
+
   describe "the application's pages" do
     test "carry a policy", %{conn: conn} do
       policy = conn |> get(~p"/dashboard") |> csp()
