@@ -14,6 +14,28 @@ defmodule QuantumBilling.Payments do
   alias QuantumBillingWeb.Format
 
   @doc """
+  `url` when it is safe to send a customer to or render as a link: an
+  `https://` URL with a host and no credentials. `nil` otherwise.
+
+  The payment URL is written only by the gateway client today, but it ends up
+  in a redirect on an unauthenticated page and in an `href` on the invoice
+  page, where a `javascript:` or plain-http value would be an XSS or a
+  downgrade. Checked where it is used, so no future writer can get that wrong.
+  """
+  def safe_payment_url(url) when is_binary(url) do
+    case URI.new(url) do
+      {:ok, %URI{scheme: "https", host: host, userinfo: nil}}
+      when is_binary(host) and host != "" ->
+        url
+
+      _other ->
+        nil
+    end
+  end
+
+  def safe_payment_url(_url), do: nil
+
+  @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
   """
   def generate_payment_link(%Invoice{} = invoice) do

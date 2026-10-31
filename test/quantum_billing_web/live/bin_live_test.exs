@@ -27,7 +27,8 @@ defmodule QuantumBillingWeb.BinLiveTest do
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
 
-  setup :register_and_log_in_user
+  # An owner: permanent deletion is theirs alone (see "staff" below).
+  setup :register_and_log_in_owner
 
   defp client_fixture do
     {:ok, client} =
@@ -165,6 +166,34 @@ defmodule QuantumBillingWeb.BinLiveTest do
     assert has_element?(view, ~s|nav a[href="/bin"]|, "Bin")
     assert has_element?(view, ~s|nav li:has(a[href="/bin"]) + li a[href="/settings"]|)
     refute has_element?(view, ~s|nav li:has(a[href="/settings"]) + li a[href="/bin"]|)
+  end
+
+  describe "staff" do
+    setup %{conn: _conn} do
+      user = QuantumBilling.AccountsFixtures.user_fixture()
+      %{conn: log_in_user(build_conn(), user)}
+    end
+
+    test "can restore but are not offered permanent deletion", %{conn: conn} do
+      invoice = invoice_fixture()
+      {:ok, _} = Invoices.delete_invoice(invoice)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+
+      assert has_element?(view, "#bin-restore-invoice-#{invoice.id}")
+      refute has_element?(view, "#bin-purge-invoice-#{invoice.id}")
+    end
+
+    test "a purge sent anyway is refused and deletes nothing", %{conn: conn} do
+      invoice = invoice_fixture()
+      {:ok, _} = Invoices.delete_invoice(invoice)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+      render_click(view, "purge", %{"type" => "invoice", "id" => to_string(invoice.id)})
+
+      assert has_element?(view, "#flash-error", "Only an owner")
+      assert QuantumBilling.Repo.get(QuantumBilling.Invoices.Invoice, invoice.id)
+    end
   end
 
   describe "an empty Bin" do

@@ -20,6 +20,39 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
     conn |> get_resp_header("content-security-policy") |> List.first()
   end
 
+  describe "the other browser headers" do
+    test "forbid framing, powerful features and cross-window access", %{conn: conn} do
+      conn = get(conn, ~p"/dashboard")
+
+      assert get_resp_header(conn, "x-frame-options") == ["DENY"]
+      assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      assert [policy] = get_resp_header(conn, "permissions-policy")
+      assert policy =~ "camera=()"
+      assert policy =~ "geolocation=()"
+      assert get_resp_header(conn, "cross-origin-opener-policy") == ["same-origin"]
+      assert [_referrer] = get_resp_header(conn, "referrer-policy")
+    end
+
+    test "JSON responses are not cached, sniffed or framed" do
+      for path <- ["/health", "/api/v1/me"] do
+        conn = get(build_conn(), path)
+
+        assert get_resp_header(conn, "x-content-type-options") == ["nosniff"], path
+        assert get_resp_header(conn, "cache-control") == ["no-store"], path
+        assert [csp] = get_resp_header(conn, "content-security-policy")
+        assert csp =~ "default-src 'none'"
+      end
+    end
+
+    test "the session cookie is HttpOnly, SameSite and encrypted", %{conn: conn} do
+      conn = conn |> recycle() |> get(~p"/users/log-in")
+      [cookie] = for c <- get_resp_header(conn, "set-cookie"), c =~ "_quantum_billing_key", do: c
+
+      assert cookie =~ "HttpOnly"
+      assert cookie =~ "SameSite=Lax"
+    end
+  end
+
   describe "the application's pages" do
     test "carry a policy", %{conn: conn} do
       policy = conn |> get(~p"/dashboard") |> csp()

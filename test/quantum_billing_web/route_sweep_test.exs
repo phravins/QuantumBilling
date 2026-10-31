@@ -145,7 +145,6 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/recurring",
         ~p"/bin",
         ~p"/settings",
-        ~p"/settings/audit-logs",
         ~p"/invoice-templates/#{template.id}"
       ]
 
@@ -161,6 +160,15 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       for section <- ~w(general invoice tax e-way-bill smtp integrations security notifications) do
         assert {:ok, _view, _html} = live(conn, ~p"/settings/#{section}"),
                "settings/#{section} did not mount"
+      end
+    end
+
+    test "every owner-only page renders for an owner", %{conn: conn, user: user} do
+      {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
+
+      for path <- ~w(/settings/team /settings/api-keys /settings/webhooks /settings/audit-logs) do
+        assert {:ok, _view, html} = live(conn, path), "#{path} did not mount for an owner"
+        assert html =~ "<html"
       end
     end
 
@@ -304,11 +312,13 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "owners"
     end
 
-    test "the team page is refused", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/dashboard", flash: flash}}} =
-               live(conn, ~p"/settings/team")
+    test "every owner-only page is refused", %{conn: conn} do
+      for path <- ~w(/settings/team /settings/api-keys /settings/webhooks /settings/audit-logs) do
+        assert {:error, {:redirect, %{to: "/dashboard", flash: flash}}} = live(conn, path),
+               "#{path} was not refused to staff"
 
-      assert flash["error"] =~ "owners"
+        assert flash["error"] =~ "owners"
+      end
     end
 
     test "the settings sidebar does not offer what it would refuse", %{conn: conn} do

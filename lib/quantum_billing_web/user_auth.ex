@@ -294,6 +294,20 @@ defmodule QuantumBillingWeb.UserAuth do
     end)
   end
 
+  @doc """
+  Disconnects every open LiveView `user` has, in every browser.
+
+  For a change to what they may do — removed from a business, an owner made
+  staff. Membership is checked when a LiveView mounts, so an already-open page
+  would otherwise go on acting with the access it mounted with. Disconnected,
+  it reconnects at once, mounts again, and is held to the new rules. Their
+  sessions themselves survive: they stay signed in to whatever else they may
+  still use.
+  """
+  def disconnect_user(%Accounts.User{} = user) do
+    user |> Accounts.list_user_session_tokens() |> disconnect_sessions()
+  end
+
   defp user_session_topic(token), do: "users_sessions:#{Base.url_encode64(token)}"
 
   @doc """

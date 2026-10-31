@@ -9,7 +9,19 @@ defmodule QuantumBillingWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {QuantumBillingWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    # On top of Phoenix's defaults. `frame-ancestors 'none'` in the policy is
+    # what modern browsers obey; X-Frame-Options is the same rule for older
+    # ones. Nothing here uses the camera, microphone, location or payment
+    # APIs, so no page — or anything injected into one — may ask for them.
+    # Cross-origin-opener isolates the window from pages it opens or that
+    # open it, which is what cross-window attacks rely on.
+    plug :put_secure_browser_headers, %{
+      "x-frame-options" => "DENY",
+      "permissions-policy" =>
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+      "cross-origin-opener-policy" => "same-origin"
+    }
+
     plug QuantumBillingWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_scope_for_user
     plug :fetch_current_business
@@ -18,6 +30,7 @@ defmodule QuantumBillingWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug QuantumBillingWeb.Plugs.ApiResponseHeaders
   end
 
   # The external API. No session, no cookies, no CSRF token and no CORS: it is
@@ -27,6 +40,7 @@ defmodule QuantumBillingWeb.Router do
   # each controller.
   pipeline :api_v1 do
     plug :accepts, ["json"]
+    plug QuantumBillingWeb.Plugs.ApiResponseHeaders
     plug QuantumBillingWeb.Plugs.ApiRequireHttps
     plug QuantumBillingWeb.Plugs.ApiAuth
     plug QuantumBillingWeb.Plugs.ApiRateLimit
@@ -75,6 +89,9 @@ defmodule QuantumBillingWeb.Router do
       live "/settings/api-keys", SettingsLive.ApiKeys, :index
       # A webhook sends the business's activity to a server someone typed in.
       live "/settings/webhooks", SettingsLive.Webhooks, :index
+      # Every member's actions and addresses: the record an investigation
+      # starts from, and personal data about the staff themselves.
+      live "/settings/audit-logs", AuditLogsLive, :index
     end
   end
 
@@ -143,7 +160,6 @@ defmodule QuantumBillingWeb.Router do
       live "/compliance", ComplianceLive, :index
       live "/recurring", RecurringLive, :index
       live "/bin", BinLive, :index
-      live "/settings/audit-logs", AuditLogsLive, :index
       live "/settings", SettingsLive, :index
       live "/settings/:section", SettingsLive, :section
       live "/invoice-templates/:id", InvoiceTemplateDesignLive, :design

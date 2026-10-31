@@ -81,8 +81,21 @@ defmodule QuantumBillingWeb.BinLive do
     {:noreply, socket |> act(fetch(type, id), &restore/2) |> load_entries()}
   end
 
+  # Purging destroys an invoice — a statutory record — for good, so it is an
+  # owner's call. Staff can bin and restore; the button is hidden from them,
+  # and the event is refused here too, since any event can be sent to a page.
   def handle_event("purge", %{"type" => type, "id" => id}, socket) do
-    {:noreply, socket |> act(fetch(type, id), &purge/2) |> load_entries()}
+    if QuantumBilling.Accounts.Scope.owner?(socket.assigns.current_scope) do
+      {:noreply, socket |> act(fetch(type, id), &purge/2) |> load_entries()}
+    else
+      {:noreply,
+       socket
+       |> put_flash(
+         :error,
+         "Only an owner can delete permanently. Ask an owner of this business."
+       )
+       |> load_entries()}
+    end
   end
 
   def handle_info({:invoice_changed, _invoice}, socket) do
@@ -484,7 +497,7 @@ defmodule QuantumBillingWeb.BinLive do
                     </button>
 
                     <button
-                      :if={!entry.locked}
+                      :if={!entry.locked and QuantumBilling.Accounts.Scope.owner?(@current_scope)}
                       type="button"
                       id={"bin-purge-#{entry.id}"}
                       phx-click="purge"

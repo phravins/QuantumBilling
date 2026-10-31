@@ -282,29 +282,9 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # Synchronous: reports what the relay said.
   def handle_event("send_test_email", _params, socket) do
-    recipient = test_recipient(socket.assigns)
-
-    case recipient && Mail.send_test(recipient) do
-      {:ok, _metadata} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, test_sent_message(recipient))
-         |> assign_deliveries()}
-
-      {:error, message} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "The relay refused it: #{message}")
-         |> assign_deliveries()}
-
-      nil ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Set a contact email address first — there is nobody to send a test to."
-         )}
-    end
+    if Scope.owner?(socket.assigns.current_scope),
+      do: send_test_email(socket),
+      else: {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
   end
 
   # The section is checked on navigation, but an event can be sent from any of them.
@@ -391,6 +371,32 @@ defmodule QuantumBillingWeb.SettingsLive do
       restore_backup(socket)
     else
       {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
+  end
+
+  defp send_test_email(socket) do
+    recipient = test_recipient(socket.assigns)
+
+    case recipient && Mail.send_test(recipient) do
+      {:ok, _metadata} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, test_sent_message(recipient))
+         |> assign_deliveries()}
+
+      {:error, message} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "The relay refused it: #{message}")
+         |> assign_deliveries()}
+
+      nil ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Set a contact email address first — there is nobody to send a test to."
+         )}
     end
   end
 
