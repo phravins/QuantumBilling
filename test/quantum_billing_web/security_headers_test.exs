@@ -44,6 +44,58 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
       end
     end
 
+    test "an oversized body is refused before it reaches a route" do
+      body = Jason.encode!(%{"padding" => String.duplicate("x", 2_100_000)})
+
+      assert_raise Plug.Parsers.RequestTooLargeError, fn ->
+        build_conn()
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/v1/invoices", body)
+      end
+    end
+
+    test "multipart bodies are not parsed, so nothing is spooled to disk" do
+      # Left unread, the body never becomes params — and never a temp file. The
+      # route then sees no params at all (in production, a 400).
+      error =
+        assert_raise Phoenix.ActionClauseError, fn ->
+          build_conn()
+          |> put_req_header("content-type", "multipart/form-data; boundary=x")
+          |> post(
+            "/users/log-in",
+            "--x\r\nContent-Disposition: form-data; name=\"f\"; filename=\"a.bin\"\r\n\r\nAAAA\r\n--x--\r\n"
+          )
+        end
+
+      assert [%Plug.Conn{body_params: %Plug.Conn.Unfetched{}}, params | _] = error.args
+      assert params == %{}
+    end
+
+    test "the remember-me cookie is HttpOnly and SameSite" do
+      user =
+        QuantumBilling.AccountsFixtures.user_fixture()
+        |> QuantumBilling.AccountsFixtures.set_password()
+
+      conn =
+        post(build_conn(), ~p"/users/log-in", %{
+          "user" => %{
+            "email" => user.email,
+            "password" => QuantumBilling.AccountsFixtures.valid_user_password(),
+            "remember_me" => "true"
+          }
+        })
+
+      [cookie] =
+        for c <- get_resp_header(conn, "set-cookie"),
+            c =~ "_quantum_billing_web_user_remember_me",
+            do: c
+
+      assert cookie =~ "HttpOnly"
+      assert cookie =~ "SameSite=Lax"
+      # `secure` follows :secure_session_cookie, which production sets; see
+      # config/prod.exs. Plain-http test requests cannot carry it.
+    end
+
     test "the session cookie is HttpOnly, SameSite and encrypted", %{conn: conn} do
       conn = conn |> recycle() |> get(~p"/users/log-in")
       [cookie] = for c <- get_resp_header(conn, "set-cookie"), c =~ "_quantum_billing_key", do: c

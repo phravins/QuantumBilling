@@ -16,10 +16,13 @@ defmodule QuantumBillingWeb.UserAuth do
   # Should match the session validity in UserToken.
   @max_cookie_age_in_days 14
   @remember_me_cookie "_quantum_billing_web_user_remember_me"
+  # Secure in production, like the session cookie: it is a fourteen-day sign-in
+  # and must never cross plain http. Encrypted, and HttpOnly by default.
   @remember_me_options [
     encrypt: true,
     max_age: @max_cookie_age_in_days * 24 * 60 * 60,
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Application.compile_env(:quantum_billing, :secure_session_cookie, false)
   ]
 
   # Tokens older than this are reissued.

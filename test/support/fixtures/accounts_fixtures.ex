@@ -79,9 +79,25 @@ defmodule QuantumBilling.AccountsFixtures do
   be written against by default.
   """
   def owner_fixture(attrs \\ %{}) do
-    user = user_fixture(attrs)
+    user = attrs |> user_fixture() |> enrol_two_factor()
     {:ok, _membership} = Accounts.set_role(Businesses.default!(), user, "owner")
     user
+  end
+
+  @doc """
+  `user` with two-factor authentication set up and confirmed.
+
+  Owners must have it (see `QuantumBillingWeb.Plugs.EnforceSecurityPolicies`),
+  so `owner_fixture/1` does this; a test about an owner who has not enrolled
+  calls `user_fixture/1` and promotes the user itself.
+  """
+  def enrol_two_factor(user) do
+    user
+    |> Ecto.Changeset.change(
+      totp_secret: NimbleTOTP.secret(),
+      totp_confirmed_at: DateTime.utc_now(:second)
+    )
+    |> QuantumBilling.Repo.update!()
   end
 
   @doc "`user`'s role in business 1 (or `business`), or `nil` when not a member."

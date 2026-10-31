@@ -155,6 +155,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "every settings section an owner can open renders", %{conn: conn, user: user} do
+      QuantumBilling.AccountsFixtures.enrol_two_factor(user)
       {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       for section <- ~w(general invoice tax e-way-bill smtp integrations security notifications) do
@@ -164,6 +165,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "every owner-only page renders for an owner", %{conn: conn, user: user} do
+      QuantumBilling.AccountsFixtures.enrol_two_factor(user)
       {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       for path <- ~w(/settings/team /settings/api-keys /settings/webhooks /settings/audit-logs) do
@@ -282,6 +284,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "the backup download answers for an owner", %{conn: conn, user: user} do
+      QuantumBilling.AccountsFixtures.enrol_two_factor(user)
       {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
       body = conn |> get(~p"/settings/backup/download") |> response(200)
@@ -346,6 +349,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
   describe "the owner-only pages, as an owner" do
     setup %{user: user} do
+      QuantumBilling.AccountsFixtures.enrol_two_factor(user)
       {:ok, _membership} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
       %{owner: user}
     end

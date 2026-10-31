@@ -199,8 +199,39 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  # TLS to PostgreSQL. `true`/`verify`: encrypted, with the server certificate
+  # and hostname checked against the system CAs, or against
+  # DATABASE_SSL_CACERTFILE for a private CA (as most managed databases use).
+  # Off by default so an existing deployment whose database has no TLS still
+  # boots — but a database on another host should never be reached in clear:
+  # the connection carries its password and every business's books.
+  database_ssl =
+    case String.downcase(System.get_env("DATABASE_SSL", "false")) do
+      ssl when ssl in ~w(true verify 1) ->
+        case System.get_env("DATABASE_SSL_CACERTFILE") do
+          nil -> true
+          "" -> true
+          cacertfile -> [cacertfile: cacertfile]
+        end
+
+      _off ->
+        false
+    end
+
+  database_host = URI.parse(database_url).host
+
+  if database_ssl == false and database_host not in [nil, "", "localhost", "127.0.0.1", "::1"] do
+    IO.puts(:stderr, """
+    [security] DATABASE_SSL is off but the database is on #{database_host}: credentials and
+    business data cross the network unencrypted. Set DATABASE_SSL=true (and
+    DATABASE_SSL_CACERTFILE for a private CA), and keep PostgreSQL reachable only from the
+    application hosts. See docs/deployment.md.
+    """)
+  end
+
   config :quantum_billing, QuantumBilling.Repo,
     url: database_url,
+    ssl: database_ssl,
     # Web requests and Oban jobs share this pool, and the queues in config.exs
     # can run 32 jobs at once. Postgres must allow POOL_SIZE × app servers
     # connections (its default max_connections is 100).

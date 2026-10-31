@@ -39,8 +39,14 @@ defmodule QuantumBillingWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: {__MODULE__, :log_level, []}
 
+  # No multipart: every file arrives through a LiveView upload, over the
+  # socket, so a multipart parser would only let anyone — signed in or not —
+  # have the server spool files to disk before any route or login check runs.
+  # 2MB is far above the largest form or API body (an API invoice of 200 lines
+  # is ~50KB) and well below Plug's 8MB default.
   plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
+    parsers: [:urlencoded, :json],
+    length: 2_000_000,
     pass: ["*/*"],
     # Signatures cover the raw bytes; see RawBodyReader.
     body_reader: {QuantumBillingWeb.RawBodyReader, :read_body, []},
