@@ -9,6 +9,8 @@ defmodule QuantumBillingWeb.BackupController do
   """
   use QuantumBillingWeb, :controller
 
+  plug QuantumBillingWeb.Plugs.RecordExport, :backup when action in [:download]
+
   alias QuantumBilling.Backup
 
   def download(conn, _params) do

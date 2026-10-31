@@ -86,6 +86,10 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # Anything else — a broadcast for another page, a library's reply — is not
+  # this page's business, and must not take it down.
+  def handle_info(_message, socket), do: {:noreply, socket}
+
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
@@ -418,6 +422,12 @@ defmodule QuantumBillingWeb.SettingsLive do
       [json_content] ->
         case QuantumBilling.Backup.restore_json(json_content) do
           {:ok, counts} ->
+            QuantumBilling.SecurityAlerts.admin_event(
+              socket.assigns.current_scope.business,
+              socket.assigns.current_scope.user,
+              "restored a backup into the business"
+            )
+
             {:noreply,
              socket
              |> put_flash(:info, "Restored #{restored_summary(counts)}.")

@@ -46,6 +46,12 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
     case Accounts.invite(business, email, role, inviter, url_fun) do
       {:ok, {:invited, invitation}} ->
+        QuantumBilling.SecurityAlerts.admin_event(
+          business,
+          inviter,
+          "invited #{invitation.email} as #{role}"
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Invitation sent to #{invitation.email}.")
@@ -53,6 +59,12 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
          |> load_team()}
 
       {:ok, {:added, membership}} ->
+        QuantumBilling.SecurityAlerts.admin_event(
+          business,
+          inviter,
+          "gave the existing account #{email} access as #{role}"
+        )
+
         {:noreply,
          socket
          |> put_flash(
@@ -147,10 +159,21 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
   end
 
   defp audit(socket, action, user, details) do
+    %{business: business, user: actor} = socket.assigns.current_scope
+
     QuantumBilling.Audit.log_event(action, "User", user.id,
-      user_id: socket.assigns.current_scope.user.id,
+      user_id: actor.id,
       details: Map.put(details, "email", user.email)
     )
+
+    summary =
+      case action do
+        :member_role_changed -> "made #{user.email} #{details["role"]}"
+        :member_removed -> "removed #{user.email} from the business"
+        :member_invited -> "gave #{user.email} access as #{details["role"]}"
+      end
+
+    QuantumBilling.SecurityAlerts.admin_event(business, actor, summary)
   end
 
   def render(assigns) do

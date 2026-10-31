@@ -339,6 +339,17 @@ defmodule QuantumBilling.Webhooks do
       user_id: owner.id,
       details: %{"url" => endpoint.url, "events" => endpoint.events}
     )
+
+    # Where the business's activity is sent, and who can sign as us there.
+    summary =
+      case action do
+        :webhook_endpoint_created -> "added a webhook endpoint sending to #{endpoint.url}"
+        :webhook_endpoint_updated -> "changed the webhook endpoint to #{endpoint.url}"
+        :webhook_secret_rotated -> "issued a new signing secret for #{endpoint.url}"
+        _other -> nil
+      end
+
+    if summary, do: QuantumBilling.SecurityAlerts.admin_event(Repo.business(), owner, summary)
   end
 
   ## Outgoing: deliveries

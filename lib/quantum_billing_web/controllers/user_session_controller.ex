@@ -31,7 +31,11 @@ defmodule QuantumBillingWeb.UserSessionController do
   # email + password login
   defp create(conn, %{"user" => user_params}, info) do
     %{"email" => email, "password" => password} = user_params
-    ip_key = {:login_ip, conn.remote_ip}
+    # The client's address, not the socket's: behind the reverse proxy every
+    # request's socket is the proxy's, so keying on it locked the whole
+    # installation after ten bad passwords from anyone.
+    ip = QuantumBillingWeb.ClientIP.client_ip_tuple(conn)
+    ip_key = {:login_ip, ip}
     email_key = {:login_email, String.downcase(String.trim(email || ""))}
 
     cond do
@@ -64,7 +68,14 @@ defmodule QuantumBillingWeb.UserSessionController do
 
           nil ->
             RateLimiter.hit(ip_key, 10, 60)
-            RateLimiter.hit(email_key, 5, 60)
+
+            # The attempt that locks the account tells its holder.
+            with {:ok, 0} <- RateLimiter.hit(email_key, 5, 60) do
+              QuantumBilling.SecurityAlerts.failed_passwords(
+                email,
+                QuantumBillingWeb.ClientIP.to_string_ip(ip)
+              )
+            end
 
             conn
             |> put_flash(:error, "Invalid email or password")
@@ -136,7 +147,7 @@ defmodule QuantumBillingWeb.UserSessionController do
             )
             |> redirect(to: ~p"/users/two-factor")
 
-          {:ok, _remaining} ->
+          {:ok, remaining} ->
             case TwoFactor.verify(user, code) do
               {:ok, user} ->
                 RateLimiter.reset(rate_key)
@@ -146,6 +157,17 @@ defmodule QuantumBillingWeb.UserSessionController do
                 |> UserAuth.complete_two_factor_login(user, pending)
 
               {:error, _reason} ->
+                # The last allowed attempt failing, after a correct password,
+                # means someone else may have the password.
+                if remaining == 0 do
+                  QuantumBilling.SecurityAlerts.failed_two_factor(
+                    user,
+                    conn
+                    |> QuantumBillingWeb.ClientIP.client_ip_tuple()
+                    |> QuantumBillingWeb.ClientIP.to_string_ip()
+                  )
+                end
+
                 conn
                 |> put_flash(:error, "That code is not valid. Please try again.")
                 |> redirect(to: ~p"/users/two-factor")

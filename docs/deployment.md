@@ -122,12 +122,23 @@ cannot do them for you.
 
 ### Monitoring
 
-Owners are notified in the app of security-relevant events (see
-`QuantumBilling.SecurityAlerts`): sign-ins from a new address, repeated failed
-sign-ins, full-data exports, role changes, API keys and webhook endpoints
-created, and 2FA switched off. Forward the application log, which records the
-same events under `[security]`, to your log system and alert on them there
-too: an in-app notice is only seen when someone signs in.
+`QuantumBilling.SecurityAlerts` emails whoever can act, and writes the same
+event to the log with a `[security]` prefix:
+
+| Event | Emailed to |
+|---|---|
+| Sign-in from an address the account has not used in 180 days | The account holder |
+| Five wrong passwords (sign-in locked), or wrong 2FA codes after a correct password | The account holder |
+| 2FA switched off | The account holder |
+| Role changed, member removed, invited or added | Every owner of the business |
+| API key created; webhook endpoint added, changed or its secret rotated | Every owner |
+| Full backup downloaded or restored | Every owner |
+| 30 report / GSTR-1 / e-way bill exports by one person within an hour | Every owner |
+
+Mail is only as good as the relay: make sure SMTP is configured, and also
+forward the application log to your log system and alert on `[security]`
+lines, so an event is seen even when mail is not read. Every one of these is
+also in the business's audit log.
 
 ## Health and logs
 

@@ -37,6 +37,16 @@ defmodule QuantumBillingWeb.UserAuth do
   def log_in_user(conn, user, params \\ %{}) do
     user_return_to = get_session(conn, :user_return_to)
 
+    # Recorded, and the holder told when it is from somewhere new.
+    QuantumBilling.SecurityAlerts.signed_in(
+      user,
+      conn
+      |> QuantumBillingWeb.ClientIP.client_ip_tuple()
+      |> QuantumBillingWeb.ClientIP.to_string_ip(),
+      conn |> get_req_header("user-agent") |> List.first(),
+      :browser
+    )
+
     conn
     |> create_or_extend_session(user, params)
     |> redirect(to: user_return_to || signed_in_path(conn))
