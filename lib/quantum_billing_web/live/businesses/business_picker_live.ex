@@ -465,10 +465,11 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
     "bg-base-200/80"
   }
 
+  # The grey shape behind each card's drawing.
   @building_tones {
-    "fill-base-200",
     "fill-base-content/10",
-    "fill-base-content/20",
+    "fill-base-content/15",
+    "fill-base-content/[0.07]",
     "fill-base-300"
   }
 

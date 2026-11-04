@@ -78,6 +78,18 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       refute has_element?(view, ~s(a[href="/settings"][phx-click]))
     end
 
+    # Collapsing leaves an icon rail: the buttons are client-side only, and
+    # every link keeps a tooltip for when its label is hidden.
+    test "the sidebar has its collapse, rail and drawer buttons", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices")
+
+      assert has_element?(view, "#app-sidebar")
+      assert has_element?(view, "#sidebar-collapse")
+      assert has_element?(view, "#sidebar-rail-expand")
+      assert has_element?(view, "#sidebar-expand")
+      assert has_element?(view, ~s(#app-sidebar a[href="/invoices"][title]))
+    end
+
     test "renders the General form fields", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/settings/general")
 

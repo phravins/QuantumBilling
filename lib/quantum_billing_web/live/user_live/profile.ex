@@ -66,8 +66,10 @@ defmodule QuantumBillingWeb.UserLive.Profile do
       notifications={@notifications}
       unread_count={@unread_count}
     >
-      <.card id="profile-hero" padding="p-0" class="mb-3 overflow-hidden">
-        <div class="group/banner relative h-44 overflow-hidden bg-base-300 sm:h-56">
+      <%!-- No overflow-hidden on the card: it would clip the options menu.
+           The banner clips itself and carries the card's top corners. --%>
+      <.card id="profile-hero" padding="p-0" class="relative z-10 mb-3">
+        <div class="group/banner relative h-44 overflow-hidden rounded-t-box bg-base-300 sm:h-56">
           <%!-- Keyed by seed so a shuffle replaces the SVG and replays the fade. --%>
           <div
             id={"profile-banner-frame-#{banner_seed(@current_scope.user)}"}

@@ -1,478 +1,582 @@
 defmodule QuantumBillingWeb.Illustrations do
   @moduledoc """
-  The flat illustrations on the focus screens: the company picker, the
-  "you're in" screen after choosing a company, and first-sign-in onboarding.
+  The illustrations on the focus screens: the company picker, the "you're in"
+  screen after choosing a company, and first-sign-in onboarding.
 
-  Inline SVG, so there is no file to fetch, nothing for the Content Security
-  Policy to allow. Drawn in the app's own ink and greys (`base-content` tints
-  on `base-100`/`base-200`), so they sit in the plain theme and follow light
-  and dark mode with it. Every colour is a literal class so Tailwind emits it.
+  Hand-drawn ink style in black and white: people drawn with a bold outline
+  over paper-white fills, solid ink hair and clothes, and soft grey shapes
+  behind them. Every scene is built from the same `person/1` figure, so the
+  set reads as one hand.
+
+  Inline SVG, so there is no file to fetch and nothing for the Content
+  Security Policy to allow. "Ink" is `base-content` and "paper" is `base-100`,
+  so the drawings invert with the rest of the app in dark mode. Every colour
+  is a literal class so Tailwind emits it.
 
   Decoration only: each SVG is `aria-hidden`, and the screen around it says in
   words whatever the picture shows.
   """
   use Phoenix.Component
 
-  @stroke "stroke-base-content/80"
-  @backdrop "fill-base-content/5"
-  @ground "fill-base-content/8"
-
   @doc """
-  A company: one of five buildings, so cards side by side do not look alike.
+  Someone at work, for a company card: at a laptop, behind a shop counter, in
+  a hard hat, carrying a box, or at a drawing board. Five, so cards side by
+  side do not look alike.
 
-  `variant` picks the building (any integer; it wraps), `tone` the colour of
-  its walls (a literal `fill-*` class from the caller).
+  `variant` picks the scene (any integer; it wraps), `tone` the fill of the
+  shape behind it (a literal `fill-*` class from the caller).
   """
   attr :variant, :integer, default: 0
-  attr :tone, :string, default: "fill-base-200"
+  attr :tone, :string, default: "fill-base-content/10"
   attr :class, :any, default: "h-28 w-auto"
 
   def company(assigns) do
-    assigns =
-      assigns
-      |> assign(:kind, rem(abs(assigns.variant), 5))
-      |> assign(stroke: @stroke, backdrop: @backdrop, ground: @ground)
+    assigns = assign(assigns, :kind, rem(abs(assigns.variant), 5))
 
     ~H"""
     <svg viewBox="0 0 200 160" class={@class} aria-hidden="true" fill="none">
-      <circle cx="100" cy="82" r="62" class={@backdrop} />
-      <ellipse cx="100" cy="142" rx="66" ry="6" class={@ground} />
+      <path
+        d="M40 46 C52 20 104 12 140 22 C176 32 192 66 186 100 C180 134 146 152 104 150 C62 148 22 132 16 100 C12 76 28 66 40 46 Z"
+        class={@tone}
+      />
 
       <%= case @kind do %>
         <% 0 -> %>
-          <%!-- Office tower with a side block and a flag on top. --%>
-          <line x1="95" y1="34" x2="95" y2="18" class={@stroke} stroke-width="2" />
-          <path d="M95 18h15l-4 5 4 5H95z" class="fill-base-content/70" />
-          <rect
-            x="72"
-            y="34"
-            width="46"
-            height="106"
-            rx="3"
-            class={[@tone, @stroke]}
-            stroke-width="2"
-          />
-          <rect
-            x="118"
-            y="70"
-            width="30"
-            height="70"
-            rx="3"
-            class={["fill-base-100", @stroke]}
-            stroke-width="2"
-          />
-          <%= for y <- [44, 58, 72, 86, 100], x <- [80, 92, 104] do %>
-            <rect x={x} y={y} width="6" height="8" rx="1" class="fill-base-100" />
-          <% end %>
-          <%= for y <- [80, 94, 108], x <- [125, 137] do %>
-            <rect x={x} y={y} width="5" height="7" rx="1" class="fill-base-content/70" />
-          <% end %>
-          <rect x="88" y="120" width="14" height="20" rx="1" class="fill-base-content/80" />
-          <circle cx="56" cy="120" r="11" class="fill-base-content/20" />
-          <rect x="55" y="126" width="2" height="14" class="fill-base-content/60" />
+          <%!-- Office: at a laptop, a tower behind. --%>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M132 150 V40 H174 V150" class="fill-base-100" />
+            <path
+              :for={y <- [52, 68, 84, 100, 116]}
+              d={"M142 #{y} h8 M158 #{y} h8"}
+              stroke-linecap="round"
+            />
+          </g>
+          <.sparkle x={30} y={40} r={8} />
+          <.person x={36} y={44} s={0.95} hair={:short} glasses shirt={:ink} />
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M44 116 H124 L116 154 H52 Z" class="fill-base-content" />
+            <circle cx="84" cy="134" r="5" class="fill-base-100" stroke="none" />
+          </g>
         <% 1 -> %>
-          <%!-- Shop with a striped awning and a sign. --%>
-          <rect x="68" y="34" width="64" height="14" rx="7" class="fill-base-content/85" />
-          <circle :for={x <- [88, 100, 112]} cx={x} cy="41" r="2.5" class="fill-base-content/70" />
-          <rect
-            x="50"
-            y="56"
-            width="100"
-            height="84"
-            rx="2"
-            class={[@tone, @stroke]}
-            stroke-width="2"
-          />
-          <%= for {x, i} <- Enum.with_index([46, 67, 88, 109, 130]) do %>
-            <rect
-              x={x}
-              y="50"
-              width="22"
-              height="16"
-              class={if(rem(i, 2) == 0, do: "fill-base-content/70", else: "fill-base-100")}
+          <%!-- Shop: behind the counter under a striped awning, waving. --%>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path
+              :for={{x, i} <- Enum.with_index([24, 52, 80, 108, 136])}
+              d={"M#{x} 14 H#{x + 28} V34 C#{x + 28} 44 #{x} 44 #{x} 34 Z"}
+              class={if(rem(i, 2) == 0, do: "fill-base-content", else: "fill-base-100")}
             />
-            <circle
-              cx={x + 11}
-              cy="66"
-              r="11"
-              class={if(rem(i, 2) == 0, do: "fill-base-content/70", else: "fill-base-100")}
-            />
-          <% end %>
-          <path d="M46 50h106" class={@stroke} stroke-width="2" stroke-linecap="round" />
-          <rect
-            x="58"
-            y="86"
-            width="44"
-            height="32"
-            rx="2"
-            class={["fill-base-100", @stroke]}
-            stroke-width="2"
-          />
-          <circle cx="70" cy="110" r="5" class="fill-base-content/25" />
-          <circle cx="82" cy="110" r="5" class="fill-base-content/25" />
-          <circle cx="94" cy="110" r="5" class="fill-base-content/30" />
-          <rect x="110" y="86" width="28" height="54" rx="2" class="fill-base-content/80" />
-          <circle cx="132" cy="114" r="2" class="fill-base-content/70" />
+          </g>
+          <.person x={56} y={50} s={0.92} hair={:bun} shirt={:paper}>
+            <:arms>
+              <.arm d="M78 86 C92 82 98 66 98 48" shirt={:paper} />
+              <.hand x={98} y={42} />
+              <.wave_marks />
+            </:arms>
+          </.person>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M20 124 H180 V156 H20 Z" class="fill-base-100" />
+            <path d="M28 136 H172" stroke-linecap="round" stroke-dasharray="2 9" />
+            <path d="M30 124 V108 C30 100 52 100 52 108 V124" class="fill-base-100" />
+            <path d="M36 106 C36 98 46 98 46 106" />
+          </g>
         <% 2 -> %>
-          <%!-- Factory with a saw-tooth roof and a chimney. --%>
-          <circle cx="142" cy="34" r="7" class="fill-base-content/10" />
-          <circle cx="154" cy="24" r="9" class="fill-base-content/10" />
-          <rect
-            x="128"
-            y="44"
-            width="14"
-            height="44"
-            class={["fill-base-100", @stroke]}
-            stroke-width="2"
-          />
-          <rect x="128" y="50" width="14" height="6" class="fill-base-content/70" />
+          <%!-- Workshop: hard hat, holding up a gear, a saw-tooth roof behind. --%>
           <path
-            d="M44 140V84l24-14v14l24-14v14l24-14v14h40v56z"
-            class={[@tone, @stroke]}
-            stroke-width="2"
+            d="M118 150 V70 L138 58 V70 L158 58 V70 L178 58 V150"
+            class="fill-base-100 stroke-base-content"
+            stroke-width="3"
             stroke-linejoin="round"
           />
-          <rect
-            :for={x <- [54, 78, 102]}
-            x={x}
-            y="96"
-            width="16"
-            height="12"
-            rx="1"
-            class="fill-base-100"
-          />
-          <rect x="126" y="108" width="20" height="32" rx="1" class="fill-base-content/80" />
-          <rect x="54" y="118" width="60" height="6" rx="3" class="fill-base-content/70" />
+          <.person x={26} y={50} s={0.9} hair={:hat} beard shirt={:paper}>
+            <:arms>
+              <.arm d="M22 86 C14 92 18 98 28 96" shirt={:paper} />
+              <.arm d="M78 86 C86 92 82 98 72 96" shirt={:paper} />
+            </:arms>
+            <:front>
+              <.gear x={50} y={92} />
+              <.hand x={28} y={96} />
+              <.hand x={72} y={96} />
+            </:front>
+          </.person>
+          <.sparkle x={170} y={34} r={7} />
         <% 3 -> %>
-          <%!-- Warehouse with an arched roof, a roller door and crates. --%>
-          <path
-            d="M48 140V86q52-40 104 0v54z"
-            class={[@tone, @stroke]}
-            stroke-width="2"
-            stroke-linejoin="round"
-          />
-          <rect x="94" y="62" width="12" height="8" rx="1" class="fill-base-100" />
-          <rect
-            x="76"
-            y="98"
-            width="48"
-            height="42"
-            class={["fill-base-100", @stroke]}
-            stroke-width="2"
-          />
-          <line
-            :for={y <- [106, 114, 122, 130]}
-            x1="76"
-            x2="124"
-            y1={y}
-            y2={y}
-            class="stroke-base-content/25"
-            stroke-width="2"
-          />
-          <rect
-            x="132"
-            y="120"
-            width="20"
-            height="20"
-            class={["fill-base-content/70", @stroke]}
-            stroke-width="2"
-          />
-          <rect
-            x="138"
-            y="104"
-            width="14"
-            height="16"
-            class={["fill-base-content/30", @stroke]}
-            stroke-width="2"
-          />
-          <rect
-            x="50"
-            y="124"
-            width="16"
-            height="16"
-            class={["fill-base-content/30", @stroke]}
-            stroke-width="2"
-          />
+          <%!-- Warehouse: carrying a parcel, a stack of boxes behind. --%>
+          <g class="fill-base-100 stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M130 116 H176 V152 H130 Z" />
+            <path d="M138 84 H172 V116 H138 Z" />
+            <path d="M153 116 V128 M155 84 V94" stroke-linecap="round" />
+          </g>
+          <.person x={22} y={44} s={0.95} hair={:curly} shirt={:paper}>
+            <:arms>
+              <.arm d="M22 86 C14 92 14 98 18 104" shirt={:paper} />
+              <.arm d="M78 86 C86 92 86 98 82 104" shirt={:paper} />
+            </:arms>
+            <:front>
+              <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+                <path d="M14 84 H86 V120 H14 Z" class="fill-base-100" />
+                <path d="M42 84 V98 H58 V84" class="fill-base-content" />
+                <path d="M24 112 l4 -5 4 5 M34 112 l4 -5 4 5" stroke-linecap="round" />
+              </g>
+              <.hand x={16} y={104} />
+              <.hand x={84} y={104} />
+            </:front>
+          </.person>
         <% _ -> %>
-          <%!-- Studio: a pitched roof, a round window, a plant and the sun. --%>
-          <circle cx="152" cy="40" r="10" class="fill-base-content/70" />
-          <path
-            d="M56 140V88l44-32 44 32v52z"
-            class={[@tone, @stroke]}
-            stroke-width="2"
-            stroke-linejoin="round"
-          />
-          <circle
-            cx="100"
-            cy="92"
-            r="11"
-            class={["fill-base-100", @stroke]}
-            stroke-width="2"
-          />
-          <path d="M100 81v22M89 92h22" class="stroke-base-content/30" stroke-width="2" />
-          <path d="M90 140v-18a10 10 0 0 1 20 0v18z" class="fill-base-content/80" />
-          <rect x="66" y="112" width="14" height="12" rx="1" class="fill-base-100" />
-          <rect x="120" y="112" width="14" height="12" rx="1" class="fill-base-100" />
-          <ellipse cx="160" cy="116" rx="7" ry="11" class="fill-base-content/20" />
-          <rect x="153" y="124" width="14" height="16" rx="2" class="fill-base-content/70" />
+          <%!-- Studio: long hair, pencil raised to a drawing board. --%>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M118 30 H184 V104 H118 Z" class="fill-base-100" />
+            <path d="M126 92 L144 66 L156 80 L166 70 L178 92" stroke-linecap="round" />
+            <circle cx="166" cy="46" r="7" class="fill-base-content" />
+            <path d="M136 104 L128 152 M166 104 L174 152" stroke-linecap="round" />
+          </g>
+          <.person x={22} y={46} s={0.95} hair={:long} shirt={:ink}>
+            <:arms>
+              <.arm d="M78 86 C94 82 104 70 110 56" />
+              <.hand x={112} y={52} />
+              <.pencil x={112} y={52} angle={-35} />
+            </:arms>
+          </.person>
       <% end %>
     </svg>
     """
   end
 
-  @doc "Someone waving beside an invoice: the first onboarding step."
+  @doc "Someone waving hello, a speech bubble beside them: the first onboarding step."
   attr :class, :any, default: "h-44 w-auto"
 
   def welcome(assigns) do
-    assigns = assign(assigns, stroke: @stroke, backdrop: @backdrop, ground: @ground)
-
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
-      <circle cx="122" cy="98" r="78" class={@backdrop} />
-      <ellipse cx="120" cy="178" rx="84" ry="7" class={@ground} />
-
-      <g>
-        <rect
-          x="118"
-          y="34"
-          width="90"
-          height="116"
-          rx="8"
-          class={["fill-base-100", @stroke]}
-          stroke-width="2"
-        />
-        <rect x="130" y="48" width="38" height="7" rx="3.5" class="fill-base-content/70" />
-        <rect
-          :for={y <- [66, 78, 90, 102]}
-          x="130"
-          y={y}
-          width="66"
-          height="4"
-          rx="2"
-          class="fill-base-content/15"
-        />
-        <rect x="164" y="124" width="32" height="10" rx="3" class="fill-base-content/70" />
-        <rect x="130" y="126" width="22" height="5" rx="2.5" class="fill-base-content/40" />
-      </g>
-
-      <rect x="62" y="150" width="11" height="28" rx="4" class="fill-base-content/80" />
-      <rect x="78" y="150" width="11" height="28" rx="4" class="fill-base-content/80" />
-      <rect x="54" y="94" width="44" height="62" rx="18" class="fill-base-content/45" />
-      <path
-        d="M60 104 50 132"
-        class="stroke-base-content/45"
-        stroke-width="10"
-        stroke-linecap="round"
-      />
-      <path
-        d="M92 104 108 76"
-        class="stroke-base-content/45"
-        stroke-width="10"
-        stroke-linecap="round"
-      />
-      <circle cx="110" cy="70" r="7" class="fill-base-content/15" />
-      <circle cx="49" cy="136" r="6" class="fill-base-content/15" />
-      <circle cx="76" cy="74" r="16" class="fill-base-content/15" />
-      <path d="M60 72a16 16 0 0 1 32-2c-6 2-16 1-22-6-2 4-6 7-10 8z" class="fill-base-content/85" />
+      <.blob />
+      <.person x={50} y={68} s={1.1} hair={:bun} glasses shirt={:ink}>
+        <:arms>
+          <.arm d="M78 86 C92 82 98 66 98 46" />
+          <.hand x={98} y={40} />
+          <.wave_marks />
+        </:arms>
+      </.person>
 
       <path
-        d="M124 62l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"
-        class="fill-base-content/70"
+        d="M156 22 H214 C220 22 224 26 224 32 V58 C224 64 220 68 214 68 H180 L168 80 L170 68 H156 C150 68 146 64 146 58 V32 C146 26 150 22 156 22 Z"
+        class="fill-base-100 stroke-base-content"
+        stroke-width="3"
+        stroke-linejoin="round"
       />
-      <path
-        d="M100 48l1.5 3.5 3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5z"
-        class="fill-base-content/30"
-      />
+      <circle :for={x <- [168, 185, 202]} cx={x} cy="45" r="4" class="fill-base-content" />
+
+      <.sparkle x={34} y={52} r={10} />
+      <.sparkle x={212} y={150} r={7} />
     </svg>
     """
   end
 
-  @doc "An ID card being filled in: the \"about you\" step."
+  @doc "Someone holding up their ID card, a pencil beside it: the \"about you\" step."
   attr :class, :any, default: "h-44 w-auto"
 
   def profile(assigns) do
-    assigns = assign(assigns, stroke: @stroke, backdrop: @backdrop, ground: @ground)
-
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
-      <circle cx="120" cy="98" r="78" class={@backdrop} />
-      <ellipse cx="120" cy="178" rx="80" ry="7" class={@ground} />
+      <.blob />
+      <.person x={65} y={50} s={1.1} hair={:curly} shirt={:paper}>
+        <:arms>
+          <.arm d="M22 86 C12 94 14 102 22 106" shirt={:paper} />
+          <.arm d="M78 86 C88 94 86 102 78 106" shirt={:paper} />
+        </:arms>
+        <:front>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M16 80 H84 V122 H16 Z" class="fill-base-100" />
+            <path d="M16 80 H84 V90 H16 Z" class="fill-base-content" />
+            <circle cx="32" cy="105" r="8" class="fill-base-content" />
+            <path d="M46 100 H74 M46 110 H66" stroke-linecap="round" />
+          </g>
+          <.hand x={20} y={108} />
+          <.hand x={80} y={108} />
+        </:front>
+      </.person>
 
-      <g>
-        <rect
-          x="44"
-          y="52"
-          width="152"
-          height="104"
-          rx="12"
-          class={["fill-base-100", @stroke]}
-          stroke-width="2"
-        />
-        <path d="M45 76V64a11 11 0 0 1 11-11h128a11 11 0 0 1 11 11v12z" class="fill-base-content/70" />
-        <circle cx="100" cy="64" r="3" class="fill-base-100" />
-        <rect x="108" y="61" width="32" height="6" rx="3" class="fill-base-100/80" />
-
-        <circle cx="84" cy="114" r="22" class="fill-base-content/10" />
-        <circle cx="84" cy="107" r="8" class="fill-base-content/75" />
-        <path d="M68 130a16 14 0 0 1 32 0z" class="fill-base-content/75" />
-
-        <rect x="118" y="96" width="58" height="7" rx="3.5" class="fill-base-content/75" />
-        <rect x="118" y="110" width="44" height="5" rx="2.5" class="fill-base-content/20" />
-        <rect x="118" y="121" width="52" height="5" rx="2.5" class="fill-base-content/20" />
-        <rect x="118" y="132" width="30" height="5" rx="2.5" class="fill-base-content/20" />
-      </g>
-
-      <g transform="rotate(35 186 150)">
-        <rect
-          x="178"
-          y="104"
-          width="14"
-          height="56"
-          rx="2"
-          class={["fill-base-content/70", @stroke]}
-          stroke-width="2"
-        />
-        <path d="M178 160l7 14 7-14z" class={["fill-base-content/15", @stroke]} stroke-width="2" />
-        <rect x="178" y="104" width="14" height="8" class="fill-base-content/25" />
-      </g>
-    </svg>
-    """
-  end
-
-  @doc "Two buildings, a badge and the people in them: the organisation step."
-  attr :class, :any, default: "h-44 w-auto"
-
-  def organization(assigns) do
-    assigns = assign(assigns, stroke: @stroke, backdrop: @backdrop, ground: @ground)
-
-    ~H"""
-    <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
-      <circle cx="120" cy="98" r="78" class={@backdrop} />
-      <ellipse cx="120" cy="176" rx="88" ry="7" class={@ground} />
-
-      <rect
-        x="62"
-        y="56"
-        width="56"
-        height="118"
-        rx="4"
-        class={["fill-base-200", @stroke]}
-        stroke-width="2"
-      />
-      <%= for y <- [68, 84, 100, 116, 132], x <- [72, 86, 100] do %>
-        <rect x={x} y={y} width="8" height="9" rx="1" class="fill-base-100" />
-      <% end %>
-      <rect
-        x="118"
-        y="96"
-        width="50"
-        height="78"
-        rx="4"
-        class={["fill-base-100", @stroke]}
-        stroke-width="2"
-      />
-      <%= for y <- [108, 124, 140], x <- [128, 146] do %>
-        <rect x={x} y={y} width="10" height="9" rx="1" class="fill-base-content/70" />
-      <% end %>
-      <rect x="82" y="152" width="16" height="22" rx="1" class="fill-base-content/80" />
-
-      <g>
-        <circle cx="168" cy="70" r="22" class={["fill-base-content/70", @stroke]} stroke-width="2" />
-        <path
-          d="M158 70l7 7 13-14"
-          class="stroke-base-content/85"
-          stroke-width="4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </g>
-
-      <circle cx="44" cy="150" r="7" class="fill-base-content/15" />
-      <rect x="36" y="158" width="16" height="16" rx="7" class="fill-base-content/25" />
-      <circle cx="194" cy="150" r="7" class="fill-base-content/15" />
-      <rect x="186" y="158" width="16" height="16" rx="7" class="fill-base-content/40" />
+      <.pencil x={200} y={100} angle={30} />
+      <.sparkle x={40} y={44} r={9} />
     </svg>
     """
   end
 
   @doc """
-  A shield with a check drawing itself in, and confetti: after choosing a
-  company, and at the end of onboarding.
+  Two colleagues at a growth chart, an idea lighting up between them: the
+  organisation step.
+  """
+  attr :class, :any, default: "h-44 w-auto"
+
+  def organization(assigns) do
+    ~H"""
+    <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
+      <path
+        d="M14 120 C10 92 28 74 54 76 C80 78 96 100 92 132 C88 164 60 176 38 168 C18 160 16 140 14 120 Z"
+        class="fill-base-content/10"
+      />
+      <path
+        d="M150 96 C162 74 196 70 216 86 C236 102 236 140 218 160 C200 180 160 178 148 156 C138 138 140 112 150 96 Z"
+        class="fill-base-content/10"
+      />
+
+      <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+        <path d="M78 16 H162 V80 H78 Z" class="fill-base-100" />
+        <path d="M90 66 V54 M104 66 V44 M118 66 V48 M132 66 V34" stroke-width="7" />
+        <path d="M88 70 H152" stroke-linecap="round" />
+        <path d="M140 40 L150 28 M150 28 H142 M150 28 V36" stroke-linecap="round" />
+      </g>
+
+      <.bulb x={52} y={36} />
+
+      <.person x={4} y={84} s={0.98} hair={:long} shirt={:ink}>
+        <:arms>
+          <.arm d="M78 86 C92 80 102 68 108 54" />
+          <.hand x={110} y={50} />
+        </:arms>
+      </.person>
+
+      <.person x={130} y={84} s={0.98} flip hair={:short} beard shirt={:paper}>
+        <:arms>
+          <.arm d="M22 86 C14 92 16 98 24 100" shirt={:paper} />
+          <.arm d="M78 86 C86 92 84 98 76 100" shirt={:paper} />
+        </:arms>
+        <:front>
+          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
+            <path d="M22 80 H78 V114 H22 Z" class="fill-base-content" />
+            <path d="M28 74 H72 V108 H28 Z" class="fill-base-100" />
+            <path d="M36 84 H64 M36 92 H58 M36 100 H62" stroke-linecap="round" />
+          </g>
+          <.hand x={24} y={100} />
+          <.hand x={76} y={100} />
+        </:front>
+      </.person>
+
+      <.sparkle x={186} y={30} r={9} />
+    </svg>
+    """
+  end
+
+  @doc """
+  Two people cheering under a tick that draws itself in, with confetti: after
+  choosing a company, and at the end of onboarding.
   """
   attr :class, :any, default: "h-48 w-auto"
 
   def success(assigns) do
-    assigns = assign(assigns, stroke: @stroke, backdrop: @backdrop, ground: @ground)
-
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
-      <circle cx="120" cy="100" r="80" class={@backdrop} />
-      <ellipse cx="120" cy="182" rx="56" ry="6" class={@ground} />
+      <.blob />
 
       <g class="qb-pop-in">
+        <circle cx="120" cy="52" r="30" class="fill-base-content" />
         <path
-          d="M120 30l52 19v46c0 36-23 59-52 71-29-12-52-35-52-71V49z"
-          class={["fill-base-100", @stroke]}
-          stroke-width="2"
-          stroke-linejoin="round"
-        />
-        <path
-          d="M120 43l41 15v38c0 29-18 48-41 58-23-10-41-29-41-58V58z"
-          class="fill-base-content/70"
-        />
-        <path
-          d="M101 99l14 14 27-29"
+          d="M106 52l10 10 19-20"
           pathLength="1"
           class="stroke-base-100 qb-draw"
-          stroke-width="9"
+          stroke-width="7"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
       </g>
 
+      <.person x={18} y={90} s={0.92} hair={:curly} shirt={:paper}>
+        <:arms>
+          <.arm d="M22 86 C8 80 4 62 6 44" shirt={:paper} />
+          <.hand x={6} y={38} />
+          <.arm d="M78 86 C92 80 96 62 94 44" shirt={:paper} />
+          <.hand x={94} y={38} />
+        </:arms>
+      </.person>
+
+      <.person x={130} y={90} s={0.92} flip hair={:bun} glasses shirt={:ink}>
+        <:arms>
+          <.arm d="M22 86 C8 80 4 62 6 44" />
+          <.hand x={6} y={38} />
+          <.arm d="M78 86 C92 80 96 62 94 44" />
+          <.hand x={94} y={38} />
+        </:arms>
+      </.person>
+
       <g class="qb-confetti">
-        <rect
-          x="52"
-          y="52"
-          width="8"
-          height="8"
-          rx="1"
-          transform="rotate(20 56 56)"
-          class="fill-base-content/40"
+        <.sparkle x={64} y={34} r={9} />
+        <.sparkle x={184} y={28} r={7} />
+        <circle cx="40" cy="70" r="4" class="fill-base-content" />
+        <circle cx="206" cy="78" r="4" class="fill-base-content" />
+        <path
+          d="M86 16 l6 4 M160 14 l-5 5 M24 104 l7 -2 M214 112 l-7 -3"
+          class="stroke-base-content"
+          stroke-width="3"
+          stroke-linecap="round"
         />
-        <rect
-          x="180"
-          y="44"
-          width="8"
-          height="8"
-          rx="1"
-          transform="rotate(-15 184 48)"
-          class="fill-base-content/45"
-        />
-        <circle cx="194" cy="112" r="4.5" class="fill-base-content/50" />
-        <circle cx="44" cy="118" r="4.5" class="fill-base-content/85" />
-        <rect
-          x="64"
-          y="148"
-          width="7"
-          height="7"
-          rx="1"
-          transform="rotate(35 67 151)"
-          class="fill-base-content/40"
-        />
-        <rect
-          x="170"
-          y="150"
-          width="7"
-          height="7"
-          rx="1"
-          transform="rotate(-30 173 153)"
-          class="fill-base-content/25"
-        />
-        <path d="M90 28l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" class="fill-base-content/70" />
-        <path d="M156 20l1.5 4 4 1.5-4 1.5-1.5 4-1.5-4-4-1.5 4-1.5z" class="fill-base-content/30" />
       </g>
     </svg>
     """
   end
+
+  ## Parts
+
+  # The soft grey shape behind a single scene.
+  defp blob(assigns) do
+    ~H"""
+    <path
+      d="M58 52 C72 22 124 16 156 30 C190 44 206 82 198 120 C190 158 150 180 106 176 C64 172 34 146 32 110 C30 84 44 72 58 52 Z"
+      class="fill-base-content/10"
+    />
+    """
+  end
+
+  # One figure, shoulders up, in a 100 × 118 frame: head centred at (50, 32),
+  # shoulders at (22, 84) and (78, 84). `arms` are drawn over the body in the
+  # same frame, `front` over everything (what the person holds, then hands).
+  attr :x, :any, default: 0
+  attr :y, :any, default: 0
+  attr :s, :any, default: 1
+  attr :flip, :boolean, default: false
+  attr :hair, :atom, values: [:short, :bun, :curly, :long, :hat], default: :short
+  attr :shirt, :atom, values: [:ink, :paper], default: :ink
+  attr :glasses, :boolean, default: false
+  attr :beard, :boolean, default: false
+  slot :arms
+  slot :front
+
+  defp person(assigns) do
+    ~H"""
+    <g transform={place(@x, @y, @s, @flip)} stroke-linecap="round" stroke-linejoin="round">
+      <path
+        :if={@hair == :long}
+        d="M26 38 C22 8 78 8 74 38 L77 78 L23 78 Z"
+        class="fill-base-content"
+      />
+
+      <path d="M10 118 C10 88 24 68 50 68 C76 68 90 88 90 118 Z" class={shirt_fill(@shirt)} />
+      <path
+        d="M10 118 C10 88 24 68 50 68 C76 68 90 88 90 118"
+        class="stroke-base-content"
+        stroke-width="3"
+      />
+      <path
+        :if={@shirt == :paper}
+        d="M20 102 l8 -4 M20 110 l8 -4 M72 98 l8 4 M72 106 l8 4"
+        class="stroke-base-content"
+        stroke-width="2"
+      />
+
+      <path d="M43 50 V70 H57 V50 Z" class="fill-base-100 stroke-base-content" stroke-width="3" />
+      <%= if @shirt == :ink do %>
+        <path d="M40 69 L50 82 L60 69 Z" class="fill-base-100 stroke-base-content" stroke-width="3" />
+      <% else %>
+        <path d="M41 69 L50 80 L59 69" class="stroke-base-content" stroke-width="3" />
+      <% end %>
+
+      <path d="M33 32 C25 29 24 42 33 41" class="fill-base-100 stroke-base-content" stroke-width="3" />
+      <path d="M67 32 C75 29 76 42 67 41" class="fill-base-100 stroke-base-content" stroke-width="3" />
+      <path
+        d="M32 34 C32 16 40 8 50 8 C61 8 68 16 68 34 C68 47 60 56 50 56 C40 56 32 47 32 34 Z"
+        class="fill-base-100 stroke-base-content"
+        stroke-width="3"
+      />
+
+      <circle cx="44" cy="34" r="2.2" class="fill-base-content" />
+      <circle cx="56" cy="34" r="2.2" class="fill-base-content" />
+      <path
+        d="M39 28 Q43 25 47 28 M53 28 Q57 25 61 28"
+        class="stroke-base-content"
+        stroke-width="2.5"
+      />
+      <path d="M50 36 Q46 42 50 43" class="stroke-base-content" stroke-width="2.5" />
+
+      <%= if @beard do %>
+        <path
+          d="M33 40 C35 56 43 62 50 62 C57 62 65 56 67 40 C62 47 57 50 50 50 C43 50 38 47 33 40 Z"
+          class="fill-base-content stroke-base-content"
+          stroke-width="2"
+        />
+        <path d="M45 52 Q50 55 55 52" class="stroke-base-100" stroke-width="2.5" />
+      <% else %>
+        <path d="M44 47 Q50 52 56 47" class="stroke-base-content" stroke-width="2.5" />
+      <% end %>
+
+      <%= case @hair do %>
+        <% :short -> %>
+          <path
+            d="M31 32 C28 14 40 4 52 5 C64 5 72 14 69 30 C66 22 60 17 52 18 C46 22 38 22 33 34 Z"
+            class="fill-base-content"
+          />
+        <% :bun -> %>
+          <circle cx="50" cy="5" r="7" class="fill-base-content" />
+          <path
+            d="M31 32 C29 16 40 8 51 8 C63 8 71 17 69 31 C64 20 56 16 48 18 C42 20 36 26 31 32 Z"
+            class="fill-base-content"
+          />
+        <% :curly -> %>
+          <path
+            d="M31 34 c-5 -4 -3 -11 2 -12 c-3 -6 2 -12 8 -11 c0 -6 8 -9 12 -5 c3 -5 11 -4 12 1 c6 -1 10 5 7 10 c5 2 5 9 1 12 c-4 -6 -10 -9 -17 -9 c-10 0 -19 6 -25 14 Z"
+            class="fill-base-100 stroke-base-content"
+            stroke-width="3"
+          />
+          <path d="M42 14 q3 3 0 6 M54 12 q3 3 0 6" class="stroke-base-content" stroke-width="2" />
+        <% :long -> %>
+          <path
+            d="M32 32 C32 14 44 7 52 8 C62 8 68 16 68 30 C60 26 54 20 50 15 C46 24 38 30 32 32 Z"
+            class="fill-base-content"
+          />
+        <% :hat -> %>
+          <path d="M30 30 C30 8 70 8 70 30 Z" class="fill-base-content" />
+          <path d="M24 30 L76 30" class="stroke-base-content" stroke-width="5" />
+          <path d="M50 12 L50 27" class="stroke-base-100" stroke-width="3" />
+      <% end %>
+
+      <g :if={@glasses} class="stroke-base-content" stroke-width="2.5">
+        <circle cx="44" cy="34" r="5" />
+        <circle cx="56" cy="34" r="5" />
+        <path d="M49 34 H51" />
+      </g>
+
+      {render_slot(@arms)}
+      {render_slot(@front)}
+    </g>
+    """
+  end
+
+  # A sleeve: a thick ink stroke, with the shirt colour inside it for a paper
+  # shirt, or a stitched seam on an ink one so it does not read as a smear.
+  attr :d, :string, required: true
+  attr :shirt, :atom, values: [:ink, :paper], default: :ink
+
+  defp arm(assigns) do
+    ~H"""
+    <path
+      d={@d}
+      class="stroke-base-content"
+      stroke-width="15"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      :if={@shirt == :paper}
+      d={@d}
+      class="stroke-base-100"
+      stroke-width="9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      :if={@shirt == :ink}
+      d={@d}
+      class="stroke-base-100"
+      stroke-width="1.5"
+      stroke-dasharray="2 8"
+      stroke-linecap="round"
+    />
+    """
+  end
+
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+
+  defp hand(assigns) do
+    ~H"""
+    <circle cx={@x} cy={@y} r="6.5" class="fill-base-100 stroke-base-content" stroke-width="3" />
+    """
+  end
+
+  # Motion lines beside a hand raised at (98, 42) in the person frame.
+  defp wave_marks(assigns) do
+    ~H"""
+    <path
+      d="M108 30 l7 -5 M111 42 h8 M108 54 l7 4"
+      class="stroke-base-content"
+      stroke-width="2.5"
+      stroke-linecap="round"
+    />
+    """
+  end
+
+  # A four-pointed spark.
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+  attr :r, :any, default: 10
+
+  defp sparkle(assigns) do
+    ~H"""
+    <path
+      transform={"translate(#{@x} #{@y}) scale(#{@r / 10})"}
+      d="M0 -10 C1.5 -2 2 -1.5 10 0 C2 1.5 1.5 2 0 10 C-1.5 2 -2 1.5 -10 0 C-2 -1.5 -1.5 -2 0 -10 Z"
+      class="fill-base-content"
+    />
+    """
+  end
+
+  # A pencil, its tip at (x, y), turned by `angle` degrees.
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+  attr :angle, :any, default: 0
+
+  defp pencil(assigns) do
+    ~H"""
+    <g
+      transform={"translate(#{@x} #{@y}) rotate(#{@angle})"}
+      class="stroke-base-content"
+      stroke-width="3"
+      stroke-linejoin="round"
+    >
+      <path d="M-6 -54 H6 V-14 H-6 Z" class="fill-base-100" />
+      <path d="M-6 -54 H6 V-46 H-6 Z" class="fill-base-content" />
+      <path d="M-6 -14 L0 0 L6 -14 Z" class="fill-base-100" />
+      <path d="M-2.5 -6 L0 0 L2.5 -6 Z" class="fill-base-content" />
+    </g>
+    """
+  end
+
+  # A light bulb with rays: an idea.
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+
+  defp bulb(assigns) do
+    ~H"""
+    <g
+      transform={"translate(#{@x} #{@y})"}
+      class="stroke-base-content"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M-12 0 C-12 -16 12 -16 12 0 C12 8 6 10 6 16 H-6 C-6 10 -12 8 -12 0 Z"
+        class="fill-base-100"
+      />
+      <path d="M-6 16 H6 V24 H-6 Z" class="fill-base-content" />
+      <path d="M-4 4 L0 -2 L4 4" />
+      <path d="M0 -22 V-28 M-17 -14 L-22 -18 M17 -14 L22 -18 M-20 2 H-26 M20 2 H26" />
+    </g>
+    """
+  end
+
+  # A cog: eight teeth round an ink wheel with a paper hub.
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+
+  defp gear(assigns) do
+    ~H"""
+    <g transform={"translate(#{@x} #{@y})"} class="stroke-base-content" stroke-width="3">
+      <rect
+        :for={angle <- [0, 45, 90, 135, 180, 225, 270, 315]}
+        x="-5"
+        y="-24"
+        width="10"
+        height="10"
+        rx="1.5"
+        transform={"rotate(#{angle})"}
+        class="fill-base-content"
+      />
+      <circle r="17" class="fill-base-content" />
+      <circle r="6.5" class="fill-base-100" />
+    </g>
+    """
+  end
+
+  defp place(x, y, s, false), do: "translate(#{x} #{y}) scale(#{s})"
+  defp place(x, y, s, true), do: "translate(#{x + 100 * s} #{y}) scale(#{-s} #{s})"
+
+  defp shirt_fill(:ink), do: "fill-base-content"
+  defp shirt_fill(:paper), do: "fill-base-100"
 end

@@ -57,9 +57,11 @@ defmodule QuantumBillingWeb.Layouts do
       />
 
       <%!--
-        Wide screens: a column that collapses to nothing (data-sidebar on <html>,
-        remembered). Narrow: a drawer that slides over the page (data-drawer).
-        The inner column keeps its width so nothing reflows while it animates.
+        Wide screens: a column that collapses to a rail of icons (data-sidebar
+        on <html>, remembered); labels become tooltips and screen-reader text.
+        Narrow: a drawer that slides over the page (data-drawer). Open, the aside
+        clips while its width animates; collapsed it does not, so the account
+        menu can open wider than the rail.
       --%>
       <aside
         id="app-sidebar"
@@ -68,12 +70,28 @@ defmodule QuantumBillingWeb.Layouts do
           "border-r border-base-300 bg-base-100 shadow-xl drawer-open:translate-x-0",
           "transition-[width,translate,border-color] duration-200 ease-out motion-reduce:transition-none",
           "lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none",
-          "lg:sidebar-collapsed:w-0 lg:sidebar-collapsed:border-transparent"
+          "lg:sidebar-collapsed:w-14 lg:sidebar-collapsed:overflow-visible"
         ]}
       >
-        <div class="flex h-full w-56 flex-col">
-          <div class="flex items-center justify-between gap-2 py-3 pl-4 pr-2.5">
-            <.brand_mark />
+        <div class="flex h-full w-56 flex-col lg:sidebar-collapsed:w-14">
+          <div class="flex items-center justify-between gap-2 py-3 pl-4 pr-2.5 lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0">
+            <.brand_mark class="lg:sidebar-collapsed:hidden" />
+            <%!-- The rail's top: the brand icon, which turns into "open" on hover. --%>
+            <button
+              type="button"
+              id="sidebar-rail-expand"
+              phx-click={JS.dispatch("qb:toggle-sidebar")}
+              aria-label="Open sidebar"
+              title="Open sidebar"
+              aria-controls="app-sidebar"
+              class="group/rail hidden size-8 items-center justify-center rounded-field text-base-content hover:bg-base-200 lg:sidebar-collapsed:flex"
+            >
+              <.icon name="hero-receipt-percent" class="size-5 group-hover/rail:hidden" />
+              <.icon
+                name="hero-chevron-double-right"
+                class="hidden size-4 text-base-content/60 group-hover/rail:block"
+              />
+            </button>
             <button
               type="button"
               id="sidebar-collapse"
@@ -81,13 +99,13 @@ defmodule QuantumBillingWeb.Layouts do
               aria-label="Close sidebar"
               title="Close sidebar"
               aria-controls="app-sidebar"
-              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/45 hover:bg-base-200 hover:text-base-content"
+              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/45 hover:bg-base-200 hover:text-base-content lg:sidebar-collapsed:hidden"
             >
               <.icon name="hero-chevron-double-left" class="size-4" />
             </button>
           </div>
-          <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
-            <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
+          <nav class="flex-1 overflow-y-auto px-2.5 pt-1 lg:sidebar-collapsed:px-2">
+            <p class={["px-3 pb-2 lg:sidebar-collapsed:hidden", micro_label_class()]}>Menu</p>
 
             <ul class="space-y-0.5">
               <li :for={item <- @nav_items} class="group">
@@ -104,9 +122,10 @@ defmodule QuantumBillingWeb.Layouts do
                 <div class="flex items-center gap-0.5">
                   <.link
                     navigate={item.path}
+                    title={item.label}
                     class={[
                       "flex min-w-0 flex-1 items-center gap-2.5 rounded-field px-3 py-2",
-                      "text-sm transition-colors",
+                      "text-sm transition-colors lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0",
                       if(@active_nav == item.key,
                         do: "bg-base-200 font-medium text-base-content",
                         else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
@@ -125,7 +144,7 @@ defmodule QuantumBillingWeb.Layouts do
                         )
                       ]}
                     />
-                    <span class="truncate">{item.label}</span>
+                    <span class="truncate lg:sidebar-collapsed:sr-only">{item.label}</span>
                   </.link>
 
                   <label
@@ -133,7 +152,8 @@ defmodule QuantumBillingWeb.Layouts do
                     for="settings-sections-toggle"
                     class={[
                       "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-field",
-                      "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
+                      "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content",
+                      "lg:sidebar-collapsed:hidden"
                     ]}
                   >
                     <span class="sr-only">Show settings sections</span>
@@ -149,7 +169,7 @@ defmodule QuantumBillingWeb.Layouts do
                   id="settings-sections"
                   class={[
                     "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out",
-                    "peer-checked:grid-rows-[1fr]"
+                    "peer-checked:grid-rows-[1fr] lg:sidebar-collapsed:hidden"
                   ]}
                 >
                   <ul class="ml-4 space-y-0.5 overflow-hidden border-l border-base-300 pl-3 pt-0.5">
@@ -184,18 +204,19 @@ defmodule QuantumBillingWeb.Layouts do
             </ul>
           </nav>
 
-          <div class="border-t border-base-300 p-2.5">
+          <div class="border-t border-base-300 p-2.5 lg:sidebar-collapsed:p-2">
             <div class="dropdown dropdown-top w-full">
               <div
                 tabindex="0"
                 role="button"
-                class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200"
+                title={user_name(@current_scope)}
+                class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200 lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0"
               >
                 <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
                   {user_initials(@current_scope)}
                 </span>
 
-                <span class="min-w-0 flex-1">
+                <span class="min-w-0 flex-1 lg:sidebar-collapsed:hidden">
                   <span class="block truncate text-sm font-medium leading-tight">
                     {user_name(@current_scope)}
                   </span>
@@ -207,13 +228,16 @@ defmodule QuantumBillingWeb.Layouts do
                     {user_designation(@current_scope)}
                   </span>
                 </span>
-                <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
+                <.icon
+                  name="hero-ellipsis-horizontal"
+                  class="size-4 shrink-0 text-base-content/45 lg:sidebar-collapsed:hidden"
+                />
               </div>
 
-              <%!-- w-full: the sidebar is only 14rem wide. --%>
+              <%!-- w-full: the sidebar is only 14rem wide; the rail is far narrower. --%>
               <ul
                 tabindex="0"
-                class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                class="dropdown-content menu z-10 mb-2 w-full lg:sidebar-collapsed:w-48 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
               >
                 <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
                 <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
@@ -230,7 +254,7 @@ defmodule QuantumBillingWeb.Layouts do
       <div class="flex min-w-0 flex-1 flex-col">
         <header class="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3">
           <div class="flex min-w-0 items-center gap-1.5">
-            <%!-- Always there on narrow screens (opens the drawer); on wide ones only while the sidebar is closed. --%>
+            <%!-- Narrow screens only (opens the drawer); wide ones open the rail from inside it. --%>
             <button
               type="button"
               id="sidebar-expand"
@@ -238,7 +262,7 @@ defmodule QuantumBillingWeb.Layouts do
               aria-label="Open sidebar"
               title="Open sidebar"
               aria-controls="app-sidebar"
-              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content lg:sidebar-open:hidden"
+              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content lg:hidden"
             >
               <.icon name="hero-bars-3" class="size-4.5" />
             </button>
