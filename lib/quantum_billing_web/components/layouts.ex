@@ -48,140 +48,202 @@ defmodule QuantumBillingWeb.Layouts do
 
     ~H"""
     <div class="flex min-h-screen bg-base-200">
-      <aside class="sticky top-0 flex h-screen w-48 shrink-0 flex-col border-r border-base-300 bg-base-100">
-        <.brand_mark class="px-4 py-4" />
-        <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
-          <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
+      <%!-- Behind the drawer on narrow screens; a click outside closes it. --%>
+      <div
+        id="sidebar-backdrop"
+        aria-hidden="true"
+        phx-click={JS.dispatch("qb:close-drawer")}
+        class="fixed inset-0 z-30 hidden bg-base-content/30 backdrop-blur-[1px] drawer-open:block lg:drawer-open:hidden"
+      />
 
-          <ul class="space-y-0.5">
-            <li :for={item <- @nav_items} class="group">
-              <%!-- Opens off @active_sub so the list stays unfolded across settings sections; the 0fr to 1fr row track animates the height without JS. --%>
-              <input
-                :if={item.key == :settings}
-                type="checkbox"
-                id="settings-sections-toggle"
-                phx-hook=".SettingsDisclosure"
-                checked={@active_sub != nil}
-                data-open={to_string(@active_sub != nil)}
-                class="peer sr-only"
-              />
-              <div class="flex items-center gap-0.5">
-                <.link
-                  navigate={item.path}
-                  class={[
-                    "flex min-w-0 flex-1 items-center gap-2.5 rounded-field px-3 py-2",
-                    "text-sm transition-colors",
-                    if(@active_nav == item.key,
-                      do: "bg-base-200 font-medium text-base-content",
-                      else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                    )
-                  ]}
-                >
-                  <%!-- Each destination keeps its own hue, dimmed while inactive. --%>
-                  <.icon
-                    name={item.icon}
+      <%!--
+        Wide screens: a column that collapses to nothing (data-sidebar on <html>,
+        remembered). Narrow: a drawer that slides over the page (data-drawer).
+        The inner column keeps its width so nothing reflows while it animates.
+      --%>
+      <aside
+        id="app-sidebar"
+        class={[
+          "fixed inset-y-0 left-0 z-40 h-dvh w-56 shrink-0 -translate-x-full overflow-hidden",
+          "border-r border-base-300 bg-base-100 shadow-xl drawer-open:translate-x-0",
+          "transition-[width,translate,border-color] duration-200 ease-out motion-reduce:transition-none",
+          "lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none",
+          "lg:sidebar-collapsed:w-0 lg:sidebar-collapsed:border-transparent"
+        ]}
+      >
+        <div class="flex h-full w-56 flex-col">
+          <div class="flex items-center justify-between gap-2 py-3 pl-4 pr-2.5">
+            <.brand_mark />
+            <button
+              type="button"
+              id="sidebar-collapse"
+              phx-click={JS.dispatch("qb:toggle-sidebar")}
+              aria-label="Close sidebar"
+              title="Close sidebar"
+              aria-controls="app-sidebar"
+              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            >
+              <.icon name="hero-chevron-double-left" class="size-4" />
+            </button>
+          </div>
+          <nav class="flex-1 overflow-y-auto px-2.5 pt-1">
+            <p class={["px-3 pb-2", micro_label_class()]}>Menu</p>
+
+            <ul class="space-y-0.5">
+              <li :for={item <- @nav_items} class="group">
+                <%!-- Opens off @active_sub so the list stays unfolded across settings sections; the 0fr to 1fr row track animates the height without JS. --%>
+                <input
+                  :if={item.key == :settings}
+                  type="checkbox"
+                  id="settings-sections-toggle"
+                  phx-hook=".SettingsDisclosure"
+                  checked={@active_sub != nil}
+                  data-open={to_string(@active_sub != nil)}
+                  class="peer sr-only"
+                />
+                <div class="flex items-center gap-0.5">
+                  <.link
+                    navigate={item.path}
                     class={[
-                      "size-4.5 shrink-0 transition-opacity",
-                      item.color,
+                      "flex min-w-0 flex-1 items-center gap-2.5 rounded-field px-3 py-2",
+                      "text-sm transition-colors",
                       if(@active_nav == item.key,
-                        do: "opacity-100",
-                        else: "opacity-70 group-hover:opacity-100"
+                        do: "bg-base-200 font-medium text-base-content",
+                        else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                       )
                     ]}
-                  />
-                  <span class="truncate">{item.label}</span>
-                </.link>
-
-                <label
-                  :if={item.key == :settings}
-                  for="settings-sections-toggle"
-                  class={[
-                    "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-field",
-                    "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
-                  ]}
-                >
-                  <span class="sr-only">Show settings sections</span>
-                  <.icon
-                    name="hero-chevron-down"
-                    class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
-                  />
-                </label>
-              </div>
-
-              <div
-                :if={item.key == :settings}
-                id="settings-sections"
-                class={[
-                  "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out",
-                  "peer-checked:grid-rows-[1fr]"
-                ]}
-              >
-                <ul class="ml-4 space-y-0.5 overflow-hidden border-l border-base-300 pl-3 pt-0.5">
-                  <li :for={section <- @settings_sections}>
-                    <.link
-                      navigate={~p"/settings/#{section.key}"}
+                  >
+                    <%!-- Each destination keeps its own hue, dimmed while inactive. --%>
+                    <.icon
+                      name={item.icon}
                       class={[
-                        "block truncate rounded-field px-2.5 py-1.5 text-xs transition-colors",
-                        if(@active_sub == section.key,
-                          do: "bg-base-200 font-medium text-base-content",
-                          else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                        "size-4.5 shrink-0 transition-opacity",
+                        item.color,
+                        if(@active_nav == item.key,
+                          do: "opacity-100",
+                          else: "opacity-70 group-hover:opacity-100"
                         )
                       ]}
-                    >
-                      {section.short_title}
-                    </.link>
-                  </li>
-                </ul>
-              </div>
-            </li>
-          </ul>
-        </nav>
+                    />
+                    <span class="truncate">{item.label}</span>
+                  </.link>
 
-        <div class="border-t border-base-300 p-2.5">
-          <div class="dropdown dropdown-top w-full">
-            <div
-              tabindex="0"
-              role="button"
-              class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200"
-            >
-              <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
-                {user_initials(@current_scope)}
-              </span>
+                  <label
+                    :if={item.key == :settings}
+                    for="settings-sections-toggle"
+                    class={[
+                      "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-field",
+                      "text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
+                    ]}
+                  >
+                    <span class="sr-only">Show settings sections</span>
+                    <.icon
+                      name="hero-chevron-down"
+                      class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
+                    />
+                  </label>
+                </div>
 
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium leading-tight">
-                  {user_name(@current_scope)}
-                </span>
-
-                <span
-                  :if={user_designation(@current_scope)}
-                  class="block truncate text-xs text-base-content/45"
+                <div
+                  :if={item.key == :settings}
+                  id="settings-sections"
+                  class={[
+                    "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out",
+                    "peer-checked:grid-rows-[1fr]"
+                  ]}
                 >
-                  {user_designation(@current_scope)}
-                </span>
-              </span>
-              <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
-            </div>
-
-            <%!-- w-full: the sidebar is only 12rem wide. --%>
-            <ul
-              tabindex="0"
-              class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-            >
-              <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
-              <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
-
-              <li>
-                <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
+                  <ul class="ml-4 space-y-0.5 overflow-hidden border-l border-base-300 pl-3 pt-0.5">
+                    <li :for={section <- @settings_sections}>
+                      <.link
+                        navigate={~p"/settings/#{section.key}"}
+                        id={"settings-link-#{section.key}"}
+                        class={[
+                          "group/sub flex items-center gap-2 rounded-field px-2.5 py-1.5 text-xs transition-colors",
+                          if(@active_sub == section.key,
+                            do: "bg-base-200 font-medium text-base-content",
+                            else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                          )
+                        ]}
+                      >
+                        <.icon
+                          name={section.icon}
+                          class={[
+                            "size-3.5 shrink-0 transition-opacity",
+                            if(@active_sub == section.key,
+                              do: "opacity-90",
+                              else: "opacity-55 group-hover/sub:opacity-90"
+                            )
+                          ]}
+                        />
+                        <span class="truncate">{section.short_title}</span>
+                      </.link>
+                    </li>
+                  </ul>
+                </div>
               </li>
             </ul>
+          </nav>
+
+          <div class="border-t border-base-300 p-2.5">
+            <div class="dropdown dropdown-top w-full">
+              <div
+                tabindex="0"
+                role="button"
+                class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200"
+              >
+                <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
+                  {user_initials(@current_scope)}
+                </span>
+
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium leading-tight">
+                    {user_name(@current_scope)}
+                  </span>
+
+                  <span
+                    :if={user_designation(@current_scope)}
+                    class="block truncate text-xs text-base-content/45"
+                  >
+                    {user_designation(@current_scope)}
+                  </span>
+                </span>
+                <.icon name="hero-ellipsis-horizontal" class="size-4 shrink-0 text-base-content/45" />
+              </div>
+
+              <%!-- w-full: the sidebar is only 14rem wide. --%>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu z-10 mb-2 w-full rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+              >
+                <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
+                <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
+
+                <li>
+                  <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
         <header class="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3">
-          <.business_switcher scope={@current_scope} />
+          <div class="flex min-w-0 items-center gap-1.5">
+            <%!-- Always there on narrow screens (opens the drawer); on wide ones only while the sidebar is closed. --%>
+            <button
+              type="button"
+              id="sidebar-expand"
+              phx-click={JS.dispatch("qb:toggle-sidebar")}
+              aria-label="Open sidebar"
+              title="Open sidebar"
+              aria-controls="app-sidebar"
+              class="flex size-7 shrink-0 items-center justify-center rounded-field text-base-content/60 hover:bg-base-200 hover:text-base-content lg:sidebar-open:hidden"
+            >
+              <.icon name="hero-bars-3" class="size-4.5" />
+            </button>
+            <.business_switcher scope={@current_scope} />
+          </div>
 
           <%!-- Live feed from NotificationsHook; capped and scrollable. Absent outside a business. --%>
           <div :if={business_chosen?(@current_scope)} class="dropdown dropdown-end">
@@ -549,6 +611,117 @@ defmodule QuantumBillingWeb.Layouts do
         color: "text-rose-600 dark:text-rose-400"
       }
     ]
+  end
+
+  @doc """
+  Renders the shell for one-thing-at-a-time screens: choosing a business, the
+  welcome after choosing one, and the first-sign-in onboarding.
+
+  No sidebar and no top bar, so nothing on screen competes with the choice.
+  A segmented progress bar shows where in the flow the screen sits, and the
+  `:footer` slot pins the Back / Next row to the bottom edge.
+
+  ## Examples
+
+      <Layouts.focus flash={@flash} current_scope={@current_scope} step={1} steps={2}>
+        <h1>Select your company</h1>
+        <:footer>
+          <button class={Layouts.focus_next_class()}>Continue</button>
+        </:footer>
+      </Layouts.focus>
+  """
+  attr :flash, :map, required: true
+  attr :current_scope, :map, default: nil
+  attr :step, :integer, default: nil, doc: "the current step, from 1"
+  attr :steps, :integer, default: nil, doc: "how many steps the flow has; no bar when nil"
+
+  slot :inner_block, required: true
+  slot :footer, doc: "the Back / Next row"
+
+  def focus(assigns) do
+    ~H"""
+    <div
+      id="focus-shell"
+      class="relative isolate flex min-h-dvh flex-col bg-base-100 text-base-content"
+    >
+      <header class="flex items-center justify-between gap-4 border-b border-base-300 px-5 py-3 sm:px-8">
+        <.brand_mark />
+
+        <div :if={@current_scope && @current_scope.user} class="dropdown dropdown-end">
+          <div
+            tabindex="0"
+            role="button"
+            id="focus-user-menu"
+            class="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-base-content/5"
+          >
+            <span class={["bg-base-content text-base-100", avatar_class()]}>
+              {user_initials(@current_scope)}
+            </span>
+            <span class="hidden max-w-40 truncate text-sm font-medium sm:block">
+              {user_name(@current_scope)}
+            </span>
+            <.icon name="hero-chevron-down" class="size-3.5 text-base-content/45" />
+          </div>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu z-20 mt-2 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+          >
+            <li>
+              <.link href={~p"/users/log-out"} method="delete" id="focus-sign-out">Sign out</.link>
+            </li>
+          </ul>
+        </div>
+      </header>
+
+      <div :if={@steps} id="focus-progress" class="mx-auto w-full max-w-5xl px-5 pt-6 sm:px-8">
+        <div
+          role="progressbar"
+          aria-label={"Step #{@step} of #{@steps}"}
+          aria-valuemin="1"
+          aria-valuemax={@steps}
+          aria-valuenow={@step}
+          class="flex gap-1.5"
+        >
+          <span
+            :for={index <- 1..@steps}
+            class={[
+              "h-1 flex-1 rounded-full transition-colors duration-500 motion-reduce:transition-none",
+              if(index <= (@step || 0), do: "bg-base-content", else: "bg-base-300")
+            ]}
+          />
+        </div>
+      </div>
+
+      <main class="flex flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
+        {render_slot(@inner_block)}
+      </main>
+
+      <footer
+        :if={@footer != []}
+        class="sticky bottom-0 border-t border-base-300 bg-base-100"
+      >
+        <div class="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
+          {render_slot(@footer)}
+        </div>
+      </footer>
+    </div>
+    <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc "The forward button on a `focus/1` screen: Next, Continue, Finish."
+  def focus_next_class do
+    "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-base-content px-5 " <>
+      "text-sm font-medium text-base-100 transition-colors hover:bg-base-content/85 " <>
+      "disabled:pointer-events-none disabled:opacity-35 aria-disabled:pointer-events-none " <>
+      "aria-disabled:opacity-35"
+  end
+
+  @doc "The quiet companion to `focus_next_class/0`: Back, Skip."
+  def focus_back_class do
+    "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-base-300 " <>
+      "bg-base-100 px-4 text-sm font-medium text-base-content/70 transition-colors " <>
+      "hover:bg-base-200 hover:text-base-content"
   end
 
   @doc """

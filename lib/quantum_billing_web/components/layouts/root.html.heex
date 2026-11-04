@@ -42,6 +42,34 @@
             document.documentElement.setAttribute("data-theme", systemTheme());
           }
         });
+
+        // The app sidebar. On wide screens it collapses out of the way and the
+        // choice is remembered; on narrow ones it is a drawer that starts closed
+        // and closes again on every navigation. Set here, before first paint,
+        // so a collapsed sidebar never flashes open. LiveView never patches
+        // <html>, so the attributes survive live navigation.
+        const root = document.documentElement;
+        const wide = matchMedia("(min-width: 1024px)");
+        let stored = null;
+        try { stored = localStorage.getItem("qb:sidebar"); } catch (_error) {}
+        root.setAttribute("data-sidebar", stored === "collapsed" ? "collapsed" : "open");
+
+        const closeDrawer = () => root.removeAttribute("data-drawer");
+        window.addEventListener("qb:toggle-sidebar", () => {
+          if (wide.matches) {
+            const next = root.getAttribute("data-sidebar") === "collapsed" ? "open" : "collapsed";
+            root.setAttribute("data-sidebar", next);
+            try { localStorage.setItem("qb:sidebar", next); } catch (_error) {}
+          } else if (root.getAttribute("data-drawer") === "open") {
+            closeDrawer();
+          } else {
+            root.setAttribute("data-drawer", "open");
+          }
+        });
+        window.addEventListener("qb:close-drawer", closeDrawer);
+        window.addEventListener("phx:page-loading-start", closeDrawer);
+        window.addEventListener("keydown", (e) => e.key === "Escape" && closeDrawer());
+        wide.addEventListener("change", closeDrawer);
       })();
     </script>
   </head>

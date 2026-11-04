@@ -338,6 +338,16 @@ defmodule QuantumBillingWeb.UserLive.Settings do
           label="Designation"
           placeholder="e.g. GST Officer"
         /> <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
+        <div class="sm:col-span-2">
+          <.field
+            field={@profile_form[:bio]}
+            label="Bio"
+            type="textarea"
+            rows="3"
+            placeholder="A line or two about what you do"
+            hint="Up to 500 characters. Shown on your profile."
+          />
+        </div>
       </div>
 
       <button type="submit" class={[action_button_class(), "mt-4"]}>

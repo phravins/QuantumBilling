@@ -150,6 +150,29 @@ defmodule QuantumBilling.SettingsTest do
     test "accepts dashes and slashes, which real numbering uses" do
       assert {:ok, _} = save(%{"invoice_prefix" => "INV-24/25"}, :invoice)
     end
+
+    test "saves bank details, normalising the IFSC and account number" do
+      assert {:ok, organization} =
+               save(
+                 %{
+                   "bank_account_name" => " Acme Traders ",
+                   "bank_ifsc" => "hdfc0001234",
+                   "bank_account_number" => "5010 0012 3456"
+                 },
+                 :invoice
+               )
+
+      assert organization.bank_account_name == "Acme Traders"
+      assert organization.bank_ifsc == "HDFC0001234"
+      assert organization.bank_account_number == "501000123456"
+    end
+
+    test "rejects an IFSC or account number that cannot be real" do
+      assert {:error, changeset} =
+               save(%{"bank_ifsc" => "HDFC1234", "bank_account_number" => "12ab"}, :invoice)
+
+      assert %{bank_ifsc: [_], bank_account_number: [_]} = errors_on(changeset)
+    end
   end
 
   describe "next_invoice_number/1" do

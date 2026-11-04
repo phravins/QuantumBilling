@@ -272,4 +272,98 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLiveTest do
 
     refute html =~ ~s(data-block-id="#{block.id}")
   end
+
+  describe "the Page panel" do
+    @png <<0x89, "PNG\r\n", 0x1A, "\n", 0, 0, 0, 13, "IHDR", 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0,
+           0>>
+
+    test "frame, watermark and spacing save to the layout", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+
+      view
+      |> element("#page-options-form")
+      |> render_change(%{
+        "page" => %{"border" => "band", "watermark" => "status", "space-top" => "20mm"}
+      })
+
+      page = saved(template).page
+      assert page.border == "band"
+      assert page.watermark == "status"
+      assert page.space_top == "20mm"
+    end
+
+    test "a background path in the params is ignored", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+
+      render_change(view, "update_page", %{
+        "page" => %{"background" => "/uploads/#{String.duplicate("ab", 16)}.png"}
+      })
+
+      assert saved(template).page.background == ""
+    end
+
+    test "uploading a letterhead sets it, records it, and Remove clears it",
+         %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+
+      file =
+        file_input(view, "#background-upload-form", :background, [
+          %{name: "letterhead.png", content: @png, type: "image/png"}
+        ])
+
+      render_upload(file, "letterhead.png")
+
+      path = saved(template).page.background
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      assert QuantumBilling.DesignAssets.owned?(path)
+      assert has_element?(view, "#remove-background")
+
+      view |> element("#remove-background") |> render_click()
+      assert saved(template).page.background == ""
+    end
+
+    test "a file that is not an image is refused", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+
+      file =
+        file_input(view, "#background-upload-form", :background, [
+          %{name: "letterhead.png", content: "not a png", type: "image/png"}
+        ])
+
+      render_upload(file, "letterhead.png")
+
+      assert has_element?(view, "#upload-error")
+      assert saved(template).page.background == ""
+    end
+  end
+
+  describe "the newer blocks" do
+    test "each can be added from the palette", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+
+      for type <- ~w(payment custom_text image spacer) do
+        view |> element(~s(button[phx-value-type="#{type}"])) |> render_click()
+      end
+
+      assert [:payment, :custom_text, :image, :spacer] -- types(saved(template)) == []
+    end
+
+    test "an image block takes an uploaded stamp", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+      view |> element(~s(button[phx-value-type="image"])) |> render_click()
+
+      file =
+        file_input(view, "#image-upload-form", :image, [
+          %{name: "stamp.png", content: @png, type: "image/png"}
+        ])
+
+      render_upload(file, "stamp.png")
+
+      [image] = Enum.filter(saved(template).blocks, &(&1.type == :image))
+      on_exit(fn -> QuantumBilling.Uploads.delete(image.opts.path) end)
+
+      assert QuantumBilling.DesignAssets.owned?(image.opts.path)
+    end
+  end
 end

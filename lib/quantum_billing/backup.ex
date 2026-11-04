@@ -49,6 +49,8 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.Compliance.Task, as: ComplianceTask
   alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.DesignAssets
+  alias QuantumBilling.DesignAssets.DesignAsset
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
@@ -83,7 +85,8 @@ defmodule QuantumBilling.Backup do
                           tds_enabled notify_invoice_created notify_ewb_generated
                           notify_filing_reminders reminder_lead_days language rows_per_page
                           upi_vpa upi_payee_name razorpay_key_id irp_username irp_client_id
-                          audit_retention_days doc_logo_path)a
+                          audit_retention_days doc_logo_path bank_account_name bank_name
+                          bank_account_number bank_ifsc bank_branch)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city
@@ -119,6 +122,9 @@ defmodule QuantumBilling.Backup do
   @credit_note_fields ~w(id note_number note_type invoice_id client_id reason subtotal tax_total
                          grand_total status)a
 
+  # Which uploaded images this business may show: its letterheads and stamps.
+  @design_asset_fields ~w(id path kind inserted_at)a
+
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
   # No author: the file may be restored on an installation without that user.
@@ -129,6 +135,7 @@ defmodule QuantumBilling.Backup do
   @sections [
     {:clients, Client, @client_fields},
     {:templates, InvoiceTemplate, @template_fields},
+    {:design_assets, DesignAsset, @design_asset_fields},
     {:invoices, Invoice, @invoice_fields},
     {:invoice_items, InvoiceItem, @item_fields},
     {:e_way_bills, EWayBill, @e_way_bill_fields},
@@ -236,7 +243,7 @@ defmodule QuantumBilling.Backup do
   def restore_json(json_string) when is_binary(json_string) do
     with {:ok, data} <- decode(json_string),
          :ok <- check_version(data) do
-      data = upgrade(data)
+      data = data |> upgrade() |> keep_valid_assets()
 
       # No timeout: a large restore is one long transaction.
       Repo.transaction(
@@ -251,6 +258,7 @@ defmodule QuantumBilling.Backup do
           Repo.delete_all(Invoice)
           Repo.delete_all(RecurringProfile)
           Repo.delete_all(InvoiceTemplate)
+          Repo.delete_all(DesignAsset)
           Repo.delete_all(Client)
 
           counts =
@@ -263,7 +271,8 @@ defmodule QuantumBilling.Backup do
           # Rows keep their ids, so move every sequence past them.
           Enum.each(
             ~w(clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
-               invoice_templates recurring_profiles credit_notes compliance_tasks audit_logs),
+               invoice_templates design_assets recurring_profiles credit_notes compliance_tasks
+               audit_logs),
             &resync_sequence/1
           )
 
@@ -279,6 +288,23 @@ defmodule QuantumBilling.Backup do
   end
 
   def restore_json(_not_a_string), do: {:error, "No backup file was provided."}
+
+  # An asset row is a claim on an uploaded file, so only well-formed ones are
+  # restored; anything else in the file is dropped rather than failing it.
+  defp keep_valid_assets(%{"design_assets" => rows} = data) when is_list(rows) do
+    valid =
+      Enum.filter(rows, fn
+        %{"path" => path, "kind" => kind} ->
+          DesignAssets.path?(path) and kind in DesignAsset.kinds()
+
+        _other ->
+          false
+      end)
+
+    Map.put(data, "design_assets", valid)
+  end
+
+  defp keep_valid_assets(data), do: data
 
   defp decode(json_string) do
     case Jason.decode(json_string) do

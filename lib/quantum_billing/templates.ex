@@ -139,6 +139,85 @@ defmodule QuantumBilling.Templates do
   end
 
   @doc """
+  Creates a design from a parsed document, under `name` or the first free
+  variant of it ("Modern", "Modern 2", …).
+
+  The XML is serialised here from the document rather than taken from anywhere
+  else, so what is stored is always what the parser and the allowlist produced.
+  """
+  def create_from_document(%QuantumBillingWeb.InvoiceDoc.Document{} = document, name) do
+    name = name |> to_string() |> String.trim() |> String.slice(0, 50)
+    name = if name == "", do: "Design", else: name
+
+    create_template(%{
+      "name" => free_name([name | Enum.map(2..50, &"#{name} #{&1}")], name),
+      "layout_xml" => Layout.to_xml(document),
+      "accent" => current_accent(),
+      "is_default" => false
+    })
+  end
+
+  @doc "Creates a design from one of `Catalog.presets/0`."
+  def create_from_preset(key) do
+    case Catalog.preset(key) do
+      nil -> {:error, :unknown_preset}
+      document -> create_from_document(document, Catalog.preset_name(key))
+    end
+  end
+
+  @max_import_bytes 256_000
+
+  @doc "The largest design file `import_layout/3` accepts, in bytes."
+  def max_import_bytes, do: @max_import_bytes
+
+  @doc """
+  Creates a design from an exported layout file.
+
+  The file is parsed with the same parser and allowlist as a stored layout —
+  unknown blocks and options are dropped, entities are never expanded — and a
+  file that declares a DTD is refused outright. Image paths the current business
+  does not own (`keep?`, by default `DesignAssets.owned?/1`) are blanked, so a
+  file exported from another business cannot be used to show its letterhead.
+  """
+  def import_layout(xml, name, keep? \\ &QuantumBilling.DesignAssets.owned?/1)
+
+  def import_layout(xml, _name, _keep?) when byte_size(xml) > @max_import_bytes do
+    {:error, "That file is larger than #{div(@max_import_bytes, 1000)}KB."}
+  end
+
+  def import_layout(xml, name, keep?) when is_binary(xml) do
+    cond do
+      not String.valid?(xml) ->
+        {:error, "That file is not a text design file."}
+
+      String.contains?(xml, ["<!DOCTYPE", "<!ENTITY", "<!doctype"]) ->
+        {:error, "Design files cannot contain a DOCTYPE or entity declarations."}
+
+      true ->
+        with {:ok, document} <- Layout.parse(xml),
+             :ok <- validate_import(document) do
+          document
+          |> Layout.strip_assets(keep?)
+          |> create_from_document(name)
+        end
+    end
+  end
+
+  defp validate_import(document) do
+    case Layout.validate(document) do
+      :ok -> :ok
+      {:error, messages} -> {:error, Enum.join(messages, " ")}
+    end
+  end
+
+  defp current_accent do
+    case default_template() do
+      %InvoiceTemplate{accent: "#" <> _ = accent} -> accent
+      _none -> @default_accent
+    end
+  end
+
+  @doc """
   Makes `template` the default, clearing the previous one.
 
   A transaction because the partial unique index on `is_default` is not

@@ -88,7 +88,10 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
            {:ok, reference, amount} <- ActionParams.payment(conn.body_params),
            {:ok, paid} <- Payments.record_payment(invoice, reference, amount, audit_opts(conn)) do
         {200,
-         InvoiceJSON.show(%{invoice: Invoices.get_invoice(paid.id), api_key: conn.assigns.api_key})}
+         InvoiceJSON.show(%{
+           invoice: Invoices.get_invoice(paid.id),
+           api_key: conn.assigns.api_key
+         })}
       else
         {:invoice, nil} ->
           not_found_body()

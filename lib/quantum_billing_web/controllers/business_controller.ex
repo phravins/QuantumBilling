@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.BusinessController do
   A controller rather than a LiveView event because the choice lives in the
   session cookie, and only an HTTP response can write that. Every tab of the
   browser follows: see `QuantumBillingWeb.UserAuth.broadcast_business_switch/2`.
+  This tab goes on to `QuantumBillingWeb.BusinessReadyLive`, which names the
+  company now open, so no flash is needed.
   """
   use QuantumBillingWeb, :controller
 
@@ -19,8 +21,7 @@ defmodule QuantumBillingWeb.BusinessController do
       conn
       |> put_session(:business_id, business.id)
       |> UserAuth.broadcast_business_switch(business.id)
-      |> put_flash(:info, "Now working in #{business.name}.")
-      |> redirect(to: ~p"/")
+      |> redirect(to: ~p"/businesses/ready")
     else
       _not_a_member -> PageController.not_found(conn, %{})
     end

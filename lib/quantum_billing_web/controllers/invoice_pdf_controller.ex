@@ -22,6 +22,7 @@ defmodule QuantumBillingWeb.InvoicePdfController do
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoicePdfGenerator
 
   def show(conn, %{"id" => id}) do
@@ -42,7 +43,8 @@ defmodule QuantumBillingWeb.InvoicePdfController do
           invoice: invoice,
           doc: doc,
           accent: accent,
-          logo: logo
+          logo: logo,
+          extras: Extras.build(invoice, doc)
         )
     end
   end
@@ -114,7 +116,8 @@ defmodule QuantumBillingWeb.InvoicePdfController do
               doc: doc,
               accent: accent,
               # A visitor has no session, so /uploads refuses them.
-              logo: InvoicePdfGenerator.inline_logo(logo)
+              logo: InvoicePdfGenerator.inline_logo(logo),
+              extras: Extras.build(invoice, doc, inline: true)
             )
         end
     end

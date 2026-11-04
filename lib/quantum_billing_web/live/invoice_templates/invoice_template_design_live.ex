@@ -28,10 +28,13 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
   import QuantumBillingWeb.InvoiceTemplateComponents
 
+  alias QuantumBilling.DesignAssets
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
+  alias QuantumBilling.Uploads
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Document
+  alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoiceDocument
@@ -54,13 +57,17 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> assign(:active_nav, :settings)
          |> assign(:active_sub, :customization)
          |> assign(:template, template)
-         |> assign(:doc, Templates.document_of(template))
+         |> assign(:organization, organization)
          |> assign(:selected_id, nil)
          |> assign(:saved_at, nil)
          |> assign(:error, nil)
+         |> assign(:upload_error, nil)
          |> assign(:sample, InvoiceDocument.sample())
          |> assign(:logo, presence(organization.doc_logo_path))
-         |> assign(:form, to_form(%{"name" => template.name, "accent" => template.accent}))}
+         |> put_doc(Templates.document_of(template))
+         |> assign(:form, to_form(%{"name" => template.name, "accent" => template.accent}))
+         |> allow_upload(:background, upload_opts(:background))
+         |> allow_upload(:image, upload_opts(:image))}
     end
   end
 
@@ -196,6 +203,28 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     end)
   end
 
+  # ── Uploads: the letterhead and image blocks ──────────────────────────────
+
+  # The form only has to exist for the file input; progress does the work.
+  def handle_event("validate_upload", _params, socket) do
+    {:noreply, assign(socket, :upload_error, upload_error(socket))}
+  end
+
+  def handle_event("remove_background", _params, socket) do
+    doc = socket.assigns.doc
+    {:noreply, save(socket, Layout.put_background(doc, ""))}
+  end
+
+  def handle_event("remove_image", _params, socket) do
+    with_selected(socket, fn doc, block ->
+      if block.type == :image do
+        {:ok, Document.put_block(doc, %{block | opts: Map.put(block.opts, :path, "")})}
+      else
+        :error
+      end
+    end)
+  end
+
   # ── Page and template ─────────────────────────────────────────────────────
 
   def handle_event("update_page", %{"page" => params}, socket) do
@@ -243,9 +272,83 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
   # ── Saving ────────────────────────────────────────────────────────────────
 
+  # A letterhead is a scan or an export: PNG or JPEG. A stamp may be a WebP.
+  defp upload_opts(name) do
+    [
+      accept: if(name == :image, do: ~w(.png .jpg .jpeg .webp), else: ~w(.png .jpg .jpeg)),
+      max_entries: 1,
+      max_file_size: Uploads.max_bytes(),
+      auto_upload: true,
+      progress: &handle_progress/3
+    ]
+  end
+
+  defp handle_progress(name, entry, socket) when name in [:background, :image] do
+    if entry.done? do
+      result =
+        consume_uploaded_entry(socket, entry, fn %{path: path} ->
+          {:ok, Uploads.store(path, entry.client_type)}
+        end)
+
+      case result do
+        {:ok, stored} ->
+          kind = if name == :background, do: "background", else: "image"
+          :ok = DesignAssets.record(stored, kind)
+          {:noreply, socket |> assign(:upload_error, nil) |> place_upload(name, stored)}
+
+        {:error, message} ->
+          {:noreply, assign(socket, :upload_error, "That image #{message}.")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp place_upload(socket, :background, path) do
+    save(socket, Layout.put_background(socket.assigns.doc, path))
+  end
+
+  defp place_upload(socket, :image, path) do
+    doc = socket.assigns.doc
+
+    case Document.block(doc, socket.assigns.selected_id) do
+      %{type: :image} = block ->
+        save(socket, Document.put_block(doc, %{block | opts: Map.put(block.opts, :path, path)}))
+
+      _not_an_image ->
+        socket
+    end
+  end
+
+  defp upload_error(socket) do
+    errors =
+      Enum.flat_map([:background, :image], fn name ->
+        upload = socket.assigns.uploads[name]
+        upload_errors(upload) ++ Enum.flat_map(upload.entries, &upload_errors(upload, &1))
+      end)
+
+    case errors do
+      [:too_large | _] -> "That image is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
+      [:not_accepted | _] -> "That has to be a PNG or JPEG image."
+      [:too_many_files | _] -> "One image at a time."
+      [_other | _] -> "That image could not be uploaded."
+      [] -> nil
+    end
+  end
+
+  # The document and what its newer blocks render with travel together.
+  defp put_doc(socket, doc) do
+    socket
+    |> assign(:doc, doc)
+    |> assign(
+      :extras,
+      Extras.build(socket.assigns.sample, doc, organization: socket.assigns.organization)
+    )
+  end
+
   # A rejected save keeps the user's change on the canvas and shows why.
   defp save(socket, doc) do
-    socket = assign(socket, :doc, doc)
+    socket = put_doc(socket, doc)
 
     case Templates.update_template(socket.assigns.template, %{"layout_xml" => Layout.to_xml(doc)}) do
       {:ok, template} ->
@@ -428,6 +531,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
               doc={@doc}
               invoice={@sample}
               logo={@logo}
+              extras={@extras}
               accent={@template.accent}
               selected={block.id == @selected_id}
               first={index == 0}
@@ -440,7 +544,13 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
           </p>
         </.card>
         <.card padding="p-3" class="hidden w-72 shrink-0 self-start xl:block">
-          <.inspector block={@selected} page={@doc.page} />
+          <.inspector block={@selected} page={@doc.page} uploads={@uploads} extras={@extras} />
+          <.page_panel
+            page={@doc.page}
+            uploads={@uploads}
+            extras={@extras}
+            upload_error={@upload_error}
+          />
         </.card>
       </div>
 

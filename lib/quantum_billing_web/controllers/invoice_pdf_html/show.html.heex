@@ -10,7 +10,13 @@
   </head>
 
   <body>
-    <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+    <Renderer.document
+      doc={@doc}
+      invoice={@invoice}
+      accent={@accent}
+      logo={@logo}
+      extras={@extras}
+    />
     <%!-- Raw script (no LiveSocket here), nonced because the layout is off and CSP silently blocks an un-nonced script. --%>
     <script nonce={@conn.assigns[:csp_nonce]}>
       // Straight into the print dialog, where "Save as PDF" writes the file.

@@ -20,13 +20,21 @@ defmodule QuantumBillingWeb.SettingsComponents do
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
 
   # short_title fits the narrow sidebar.
+  # Every icon is distinct, so the narrow sidebar can be read by icon alone.
   @sections [
+    %{
+      key: :company,
+      title: "Company Profile",
+      short_title: "Company Profile",
+      subtitle: "Your company at a glance",
+      icon: "hero-identification"
+    },
     %{
       key: :general,
       title: "General Settings",
       short_title: "General",
       subtitle: "Company details and basic settings",
-      icon: "hero-cog-6-tooth"
+      icon: "hero-building-office"
     },
     %{
       key: :invoice,
@@ -68,7 +76,7 @@ defmodule QuantumBillingWeb.SettingsComponents do
       title: "SMTP Server Configuration",
       short_title: "SMTP Server",
       subtitle: "Configure custom SMTP mail server for sending invoices",
-      icon: "hero-envelope"
+      icon: "hero-server-stack"
     },
     %{
       key: :backup,
@@ -82,7 +90,7 @@ defmodule QuantumBillingWeb.SettingsComponents do
       title: "Integrations",
       short_title: "Integrations",
       subtitle: "API, Razorpay & E-Invoice credentials",
-      icon: "hero-squares-2x2"
+      icon: "hero-puzzle-piece"
     },
     %{
       key: :security,
@@ -96,14 +104,14 @@ defmodule QuantumBillingWeb.SettingsComponents do
       title: "Preferences",
       short_title: "Preferences",
       subtitle: "Language and theme settings",
-      icon: "hero-computer-desktop"
+      icon: "hero-adjustments-horizontal"
     }
   ]
 
   @doc "Every section, in the order the nav shows them."
   def sections, do: @sections
 
-  @doc "The section for `key`, or the general section when it is unknown."
+  @doc "The section for `key`, or the first (Company Profile) when it is unknown."
   def section(key) do
     Enum.find(@sections, hd(@sections), &(&1.key == key))
   end

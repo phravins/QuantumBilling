@@ -86,7 +86,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
         |> Enum.with_index(1)
         |> Enum.map(fn {type, index} ->
           block = Catalog.new(type, "b#{index}")
-          %{block | opts: Map.new(block.opts, fn {k, v} -> {k, flip(v)} end)}
+          %{block | opts: Map.new(block.opts, fn {k, v} -> {k, flip(k, v)} end)}
         end)
 
       document = %Document{blocks: blocks}
@@ -346,6 +346,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.LayoutTest do
   end
 
   # Moves a value off its default so the round trip has something to lose.
+  # An image path is set by the server, but it must still survive the file.
+  defp flip(:path, _value), do: "/uploads/" <> String.duplicate("ab", 16) <> ".png"
+  defp flip(_key, value), do: flip(value)
+
+  defp flip("plain"), do: "boxed"
   defp flip(true), do: false
   defp flip(false), do: true
   defp flip(value) when is_integer(value), do: value + 7

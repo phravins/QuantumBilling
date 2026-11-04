@@ -3,8 +3,15 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   Every business the signed-in user belongs to, to choose which to work in.
 
   Where a user lands when they belong to several and have not chosen, and
-  reachable from the top bar at any time. Choosing posts to
-  `QuantumBillingWeb.BusinessController.switch/2`.
+  reachable from the top bar at any time. A focus screen, without the app
+  sidebar: pick a card, then Continue, which posts to
+  `QuantumBillingWeb.BusinessController.switch/2`. That leads on to
+  `QuantumBillingWeb.BusinessReadyLive`, step two of two.
+
+  Each card shows the business's own logo when it has uploaded one, and
+  otherwise one of the buildings from `QuantumBillingWeb.Illustrations`.
+  Logos are inlined as data URIs: `/uploads/` only serves the logo of the
+  business the browser is working in, and a picker shows all of them.
 
   Owners also rename and archive their businesses here, and restore archived
   ones. Each of those reloads the page, so the top bar's list of businesses —
@@ -12,18 +19,29 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.Illustrations, only: [company: 1]
+
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.Business
+  alias QuantumBilling.Repo
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Uploads
+
+  # A logo bigger than this is not worth carrying in the page for a card; the
+  # card shows its illustration instead.
+  @logo_limit 600_000
 
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_scope.user
+    entries = Businesses.list_for_user(user)
 
     {:ok,
      socket
-     |> assign(:page_title, "Businesses")
-     |> assign(:active_nav, nil)
-     |> assign(:entries, Businesses.list_for_user(user))
+     |> assign(:page_title, "Select your company")
+     |> assign(:entries, entries)
+     |> assign(:logos, logos(entries))
+     |> assign(:selected_id, initial_selection(socket.assigns.current_scope, entries))
      |> assign(:archived, Businesses.list_archived_owned(user))
      |> assign(:can_create?, Businesses.owns_any?(user))
      |> assign(:renaming_id, nil)
@@ -31,6 +49,13 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   end
 
   @impl true
+  def handle_event("select", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.entries, fn {b, _m} -> to_string(b.id) == to_string(id) end) do
+      {business, _membership} -> {:noreply, assign(socket, :selected_id, business.id)}
+      nil -> {:noreply, socket}
+    end
+  end
+
   def handle_event("rename", %{"id" => id}, socket) do
     case owned(socket, id) do
       nil ->
@@ -116,243 +141,303 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
     |> push_navigate(to: ~p"/businesses")
   end
 
+  # The business already open, else the first in the list.
+  defp initial_selection(scope, entries) do
+    current = scope.business && scope.business.id
+
+    cond do
+      current && Enum.any?(entries, fn {b, _m} -> b.id == current end) -> current
+      entries != [] -> entries |> hd() |> elem(0) |> Map.fetch!(:id)
+      true -> nil
+    end
+  end
+
+  defp logos(entries) do
+    Map.new(entries, fn {business, _membership} -> {business.id, logo_data(business)} end)
+  end
+
+  # Read from the business's own settings, and only ever a file in the uploads
+  # directory, by name: a path in the settings is never followed anywhere else.
+  defp logo_data(business) do
+    path = Repo.with_business(business, fn -> Settings.get_organization().doc_logo_path end)
+
+    with "/uploads/" <> name <- path,
+         {:ok, file, content_type} <- Uploads.locate(name),
+         {:ok, %File.Stat{size: size}} when size <= @logo_limit <- File.stat(file),
+         {:ok, contents} <- File.read(file) do
+      "data:#{content_type};base64,#{Base.encode64(contents)}"
+    else
+      _none_or_unreadable -> nil
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_nav={@active_nav}
-      notifications={@notifications}
-      unread_count={@unread_count}
-    >
-      <div
-        id="business-picker"
-        class="flex min-h-[calc(100dvh-9rem)] w-full flex-col items-center justify-center py-8"
-      >
-        <div class="w-full max-w-5xl">
-          <header class="mb-8 text-center">
-            <span class="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <.icon name="hero-building-office-2" class="size-6" />
-            </span>
-            <h1 id="picker-welcome" class="text-2xl font-semibold tracking-tight sm:text-3xl">
-              {welcome(@current_scope.user)}
-            </h1>
-            <p id="picker-count" class="mt-2 text-sm text-base-content/60">
-              {count_line(length(@entries))}
-            </p>
-          </header>
+    <Layouts.focus flash={@flash} current_scope={@current_scope} step={1} steps={2}>
+      <div id="business-picker" class="flex w-full max-w-5xl flex-col">
+        <header class="qb-rise mb-8 text-center sm:mb-10">
+          <p id="picker-welcome" class="text-sm font-medium text-base-content/55">
+            {welcome(@current_scope.user)}
+          </p>
+          <h1 class="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">
+            Select your company
+          </h1>
+          <p id="picker-count" class="mt-2 text-sm text-base-content/60">
+            {count_line(length(@entries))}
+          </p>
+        </header>
 
-          <div
-            :if={@entries == [] and not @can_create?}
-            id="no-businesses"
-            class="mx-auto max-w-md rounded-2xl border border-dashed border-base-300 bg-base-100 p-8"
+        <div
+          :if={@entries == [] and not @can_create?}
+          id="no-businesses"
+          class="mx-auto flex max-w-md flex-col items-center rounded-xl border border-dashed border-base-300 bg-base-100 p-8 text-center"
+        >
+          <.company variant={4} class="h-32 w-auto" />
+          <p class="mt-4 text-base font-semibold">You are not part of any business yet</p>
+          <p class="mt-1 text-sm text-base-content/60">
+            Ask an owner to add you to their business. You will see it here as soon as they do.
+          </p>
+        </div>
+
+        <ul
+          :if={@entries != [] or @can_create?}
+          id="business-list"
+          role="radiogroup"
+          aria-label="Your companies"
+          class={[
+            "grid grid-cols-1 gap-5 sm:grid-cols-2",
+            card_count(@entries, @can_create?) >= 3 && "lg:grid-cols-3",
+            card_count(@entries, @can_create?) == 1 && "mx-auto w-full max-w-xs sm:grid-cols-1"
+          ]}
+        >
+          <li
+            :for={{{business, membership}, index} <- Enum.with_index(@entries)}
+            id={"business-#{business.id}"}
+            class="qb-rise flex flex-col"
+            style={"animation-delay: #{min(index, 8) * 40}ms"}
           >
-            <.empty_state
-              icon="hero-building-office-2"
-              title="You are not part of any business yet"
-              description="Ask an owner to add you to their business. You will see it here as soon as they do."
-            />
-          </div>
+            <%= if @renaming_id == business.id do %>
+              <.form
+                for={@rename_form}
+                id={"rename-business-#{business.id}"}
+                phx-change="validate_rename"
+                phx-submit="save_rename"
+                class="flex min-h-72 flex-1 flex-col rounded-xl border border-base-300 bg-base-100 p-5"
+              >
+                <p class="mb-3 text-sm font-semibold">Rename company</p>
+                <.input
+                  field={@rename_form[:name]}
+                  type="text"
+                  label="Name"
+                  phx-mounted={JS.focus()}
+                />
+                <p class="-mt-1 text-xs text-base-content/55">
+                  Payment links keep working: they use <span class="font-mono">{business.slug}</span>, which does not change.
+                </p>
+                <div class="mt-auto flex justify-end gap-2 pt-3">
+                  <button
+                    type="button"
+                    id={"cancel-rename-#{business.id}"}
+                    phx-click="cancel_rename"
+                    class={secondary_button_class()}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    id={"save-rename-#{business.id}"}
+                    phx-disable-with="Saving…"
+                    class={action_button_class()}
+                  >
+                    Save
+                  </button>
+                </div>
+              </.form>
+            <% else %>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={to_string(@selected_id == business.id)}
+                id={"choose-business-#{business.id}"}
+                phx-click="select"
+                phx-value-id={business.id}
+                class={[
+                  "group relative flex flex-1 flex-col overflow-hidden rounded-xl border bg-base-100 text-left",
+                  "shadow-sm outline-none transition-all duration-200 motion-reduce:transition-none",
+                  "hover:shadow-md",
+                  "focus-visible:ring-2 focus-visible:ring-base-content focus-visible:ring-offset-2 focus-visible:ring-offset-base-100",
+                  if(@selected_id == business.id,
+                    do: "border-base-content ring-1 ring-base-content",
+                    else: "border-base-300 hover:border-base-content/30"
+                  )
+                ]}
+              >
+                <span class={[
+                  "absolute right-3.5 top-3.5 z-10 flex size-7 items-center justify-center rounded-full transition-all duration-200",
+                  if(@selected_id == business.id,
+                    do: "scale-100 bg-base-content text-base-100",
+                    else: "scale-90 border-2 border-base-content/15 bg-base-100 text-base-content/25"
+                  )
+                ]}>
+                  <.icon name="hero-check-mini" class="size-4.5" />
+                </span>
 
-          <ul
-            :if={@entries != [] or @can_create?}
-            id="business-list"
-            class={[
-              "grid grid-cols-1 gap-4 sm:grid-cols-2",
-              card_count(@entries, @can_create?) >= 3 && "lg:grid-cols-3",
-              card_count(@entries, @can_create?) == 1 && "mx-auto max-w-sm sm:grid-cols-1"
-            ]}
-          >
-            <li
-              :for={{business, membership} <- @entries}
-              id={"business-#{business.id}"}
-              class={[
-                "group/card flex min-h-44 flex-col overflow-hidden rounded-2xl border bg-base-100",
-                "shadow-sm transition-all duration-200 motion-reduce:transition-none",
-                "hover:-translate-y-0.5 hover:shadow-lg focus-within:shadow-lg motion-reduce:hover:translate-y-0",
-                if(current?(@current_scope, business),
-                  do: "border-primary/60 ring-1 ring-primary/25",
-                  else: "border-base-300 hover:border-base-content/25"
-                )
-              ]}
-            >
-              <%= if @renaming_id == business.id do %>
-                <.form
-                  for={@rename_form}
-                  id={"rename-business-#{business.id}"}
-                  phx-change="validate_rename"
-                  phx-submit="save_rename"
-                  class="flex flex-1 flex-col p-5"
-                >
-                  <.input
-                    field={@rename_form[:name]}
-                    type="text"
-                    label="Name"
-                    phx-mounted={JS.focus()}
-                  />
-                  <p class="-mt-1 text-xs text-base-content/55">
-                    Payment links keep working: they use <span class="font-mono">{business.slug}</span>, which does not change.
-                  </p>
-                  <div class="mt-auto flex justify-end gap-2 pt-3">
-                    <button
-                      type="button"
-                      id={"cancel-rename-#{business.id}"}
-                      phx-click="cancel_rename"
-                      class={secondary_button_class()}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      id={"save-rename-#{business.id}"}
-                      phx-disable-with="Saving…"
-                      class={action_button_class()}
-                    >
-                      Save
-                    </button>
-                  </div>
-                </.form>
-              <% else %>
-                <.link
-                  href={~p"/businesses/#{business.id}/switch"}
-                  method="post"
-                  id={"choose-business-#{business.id}"}
-                  class="group flex flex-1 flex-col gap-4 p-5 outline-none focus-visible:bg-base-200/60"
-                >
-                  <span class="flex items-start justify-between gap-3">
-                    <span class={[
-                      "flex size-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold",
-                      tile_tone(business.id)
-                    ]}>
-                      {initials(business.name)}
+                <span class={[
+                  "flex h-44 items-center justify-center",
+                  scene_tone(business.id)
+                ]}>
+                  <%= if logo = @logos[business.id] do %>
+                    <span class="flex size-28 items-center justify-center rounded-2xl bg-base-100 p-3 shadow-sm ring-1 ring-base-content/5">
+                      <img
+                        src={logo}
+                        alt={"#{business.name} logo"}
+                        id={"business-logo-#{business.id}"}
+                        class="max-h-full max-w-full object-contain"
+                      />
                     </span>
+                  <% else %>
+                    <.company
+                      variant={business.id}
+                      tone={building_tone(business.id)}
+                      class="h-36 w-auto transition-transform duration-300 group-hover:scale-[1.04] motion-reduce:transition-none"
+                    />
+                  <% end %>
+                </span>
 
-                    <span class="flex flex-wrap justify-end gap-1.5">
-                      <span
-                        :if={current?(@current_scope, business)}
-                        class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                      >
-                        <.icon name="hero-check" class="size-3" /> Current
-                      </span>
-                      <span class="inline-flex items-center rounded-full border border-base-300 px-2 py-0.5 text-xs font-medium text-base-content/70">
-                        {if membership.role == "owner", do: "Owner", else: "Staff"}
-                      </span>
-                    </span>
-                  </span>
-
+                <span class="flex items-center justify-between gap-3 border-t border-base-content/5 px-5 py-4">
                   <span class="min-w-0">
                     <span class="block truncate text-base font-semibold tracking-tight">
                       {business.name}
                     </span>
-                    <span class="mt-0.5 block truncate font-mono text-xs text-base-content/50">
-                      {business.slug}
+                    <span class="mt-0.5 flex items-center gap-1.5 text-xs text-base-content/55">
+                      <span>{if membership.role == "owner", do: "Owner", else: "Staff"}</span>
+                      <span :if={current?(@current_scope, business)} aria-hidden="true">·</span>
+                      <span
+                        :if={current?(@current_scope, business)}
+                        class="font-medium text-base-content"
+                      >
+                        Open now
+                      </span>
                     </span>
                   </span>
-
-                  <span class="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                    Open
-                    <.icon
-                      name="hero-arrow-right"
-                      class="size-4 transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transition-none"
-                    />
-                  </span>
-                </.link>
-
-                <div
-                  :if={membership.role == "owner"}
-                  class="flex items-center justify-end gap-1 border-t border-base-200 px-3 py-1.5"
-                >
-                  <button
-                    type="button"
-                    id={"rename-#{business.id}"}
-                    phx-click="rename"
-                    phx-value-id={business.id}
-                    class="inline-flex items-center gap-1 rounded-field px-2 py-1 text-xs text-base-content/60 transition-colors hover:bg-base-200 hover:text-base-content"
-                  >
-                    <.icon name="hero-pencil-square" class="size-3.5" /> Rename
-                  </button>
-                  <button
-                    :if={business.id != 1}
-                    type="button"
-                    id={"archive-#{business.id}"}
-                    phx-click="archive"
-                    phx-value-id={business.id}
-                    data-confirm={"Archive #{business.name}? It leaves this list and stops its scheduled jobs. Its records are kept, and you can restore it."}
-                    class="inline-flex items-center gap-1 rounded-field px-2 py-1 text-xs text-base-content/60 transition-colors hover:bg-error/10 hover:text-error"
-                  >
-                    <.icon name="hero-archive-box" class="size-3.5" /> Archive
-                  </button>
-                </div>
-              <% end %>
-            </li>
-
-            <li :if={@can_create?}>
-              <.link
-                navigate={~p"/businesses/new"}
-                id="picker-new-business"
-                class={[
-                  "group flex h-full min-h-44 flex-col items-center justify-center gap-3 rounded-2xl p-5",
-                  "border-2 border-dashed border-base-300 text-base-content/60 outline-none",
-                  "transition-colors duration-200 hover:border-primary/50 hover:bg-primary/5 hover:text-primary",
-                  "focus-visible:border-primary/50 focus-visible:bg-primary/5 focus-visible:text-primary"
-                ]}
-              >
-                <span class="flex size-12 items-center justify-center rounded-xl bg-base-200 transition-colors duration-200 group-hover:bg-primary/10">
-                  <.icon name="hero-plus" class="size-6" />
                 </span>
-                <span class="text-sm font-medium">New business</span>
-              </.link>
-            </li>
-          </ul>
+              </button>
 
-          <details
-            :if={@archived != []}
-            id="archived-businesses"
-            class="group/archived mt-8 rounded-2xl border border-base-300 bg-base-100"
-          >
-            <summary
-              id="archived-toggle"
-              class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-5 py-3 text-sm font-medium text-base-content/70 transition-colors hover:bg-base-200/60 [&::-webkit-details-marker]:hidden"
-            >
-              <span class="inline-flex items-center gap-2">
-                <.icon name="hero-archive-box" class="size-4" /> Archived ({length(@archived)})
-              </span>
-              <.icon
-                name="hero-chevron-down"
-                class="size-4 transition-transform duration-200 group-open/archived:rotate-180"
-              />
-            </summary>
-            <ul class="divide-y divide-base-200 border-t border-base-200">
-              <li
-                :for={business <- @archived}
-                id={"archived-business-#{business.id}"}
-                class="flex items-center gap-3 px-5 py-3"
+              <div
+                :if={membership.role == "owner"}
+                class="mt-1.5 flex items-center justify-center gap-1"
               >
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium text-base-content/70">
-                    {business.name}
-                  </span>
-                  <span class="text-xs text-base-content/45">
-                    Archived {Calendar.strftime(business.archived_at, "%d %b %Y")}
-                  </span>
-                </span>
                 <button
                   type="button"
-                  id={"restore-#{business.id}"}
-                  phx-click="restore"
+                  id={"rename-#{business.id}"}
+                  phx-click="rename"
                   phx-value-id={business.id}
-                  phx-disable-with="Restoring…"
-                  class={secondary_button_class()}
+                  class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-base-content/55 transition-colors hover:bg-base-content/5 hover:text-base-content"
                 >
-                  <.icon name="hero-arrow-uturn-left" class="size-4" /> Restore
+                  <.icon name="hero-pencil-square" class="size-3.5" /> Rename
                 </button>
-              </li>
-            </ul>
-          </details>
-        </div>
+                <button
+                  :if={business.id != 1}
+                  type="button"
+                  id={"archive-#{business.id}"}
+                  phx-click="archive"
+                  phx-value-id={business.id}
+                  data-confirm={"Archive #{business.name}? It leaves this list and stops its scheduled jobs. Its records are kept, and you can restore it."}
+                  class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-base-content/55 transition-colors hover:bg-error/10 hover:text-error"
+                >
+                  <.icon name="hero-archive-box" class="size-3.5" /> Archive
+                </button>
+              </div>
+            <% end %>
+          </li>
+
+          <li :if={@can_create?} class="qb-rise flex flex-col">
+            <.link
+              navigate={~p"/businesses/new"}
+              id="picker-new-business"
+              class={[
+                "group flex min-h-[15.5rem] flex-1 flex-col items-center justify-center gap-3 rounded-xl p-5",
+                "border border-dashed border-base-300 bg-base-100 text-base-content/60 outline-none",
+                "transition-colors duration-200 hover:border-base-content/40 hover:bg-base-200/60 hover:text-base-content",
+                "focus-visible:border-base-content/40 focus-visible:bg-base-200/60"
+              ]}
+            >
+              <span class="flex size-14 items-center justify-center rounded-2xl bg-base-100 shadow-sm ring-1 ring-base-content/5 transition-transform duration-200 group-hover:scale-105">
+                <.icon name="hero-plus" class="size-6" />
+              </span>
+              <span class="text-sm font-semibold">New company</span>
+              <span class="text-xs text-base-content/50">A separate set of books</span>
+            </.link>
+          </li>
+        </ul>
+
+        <details
+          :if={@archived != []}
+          id="archived-businesses"
+          class="group/archived mx-auto mt-10 w-full max-w-2xl rounded-2xl border border-base-content/10 bg-base-100/70"
+        >
+          <summary
+            id="archived-toggle"
+            class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-5 py-3 text-sm font-medium text-base-content/70 transition-colors hover:bg-base-100 [&::-webkit-details-marker]:hidden"
+          >
+            <span class="inline-flex items-center gap-2">
+              <.icon name="hero-archive-box" class="size-4" /> Archived ({length(@archived)})
+            </span>
+            <.icon
+              name="hero-chevron-down"
+              class="size-4 transition-transform duration-200 group-open/archived:rotate-180"
+            />
+          </summary>
+          <ul class="divide-y divide-base-content/5 border-t border-base-content/5">
+            <li
+              :for={business <- @archived}
+              id={"archived-business-#{business.id}"}
+              class="flex items-center gap-3 px-5 py-3"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-base-content/70">
+                  {business.name}
+                </span>
+                <span class="text-xs text-base-content/45">
+                  Archived {Calendar.strftime(business.archived_at, "%d %b %Y")}
+                </span>
+              </span>
+              <button
+                type="button"
+                id={"restore-#{business.id}"}
+                phx-click="restore"
+                phx-value-id={business.id}
+                phx-disable-with="Restoring…"
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-arrow-uturn-left" class="size-4" /> Restore
+              </button>
+            </li>
+          </ul>
+        </details>
       </div>
-    </Layouts.app>
+
+      <:footer :if={@entries != []}>
+        <%= if @current_scope.business do %>
+          <.link navigate={~p"/dashboard"} id="picker-back" class={Layouts.focus_back_class()}>
+            <.icon name="hero-arrow-left-mini" class="size-4" /> Back
+          </.link>
+        <% else %>
+          <span />
+        <% end %>
+
+        <.link
+          :if={@selected_id}
+          href={~p"/businesses/#{@selected_id}/switch"}
+          method="post"
+          id="picker-continue"
+          class={Layouts.focus_next_class()}
+        >
+          Continue <.icon name="hero-arrow-right-mini" class="size-4" />
+        </.link>
+      </:footer>
+    </Layouts.focus>
     """
   end
 
@@ -365,30 +450,28 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   defp welcome(%{username: name}) when is_binary(name) and name != "", do: "Welcome back, #{name}"
   defp welcome(_user), do: "Welcome back"
 
-  defp count_line(0), do: "Choose where to start."
-  defp count_line(1), do: "You have 1 business. Open it to carry on."
-  defp count_line(count), do: "You have #{count} businesses. Choose one to work in."
+  defp count_line(0), do: "Create your first company to get started."
+  defp count_line(1), do: "You have 1 company. Continue to open it."
+  defp count_line(count), do: "You have #{count} companies. Pick one to work in."
 
   defp card_count(entries, can_create?), do: length(entries) + if(can_create?, do: 1, else: 0)
 
-  # Literal class strings so Tailwind emits them. By id, so a business keeps its
-  # colour when the list changes around it.
-  @tile_tones {
-    "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
-    "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-    "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+  # Literal class strings so Tailwind emits them. The app's greys, a shade
+  # apart, so cards side by side differ without leaving the plain theme. By id,
+  # so a business keeps its shade when the list changes around it.
+  @scene_tones {
+    "bg-base-200/60",
+    "bg-base-200/40",
+    "bg-base-200/80"
   }
 
-  defp tile_tone(id), do: elem(@tile_tones, rem(id, tuple_size(@tile_tones)))
+  @building_tones {
+    "fill-base-200",
+    "fill-base-content/10",
+    "fill-base-content/20",
+    "fill-base-300"
+  }
 
-  defp initials(name) do
-    name
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.take(2)
-    |> Enum.map_join(&String.first/1)
-    |> String.upcase()
-  end
+  defp scene_tone(id), do: elem(@scene_tones, rem(id, tuple_size(@scene_tones)))
+  defp building_tone(id), do: elem(@building_tones, rem(id, tuple_size(@building_tones)))
 end

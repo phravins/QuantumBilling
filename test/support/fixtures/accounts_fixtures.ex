@@ -39,7 +39,7 @@ defmodule QuantumBilling.AccountsFixtures do
       |> valid_registration_attributes()
       |> Accounts.register_user_with_password()
 
-    user
+    mark_onboarded(user)
   end
 
   @doc """
@@ -52,7 +52,24 @@ defmodule QuantumBilling.AccountsFixtures do
       |> Accounts.register_user()
 
     {:ok, _membership} = Businesses.put_membership(user, Businesses.default!(), "staff")
+    mark_onboarded(user)
+  end
+
+  @doc """
+  `user` as if it had finished the first-sign-in screens. Every fixture does
+  this, so a test about onboarding asks for it with `not_onboarded/1`.
+  """
+  def mark_onboarded(user) do
     user
+    |> Ecto.Changeset.change(onboarded_at: DateTime.utc_now(:second))
+    |> QuantumBilling.Repo.update!()
+  end
+
+  @doc "`user` with the first-sign-in screens still to see."
+  def not_onboarded(user) do
+    user
+    |> Ecto.Changeset.change(onboarded_at: nil)
+    |> QuantumBilling.Repo.update!()
   end
 
   def user_fixture(attrs \\ %{}) do

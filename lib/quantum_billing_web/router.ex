@@ -79,6 +79,7 @@ defmodule QuantumBillingWeb.Router do
     live_session :owner,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_onboarded},
         {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.UserAuth, :require_owner},
         {QuantumBillingWeb.NotificationsHook, :default}
@@ -122,6 +123,7 @@ defmodule QuantumBillingWeb.Router do
     get "/e-way-bills/:id/print", EWayBillPdfController, :show
     get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
     get "/invoices/:id/e-invoice.xml", EInvoiceController, :show
+    get "/invoice-templates/:id/export", InvoiceTemplateExportController, :export
   end
 
   # Decides for itself: the answer depends on whose logo the file is.
@@ -139,11 +141,14 @@ defmodule QuantumBillingWeb.Router do
     live_session :app,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_onboarded},
         {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
       live "/", DashboardLive, :index
       live "/dashboard", DashboardLive, :index
+      # The step after BusinessController.switch: needs the business it names.
+      live "/businesses/ready", BusinessReadyLive, :show
       live "/invoices", InvoicesLive, :index
       live "/invoices/new", InvoiceNewLive, :new
       # Before "/invoices/:id", or "new" and "<id>/edit" would both match it.
@@ -238,6 +243,8 @@ defmodule QuantumBillingWeb.Router do
       live "/users/profile", UserLive.Profile, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+      # First sign-in screens: a signed-in user, but no business chosen yet.
+      live "/onboarding", OnboardingLive, :show
       # Choosing or creating a business needs a signed-in user but no business yet.
       live "/businesses", BusinessPickerLive, :index
       live "/businesses/new", BusinessNewLive, :new

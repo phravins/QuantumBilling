@@ -66,8 +66,20 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     {"text-color", :text_color, :color, "#18181b"},
     {"heading-color", :heading_color, {:enum, ~w(text accent)}, "text"},
     {"label-color", :label_color, :color, "#71717a"},
-    {"muted-color", :muted_color, :color, "#52525b"}
+    {"muted-color", :muted_color, :color, "#52525b"},
+    {"border", :border, {:enum, ~w(none hairline band)}, "none"},
+    {"watermark", :watermark, {:enum, ~w(none status custom)}, "none"},
+    {"watermark-text", :watermark_text, :string, ""},
+    {"background", :background, :upload, ""},
+    {"background-fit", :background_fit, {:enum, ~w(page top contain)}, "page"},
+    {"background-opacity", :background_opacity, {:enum, ~w(100 60 30)}, "100"},
+    {"space-top", :space_top, {:enum, ~w(0mm 20mm 35mm 50mm)}, "0mm"},
+    {"space-bottom", :space_bottom, {:enum, ~w(0mm 20mm 35mm 50mm)}, "0mm"}
   ]
+
+  # Set by the server after an upload (see `put_background/2`), never from form
+  # params: a typed path could name another business's file.
+  @server_only_page ~w(background)
 
   @doc "The layout schema version this module writes."
   def version, do: @version
@@ -98,7 +110,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   is why a half-typed colour cannot blank the document's text.
   """
   def cast_page(page, params) when is_map(params) do
-    Enum.reduce(@page_attrs, page, fn {xml, key, kind, _default}, acc ->
+    @page_attrs
+    |> Enum.reject(fn {xml, _key, _kind, _default} -> xml in @server_only_page end)
+    |> Enum.reduce(page, fn {xml, key, kind, _default}, acc ->
       with {:ok, raw} <- Map.fetch(params, xml),
            {:ok, value} <- Catalog.cast_value(raw, kind) do
         Map.put(acc, key, value)
@@ -106,6 +120,62 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
         _ -> acc
       end
     end)
+  end
+
+  @doc """
+  Sets or clears the page's background image. The path must already be one the
+  server stored (`QuantumBilling.DesignAssets.record/2`); a malformed one is
+  ignored.
+  """
+  def put_background(%Document{} = document, path) when is_binary(path) do
+    case Catalog.cast_value(path, :upload) do
+      {:ok, value} -> %{document | page: Map.put(document.page, :background, value)}
+      :error -> document
+    end
+  end
+
+  @doc """
+  Every uploaded image path a document refers to: the page background and any
+  image blocks. What import checks for ownership, and what rendering inlines.
+  """
+  def asset_paths(%Document{} = document) do
+    block_paths =
+      for %Block{type: :image, opts: opts} <- document.blocks,
+          path = Map.get(opts, :path, ""),
+          path != "",
+          do: path
+
+    [Map.get(document.page, :background, "") | block_paths]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Blanks every asset path that `keep?` refuses. Import runs a foreign file
+  through this so a design exported elsewhere cannot point at a file this
+  business does not own.
+  """
+  def strip_assets(%Document{} = document, keep?) when is_function(keep?, 1) do
+    page =
+      case Map.get(document.page, :background, "") do
+        "" -> document.page
+        path -> if keep?.(path), do: document.page, else: Map.put(document.page, :background, "")
+      end
+
+    blocks =
+      Enum.map(document.blocks, fn
+        %Block{type: :image, opts: opts} = block ->
+          path = Map.get(opts, :path, "")
+
+          if path == "" or keep?.(path),
+            do: block,
+            else: %{block | opts: Map.put(opts, :path, "")}
+
+        block ->
+          block
+      end)
+
+    %{document | page: page, blocks: blocks}
   end
 
   @doc """
@@ -434,7 +504,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     end
   end
 
-  defp parse_text(type, children) when type in [:signature, :footer] do
+  defp parse_text(type, children) when type in [:signature, :footer, :custom_text] do
     children
     |> Enum.filter(&is_binary/1)
     |> Enum.join()

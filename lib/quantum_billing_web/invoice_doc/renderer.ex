@@ -75,6 +75,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     default: nil,
     doc: "render just this block, by id — the design pad's canvas cards"
 
+  attr :extras, :map,
+    default: %{payment: nil, images: %{}},
+    doc: "payment details and image sources, from `InvoiceDoc.Extras.build/3`"
+
   @doc """
   The invoice document.
 
@@ -83,22 +87,88 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   stand-in, so what is dragged is what prints.
   """
   def document(assigns) do
-    assigns = assign(assigns, :rows, rows(assigns.doc, assigns.only))
+    page = assigns.doc.page
+    sheet? = is_nil(assigns.only)
+    extras = assigns.extras || %{}
+    images = Map.get(extras, :images) || %{}
+
+    background =
+      if sheet?, do: Map.get(images, Map.get(page, :background, "")), else: nil
+
+    watermark = if sheet?, do: watermark(page, assigns.invoice), else: nil
+
+    assigns =
+      assigns
+      |> assign(:rows, rows(assigns.doc, assigns.only))
+      |> assign(:sheet?, sheet?)
+      |> assign(:background, background)
+      |> assign(:watermark, watermark)
+      |> assign(:layered?, not is_nil(background) or not is_nil(watermark))
+      |> assign(:payment, Map.get(extras, :payment))
+      |> assign(:images, images)
+      |> assign(:page, page)
 
     ~H"""
-    <div class={["qb-doc", @class]} style={"--qb-accent: #{@accent}"}>
+    <div
+      class={[
+        "qb-doc",
+        @sheet? && "qb-doc--sheet",
+        @layered? && "qb-doc--layered",
+        @background && "qb-doc--letterhead",
+        @class
+      ]}
+      style={"--qb-accent: #{@accent}"}
+    >
       <%= for row <- @rows do %>
-        <.row row={row} invoice={@invoice} logo={@logo} />
+        <.row
+          row={row}
+          invoice={@invoice}
+          logo={@logo}
+          payment={@payment}
+          images={@images}
+          editing={not @sheet?}
+        />
       <% end %>
+      <%!-- After the blocks, so `.qb-doc__block:first-child` still finds the first block. --%>
+      <img
+        :if={@background}
+        src={@background}
+        alt=""
+        class={[
+          "qb-doc__background",
+          "qb-doc__background--#{@page.background_fit}",
+          "qb-doc__background--o#{@page.background_opacity}"
+        ]}
+      />
+      <div :if={@watermark} class="qb-doc__watermark" aria-hidden="true">
+        <span>{@watermark}</span>
+      </div>
     </div>
     """
   end
+
+  # A status watermark marks only the states a reader should not miss.
+  @watermarked_statuses ~w(draft paid cancelled)
+
+  defp watermark(%{watermark: "status"}, %Invoice{status: status}) when is_binary(status) do
+    if String.downcase(status) in @watermarked_statuses, do: String.upcase(status)
+  end
+
+  defp watermark(%{watermark: "custom", watermark_text: text}, _invoice) when is_binary(text) do
+    case String.trim(text) do
+      "" -> nil
+      trimmed -> String.slice(trimmed, 0, 40)
+    end
+  end
+
+  defp watermark(_page, _invoice), do: nil
 
   attr :doc, Document, required: true
   attr :invoice, Invoice, required: true
   attr :accent, :string, default: "#18181b"
   attr :logo, :string, default: nil
   attr :scale, :float, default: 0.5
+  attr :extras, :map, default: %{payment: nil, images: %{}}
 
   @doc """
   The document at a fraction of its size, for previews and template thumbnails.
@@ -111,7 +181,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     ~H"""
     <div class="qb-doc-frame">
       <div class="qb-doc-scale" style={"transform: scale(#{@scale}); width: #{100 / @scale}%"}>
-        <.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+        <.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} extras={@extras} />
       </div>
     </div>
     """
@@ -120,13 +190,23 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :row, :list, required: true
   attr :invoice, Invoice, required: true
   attr :logo, :string, default: nil
+  attr :payment, :map, default: nil
+  attr :images, :map, default: %{}
+  attr :editing, :boolean, default: false
 
   defp row(%{row: [block]} = assigns) do
     assigns = assign(assigns, :block, block)
 
     ~H"""
     <div class={["qb-doc__block", align_class(@block)]}>
-      <.block block={@block} invoice={@invoice} logo={@logo} />
+      <.block
+        block={@block}
+        invoice={@invoice}
+        logo={@logo}
+        payment={@payment}
+        images={@images}
+        editing={@editing}
+      />
     </div>
     """
   end
@@ -135,7 +215,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     ~H"""
     <div class="qb-doc__block qb-doc__row">
       <div :for={block <- @row} class={["qb-doc__cell", align_class(block)]}>
-        <.block block={block} invoice={@invoice} logo={@logo} />
+        <.block
+          block={block}
+          invoice={@invoice}
+          logo={@logo}
+          payment={@payment}
+          images={@images}
+          editing={@editing}
+        />
       </div>
     </div>
     """
@@ -144,6 +231,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :block, Block, required: true
   attr :invoice, Invoice, required: true
   attr :logo, :string, default: nil
+  attr :payment, :map, default: nil
+  attr :images, :map, default: %{}
+  attr :editing, :boolean, default: false
 
   defp block(%{block: %Block{type: :logo}} = assigns) do
     ~H"""
@@ -350,6 +440,95 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     """
   end
 
+  defp block(%{block: %Block{type: :custom_text}} = assigns) do
+    ~H"""
+    <div
+      :if={present?(@block.opts.title) or present?(@block.text)}
+      class={["qb-doc__note", "qb-doc__note--#{@block.opts.style}"]}
+    >
+      <p :if={present?(@block.opts.title)} class="qb-doc__note-title">{@block.opts.title}</p>
+      <p :if={present?(@block.text)} class="qb-doc__muted">{@block.text}</p>
+    </div>
+    """
+  end
+
+  defp block(%{block: %Block{type: :spacer}} = assigns) do
+    assigns = assign(assigns, :height, clamp(assigns.block.opts.height, 0, 400))
+
+    ~H"""
+    <div class={["qb-doc__spacer", @editing && "qb-doc__spacer--edit"]} style={"height: #{@height}px"}>
+    </div>
+    """
+  end
+
+  defp block(%{block: %Block{type: :payment}} = assigns) do
+    payment = assigns.payment || %{upi_id: nil, payee: nil, qr: "", bank: []}
+    opts = assigns.block.opts
+
+    assigns =
+      assigns
+      |> assign(:upi_id, if(opts.show_upi, do: payment.upi_id))
+      |> assign(:payee, if(opts.show_upi, do: payment.payee))
+      |> assign(:qr, if(opts.show_qr and payment.qr not in [nil, ""], do: payment.qr))
+      |> assign(:bank, if(opts.show_bank, do: payment.bank, else: []))
+      |> assign(:qr_size, clamp(opts.qr_size, 48, 200))
+
+    assigns =
+      assign(
+        assigns,
+        :empty?,
+        is_nil(assigns.upi_id) and is_nil(assigns.qr) and assigns.bank == []
+      )
+
+    ~H"""
+    <div :if={not @empty? or @editing}>
+      <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+
+      <div class="qb-doc__payment">
+        <%!-- The SVG is generated on the server from the UPI URI; nothing user-written is in it. --%>
+        <div :if={@qr} class="qb-doc__qr" style={"width: #{@qr_size}px; height: #{@qr_size}px"}>
+          {Phoenix.HTML.raw(@qr)}
+        </div>
+
+        <div class="qb-doc__payment-lines">
+          <p :if={@upi_id} class="qb-doc__payment-line">
+            <span class="qb-doc__payment-key">UPI</span> <span>{@upi_id}</span>
+          </p>
+          <p :if={@upi_id && @payee} class="qb-doc__payment-line">
+            <span class="qb-doc__payment-key">Payee</span> <span>{@payee}</span>
+          </p>
+          <p :for={{label, value} <- @bank} class="qb-doc__payment-line">
+            <span class="qb-doc__payment-key">{label}</span> <span>{value}</span>
+          </p>
+          <p :if={@empty?} class="qb-doc__muted">
+            Add a UPI ID or bank details in Settings to fill this in.
+          </p>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp block(%{block: %Block{type: :image}} = assigns) do
+    assigns =
+      assigns
+      |> assign(:src, Map.get(assigns.images || %{}, assigns.block.opts.path))
+      |> assign(:max_height, clamp(assigns.block.opts.max_height, 16, 400))
+
+    ~H"""
+    <img
+      :if={@src}
+      src={@src}
+      alt=""
+      class="qb-doc__image"
+      style={"max-height: #{@max_height}px"}
+    />
+    <div :if={is_nil(@src) and @editing} class="qb-doc__placeholder">
+      Upload an image, stamp or seal
+    </div>
+    """
+  end
+
   @doc """
   The title printed on the document.
 
@@ -451,6 +630,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp shown?(%{when: "non-zero"}, value), do: value not in [nil, 0]
   defp shown?(%{when: "present"}, value), do: present?(value)
   defp shown?(_line, _value), do: true
+
+  defp clamp(value, low, high) when is_integer(value), do: value |> max(low) |> min(high)
+  defp clamp(_value, low, _high), do: low
 
   defp present?(nil), do: false
   defp present?(""), do: false

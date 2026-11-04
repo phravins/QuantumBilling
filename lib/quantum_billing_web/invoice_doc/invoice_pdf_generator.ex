@@ -23,6 +23,7 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.PDF
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
@@ -45,6 +46,7 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
       invoice: invoice,
       accent: accent,
       logo: inline_logo(logo),
+      extras: Extras.build(invoice, doc, inline: true),
       print_button: Keyword.get(opts, :print_button, true)
     }
 
@@ -164,7 +166,13 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
             Print / Save as PDF
           </button>
         </div>
-        <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+        <Renderer.document
+          doc={@doc}
+          invoice={@invoice}
+          accent={@accent}
+          logo={@logo}
+          extras={@extras}
+        />
       </body>
     </html>
     """

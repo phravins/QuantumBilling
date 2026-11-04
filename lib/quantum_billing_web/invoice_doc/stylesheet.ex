@@ -41,7 +41,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   """
   @spec css(Document.t(), keyword()) :: binary()
   def css(%Document{page: page}, opts \\ []) do
-    base(page) <> mode_rules(Keyword.get(opts, :mode, :screen), page)
+    mode = Keyword.get(opts, :mode, :screen)
+    base(page) <> sheet_rules(page) <> mode_rules(mode, page) <> letterhead_print(mode, page)
   end
 
   defp base(page) do
@@ -166,6 +167,64 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
       white-space: pre-line;
     }
 
+    .qb-doc__note-title { font-weight: 600; margin-bottom: 2px; }
+    .qb-doc__note--boxed { border: 1px solid var(--qb-rule); border-radius: 4px; padding: 10px 12px; }
+    .qb-doc__note--accent { border-left: 3px solid var(--qb-accent); padding: 2px 0 2px 12px; }
+    .qb-doc__note--accent .qb-doc__note-title { color: var(--qb-accent); }
+
+    .qb-doc__spacer--edit {
+      background: repeating-linear-gradient(135deg, #f4f4f5 0 6px, transparent 6px 12px);
+      border-radius: 4px;
+    }
+
+    .qb-doc__payment { display: flex; gap: 16px; align-items: flex-start; margin-top: 6px; }
+    .qb-doc--right .qb-doc__payment { flex-direction: row-reverse; }
+    .qb-doc--center .qb-doc__payment { justify-content: center; }
+    .qb-doc__qr { flex: none; }
+    .qb-doc__qr svg { display: block; width: 100%; height: 100%; }
+    .qb-doc__payment-lines { min-width: 0; }
+    .qb-doc__payment-line { margin: 2px 0; }
+    .qb-doc__payment-key { color: var(--qb-label); margin-right: 8px; }
+
+    .qb-doc__image { display: block; max-width: 100%; }
+    .qb-doc--center .qb-doc__image { margin-left: auto; margin-right: auto; }
+    .qb-doc--right .qb-doc__image { margin-left: auto; }
+    .qb-doc__placeholder {
+      border: 1px dashed var(--qb-rule);
+      border-radius: 4px;
+      padding: 18px;
+      color: var(--qb-label);
+      text-align: center;
+    }
+
+    /* Background and watermark sit under the blocks; neither changes the flow. */
+    .qb-doc--layered { position: relative; overflow: hidden; }
+    .qb-doc--layered > .qb-doc__block { position: relative; z-index: 1; }
+    .qb-doc__background { position: absolute; z-index: 0; pointer-events: none; }
+    .qb-doc__background--page { inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+    .qb-doc__background--top { top: 0; left: 0; width: 100%; height: auto; }
+    .qb-doc__background--contain { inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .qb-doc__background--o60 { opacity: 0.6; }
+    .qb-doc__background--o30 { opacity: 0.3; }
+    .qb-doc__watermark {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .qb-doc__watermark span {
+      transform: rotate(-30deg);
+      font-size: 88px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      color: var(--qb-accent);
+      opacity: 0.08;
+    }
+
     /* The settings panel and the design pad render the document at a fraction
        of its size. Scaling rather than restyling is what keeps the thumbnail an
        honest picture of the page instead of a second design that can flatter it.
@@ -201,6 +260,74 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   end
 
   defp mode_rules(_screen, _page), do: ""
+
+  # The whole-sheet options. Empty for a page at its defaults, so a stored layout
+  # gets exactly the stylesheet it had. Scoped to `--sheet`, which the renderer
+  # sets only on the full document, never on the pad's single-block cards.
+  defp sheet_rules(page) do
+    border = Map.get(page, :border, "none")
+    top = Map.get(page, :space_top, "0mm")
+    bottom = Map.get(page, :space_bottom, "0mm")
+    letterhead? = Map.get(page, :background, "") != ""
+
+    rules =
+      [
+        border_rule(border),
+        padding_rule(border, top, bottom),
+        letterhead? && ".qb-doc--sheet.qb-doc--letterhead { aspect-ratio: #{aspect(page)}; }"
+      ]
+      |> Enum.filter(&is_binary/1)
+
+    if rules == [], do: "", else: Enum.join(rules, "\n") <> "\n"
+  end
+
+  defp border_rule("hairline"),
+    do: ".qb-doc--sheet { border: 1px solid var(--qb-rule); border-radius: 2px; }"
+
+  defp border_rule("band"), do: ".qb-doc--sheet { border-top: 6px solid var(--qb-accent); }"
+  defp border_rule(_none), do: nil
+
+  defp padding_rule("none", "0mm", "0mm"), do: nil
+
+  defp padding_rule(border, top, bottom) do
+    {edge, inner} =
+      case border do
+        "hairline" -> {"24px", "24px"}
+        "band" -> {"0px", "20px"}
+        _none -> {"0px", "0px"}
+      end
+
+    ".qb-doc--sheet { padding: calc(#{inner} + #{space(top)}) #{edge} " <>
+      "calc(#{if border == "hairline", do: inner, else: "0px"} + #{space(bottom)}); }"
+  end
+
+  # Closed enum in, literal out; anything else is no space at all.
+  defp space(value) when value in ~w(0mm 20mm 35mm 50mm), do: value
+  defp space(_value), do: "0mm"
+
+  defp aspect(%{size: "Letter"}), do: "8.5 / 11"
+  defp aspect(_a4), do: "210 / 297"
+
+  # A letterhead is printed edge to edge: the sheet takes the page margin as its
+  # own padding instead of sitting inside the body's, so the image reaches the
+  # paper's edges and the text still clears them.
+  defp letterhead_print(:print, %{background: "/" <> _} = page) do
+    margin = page.margin
+
+    """
+    @media print {
+      body { padding: 0; }
+      .qb-doc--sheet.qb-doc--letterhead {
+        max-width: none;
+        min-height: 100vh;
+        aspect-ratio: auto;
+        padding: calc(#{margin} + #{space(page.space_top)}) #{margin} calc(#{margin} + #{space(page.space_bottom)});
+      }
+    }
+    """
+  end
+
+  defp letterhead_print(_mode, _page), do: ""
 
   defp font_stack("serif") do
     ~s|ui-serif, Georgia, Cambria, "Times New Roman", Times, serif|

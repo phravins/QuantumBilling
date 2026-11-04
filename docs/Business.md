@@ -45,7 +45,7 @@ Within a business, staff collaborate on the same books. Client and invoice acces
 
 The business menu and `/businesses` list the active businesses the signed-in user belongs to. If the account belongs to exactly one business, it is selected automatically. With several memberships and no valid previous selection, workspace routes redirect to the picker.
 
-Choosing a business posts to `/businesses/:id/switch`, verifies membership, saves the choice in the browser session, and reloads the workspace. Other workspace tabs using the same sign-in session are told to reload into the selected business. Different browser sessions can work in different businesses.
+The picker is a full-screen step without the app sidebar. Each card shows the business's logo, or an illustration when it has none, and the person selects a card and presses Continue. Choosing a business posts to `/businesses/:id/switch`, verifies membership, saves the choice in the browser session, and shows a short confirmation screen (`/businesses/ready`) before opening the dashboard. Other workspace tabs using the same sign-in session are told to reload into the selected business. Different browser sessions can work in different businesses.
 
 Someone who owns at least one active business can open `/businesses/new`, supply a name and optional GSTIN, and create another firm. Creation builds its schema/tables, organization settings, default invoice design, and creator's owner membership before switching the browser into it. A staff-only account cannot open the business creation page. An account with no active memberships sees the picker empty state and needs an owner to add it.
 
@@ -64,14 +64,19 @@ Registration accepts the first account on an empty installation; subsequent regi
 
 Authentication features include password sign-in, email confirmation, emailed sign-in links, forgotten-password reset, password and email changes, optional remembered sessions, and TOTP two-factor authentication with recovery codes. An ordinary newly registered password account starts unconfirmed; the confirmation email completes activation. Demo account provisioning is described separately in [Getting started](getting-started.md), without publishing a shared password in this guide.
 
+### First sign-in
+
+Each account sees a short onboarding flow at `/onboarding` once, on its next sign-in: a welcome screen, the person's name, job title, phone and bio (prefilled from the account), the organisation's name, contact email, phone, GSTIN and state (owners only; staff see their business read-only), and a closing screen. Any step can be skipped; finishing or skipping records the account as onboarded and the flow does not return.
+
 ## 4. Configure the firm before invoicing
 
 Settings are divided into independently saved sections. A change in one section is validated against that section's fields.
 
 | Section | Business information maintained |
 | --- | --- |
+| Company profile | Read-only summary of the business: logo, names, GSTIN/PAN/state, address and contacts, financial year, currency and team size, with links to the sections that edit them. `/settings` opens here. |
 | General | Company/trade name, address, city, PIN, phone, contact email, GSTIN, PAN, state, currency, financial year, time zone, and date format. |
-| Invoice | Number prefix, next number, number padding, default due days, and default terms. |
+| Invoice | Number prefix, next number, number padding, default due days, default terms, and the bank details (account name, bank, account number, IFSC, branch) printed by a design's Payment details block. |
 | E-Way Bill | Default transport mode, transporter identifier, value threshold, and an auto-generate preference. |
 | Tax | Default line GST rate and flags for cess, composition scheme, and TDS. |
 | Customization | Company logo and invoice design templates. |
@@ -262,6 +267,10 @@ The HSN finder searches a compiled, curated set of goods/service codes by keywor
 ## 14. Invoice designs and branding
 
 Settings → Customization lists invoice designs and supports creating/duplicating, choosing a default, editing, archiving, and restoring templates. The design editor stores layout XML, including document blocks and page/text choices. Company-logo upload is handled separately from template layout storage.
+
+**New design** opens a gallery of starting points: Blank, Classic, Modern, Minimal, Compact and Letterhead. Besides the standard blocks, a design can hold repeatable custom-text and spacer blocks, a Payment details block (UPI ID, an optional UPI QR code carrying the amount and invoice number, and the bank details from Settings → Invoice), and an image block for a stamp or seal. The Page panel adds a border (hairline or accent band), a watermark (the invoice status or custom text) and a letterhead background image with its fit, opacity, and top/bottom space so the printed text clears the letterhead's header and footer.
+
+**Import** accepts either a design file (`.xml`, up to 256 KB, as produced by each design's **Export** link) or an image of the business's own invoice or letterhead (PNG/JPEG). A design file is checked against the same block and option list as the editor; a file that is not a QuantumBilling design is refused. An image creates a new Letterhead design with that image as the background and opens it in the editor for adjustment. Images uploaded for designs belong to the business that uploaded them and are not served to, or importable by, other businesses.
 
 A template is archived when deleted so existing invoice references remain meaningful. It can be restored from the Bin. A template referenced by invoices cannot be permanently purged; a restored design does not automatically become the default.
 

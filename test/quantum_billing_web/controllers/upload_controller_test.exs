@@ -26,8 +26,25 @@ defmodule QuantumBillingWeb.UploadControllerTest do
       )
   end
 
+  # Named as Uploads.store/2 names files, which is what a design asset must be.
+  defp stored_design_file do
+    name = (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)) <> ".png"
+    path = Path.join(Uploads.directory(), name)
+    File.mkdir_p!(Uploads.directory())
+    File.write!(path, <<0x89, "PNG\r\n", 0x1A, "\n", 0, 0, 0, 0>>)
+    on_exit(fn -> File.rm(path) end)
+    "/uploads/" <> name
+  end
+
   describe "signed out" do
     setup :stored_file
+
+    test "a recorded design image is forbidden", %{conn: conn} do
+      path = stored_design_file()
+      :ok = QuantumBilling.DesignAssets.record(path, "background")
+
+      assert conn |> get(path) |> html_response(403) =~ "forbidden-illustration"
+    end
 
     test "a real file is forbidden, with a refresh to sign in", %{conn: conn, name: name} do
       use_as_logo(name)
@@ -93,6 +110,26 @@ defmodule QuantumBillingWeb.UploadControllerTest do
       Repo.with_business(other, fn -> use_as_logo(name) end)
 
       assert conn |> get("/uploads/#{name}") |> response(403)
+    end
+
+    test "a design image the business recorded is served", %{conn: conn} do
+      path = stored_design_file()
+      :ok = QuantumBilling.DesignAssets.record(path, "background")
+
+      conn = get(conn, path)
+
+      assert response(conn, 200)
+      assert get_resp_header(conn, "content-disposition") == ["attachment"]
+    end
+
+    test "another business's design image is forbidden", %{conn: conn} do
+      path = stored_design_file()
+      owner = QuantumBilling.AccountsFixtures.owner_fixture()
+      {:ok, other} = Businesses.create(owner, %{"name" => "Firm Two"})
+
+      Repo.with_business(other, fn -> QuantumBilling.DesignAssets.record(path, "image") end)
+
+      assert conn |> get(path) |> response(403)
     end
 
     test "a path cannot climb out of the uploads directory", %{conn: conn} do

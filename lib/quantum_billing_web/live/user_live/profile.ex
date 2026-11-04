@@ -215,6 +215,14 @@ defmodule QuantumBillingWeb.UserLive.Profile do
           <.card id="profile-about" padding="p-4">
             <h2 class="text-sm font-semibold tracking-tight">About</h2>
 
+            <p
+              :if={present?(@current_scope.user.bio)}
+              id="profile-bio"
+              class="mt-2 whitespace-pre-line text-sm text-base-content/75"
+            >
+              {@current_scope.user.bio}
+            </p>
+
             <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <.about_item label="Full name" value={@current_scope.user.full_name} />
               <.about_item label="Designation" value={@current_scope.user.designation} />

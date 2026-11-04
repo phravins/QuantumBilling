@@ -109,7 +109,7 @@ defmodule QuantumBillingWeb.RealtimeTest do
     end
 
     test "the saving window is not sent its own echo", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
 
       # Saving through the page itself must not also arrive as a broadcast —
       # that would rebuild the form the user is still typing in.

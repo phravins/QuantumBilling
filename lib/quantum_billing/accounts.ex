@@ -521,6 +521,48 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc """
+  A changeset for onboarding's "About you" step.
+  """
+  def change_onboarding(%User{} = user, attrs \\ %{}) do
+    User.onboarding_changeset(user, attrs)
+  end
+
+  @doc """
+  Saves the "About you" step without finishing onboarding.
+  """
+  def save_onboarding_profile(%User{} = user, attrs) do
+    user
+    |> User.onboarding_changeset(attrs)
+    |> Repo.update()
+    |> broadcast_profile()
+  end
+
+  @doc """
+  Marks onboarding finished (or skipped), so it is not shown again.
+
+  Set here, never from a form. Idempotent: a second call keeps the first time.
+  """
+  def complete_onboarding(%User{onboarded_at: %DateTime{}} = user), do: {:ok, user}
+
+  def complete_onboarding(%User{} = user) do
+    user
+    |> Ecto.Changeset.change(onboarded_at: DateTime.utc_now(:second))
+    |> Repo.update()
+    |> broadcast_profile()
+  end
+
+  @doc "Whether `user` still has the first-sign-in screens to see."
+  def onboarding_pending?(%User{onboarded_at: nil}), do: true
+  def onboarding_pending?(_user), do: false
+
+  defp broadcast_profile({:ok, saved} = result) do
+    Events.broadcast(Events.user_topic(saved.id), {:profile_updated, saved})
+    result
+  end
+
+  defp broadcast_profile(error), do: error
+
+  @doc """
   Gives the user's profile banner a new generated scene.
 
   Broadcasts like a profile edit, so open pages keep `current_scope` in step.

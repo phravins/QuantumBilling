@@ -21,8 +21,10 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   import QuantumBillingWeb.CalendarComponents, only: [calendar_cards: 1]
   import QuantumBillingWeb.SettingsComponents
+  import QuantumBillingWeb.SceneBanner, only: [scene_banner: 1]
   import QuantumBillingWeb.InvoiceTemplateComponents, only: [template_list: 1]
 
+  alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.Calendars
   alias QuantumBilling.Calendars.GoogleClient
@@ -34,7 +36,10 @@ defmodule QuantumBillingWeb.SettingsLive do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
+  alias QuantumBilling.DesignAssets
+  alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
+  alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoiceDocument
 
   @saveable ~w(general invoice e_way_bill tax notifications preferences customization smtp integrations security)a
@@ -63,6 +68,24 @@ defmodule QuantumBillingWeb.SettingsLive do
        accept: ~w(.json),
        max_entries: 1,
        max_file_size: 50_000_000
+     )
+     |> assign(:gallery_open, false)
+     |> assign(:import_open, false)
+     |> assign(:import_error, nil)
+     # Both act as soon as the file is in: there is no form to submit.
+     |> allow_upload(:design_file,
+       accept: ~w(.xml),
+       max_entries: 1,
+       max_file_size: Templates.max_import_bytes(),
+       auto_upload: true,
+       progress: &handle_import_progress/3
+     )
+     |> allow_upload(:letterhead,
+       accept: ~w(.png .jpg .jpeg),
+       max_entries: 1,
+       max_file_size: Uploads.max_bytes(),
+       auto_upload: true,
+       progress: &handle_import_progress/3
      )}
   end
 
@@ -107,7 +130,8 @@ defmodule QuantumBillingWeb.SettingsLive do
        |> assign_form(section)
        |> assign_templates(section)
        |> assign_deliveries(section)
-       |> assign_calendars(section)}
+       |> assign_calendars(section)
+       |> assign_company(section)}
     end
   end
 
@@ -146,6 +170,16 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp assign_calendars(socket, _section), do: socket
 
+  defp assign_company(socket, :company) do
+    assign(
+      socket,
+      :member_count,
+      length(Accounts.list_members(socket.assigns.current_scope.business))
+    )
+  end
+
+  defp assign_company(socket, _section), do: socket
+
   defp assign_caldav_form(socket, changeset) do
     assign(socket, :caldav_form, to_form(changeset, as: :caldav))
   end
@@ -167,10 +201,11 @@ defmodule QuantumBillingWeb.SettingsLive do
     assign(socket, :templates, templates)
   end
 
-  defp section_from(nil), do: :general
+  # Bare /settings opens the read-only profile: the page anyone can see.
+  defp section_from(nil), do: :company
 
   defp section_from(value) do
-    Enum.find_value(sections(), :general, fn s -> if to_string(s.key) == value, do: s.key end)
+    Enum.find_value(sections(), :company, fn s -> if to_string(s.key) == value, do: s.key end)
   end
 
   # From the scrubbed organisation, so stored credentials never reach the browser.
@@ -205,14 +240,42 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, save_page(socket, id, fn _page -> Layout.default_page() end)}
   end
 
-  def handle_event("new_template", _params, socket) do
-    case Templates.duplicate_template(Templates.ensure_default()) do
-      {:ok, template} ->
-        {:noreply, push_navigate(socket, to: ~p"/invoice-templates/#{template.id}")}
+  # ── New design: the starter gallery and Import ──
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "That design could not be created.")}
+  def handle_event("new_template", _params, socket) do
+    {:noreply, socket |> assign(:gallery_open, true) |> assign(:import_open, false)}
+  end
+
+  def handle_event("close_gallery", _params, socket) do
+    {:noreply, assign(socket, :gallery_open, false)}
+  end
+
+  def handle_event("create_from_preset", %{"preset" => key}, socket) do
+    with true <- Catalog.preset?(key),
+         {:ok, template} <- Templates.create_from_preset(key) do
+      {:noreply, push_navigate(socket, to: ~p"/invoice-templates/#{template.id}")}
+    else
+      _error -> {:noreply, put_flash(socket, :error, "That design could not be created.")}
     end
+  end
+
+  def handle_event("toggle_import", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:import_open, !socket.assigns.import_open)
+     |> assign(:gallery_open, false)
+     |> assign(:import_error, nil)}
+  end
+
+  # Uploads need a change event to report into; the files act on arrival.
+  def handle_event("validate_import", _params, socket) do
+    {:noreply, assign(socket, :import_error, import_upload_error(socket))}
+  end
+
+  def handle_event("cancel_import", %{"ref" => ref, "upload" => name}, socket)
+      when name in ["design_file", "letterhead"] do
+    upload = if name == "letterhead", do: :letterhead, else: :design_file
+    {:noreply, cancel_upload(socket, upload, ref)}
   end
 
   def handle_event("duplicate_template", %{"id" => id}, socket) do
@@ -265,7 +328,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   def handle_event("remove_logo", _params, socket) do
     organization = socket.assigns.organization
-    Uploads.delete(organization.doc_logo_path)
+    delete_logo_file(organization.doc_logo_path)
 
     case Settings.update_section(organization, %{"doc_logo_path" => nil}, :customization) do
       {:ok, organization} ->
@@ -499,7 +562,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     case consume_uploaded_entries(socket, :logo, &store_logo/2) do
       [{:ok, path}] ->
         # Unlink the old file only once the new one is on disk.
-        if previous && previous != path, do: Uploads.delete(previous)
+        if previous && previous != path, do: delete_logo_file(previous)
         {Map.put(params, "doc_logo_path", path), socket}
 
       [{:error, message}] ->
@@ -522,6 +585,102 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF or WebP image."
   defp upload_message(:too_many_files), do: "One logo at a time."
   defp upload_message(other), do: "That file could not be uploaded (#{inspect(other)})."
+
+  # A design may show the same file (uploads are content-addressed).
+  defp delete_logo_file(path) do
+    unless DesignAssets.recorded?(path), do: Uploads.delete(path)
+  end
+
+  # ── Import ──
+  # A design file becomes a design as it is; a letterhead image becomes the
+  # background of a new Letterhead design. Either way the pad opens next, where
+  # the spacing can be set to clear the printed header and footer.
+
+  defp handle_import_progress(name, entry, socket) do
+    if entry.done? do
+      {:noreply, import_entry(socket, name, entry)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp import_entry(socket, :design_file, entry) do
+    xml = consume_uploaded_entry(socket, entry, fn %{path: path} -> {:ok, File.read!(path)} end)
+
+    xml
+    |> Templates.import_layout(design_name(entry.client_name))
+    |> after_import(socket, "That design file could not be imported")
+  end
+
+  defp import_entry(socket, :letterhead, entry) do
+    stored =
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        {:ok, Uploads.store(path, entry.client_type)}
+      end)
+
+    with {:ok, path} <- stored,
+         :ok <- DesignAssets.record(path, "background") do
+      "letterhead"
+      |> Catalog.preset()
+      |> Layout.put_background(path)
+      |> Templates.create_from_document("Letterhead")
+      |> after_import(socket, "That letterhead could not be used")
+    else
+      {:error, message} when is_binary(message) ->
+        assign(socket, :import_error, "That image #{message}.")
+
+      _error ->
+        assign(socket, :import_error, "That image could not be saved.")
+    end
+  end
+
+  defp after_import({:ok, template}, socket, _prefix) do
+    socket
+    |> put_flash(:info, "“#{template.name}” imported — adjust it here.")
+    |> push_navigate(to: ~p"/invoice-templates/#{template.id}")
+  end
+
+  defp after_import({:error, message}, socket, prefix) when is_binary(message) do
+    assign(socket, :import_error, "#{prefix}: #{message}")
+  end
+
+  defp after_import({:error, _reason}, socket, prefix) do
+    assign(socket, :import_error, "#{prefix}.")
+  end
+
+  # "Acme invoice v2.xml" → "Acme invoice v2". Shown only as a design name.
+  defp design_name(client_name) do
+    name =
+      (client_name || "")
+      |> Path.rootname()
+      |> String.replace(~r/[^\p{L}\p{N} ._()-]+/u, " ")
+      |> String.replace(~r/\s+/u, " ")
+      |> String.trim()
+
+    if name == "", do: "Imported design", else: name
+  end
+
+  defp import_upload_error(socket) do
+    [:design_file, :letterhead]
+    |> Enum.flat_map(fn name ->
+      upload = socket.assigns.uploads[name]
+      upload_errors(upload) ++ Enum.flat_map(upload.entries, &upload_errors(upload, &1))
+    end)
+    |> case do
+      [] -> nil
+      [:too_large | _] -> "That file is too large."
+      [:not_accepted | _] -> "Choose a .xml design file, or a PNG or JPEG image."
+      [:too_many_files | _] -> "One file at a time."
+      [other | _] -> "That file could not be uploaded (#{inspect(other)})."
+    end
+  end
+
+  defp gallery_accent(templates) do
+    case Enum.find(templates, & &1.is_default) do
+      %{accent: "#" <> _ = accent} -> accent
+      _none -> "#18181b"
+    end
+  end
 
   def render(assigns) do
     ~H"""
@@ -564,6 +723,132 @@ defmodule QuantumBillingWeb.SettingsLive do
         </.card>
       </div>
     </Layouts.app>
+    """
+  end
+
+  # Read-only: staff see it too. Each edit lives in the section that owns it.
+  defp render_panel(%{section: :company} = assigns) do
+    ~H"""
+    <div id="company-profile" class="-m-4 flex flex-col">
+      <div class="relative h-32 overflow-hidden rounded-t-[inherit] bg-base-300 sm:h-40">
+        <.scene_banner
+          id="company-banner"
+          seed={@current_scope.business.id}
+          class="block size-full"
+        />
+      </div>
+
+      <div class="px-4 pb-5 sm:px-6">
+        <div class="-mt-10 flex flex-col gap-4 sm:-mt-12 sm:flex-row sm:items-end sm:justify-between">
+          <div class="flex items-end gap-4">
+            <span class="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-base-100 bg-base-100 shadow-md sm:size-24">
+              <%= if @organization.doc_logo_path do %>
+                <img
+                  id="company-logo"
+                  src={@organization.doc_logo_path}
+                  alt={"#{company_display_name(assigns)} logo"}
+                  class="max-h-full max-w-full object-contain p-1.5"
+                />
+              <% else %>
+                <span
+                  id="company-initials"
+                  class="flex size-full items-center justify-center bg-amber-100 text-2xl font-semibold text-amber-800 dark:bg-amber-300/15 dark:text-amber-200"
+                >
+                  {company_initials(company_display_name(assigns))}
+                </span>
+              <% end %>
+            </span>
+
+            <div class="min-w-0 pb-1">
+              <h2 id="company-name" class="truncate text-lg font-semibold tracking-tight sm:text-xl">
+                {company_display_name(assigns)}
+              </h2>
+              <p
+                :if={present?(@organization.trade_name)}
+                class="truncate text-sm text-base-content/60"
+              >
+                Trading as {@organization.trade_name}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <.link
+              navigate={~p"/settings/general"}
+              id="company-edit-details"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-pencil-square" class="size-4" /> Edit details
+            </.link>
+            <.link
+              navigate={~p"/settings/customization"}
+              id="company-edit-designs"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-paint-brush" class="size-4" /> Logo &amp; designs
+            </.link>
+            <.link
+              :if={Scope.owner?(@current_scope)}
+              navigate={~p"/settings/team"}
+              id="company-team"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-user-group" class="size-4" /> Team
+            </.link>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-1.5">
+          <.company_badge :if={present?(@organization.gstin)} icon="hero-receipt-percent">
+            GSTIN <span class="font-mono">{@organization.gstin}</span>
+          </.company_badge>
+          <.company_badge :if={present?(@organization.pan)} icon="hero-identification">
+            PAN <span class="font-mono">{@organization.pan}</span>
+          </.company_badge>
+          <.company_badge :if={present?(@organization.state)} icon="hero-map-pin">
+            {@organization.state}
+          </.company_badge>
+          <.company_badge icon={if(Scope.owner?(@current_scope), do: "hero-star", else: "hero-user")}>
+            You are {if Scope.owner?(@current_scope), do: "an owner", else: "staff"}
+          </.company_badge>
+        </div>
+
+        <dl
+          id="company-facts"
+          class="mt-5 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-base-300 bg-base-300 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          <.company_fact icon="hero-map" label="Address">
+            {company_address(@organization)}
+          </.company_fact>
+          <.company_fact icon="hero-envelope" label="Email">
+            {blank_dash(@organization.email)}
+          </.company_fact>
+          <.company_fact icon="hero-phone" label="Phone">
+            {blank_dash(@organization.phone)}
+          </.company_fact>
+          <.company_fact icon="hero-calendar-days" label="Financial year">
+            {blank_dash(@organization.financial_year)}
+          </.company_fact>
+          <.company_fact icon="hero-banknotes" label="Currency">
+            {blank_dash(@organization.currency)}
+          </.company_fact>
+          <.company_fact icon="hero-users" label="Team">
+            <span id="company-member-count">
+              {@member_count} {if @member_count == 1, do: "member", else: "members"}
+            </span>
+          </.company_fact>
+        </dl>
+
+        <p
+          :if={not present?(@organization.gstin) and Scope.owner?(@current_scope)}
+          id="company-incomplete"
+          class="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-300/10 dark:text-amber-100"
+        >
+          <.icon name="hero-light-bulb" class="size-4 shrink-0" />
+          Add your GSTIN in General settings so it appears on your invoices.
+        </p>
+      </div>
+    </div>
     """
   end
 
@@ -675,6 +960,40 @@ defmodule QuantumBillingWeb.SettingsLive do
           placeholder="Shown at the foot of every invoice"
         />
       </div>
+
+      <section
+        id="payment-details-card"
+        class="mt-6 rounded-box border border-base-300 bg-base-100 p-4"
+      >
+        <div class="mb-3 flex items-start gap-3">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-field bg-base-200">
+            <.icon name="hero-building-library" class="size-4 text-base-content/70" />
+          </span>
+          <div>
+            <h3 class="text-sm font-semibold">Payment details</h3>
+            <p class="text-xs text-base-content/60">
+              Shown by the Payment Details block in your invoice designs. The UPI ID and its QR code come from Integrations.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <.field
+            field={f[:bank_account_name]}
+            label="Account Name"
+            placeholder="Acme Traders Pvt Ltd"
+          />
+          <.field field={f[:bank_name]} label="Bank" placeholder="HDFC Bank" />
+          <.field
+            field={f[:bank_account_number]}
+            label="Account Number"
+            inputmode="numeric"
+            autocomplete="off"
+          />
+          <.field field={f[:bank_ifsc]} label="IFSC" placeholder="HDFC0001234" />
+          <.field field={f[:bank_branch]} label="Branch" placeholder="MG Road, Bengaluru" />
+        </div>
+      </section>
     </.form>
     """
   end
@@ -1103,10 +1422,41 @@ defmodule QuantumBillingWeb.SettingsLive do
             </p>
           </div>
 
-          <button type="button" phx-click="new_template" class={action_button_class()}>
-            <.icon name="hero-plus" class="size-4" /> New design
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              id="import-design"
+              type="button"
+              phx-click="toggle_import"
+              aria-expanded={to_string(@import_open)}
+              aria-controls="import-panel"
+              class={secondary_button_class()}
+            >
+              <.icon name="hero-arrow-up-tray" class="size-4" /> Import
+            </button>
+
+            <button
+              id="new-design"
+              type="button"
+              phx-click="new_template"
+              class={action_button_class()}
+            >
+              <.icon name="hero-plus" class="size-4" /> New design
+            </button>
+          </div>
         </div>
+
+        <.import_panel
+          :if={@import_open}
+          uploads={@uploads}
+          error={@import_error}
+        />
+
+        <.preset_gallery
+          :if={@gallery_open}
+          invoice={@sample}
+          logo={@organization.doc_logo_path}
+          accent={gallery_accent(@templates)}
+        />
 
         <.template_list
           templates={@templates}
@@ -1365,4 +1715,218 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp mode(true), do: "live"
   defp mode(false), do: "demo"
+
+  # ── Company profile helpers ──
+
+  attr :icon, :string, required: true
+  slot :inner_block, required: true
+
+  defp company_badge(assigns) do
+    ~H"""
+    <span class="inline-flex items-center gap-1.5 rounded-full border border-base-300 bg-base-200/60 px-2.5 py-1 text-xs text-base-content/75">
+      <.icon name={@icon} class="size-3.5 text-base-content/50" />
+      {render_slot(@inner_block)}
+    </span>
+    """
+  end
+
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  slot :inner_block, required: true
+
+  defp company_fact(assigns) do
+    ~H"""
+    <div class="flex gap-3 bg-base-100 p-3.5">
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-base-200 text-base-content/60">
+        <.icon name={@icon} class="size-4" />
+      </span>
+      <div class="min-w-0">
+        <dt class="text-xs text-base-content/50">{@label}</dt>
+        <dd class="mt-0.5 break-words text-sm font-medium">{render_slot(@inner_block)}</dd>
+      </div>
+    </div>
+    """
+  end
+
+  defp company_display_name(%{organization: organization, current_scope: scope}) do
+    if present?(organization.company_name),
+      do: organization.company_name,
+      else: scope.business.name
+  end
+
+  defp company_initials(name) do
+    name
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.take(2)
+    |> Enum.map_join(&String.first/1)
+    |> String.upcase()
+  end
+
+  defp company_address(organization) do
+    [organization.address, organization.city, organization.pincode]
+    |> Enum.filter(&present?/1)
+    |> Enum.join(", ")
+    |> blank_dash()
+  end
+
+  defp blank_dash(value), do: if(present?(value), do: value, else: "—")
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
+
+  attr :invoice, :map, required: true
+  attr :logo, :string, default: nil
+  attr :accent, :string, required: true
+
+  defp preset_gallery(assigns) do
+    assigns = assign(assigns, :presets, Enum.map(Catalog.presets(), &preset_entry/1))
+
+    ~H"""
+    <section
+      id="preset-gallery"
+      class="mb-4 rounded-box border border-base-300 bg-base-200/50 p-4"
+    >
+      <div class="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-semibold tracking-tight">Start from a design</h4>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Pick a starting point. Everything in it can be changed on the design pad.
+          </p>
+        </div>
+
+        <button
+          id="close-gallery"
+          type="button"
+          phx-click="close_gallery"
+          class="rounded-field p-1 text-base-content/50 transition hover:bg-base-300 hover:text-base-content"
+          aria-label="Close"
+        >
+          <.icon name="hero-x-mark" class="size-4" />
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <button
+          :for={{key, name, description, doc} <- @presets}
+          id={"preset-#{key}"}
+          type="button"
+          phx-click="create_from_preset"
+          phx-value-preset={key}
+          phx-disable-with="Creating…"
+          class="group flex flex-col overflow-hidden rounded-box border border-base-300 bg-base-100 text-left transition duration-150 hover:-translate-y-0.5 hover:border-base-content/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-base-content motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+        >
+          <div class="pointer-events-none overflow-hidden border-b border-base-300 bg-base-100">
+            <Renderer.stylesheet doc={doc} />
+            <Renderer.thumbnail
+              doc={doc}
+              invoice={@invoice}
+              accent={@accent}
+              logo={@logo}
+              scale={0.3}
+            />
+          </div>
+          <div class="p-2.5">
+            <p class="flex items-center justify-between gap-2 text-sm font-medium">
+              {name}
+              <.icon
+                name="hero-arrow-right"
+                class="size-3.5 text-base-content/30 transition group-hover:translate-x-0.5 group-hover:text-base-content"
+              />
+            </p>
+            <p class="mt-0.5 line-clamp-2 text-2xs text-base-content/55">{description}</p>
+          </div>
+        </button>
+      </div>
+    </section>
+    """
+  end
+
+  defp preset_entry({key, name, description}),
+    do: {key, name, description, Catalog.preset(key)}
+
+  attr :uploads, :map, required: true
+  attr :error, :string, default: nil
+
+  defp import_panel(assigns) do
+    ~H"""
+    <section
+      id="import-panel"
+      class="mb-4 rounded-box border border-base-300 bg-base-200/50 p-4"
+    >
+      <h4 class="text-sm font-semibold tracking-tight">Import your own invoice</h4>
+      <p class="mt-0.5 text-xs text-base-content/60">
+        Bring in a design exported from QuantumBilling, or use your existing invoice or letterhead as the page background.
+      </p>
+
+      <form
+        id="import-form"
+        phx-change="validate_import"
+        class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"
+      >
+        <label
+          id="import-design-file"
+          class="group flex cursor-pointer items-start gap-3 rounded-box border border-dashed border-base-300 bg-base-100 p-3.5 transition hover:border-base-content/40 hover:bg-base-100/70"
+        >
+          <span class="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 transition group-hover:scale-105">
+            <.icon name="hero-code-bracket-square" class="size-5 text-base-content/70" />
+          </span>
+          <span class="min-w-0">
+            <span class="block text-sm font-medium">Design file</span>
+            <span class="mt-0.5 block text-2xs text-base-content/55">
+              A .xml file from Export, up to {div(Templates.max_import_bytes(), 1000)}KB.
+            </span>
+          </span>
+          <.live_file_input upload={@uploads.design_file} class="sr-only" />
+        </label>
+
+        <label
+          id="import-letterhead"
+          class="group flex cursor-pointer items-start gap-3 rounded-box border border-dashed border-base-300 bg-base-100 p-3.5 transition hover:border-base-content/40 hover:bg-base-100/70"
+        >
+          <span class="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 transition group-hover:scale-105">
+            <.icon name="hero-document-arrow-up" class="size-5 text-base-content/70" />
+          </span>
+          <span class="min-w-0">
+            <span class="block text-sm font-medium">Invoice or letterhead image</span>
+            <span class="mt-0.5 block text-2xs text-base-content/55">
+              A PNG or JPEG of your page, up to {div(Uploads.max_bytes(), 1_000_000)}MB. It becomes the background.
+            </span>
+          </span>
+          <.live_file_input upload={@uploads.letterhead} class="sr-only" />
+        </label>
+      </form>
+
+      <div
+        :for={{name, entry} <- import_entries(@uploads)}
+        id={"import-entry-#{entry.ref}"}
+        class="mt-3 flex items-center gap-2 text-xs"
+      >
+        <span class="h-1.5 w-24 overflow-hidden rounded-full bg-base-300">
+          <span
+            class="block h-full rounded-full bg-base-content/70 transition-[width]"
+            style={"width: #{entry.progress}%"}
+          />
+        </span>
+        <span class="min-w-0 truncate text-base-content/60">{entry.client_name}</span>
+        <button
+          type="button"
+          phx-click="cancel_import"
+          phx-value-ref={entry.ref}
+          phx-value-upload={name}
+          class="text-error hover:underline"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <p :if={@error} id="import-error" class="mt-2 flex items-center gap-1 text-xs text-error">
+        <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@error}
+      </p>
+    </section>
+    """
+  end
+
+  defp import_entries(uploads) do
+    Enum.map(uploads.design_file.entries, &{"design_file", &1}) ++
+      Enum.map(uploads.letterhead.entries, &{"letterhead", &1})
+  end
 end

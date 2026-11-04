@@ -33,7 +33,11 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     {:remarks, "Remarks", "hero-chat-bubble-left"},
     {:terms, "Terms", "hero-document-text"},
     {:signature, "Signature", "hero-pencil"},
-    {:footer, "Footer", "hero-bars-3-bottom-left"}
+    {:footer, "Footer", "hero-bars-3-bottom-left"},
+    {:payment, "Payment Details", "hero-qr-code"},
+    {:custom_text, "Custom Text", "hero-chat-bubble-bottom-center-text"},
+    {:image, "Image or Stamp", "hero-photo"},
+    {:spacer, "Spacer", "hero-arrows-up-down"}
   ]
 
   @doc "Every block a user can add, with the label and icon the palette shows."
@@ -106,6 +110,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   attr :invoice, :map, required: true
   attr :logo, :string, default: nil
   attr :accent, :string, required: true
+  attr :extras, :map, default: %{payment: nil, images: %{}}
   attr :selected, :boolean, default: false
   attr :first, :boolean, default: false
   attr :last, :boolean, default: false
@@ -177,6 +182,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           invoice={@invoice}
           accent={@accent}
           logo={@logo}
+          extras={@extras}
           only={@block.id}
         />
       </div>
@@ -187,6 +193,8 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   @doc "The options panel for whichever block is selected."
   attr :block, :map, default: nil
   attr :page, :map, required: true
+  attr :uploads, :map, default: nil
+  attr :extras, :map, default: %{payment: nil, images: %{}}
 
   def inspector(assigns) do
     ~H"""
@@ -205,22 +213,225 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         <%!-- _id, not id: an input named id overrides the form's DOM id. --%>
         <input type="hidden" name="_id" value={@block.id} />
         <.option
-          :for={{xml, key, kind, _default} <- Catalog.attrs(@block.type)}
+          :for={{xml, key, kind, _default} <- editable_attrs(@block.type)}
           name={xml}
           label={option_label(xml)}
           kind={kind}
           value={Map.get(@block.opts, key)}
         />
-        <label :if={@block.type in [:signature, :footer]} class="block">
+        <label :if={@block.type in Catalog.text_types()} class="block">
           <span class="mb-1 block text-xs text-base-content/60">Text</span> <textarea
             name="text"
-            rows="2"
+            rows={if @block.type == :custom_text, do: "5", else: "2"}
             class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
           >{@block.text}</textarea>
         </label>
       </form>
+      <.image_picker :if={@block.type == :image and @uploads} block={@block} uploads={@uploads} />
+      <p :if={@block.type == :payment} id="payment-block-hint" class="text-2xs text-base-content/50">
+        The UPI ID comes from Settings › Integrations and the bank lines from
+        Settings › Invoice › Payment details. The QR carries each invoice's amount.
+      </p>
       <.children_editor :if={Catalog.child_element(@block.type)} block={@block} />
     </div>
+    """
+  end
+
+  # An upload's path is set by the server, so it never shows as a text field.
+  defp editable_attrs(type) do
+    Enum.reject(Catalog.attrs(type), fn {_xml, _key, kind, _default} -> kind == :upload end)
+  end
+
+  attr :block, :map, required: true
+  attr :uploads, :map, required: true
+
+  defp image_picker(assigns) do
+    ~H"""
+    <form
+      id="image-upload-form"
+      phx-change="validate_upload"
+      class="space-y-2 border-t border-base-300 pt-3"
+    >
+      <p class="text-2xs font-medium uppercase tracking-wider text-base-content/45">Image</p>
+      <div class="flex items-center gap-2">
+        <label class={[secondary_button_class(), "cursor-pointer"]}>
+          <.icon name="hero-arrow-up-tray" class="size-4" />
+          {if @block.opts.path == "", do: "Upload", else: "Replace"}
+          <.live_file_input upload={@uploads.image} class="hidden" />
+        </label>
+        <button
+          :if={@block.opts.path != ""}
+          type="button"
+          id="remove-image"
+          phx-click="remove_image"
+          class="text-xs text-base-content/50 hover:text-red-600"
+        >
+          Remove
+        </button>
+      </div>
+      <p class="text-2xs text-base-content/45">
+        PNG, JPEG or WebP up to 2MB — a seal, stamp or signature.
+      </p>
+      <.upload_progress upload={@uploads.image} />
+    </form>
+    """
+  end
+
+  attr :upload, :map, required: true
+
+  defp upload_progress(assigns) do
+    ~H"""
+    <div :for={entry <- @upload.entries} class="flex items-center gap-2 text-2xs text-base-content/60">
+      <span class="truncate">{entry.client_name}</span>
+      <div class="h-1 flex-1 overflow-hidden rounded-full bg-base-200">
+        <div class="h-full bg-base-content/50 transition-all" style={"width: #{entry.progress}%"}>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  @borders [{"none", "None"}, {"hairline", "Hairline frame"}, {"band", "Accent band"}]
+  @watermarks [{"none", "None"}, {"status", "Invoice status"}, {"custom", "Custom text"}]
+  @fits [{"page", "Whole page"}, {"top", "Top strip"}, {"contain", "Fit inside"}]
+  @opacities [{"100", "Full"}, {"60", "Faded"}, {"30", "Light"}]
+  @spaces [{"0mm", "None"}, {"20mm", "20 mm"}, {"35mm", "35 mm"}, {"50mm", "50 mm"}]
+
+  @doc """
+  The whole-sheet options: frame, watermark and letterhead.
+
+  These sit beside the text tools rather than in them because they decide what
+  the paper looks like, not how the type reads. The background itself is set by
+  upload, never by a typed path — see `InvoiceDoc.Layout.put_background/2`.
+  """
+  attr :page, :map, required: true
+  attr :uploads, :map, required: true
+  attr :extras, :map, default: %{payment: nil, images: %{}}
+  attr :upload_error, :string, default: nil
+
+  def page_panel(assigns) do
+    assigns =
+      assign(assigns,
+        borders: @borders,
+        watermarks: @watermarks,
+        fits: @fits,
+        opacities: @opacities,
+        spaces: @spaces,
+        background_src: Map.get(assigns.extras.images || %{}, assigns.page.background)
+      )
+
+    ~H"""
+    <div id="page-panel" class="mt-4 space-y-3 border-t border-base-300 pt-3">
+      <div class="flex items-center gap-2">
+        <.icon name="hero-document" class="size-4 text-base-content/45" />
+        <p class="text-sm font-medium">Page</p>
+      </div>
+
+      <form id="page-options-form" phx-change="update_page" class="space-y-3">
+        <.page_select name="border" label="Frame" value={@page.border} options={@borders} />
+        <.page_select
+          name="watermark"
+          label="Watermark"
+          value={@page.watermark}
+          options={@watermarks}
+        />
+        <label :if={@page.watermark == "custom"} class="block">
+          <span class="mb-1 block text-xs text-base-content/60">Watermark text</span>
+          <input
+            type="text"
+            name="page[watermark-text]"
+            value={@page.watermark_text}
+            maxlength="40"
+            placeholder="e.g. COPY"
+            class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+          />
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <.page_select
+            name="space-top"
+            label="Space above"
+            value={@page.space_top}
+            options={@spaces}
+          />
+          <.page_select
+            name="space-bottom"
+            label="Space below"
+            value={@page.space_bottom}
+            options={@spaces}
+          />
+        </div>
+        <.page_select
+          :if={@page.background != ""}
+          name="background-fit"
+          label="Letterhead fit"
+          value={@page.background_fit}
+          options={@fits}
+        />
+        <.page_select
+          :if={@page.background != ""}
+          name="background-opacity"
+          label="Letterhead strength"
+          value={@page.background_opacity}
+          options={@opacities}
+        />
+      </form>
+
+      <form id="background-upload-form" phx-change="validate_upload" class="space-y-2">
+        <p class="text-xs text-base-content/60">Letterhead or background</p>
+        <div
+          :if={@background_src}
+          class="overflow-hidden rounded-field border border-base-300 bg-base-200/40"
+        >
+          <img src={@background_src} alt="Current letterhead" class="max-h-28 w-full object-contain" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class={[secondary_button_class(), "cursor-pointer"]}>
+            <.icon name="hero-arrow-up-tray" class="size-4" />
+            {if @page.background == "", do: "Upload letterhead", else: "Replace"}
+            <.live_file_input upload={@uploads.background} class="hidden" />
+          </label>
+          <button
+            :if={@page.background != ""}
+            type="button"
+            id="remove-background"
+            phx-click="remove_background"
+            data-confirm="Remove the letterhead from this design?"
+            class="text-xs text-base-content/50 hover:text-red-600"
+          >
+            Remove
+          </button>
+        </div>
+        <p class="text-2xs text-base-content/45">
+          Your printed letterhead or an existing invoice as a PNG or JPEG, up to 2MB.
+          Use the spacing above to keep the text clear of its header and footer.
+        </p>
+        <.upload_progress upload={@uploads.background} />
+        <p :if={@upload_error} id="upload-error" class="flex items-center gap-1 text-2xs text-error">
+          <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@upload_error}
+        </p>
+      </form>
+    </div>
+    """
+  end
+
+  attr :name, :string, required: true
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :options, :list, required: true
+
+  defp page_select(assigns) do
+    ~H"""
+    <label class="block">
+      <span class="mb-1 block text-xs text-base-content/60">{@label}</span>
+      <select
+        name={"page[#{@name}]"}
+        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+      >
+        <option :for={{value, text} <- @options} value={value} selected={value == @value}>
+          {text}
+        </option>
+      </select>
+    </label>
     """
   end
 
@@ -868,6 +1079,16 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           >
             Duplicate
           </button>
+
+          <.link
+            id={"export-template-#{template.id}"}
+            href={~p"/invoice-templates/#{template.id}/export"}
+            download
+            title="Download this design as an XML file"
+            class={[secondary_button_class(), "h-8 px-2.5 text-xs"]}
+          >
+            <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
+          </.link>
 
           <button
             :if={!template.is_default}

@@ -17,7 +17,7 @@ One PostgreSQL database holds shared account data in `public` and separate busin
 | `public` | `rate_limits` | Rate-limit counters shared by every server (UNLOGGED). |
 | `public` | `oban_jobs`, `oban_peers` | Shared background-job storage and leader coordination. |
 | `public` | `schema_migrations` | Ecto's record of shared/public migrations. |
-| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events`, `webhook_endpoints`, `webhook_deliveries`, `compliance_tasks`, `calendar_connections`, `calendar_event_links` | The selected business's operational data. |
+| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `design_assets`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events`, `webhook_endpoints`, `webhook_deliveries`, `compliance_tasks`, `calendar_connections`, `calendar_event_links` | The selected business's operational data. |
 | Each `biz_N` | `schema_migrations` | Ecto's record of tenant migrations for that schema. |
 
 Business tables do not carry a `business_id` column. Their schema establishes ownership. Consequently, invoice ID `42` in `biz_1` and invoice ID `42` in `biz_2` are different invoices. Invoice numbers, GSTIN uniqueness, public invoice tokens, and webhook event uniqueness are enforced within each business schema.
@@ -103,6 +103,8 @@ A sign-in identity, separate from any business role.
 | `hashed_password` | `varchar(255)` | Nullable | PBKDF2 password hash; the plain password is virtual and is not a database column. |
 | `confirmed_at` | timestamp | Nullable | Email confirmation time. |
 | `full_name`, `phone`, `designation` | `varchar(255)` | Nullable | Account display information. |
+| `bio` | `text` | Nullable | Short About text from onboarding and the profile; at most 500 characters in the changeset. |
+| `onboarded_at` | timestamp | Nullable | Set by `Accounts.complete_onboarding/2` when the first-sign-in screens are finished or skipped. While `NULL`, sign-in and workspace pages send the user to `/onboarding`. Never cast from a form. |
 | `banner_seed` | `bigint` | Nullable | Seed for the generated profile landscape; `NULL` uses the user ID. |
 | `totp_secret` | `bytea` | Nullable | Encrypted TOTP enrolment secret. |
 | `totp_confirmed_at` | timestamp | Nullable | A completed enrolment enables two-factor authentication. |
@@ -233,6 +235,7 @@ Application-managed business configuration. A unique index on `singleton` is use
 | `razorpay_key_id`, `irp_username`, `irp_client_id`, `webhook_url` | `varchar(255)` | Nullable |
 | `razorpay_key_secret`, `irp_password`, `webhook_secret` | `bytea` | Nullable; encrypted |
 | `upi_vpa`, `upi_payee_name` | `varchar(255)` | Nullable |
+| `bank_account_name`, `bank_name`, `bank_account_number`, `bank_ifsc`, `bank_branch` | `varchar(255)` | Nullable; printed by an invoice design's Payment details block. The changeset strips spaces from the account number and upper-cases and checks the IFSC format. |
 | `audit_retention_days` | `integer` | Nullable; `90` |
 | `singleton` | `boolean` | Required; `true`; unique |
 
@@ -420,6 +423,20 @@ Source: [recurring-profile schema](../lib/quantum_billing/recurring/recurring_pr
 A partial unique index permits one active template per name (`archived_at IS NULL`). `invoice_templates_one_default_index` permits at most one `is_default = true` template per business. The application swaps defaults transactionally. Templates are archived in ordinary use. Invoice layout structure is snapshotted to `invoices.layout_xml`, while the template's live branding/accent can still affect rendering.
 
 Source: [template schema](../lib/quantum_billing/templates/invoice_template.ex), [template context](../lib/quantum_billing/templates.ex).
+
+### `design_assets`
+
+The images a business uploaded for its invoice designs (letterhead backgrounds, stamps, seals). Upload files share one directory and are named by a hash of their contents, so a path alone does not say which business owns it; this table is that record.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `path` | `varchar(255)` | Required; unique; `/uploads/<hash>.<ext>` |
+| `kind` | `varchar(255)` | Required; `image`; `background` or `image` in the application |
+| `inserted_at` | timestamp | Required |
+
+`DesignAssets.owned?/1` answers "this business's logo, or a path recorded here". The upload controller serves a file only when it is owned, and the PDF and public-page renderers inline only owned images. Layout XML may name a background or image path, but the path is set only by the server after an upload (never cast from form params), and an imported design file loses any path this business has not recorded. Removing the company logo does not delete a file that is also recorded here.
+
+Source: [design assets context](../lib/quantum_billing/design_assets.ex).
 
 ### `notifications`
 
@@ -699,7 +716,7 @@ Sources: [schema-transfer migration](../priv/repo/migrations/20261015115410_move
 
 The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.0` stores money in paise and can upgrade the supported older `2.0`/`2.1` files on restore.
 
-The export includes selected organization settings plus clients, templates, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, and audit logs. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo bytes are not embedded; a path reference alone is not an asset backup.
+The export includes selected organization settings plus clients, templates, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, design-asset records, and audit logs. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo and design-image bytes are not embedded; a path reference alone is not an asset backup. Restore drops `design_assets` rows whose path or kind is malformed. A restored row makes that business the owner of the path, which is the same trust a restore already gives `doc_logo_path`; paths are unguessable content hashes, so only someone who already has the file name can claim it this way.
 
 Export streams explicit field maps inside one transaction. Restore replaces the listed business tables in one transaction, inserts parents before children in batches, and resynchronizes primary-key sequences. A failure rolls back the transaction. Omitted credentials must be configured separately; the file is not a copy of the application's encryption-key environment.
 

@@ -16,6 +16,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
   def mount(%{"id" => id}, _session, socket) do
@@ -31,6 +32,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         if connected?(socket), do: Invoices.subscribe()
 
         {doc, accent, logo} = Templates.document_for(invoice)
+        extras = Extras.build(invoice, doc)
 
         {:ok,
          socket
@@ -40,6 +42,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:doc, doc)
          |> assign(:accent, accent)
          |> assign(:logo, logo)
+         |> assign(:extras, extras)
          |> assign(:e_way_bill, EWayBills.live_bill_for_invoice(invoice.id))
          |> assign(:ewb_defaults, Settings.get_organization())
          |> assign(:show_qr_modal, false)}
@@ -178,12 +181,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       invoice ->
         {doc, accent, logo} = Templates.document_for(invoice)
+        extras = Extras.build(invoice, doc)
 
         socket
         |> assign(:invoice, invoice)
         |> assign(:doc, doc)
         |> assign(:accent, accent)
         |> assign(:logo, logo)
+        |> assign(:extras, extras)
     end
   end
 
@@ -369,7 +374,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           class="mx-auto aspect-[210/297] w-full max-w-[210mm] bg-white p-4 text-black shadow-xl ring-1 ring-black/5 sm:p-[12mm]"
         >
           <Renderer.stylesheet doc={@doc} />
-          <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+          <Renderer.document
+            doc={@doc}
+            invoice={@invoice}
+            accent={@accent}
+            logo={@logo}
+            extras={@extras}
+          />
         </div>
       </div>
 

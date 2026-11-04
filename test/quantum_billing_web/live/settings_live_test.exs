@@ -22,7 +22,10 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     test "opens on General with every section in the sidebar", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/settings")
 
-      assert html =~ "General Settings"
+      # Bare /settings opens the read-only Company Profile.
+      assert html =~ "Company Profile"
+      assert has_element?(view, "#company-profile")
+      refute has_element?(view, "#settings-form")
 
       for section <- QuantumBillingWeb.SettingsComponents.sections() do
         assert has_element?(view, ~s(a[href="/settings/#{section.key}"])),
@@ -76,7 +79,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
 
     test "renders the General form fields", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/settings")
+      {:ok, _view, html} = live(conn, ~p"/settings/general")
 
       assert html =~ "Company Name"
       assert html =~ "GSTIN"
@@ -89,10 +92,44 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert {:error, {:redirect, %{to: "/users/log-in"}}} = live(build_conn(), ~p"/settings")
     end
 
-    test "an unknown section falls back to General rather than crashing", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/settings/nonsense")
+    test "an unknown section falls back to the Company Profile rather than crashing", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/nonsense")
 
-      assert html =~ "Company Name"
+      assert has_element?(view, "#company-profile")
+    end
+
+    test "the Company Profile is read-only and shows the company's facts", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/company")
+
+      assert has_element?(view, "#company-name")
+      assert has_element?(view, "#company-facts")
+      assert has_element?(view, "#company-member-count")
+      assert has_element?(view, "#company-edit-details[href='/settings/general']")
+      assert has_element?(view, "#company-edit-designs[href='/settings/customization']")
+      refute has_element?(view, "#settings-form")
+    end
+
+    test "staff see the Company Profile too, without the owner's Team link", %{conn: conn} do
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      {:ok, view, _html} = live(log_in_user(conn, staff), ~p"/settings")
+
+      assert has_element?(view, "#company-profile")
+      assert has_element?(view, "#company-edit-details")
+      refute has_element?(view, "#company-team")
+    end
+
+    test "each settings link in the sidebar carries its own icon", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      icons =
+        for section <- QuantumBillingWeb.SettingsComponents.sections() do
+          assert has_element?(view, "#settings-link-#{section.key} span.#{section.icon}")
+          section.icon
+        end
+
+      assert icons == Enum.uniq(icons)
     end
   end
 
@@ -138,7 +175,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
   describe "saving" do
     test "General persists and survives a remount", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
 
       view
       |> form("#settings-form", %{
@@ -152,7 +189,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       |> render_submit()
 
       # The whole point of the migration: mount again and the values come back.
-      {:ok, _view, html} = live(conn, ~p"/settings")
+      {:ok, _view, html} = live(conn, ~p"/settings/general")
 
       assert html =~ "Acme Traders Private Limited"
       assert html =~ "27AABCA1234A1Z5"
@@ -160,7 +197,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
 
     test "an invalid GSTIN shows an error and does not save", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
 
       html =
         view
@@ -174,7 +211,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
 
     test "a PAN contradicting the GSTIN is rejected", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
 
       html =
         view
@@ -191,7 +228,7 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     end
 
     test "sections save independently of each other", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
+      {:ok, view, _html} = live(conn, ~p"/settings/general")
 
       view
       |> form("#settings-form", %{"organization" => %{"company_name" => "Acme"}})
@@ -594,13 +631,111 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert length(Templates.list_templates()) == 2
     end
 
-    test "a new design opens the pad", %{conn: conn} do
+    test "a new design opens the starter gallery, and a preset opens the pad", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/customization")
 
+      refute has_element?(view, "#preset-gallery")
+      view |> element("#new-design") |> render_click()
+      assert has_element?(view, "#preset-gallery")
+
+      for {key, _name, _description} <- QuantumBillingWeb.InvoiceDoc.Catalog.presets() do
+        assert has_element?(view, "#preset-#{key}")
+      end
+
       assert {:error, {:live_redirect, %{to: to}}} =
-               view |> element("button[phx-click=new_template]") |> render_click()
+               view |> element("#preset-modern") |> render_click()
 
       assert to =~ "/invoice-templates/"
+      assert Enum.any?(Templates.list_templates(), &(&1.name == "Modern"))
+    end
+
+    test "an unknown preset creates nothing", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      before = length(Templates.list_templates())
+
+      render_hook(view, "create_from_preset", %{"preset" => "../../etc"})
+
+      assert length(Templates.list_templates()) == before
+    end
+
+    test "the gallery closes", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      view |> element("#new-design") |> render_click()
+      view |> element("#close-gallery") |> render_click()
+
+      refute has_element?(view, "#preset-gallery")
+    end
+
+    test "every design has an Export link", %{conn: conn} do
+      template = Templates.ensure_default()
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      assert has_element?(
+               view,
+               ~s(#export-template-#{template.id}[href="/invoice-templates/#{template.id}/export"])
+             )
+    end
+
+    test "Import takes a design file and opens the pad", %{conn: conn} do
+      xml =
+        QuantumBillingWeb.InvoiceDoc.Layout.to_xml(
+          QuantumBillingWeb.InvoiceDoc.Catalog.preset("minimal")
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+
+      view |> element("#import-design") |> render_click()
+      assert has_element?(view, "#import-panel")
+
+      file =
+        file_input(view, "#import-form", :design_file, [
+          %{name: "Our invoice.xml", content: xml, type: "application/xml"}
+        ])
+
+      assert {:error, {:live_redirect, %{to: to}}} = render_upload(file, "Our invoice.xml")
+      assert to =~ "/invoice-templates/"
+      assert Enum.any?(Templates.list_templates(), &(&1.name == "Our invoice"))
+    end
+
+    test "Import refuses a file that is not a design", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      view |> element("#import-design") |> render_click()
+      before = length(Templates.list_templates())
+
+      file =
+        file_input(view, "#import-form", :design_file, [
+          %{name: "notes.xml", content: "<html><body>hi</body></html>", type: "application/xml"}
+        ])
+
+      render_upload(file, "notes.xml")
+
+      assert has_element?(view, "#import-error")
+      assert length(Templates.list_templates()) == before
+    end
+
+    test "Import turns a letterhead image into a Letterhead design", %{conn: conn} do
+      png =
+        <<0x89, "PNG\r\n", 0x1A, "\n", 0, 0, 0, 13, "IHDR", 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0,
+          0>>
+
+      {:ok, view, _html} = live(conn, ~p"/settings/customization")
+      view |> element("#import-design") |> render_click()
+
+      file =
+        file_input(view, "#import-form", :letterhead, [
+          %{name: "letterhead.png", content: png, type: "image/png"}
+        ])
+
+      assert {:error, {:live_redirect, %{to: "/invoice-templates/" <> id}}} =
+               render_upload(file, "letterhead.png")
+
+      template = Templates.get_template(String.to_integer(id))
+      background = Templates.document_of(template).page.background
+
+      assert template.name == "Letterhead"
+      assert QuantumBilling.DesignAssets.owned?(background)
+      on_exit(fn -> QuantumBilling.Uploads.delete(background) end)
     end
 
     test "making another design default swaps which one is", %{conn: conn} do

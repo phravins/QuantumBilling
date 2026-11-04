@@ -47,9 +47,15 @@ defmodule QuantumBillingWeb.UserAuth do
       :browser
     )
 
+    # First sign-in screens before anything else; they lead on to "/" when done.
+    to =
+      if Accounts.onboarding_pending?(user),
+        do: ~p"/onboarding",
+        else: user_return_to || signed_in_path(conn)
+
     conn
     |> create_or_extend_session(user, params)
-    |> redirect(to: user_return_to || signed_in_path(conn))
+    |> redirect(to: to)
   end
 
   @pending_two_factor_key :pending_two_factor
@@ -416,6 +422,23 @@ defmodule QuantumBillingWeb.UserAuth do
 
       _no_business ->
         {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/businesses")}
+    end
+  end
+
+  # On the business pages only (live_sessions :app and :owner), never on
+  # /onboarding itself or the account pages, so it cannot loop and does not
+  # stand between an owner and the two-factor set-up they are sent to.
+  def on_mount(:require_onboarded, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    case socket.assigns.current_scope do
+      %Scope{user: %Accounts.User{} = user} ->
+        if Accounts.onboarding_pending?(user),
+          do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/onboarding")},
+          else: {:cont, socket}
+
+      _signed_out ->
+        {:cont, socket}
     end
   end
 

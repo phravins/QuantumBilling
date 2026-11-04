@@ -26,9 +26,13 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   # Without these the document would not be an invoice.
   @required ~w(items totals invoice_meta)a
 
-  # Everything else (today only divider) may repeat.
+  # Everything else (divider, custom text, spacer, image) may repeat.
   @singleton ~w(logo heading company client invoice_meta items totals
-                amount_in_words remarks terms signature footer)a
+                amount_in_words remarks terms signature footer payment)a
+
+  # Set by the server after an upload, never from the pad's params: a path
+  # the user could type would name another business's file.
+  @server_only ~w(path)
 
   @item_fields ~w(serial description hsn_sac quantity unit rate tax_rate amount)
   @required_item_fields ~w(description quantity rate amount)
@@ -49,7 +53,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     {"remarks", :remarks},
     {"terms", :terms},
     {"signature", :signature},
-    {"footer", :footer}
+    {"footer", :footer},
+    {"custom-text", :custom_text},
+    {"spacer", :spacer},
+    {"payment", :payment},
+    {"image", :image}
   ]
 
   @width {:enum, ~w(full half)}
@@ -127,6 +135,30 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     footer: [
       {"width", :width, @width, "full"},
       {"align", :align, @align, "center"}
+    ],
+    custom_text: [
+      {"width", :width, @width, "full"},
+      {"align", :align, @align, "left"},
+      {"title", :title, :string, ""},
+      {"style", :style, {:enum, ~w(plain boxed accent)}, "plain"}
+    ],
+    spacer: [
+      {"height", :height, :integer, 24}
+    ],
+    payment: [
+      {"width", :width, @width, "full"},
+      {"align", :align, @align, "left"},
+      {"label", :label, :string, "Payment Details"},
+      {"show-upi", :show_upi, :boolean, true},
+      {"show-qr", :show_qr, :boolean, true},
+      {"show-bank", :show_bank, :boolean, true},
+      {"qr-size", :qr_size, :integer, 96}
+    ],
+    image: [
+      {"width", :width, @width, "full"},
+      {"align", :align, @align, "left"},
+      {"max-height", :max_height, :integer, 80},
+      {"path", :path, :upload, ""}
     ]
   }
 
@@ -275,7 +307,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
 
   defp default_text(:signature), do: "For Your Company"
   defp default_text(:footer), do: ""
+  defp default_text(:custom_text), do: "Add your own text here."
   defp default_text(_type), do: nil
+
+  @doc "Block types whose element body is text (the footer copy, a caption)."
+  def text_types, do: [:signature, :footer, :custom_text]
 
   @doc """
   Applies user-supplied params to a block, ignoring anything not in its spec.
@@ -287,6 +323,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     opts =
       block.type
       |> attrs()
+      |> Enum.reject(fn {xml, _key, _kind, _default} -> xml in @server_only end)
       |> Enum.reduce(block.opts, fn {xml, key, kind, _default}, acc ->
         case Map.fetch(params, xml) do
           {:ok, raw} ->
@@ -303,7 +340,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     %{block | opts: opts, text: cast_text(block, params)}
   end
 
-  defp cast_text(%Block{type: type} = block, params) when type in [:signature, :footer] do
+  defp cast_text(%Block{type: type} = block, params)
+       when type in [:signature, :footer, :custom_text] do
     case Map.fetch(params, "text") do
       {:ok, text} when is_binary(text) -> text
       _other -> block.text
@@ -324,6 +362,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   end
 
   def cast_value(value, :string) when is_binary(value), do: {:ok, value}
+
+  # A stored upload's path, or blank. Shape only: ownership is checked where
+  # the image is served or inlined (`QuantumBilling.DesignAssets.owned?/1`).
+  def cast_value("", :upload), do: {:ok, ""}
+
+  def cast_value(value, :upload) when is_binary(value) do
+    if QuantumBilling.DesignAssets.path?(value), do: {:ok, value}, else: :error
+  end
 
   # Interpolated into the stylesheet, so six hex digits only.
   def cast_value(value, :color) when is_binary(value) do
@@ -369,12 +415,105 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   The stock layout — what a fresh installation prints, and what the pad's
   "reset" restores.
   """
-  def classic do
+  def classic, do: build(@classic)
+
+  # -- presets --------------------------------------------------------------
+
+  @presets [
+    {"blank", "Blank", "Only what an invoice must have. Build up from there."},
+    {"classic", "Classic", "The standard layout: logo, details, items, totals."},
+    {"modern", "Modern", "An accent band, bold headings, striped rows and payment details."},
+    {"minimal", "Minimal", "Quiet type, no rules, sentence-case labels."},
+    {"compact", "Compact", "Tighter type and rows, so long invoices fit on fewer pages."},
+    {"letterhead", "Letterhead", "Leaves room for your printed or uploaded letterhead."}
+  ]
+
+  @doc "The starter designs, as `{key, name, description}`."
+  def presets, do: @presets
+
+  @doc "Whether `key` names a preset. The gallery's value comes off the wire."
+  def preset?(key), do: Enum.any?(@presets, fn {k, _name, _desc} -> k == key end)
+
+  @doc "The preset's display name."
+  def preset_name(key) do
+    Enum.find_value(@presets, "Design", fn {k, name, _desc} -> if k == key, do: name end)
+  end
+
+  @doc """
+  The document a preset starts from, or `nil` for a key that is not one.
+
+  Each is built from the same blocks and page options a user could set by hand,
+  so a preset is a starting point and nothing more: every part of it can be
+  changed in the pad.
+  """
+  def preset("blank"), do: build(~w(invoice_meta items totals)a)
+  def preset("classic"), do: classic()
+
+  def preset("modern") do
+    ~w(logo heading company invoice_meta client items totals amount_in_words payment
+       terms signature footer)a
+    |> build(%{
+      border: "band",
+      heading_weight: "bold",
+      heading_color: "accent",
+      numerals: "tabular"
+    })
+    |> update_blocks(:heading, &put_opts(&1, size: "lg", color: "accent"))
+    |> update_blocks(:client, &put_opts(&1, width: "half"))
+    |> update_blocks(:items, &put_opts(&1, zebra: true))
+    |> update_blocks(:payment, &put_opts(&1, width: "half"))
+    |> update_blocks(:terms, &put_opts(&1, width: "half"))
+  end
+
+  def preset("minimal") do
+    ~w(heading invoice_meta company client items totals remarks footer)a
+    |> build(%{label_case: "normal", heading_scale: "small", heading_weight: "medium"})
+    |> update_blocks(:heading, &put_opts(&1, align: "left", color: "default", size: "md"))
+    |> update_blocks(:invoice_meta, &put_opts(&1, align: "left", width: "full"))
+    |> update_blocks(:company, &put_opts(&1, label: "From"))
+    |> update_blocks(:client, &put_opts(&1, width: "half"))
+    |> update_blocks(:items, &put_opts(&1, border: "none"))
+  end
+
+  def preset("compact") do
+    ~w(logo heading company invoice_meta client items totals amount_in_words terms footer)a
+    |> build(%{
+      table_density: "compact",
+      paragraph_spacing: "tight",
+      base_font: 11,
+      margin: "10mm",
+      line_height: "tight"
+    })
+    |> update_blocks(:logo, &put_opts(&1, max_height: 40))
+    |> update_blocks(:client, &put_opts(&1, width: "half"))
+    |> update_blocks(:terms, &put_opts(&1, width: "full"))
+  end
+
+  def preset("letterhead") do
+    ~w(heading invoice_meta client items totals amount_in_words payment terms signature)a
+    |> build(%{space_top: "35mm", space_bottom: "20mm"})
+    |> update_blocks(:heading, &put_opts(&1, align: "left", size: "lg"))
+    |> update_blocks(:invoice_meta, &put_opts(&1, align: "right"))
+    |> update_blocks(:client, &put_opts(&1, width: "half"))
+    |> update_blocks(:payment, &put_opts(&1, width: "half"))
+    |> update_blocks(:terms, &put_opts(&1, width: "half"))
+  end
+
+  def preset(_key), do: nil
+
+  defp build(types, page \\ %{}) do
     blocks =
-      @classic
+      types
       |> Enum.with_index(1)
       |> Enum.map(fn {type, index} -> new(type, "b#{index}") end)
 
-    %Document{version: 1, blocks: blocks}
+    document = %Document{version: 1, blocks: blocks}
+    %{document | page: Map.merge(document.page, page)}
   end
+
+  defp update_blocks(%Document{} = document, type, fun) do
+    %{document | blocks: Enum.map(document.blocks, &if(&1.type == type, do: fun.(&1), else: &1))}
+  end
+
+  defp put_opts(%Block{} = block, opts), do: %{block | opts: Map.merge(block.opts, Map.new(opts))}
 end

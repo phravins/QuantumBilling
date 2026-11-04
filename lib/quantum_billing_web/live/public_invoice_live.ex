@@ -11,6 +11,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
   alias QuantumBilling.Invoices
   alias QuantumBilling.Payments
   alias QuantumBilling.Templates
+  alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoicePdfGenerator
 
@@ -39,6 +40,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
         {doc, accent, logo} = Templates.document_for(invoice)
         # A visitor has no session, so /uploads refuses them.
         logo = InvoicePdfGenerator.inline_logo(logo)
+        extras = Extras.build(invoice, doc, inline: true)
 
         if connected?(socket) do
           # This invoice only. The global topic put every invoice in the
@@ -54,7 +56,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
          |> assign(:business, business)
          |> assign(:doc, doc)
          |> assign(:accent, accent)
-         |> assign(:logo, logo)}
+         |> assign(:logo, logo)
+         |> assign(:extras, extras)}
     end
   end
 
@@ -140,12 +143,14 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
         {doc, accent, logo} = Templates.document_for(invoice)
         # A visitor has no session, so /uploads refuses them.
         logo = InvoicePdfGenerator.inline_logo(logo)
+        extras = Extras.build(invoice, doc, inline: true)
 
         socket
         |> assign(:invoice, invoice)
         |> assign(:doc, doc)
         |> assign(:accent, accent)
         |> assign(:logo, logo)
+        |> assign(:extras, extras)
     end
   end
 
@@ -253,7 +258,13 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
         <div class="bg-base-100 p-8 rounded-2xl border border-base-300 shadow-xl">
           <Renderer.stylesheet doc={@doc} />
-          <Renderer.document doc={@doc} invoice={@invoice} accent={@accent} logo={@logo} />
+          <Renderer.document
+            doc={@doc}
+            invoice={@invoice}
+            accent={@accent}
+            logo={@logo}
+            extras={@extras}
+          />
         </div>
 
         <div class="text-center text-xs text-base-content/45 py-4">

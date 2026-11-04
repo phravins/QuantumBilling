@@ -109,6 +109,13 @@ defmodule QuantumBilling.Settings.Organization do
 
     field :doc_logo_path, :string
 
+    # Printed by the Payment details block on an invoice design.
+    field :bank_account_name, :string
+    field :bank_name, :string
+    field :bank_account_number, :string
+    field :bank_ifsc, :string
+    field :bank_branch, :string
+
     field :singleton, :boolean, default: true
 
     timestamps(type: :utc_datetime)
@@ -119,6 +126,8 @@ defmodule QuantumBilling.Settings.Organization do
 
   @invoice ~w(invoice_prefix invoice_next_number invoice_number_padding
               invoice_due_days invoice_terms)a
+
+  @bank ~w(bank_account_name bank_name bank_account_number bank_ifsc bank_branch)a
 
   @e_way_bill ~w(ewb_transport_mode ewb_transporter_id ewb_threshold_value
                  ewb_auto_generate)a
@@ -171,7 +180,17 @@ defmodule QuantumBilling.Settings.Organization do
 
   def changeset(organization, attrs, :invoice) do
     organization
-    |> cast(attrs, @invoice)
+    |> cast(attrs, @invoice ++ @bank)
+    |> trim(@bank)
+    |> update_change(:bank_ifsc, &String.upcase/1)
+    |> validate_format(:bank_ifsc, ~r/^[A-Z]{4}0[A-Z0-9]{6}$/,
+      message: "must be 11 characters like HDFC0001234"
+    )
+    |> update_change(:bank_account_number, &String.replace(&1, " ", ""))
+    |> validate_format(:bank_account_number, ~r/^[0-9]{6,20}$/, message: "must be 6 to 20 digits")
+    |> validate_length(:bank_account_name, max: 120)
+    |> validate_length(:bank_name, max: 120)
+    |> validate_length(:bank_branch, max: 120)
     |> validate_required([:invoice_prefix, :invoice_next_number])
     |> validate_format(:invoice_prefix, ~r/^[A-Za-z0-9\-\/]+$/,
       message: "may only contain letters, numbers, dashes and slashes"

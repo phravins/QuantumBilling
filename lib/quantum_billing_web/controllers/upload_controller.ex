@@ -2,12 +2,13 @@ defmodule QuantumBillingWeb.UploadController do
   @moduledoc """
   Serves uploaded files to the people they belong to.
 
-  A file goes out only to someone signed in, in the business whose settings point
-  at it. Everyone else gets the same Forbidden page whether or not the file
+  A file goes out only to someone signed in, in the business that owns it: the
+  one whose logo it is, or that recorded it as a design asset (a letterhead,
+  a stamp) through `QuantumBilling.DesignAssets`. Everyone else gets the same Forbidden page whether or not the file
   exists, so the answer does not reveal which names are real.
 
   Customers on a public invoice page never come through here: that page carries
-  the logo inline.
+  the logo and design images inline.
 
   The headers make the file safe on this origin:
 
@@ -21,13 +22,13 @@ defmodule QuantumBillingWeb.UploadController do
   """
   use QuantumBillingWeb, :controller
 
-  alias QuantumBilling.Settings
+  alias QuantumBilling.DesignAssets
   alias QuantumBilling.Uploads
   alias QuantumBillingWeb.UserAuth
 
   def show(conn, %{"file" => name}) do
     with %{business: %{}} <- conn.assigns.current_scope,
-         true <- Settings.get_organization().doc_logo_path == "/uploads/" <> name,
+         true <- DesignAssets.owned?("/uploads/" <> name),
          {:ok, file, content_type} <- Uploads.locate(name) do
       conn
       |> put_resp_content_type(content_type, nil)

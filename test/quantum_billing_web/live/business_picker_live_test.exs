@@ -47,8 +47,80 @@ defmodule QuantumBillingWeb.BusinessPickerLiveTest do
       assert has_element?(view, "#choose-business-#{other.id}")
 
       conn = post(conn, ~p"/businesses/#{other.id}/switch")
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/businesses/ready"
       assert get_session(conn, :business_id) == other.id
+    end
+
+    test "a focus screen: no app sidebar, a progress bar and a Continue button", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/businesses")
+
+      assert has_element?(view, "#focus-shell")
+      assert has_element?(view, "#focus-progress")
+      refute has_element?(view, "#app-sidebar")
+      assert has_element?(view, "#business-list[role=radiogroup]")
+      # Business 1 is the one open, so it starts selected and Back is offered.
+      assert has_element?(view, "#choose-business-1[aria-checked=true]")
+      assert has_element?(view, "#picker-back")
+      assert has_element?(view, ~s|#picker-continue[href="/businesses/1/switch"]|)
+    end
+
+    test "selecting a card moves the check and the Continue target", %{conn: conn, other: other} do
+      {:ok, view, _html} = live(conn, ~p"/businesses")
+
+      view |> element("#choose-business-#{other.id}") |> render_click()
+
+      assert has_element?(view, "#choose-business-#{other.id}[aria-checked=true]")
+      assert has_element?(view, "#choose-business-1[aria-checked=false]")
+      assert has_element?(view, ~s|#picker-continue[href="/businesses/#{other.id}/switch"]|)
+    end
+
+    test "a forged selection is ignored", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/businesses")
+
+      render_click(view, "select", %{"id" => "999999"})
+
+      assert has_element?(view, "#choose-business-1[aria-checked=true]")
+    end
+
+    test "a card shows the company's logo when it has one, else an illustration", %{
+      conn: conn,
+      other: other
+    } do
+      name = "picker-logo-#{System.unique_integer([:positive])}.png"
+      file = Path.join(QuantumBilling.Uploads.directory(), name)
+      File.mkdir_p!(Path.dirname(file))
+      File.write!(file, <<137, 80, 78, 71, 13, 10, 26, 10>>)
+      on_exit(fn -> File.rm(file) end)
+
+      Repo.with_business(other, fn ->
+        {:ok, _org} =
+          QuantumBilling.Settings.update_section(
+            QuantumBilling.Settings.get_organization(),
+            %{"doc_logo_path" => "/uploads/#{name}"},
+            :customization
+          )
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/businesses")
+
+      assert has_element?(view, ~s|#business-logo-#{other.id}[src^="data:image/png;base64,"]|)
+      refute has_element?(view, "#business-logo-1")
+    end
+
+    test "the success screen names the company and moves on to the dashboard", %{
+      conn: conn,
+      other: other
+    } do
+      conn = post(conn, ~p"/businesses/#{other.id}/switch")
+      {:ok, view, _html} = live(recycle(conn), ~p"/businesses/ready")
+
+      assert has_element?(view, "#focus-shell")
+      refute has_element?(view, "#app-sidebar")
+      assert view |> element("#ready-title") |> render() =~ "Firm Two"
+      assert has_element?(view, "#ready-continue[href='/dashboard']")
+
+      send(view.pid, :continue)
+      assert_redirect(view, ~p"/dashboard")
     end
 
     test "other open tabs follow a switch", %{conn: conn, other: other} do
@@ -80,7 +152,7 @@ defmodule QuantumBillingWeb.BusinessPickerLiveTest do
       assert Enum.any?(Businesses.list_for_user(user), fn {b, _m} -> b.name == "Firm Three" end)
 
       conn = follow_trigger_action(form(view, "#switch-to-new-business"), conn)
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/businesses/ready"
     end
 
     test "a blank name is refused on the form", %{conn: conn} do

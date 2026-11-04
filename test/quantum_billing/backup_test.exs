@@ -114,6 +114,35 @@ defmodule QuantumBilling.BackupTest do
     end
   end
 
+  describe "design assets" do
+    @asset "/uploads/" <> String.duplicate("4b", 16) <> ".png"
+
+    test "travel with the backup and are restored" do
+      :ok = QuantumBilling.DesignAssets.record(@asset, "background")
+      json = Backup.export_json()
+
+      Repo.delete_all(QuantumBilling.DesignAssets.DesignAsset)
+      refute QuantumBilling.DesignAssets.recorded?(@asset)
+
+      assert {:ok, %{design_assets: 1}} = Backup.restore_json(json)
+      assert QuantumBilling.DesignAssets.recorded?(@asset)
+    end
+
+    test "a malformed asset row in the file is dropped" do
+      data =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("design_assets", [
+          %{"id" => 1, "path" => "/etc/passwd", "kind" => "background"},
+          %{"id" => 2, "path" => @asset, "kind" => "script"},
+          %{"id" => 3, "path" => @asset, "kind" => "image"}
+        ])
+
+      assert {:ok, %{design_assets: 1}} = Backup.restore_json(Jason.encode!(data))
+      assert QuantumBilling.DesignAssets.list_paths() == [@asset]
+    end
+  end
+
   describe "restore_json/1" do
     test "brings back everything it deletes" do
       client = client_fixture()

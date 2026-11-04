@@ -32,7 +32,15 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
           text_color: String.t(),
           heading_color: String.t(),
           label_color: String.t(),
-          muted_color: String.t()
+          muted_color: String.t(),
+          border: String.t(),
+          watermark: String.t(),
+          watermark_text: String.t(),
+          background: String.t(),
+          background_fit: String.t(),
+          background_opacity: String.t(),
+          space_top: String.t(),
+          space_bottom: String.t()
         }
   @type t :: %__MODULE__{version: integer(), page: page(), blocks: [Block.t()]}
 
@@ -55,7 +63,15 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
               text_color: "#18181b",
               heading_color: "text",
               label_color: "#71717a",
-              muted_color: "#52525b"
+              muted_color: "#52525b",
+              border: "none",
+              watermark: "none",
+              watermark_text: "",
+              background: "",
+              background_fit: "page",
+              background_opacity: "100",
+              space_top: "0mm",
+              space_bottom: "0mm"
             },
             blocks: []
 

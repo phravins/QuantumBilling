@@ -14,6 +14,9 @@ defmodule QuantumBilling.Accounts.User do
     field :full_name, :string
     field :phone, :string
     field :designation, :string
+    field :bio, :string
+    # Set when the first-sign-in screens are finished or skipped; never cast.
+    field :onboarded_at, :utc_datetime
     # Seeds the profile page's generated landscape; nil falls back to the id.
     field :banner_seed, :integer
 
@@ -35,14 +38,32 @@ defmodule QuantumBilling.Accounts.User do
   """
   def profile_changeset(user, attrs) do
     user
-    |> cast(attrs, [:full_name, :phone, :designation])
+    |> cast(attrs, [:full_name, :phone, :designation, :bio])
     |> validate_length(:full_name, max: 120)
+    |> validate_length(:bio, max: 500)
     |> validate_length(:designation, max: 80)
     |> validate_length(:phone, max: 30)
     |> validate_format(:phone, ~r/^[\d\s+()-]*$/,
       message: "may only contain digits, spaces and + ( ) -"
     )
   end
+
+  @doc """
+  A changeset for the "About you" step of onboarding: the profile fields and
+  the bio, with a name required. `onboarded_at` is never cast; it is set by
+  `QuantumBilling.Accounts.complete_onboarding/2`.
+  """
+  def onboarding_changeset(user, attrs) do
+    user
+    |> profile_changeset(attrs)
+    |> cast(attrs, [:bio])
+    |> update_change(:full_name, &trim/1)
+    |> validate_required([:full_name], message: "tell us what to call you")
+    |> validate_length(:bio, max: 500)
+  end
+
+  defp trim(value) when is_binary(value), do: String.trim(value)
+  defp trim(value), do: value
 
   @doc """
   A changeset for the profile banner's scene seed, and nothing else.
