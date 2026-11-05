@@ -51,7 +51,8 @@ defmodule QuantumBillingWeb.NotificationsHook do
   notification written by a *different* test running at the same moment is
   delivered here and drawn into this socket's panel. It cannot leak between
   businesses in production — each one's notifications go out on a topic named
-  for its schema, and every notification is addressed to all of that business —
+  for its schema, and every notification is addressed to all of that business or to one
+  member of it —
   but it does mean a LiveView assertion of the form
   `refute render(view) =~ "Some Client"` is no longer sound, because another
   test's invoice for a client of that name will put the string on the page.
@@ -89,14 +90,14 @@ defmodule QuantumBillingWeb.NotificationsHook do
     {:cont, socket}
   end
 
-  # Patched in place; a new row is unread by construction.
+  # Patched in place; a new row is unread by construction. One addressed to
+  # somebody else — their private reminder — is not this bell's.
   defp handle_feed_info({:notification_created, %Notification{} = notification}, socket) do
-    feed = Enum.take([notification | socket.assigns.notifications], Notifications.feed_limit())
-
-    {:halt,
-     socket
-     |> assign(:notifications, feed)
-     |> assign(:unread_count, socket.assigns.unread_count + 1)}
+    if Notifications.visible?(notification, viewer_id(socket)) do
+      prepend(socket, notification)
+    else
+      {:halt, socket}
+    end
   end
 
   defp handle_feed_info({:notifications_read, _which}, socket) do
@@ -105,10 +106,19 @@ defmodule QuantumBillingWeb.NotificationsHook do
 
   defp handle_feed_info(_message, socket), do: {:cont, socket}
 
+  defp prepend(socket, notification) do
+    feed = Enum.take([notification | socket.assigns.notifications], Notifications.feed_limit())
+
+    {:halt,
+     socket
+     |> assign(:notifications, feed)
+     |> assign(:unread_count, socket.assigns.unread_count + 1)}
+  end
+
   # Marked read and navigated server-side; a link with phx-click races its navigation.
   defp handle_feed_event("open_notification", %{"id" => id}, socket) do
-    notification = Notifications.get_notification(id)
-    _ = Notifications.mark_read(id)
+    notification = Notifications.get_notification(id, viewer_id(socket))
+    _ = Notifications.mark_read(id, viewer_id(socket))
 
     socket = assign_feed(socket)
 
@@ -122,17 +132,20 @@ defmodule QuantumBillingWeb.NotificationsHook do
   end
 
   defp handle_feed_event("mark_all_notifications_read", _params, socket) do
-    Notifications.mark_all_read()
+    Notifications.mark_all_read(viewer_id(socket))
     {:halt, assign_feed(socket)}
   end
 
   defp handle_feed_event(_event, _params, socket), do: {:cont, socket}
 
   defp assign_feed(socket) do
-    feed = Notifications.feed()
+    feed = Notifications.feed(viewer_id(socket))
 
     socket
     |> assign(:notifications, feed.notifications)
     |> assign(:unread_count, feed.unread_count)
   end
+
+  defp viewer_id(%{assigns: %{current_scope: %{user: %{id: id}}}}), do: id
+  defp viewer_id(_socket), do: nil
 end

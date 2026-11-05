@@ -298,16 +298,21 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   @spaces [{"0mm", "None"}, {"20mm", "20 mm"}, {"35mm", "35 mm"}, {"50mm", "50 mm"}]
 
   @doc """
-  The whole-sheet options: frame, watermark and letterhead.
+  The whole-sheet options: logo, frame, watermark and letterhead.
 
   These sit beside the text tools rather than in them because they decide what
   the paper looks like, not how the type reads. The background itself is set by
   upload, never by a typed path — see `InvoiceDoc.Layout.put_background/2`.
+
+  `logo` is the company logo's `src`, already inline; the logo is the company's,
+  shared by every design.
   """
   attr :page, :map, required: true
   attr :uploads, :map, required: true
   attr :extras, :map, default: %{payment: nil, images: %{}}
   attr :upload_error, :string, default: nil
+  attr :logo, :string, default: nil
+  attr :logo_error, :string, default: nil
 
   def page_panel(assigns) do
     assigns =
@@ -326,6 +331,46 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         <.icon name="hero-document" class="size-4 text-base-content/45" />
         <p class="text-sm font-medium">Page</p>
       </div>
+
+      <form id="logo-upload-form" phx-change="validate_logo" class="space-y-2">
+        <p class="text-xs text-base-content/60">Logo</p>
+        <div class="flex items-center gap-2">
+          <span
+            id="current-logo"
+            class="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded-field border border-base-300 bg-base-100 p-1"
+          >
+            <img
+              :if={@logo}
+              src={@logo}
+              alt="Company logo"
+              class="max-h-10 max-w-full object-contain"
+            />
+            <.icon :if={!@logo} name="hero-photo" class="size-5 text-base-content/25" />
+          </span>
+          <label class={[secondary_button_class(), "cursor-pointer"]}>
+            <.icon name="hero-arrow-up-tray" class="size-4" />
+            {if @logo, do: "Replace", else: "Upload logo"}
+            <.live_file_input upload={@uploads.logo} class="hidden" />
+          </label>
+          <button
+            :if={@logo}
+            type="button"
+            id="remove-logo"
+            phx-click="remove_logo"
+            data-confirm="Remove the company logo? Every design uses it."
+            class="text-xs text-base-content/50 transition-colors hover:text-red-600"
+          >
+            Remove
+          </button>
+        </div>
+        <p class="text-2xs text-base-content/45">
+          Shown by the Logo block in every design. PNG, JPEG, GIF or WebP, up to 2MB.
+        </p>
+        <.upload_progress upload={@uploads.logo} />
+        <p :if={@logo_error} id="logo-error" class="flex items-center gap-1 text-2xs text-error">
+          <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@logo_error}
+        </p>
+      </form>
 
       <form id="page-options-form" phx-change="update_page" class="space-y-3">
         <.page_select name="border" label="Frame" value={@page.border} options={@borders} />
@@ -382,8 +427,23 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           :if={@background_src}
           class="overflow-hidden rounded-field border border-base-300 bg-base-200/40"
         >
-          <img src={@background_src} alt="Current letterhead" class="max-h-28 w-full object-contain" />
+          <img
+            id="current-letterhead"
+            src={@background_src}
+            alt="Current letterhead"
+            class="max-h-28 w-full object-contain"
+          />
         </div>
+        <button
+          :if={@background_src}
+          type="button"
+          id="use-background-as-logo"
+          phx-click="use_background_as_logo"
+          class="flex items-center gap-1 text-xs text-base-content/60 transition-colors hover:text-base-content"
+        >
+          <.icon name="hero-arrow-uturn-up" class="size-3.5" />
+          Is this your logo? Use it as the logo instead
+        </button>
         <div class="flex items-center gap-2">
           <label class={[secondary_button_class(), "cursor-pointer"]}>
             <.icon name="hero-arrow-up-tray" class="size-4" />

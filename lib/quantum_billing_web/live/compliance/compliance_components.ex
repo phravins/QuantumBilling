@@ -20,21 +20,25 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   alias QuantumBillingWeb.Format
 
   @doc """
-  Renders the All / Returns / Payments / Other Compliances tab row.
+  Renders the All / Returns / Payments / Other Compliances tab row, followed by
+  a tab for each custom category in use.
   """
   attr :categories, :list, required: true
-  attr :active, :atom, required: true
+  attr :active, :any, required: true, doc: "a category key: an atom, or {:custom, label}"
 
   def tabs(assigns) do
     ~H"""
-    <div class="-mb-px flex items-center gap-4 border-b border-base-300">
+    <div
+      id="compliance-tabs"
+      class="-mb-px flex items-center gap-4 overflow-x-auto border-b border-base-300 [scrollbar-width:none]"
+    >
       <button
         :for={{key, label} <- @categories}
         type="button"
         phx-click="filter_category"
-        phx-value-category={key}
+        phx-value-category={Compliance.category_param(key)}
         class={[
-          "border-b-2 pb-2.5 text-sm transition-colors",
+          "shrink-0 whitespace-nowrap border-b-2 pb-2.5 text-sm transition-colors",
           if(@active == key,
             do: "border-base-content font-medium text-base-content",
             else: "border-transparent text-base-content/60 hover:text-base-content"
@@ -284,7 +288,17 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   attr :kind, :string, required: true
   attr :editing?, :boolean, required: true
 
+  attr :author?, :boolean,
+    default: true,
+    doc: "whether the viewer wrote it; only the author picks Only me and the email"
+
   def task_dialog(assigns) do
+    assigns =
+      assign(assigns,
+        custom?: to_string(assigns.form[:category].value) == "custom",
+        repeat: to_string(assigns.form[:repeat].value || "none")
+      )
+
     ~H"""
     <div
       id="task-dialog"
@@ -297,7 +311,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     >
       <div class="fixed inset-0 bg-base-content/30 backdrop-blur-sm" phx-click="cancel_task" />
 
-      <div class="relative w-full max-w-md rounded-box border border-base-300 bg-base-100 p-5 shadow-xl">
+      <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-box border border-base-300 bg-base-100 p-5 shadow-xl">
         <div class="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 id="task-dialog-title" class="text-sm font-semibold tracking-tight">
@@ -305,7 +319,8 @@ defmodule QuantumBillingWeb.ComplianceComponents do
             </h2>
 
             <p class="mt-0.5 text-xs text-base-content/60">
-              It appears with your filing deadlines and in any connected calendar.
+              It appears with your filing deadlines, in the bell and, unless it is
+              yours only, in any connected calendar.
             </p>
           </div>
 
@@ -339,13 +354,68 @@ defmodule QuantumBillingWeb.ComplianceComponents do
                 options={Compliance.task_categories()}
               />
             </div>
+            <div
+              :if={@custom?}
+              id="task-custom-category"
+              class="motion-safe:animate-[qb-rise_180ms_ease-out]"
+            >
+              <.input
+                field={@form[:custom_category]}
+                type="text"
+                label="Category name"
+                placeholder="Rent, Insurance, Trade licence…"
+                maxlength="40"
+                phx-debounce="300"
+                phx-mounted={JS.focus()}
+              />
+            </div>
+
             <.input
-              field={@form[:remind_days_before]}
-              type="number"
-              label="Remind me this many days before"
-              min="0"
-              max="365"
+              field={@form[:repeat]}
+              type="select"
+              label="Repeat"
+              options={Compliance.repeat_options()}
             />
+            <p
+              :if={@repeat != "none"}
+              id="task-repeat-hint"
+              class="-mt-1 text-xs text-base-content/50"
+            >
+              Marking it done adds the next one automatically.
+            </p>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <.input
+                field={@form[:remind_days_before]}
+                type="number"
+                label="Remind me, days before"
+                min="0"
+                max="365"
+              />
+              <.input
+                field={@form[:remind_at]}
+                type="time"
+                label="At (optional)"
+                value={time_value(@form[:remind_at].value)}
+              />
+            </div>
+
+            <div
+              :if={@author?}
+              id="task-delivery-options"
+              class="space-y-2 rounded-field border border-base-300 bg-base-200/40 px-3 py-2.5"
+            >
+              <.input
+                field={@form[:private]}
+                type="checkbox"
+                label="Only me — hide it and its reminder from the rest of the team"
+              />
+              <.input
+                field={@form[:email_reminder]}
+                type="checkbox"
+                label="Also email me the reminder"
+              />
+            </div>
             <.input
               field={@form[:notes]}
               type="textarea"
@@ -378,6 +448,11 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     </div>
     """
   end
+
+  # A time input wants "HH:MM"; the form holds a Time, or the raw text typed.
+  defp time_value(%Time{} = time), do: Calendar.strftime(time, "%H:%M")
+  defp time_value(value) when is_binary(value), do: value
+  defp time_value(_none), do: nil
 
   # Screen-reader label for a cell.
   defp day_label(%{obligations: []} = cell), do: Format.format_date(cell.date)

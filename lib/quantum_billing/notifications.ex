@@ -32,6 +32,14 @@ defmodule QuantumBilling.Notifications do
   business, not for you. Per-user read state needs a join table and belongs
   with the rest of the per-user work.
 
+  ## Addressed to one person
+
+  A row with a `recipient_id` is that person's alone — today, the reminder for
+  a task marked "Only me". Every read here takes the viewer's user id and shows
+  the business's rows plus that viewer's own; with no id, only the business's.
+  The broadcast still goes out on the shared topic, and
+  `QuantumBillingWeb.NotificationsHook` drops one addressed to somebody else.
+
   ## Writing one twice
 
   Producers are not all one-shot. The filing reminder runs every morning
@@ -87,22 +95,37 @@ defmodule QuantumBilling.Notifications do
   One call rather than two, because every page needs both on mount and both
   again on every change, and they must agree with each other.
   """
-  def feed(limit \\ @feed_limit) do
-    %{notifications: recent(limit), unread_count: unread_count()}
+  def feed(user_id \\ nil) do
+    %{notifications: recent(@feed_limit, user_id), unread_count: unread_count(user_id)}
   end
 
-  @doc "The newest notifications, newest first."
-  def recent(limit \\ @feed_limit) do
+  @doc "The newest notifications `user_id` may see, newest first."
+  def recent(limit \\ @feed_limit, user_id \\ nil) do
     Repo.all(
-      from n in Notification,
+      from n in visible_to(Notification, user_id),
         order_by: [desc: n.inserted_at, desc: n.id],
         limit: ^limit
     )
   end
 
-  @doc "How many notifications have not been read."
-  def unread_count do
-    Repo.aggregate(from(n in Notification, where: is_nil(n.read_at)), :count, :id)
+  @doc "How many notifications `user_id` may see have not been read."
+  def unread_count(user_id \\ nil) do
+    Repo.aggregate(
+      from(n in visible_to(Notification, user_id), where: is_nil(n.read_at)),
+      :count,
+      :id
+    )
+  end
+
+  @doc "Whether `user_id` may see `notification`."
+  def visible?(%Notification{recipient_id: nil}, _user_id), do: true
+  def visible?(%Notification{recipient_id: id}, user_id), do: id == user_id
+
+  # The business's notifications, plus the ones addressed to this person.
+  defp visible_to(query, nil), do: from(n in query, where: is_nil(n.recipient_id))
+
+  defp visible_to(query, user_id) do
+    from n in query, where: is_nil(n.recipient_id) or n.recipient_id == ^user_id
   end
 
   @doc "Fetches a notification by id, or `nil` for one that is not there."
@@ -116,14 +139,25 @@ defmodule QuantumBilling.Notifications do
   def get_notification(id) when is_integer(id), do: Repo.get(Notification, id)
   def get_notification(_other), do: nil
 
+  @doc "As `get_notification/1`, but `nil` for one addressed to somebody else."
+  def get_notification(id, user_id) do
+    case get_notification(id) do
+      %Notification{} = notification ->
+        if visible?(notification, user_id), do: notification
+
+      nil ->
+        nil
+    end
+  end
+
   @doc """
   Marks one notification read.
 
   Already-read rows are left with the time they were first read rather than
   re-stamped, so opening the same notice twice does not move it.
   """
-  def mark_read(id) do
-    case get_notification(id) do
+  def mark_read(id, user_id \\ nil) do
+    case get_notification(id, user_id) do
       nil ->
         {:error, :not_found}
 
@@ -139,14 +173,14 @@ defmodule QuantumBilling.Notifications do
   end
 
   @doc """
-  Marks every unread notification read.
+  Marks every unread notification `user_id` can see read.
 
   Returns the number cleared.
   """
-  def mark_all_read do
+  def mark_all_read(user_id \\ nil) do
     {count, _rows} =
       Repo.update_all(
-        from(n in Notification, where: is_nil(n.read_at)),
+        from(n in visible_to(Notification, user_id), where: is_nil(n.read_at)),
         set: [read_at: now(), updated_at: now()]
       )
 

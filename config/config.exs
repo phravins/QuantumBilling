@@ -125,6 +125,8 @@ config :quantum_billing, Oban,
        # After the prune, and before the working day: a filing reminder is only
        # useful if it is already in the feed when somebody opens the app.
        {"30 2 * * *", QuantumBilling.Workers.ComplianceReminderWorker},
+       # Reminders with a time of day; within a quarter of an hour of it.
+       {"*/15 * * * *", QuantumBilling.Workers.TaskReminderWorker},
        {"0 3 * * *", QuantumBilling.Workers.CalendarSyncWorker}
      ]}
   ]

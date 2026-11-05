@@ -128,8 +128,11 @@ defmodule QuantumBilling.Backup do
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
   # No author: the file may be restored on an installation without that user.
-  @compliance_task_fields ~w(id title notes category due_date kind status completed_at
-                             remind_days_before reminded_at inserted_at)a
+  # For the same reason private tasks are not exported at all (see `exported/1`)
+  # and nor is "email me": both mean one particular person.
+  @compliance_task_fields ~w(id title notes category custom_category due_date kind status
+                             completed_at remind_days_before remind_at repeat reminded_at
+                             inserted_at)a
 
   # Parents before children, so foreign keys resolve on restore.
   @sections [
@@ -180,6 +183,7 @@ defmodule QuantumBilling.Backup do
 
             {acc, _first?} =
               schema
+              |> exported()
               |> order_by(asc: :id)
               |> Repo.stream(max_rows: @stream_rows)
               |> Enum.reduce({acc, true}, fn row, {acc, first?} ->
@@ -197,6 +201,11 @@ defmodule QuantumBilling.Backup do
       timeout: :infinity
     )
   end
+
+  # A private task is one person's; a business backup restored without that
+  # person would show it to everyone.
+  defp exported(ComplianceTask), do: where(ComplianceTask, [t], not t.private)
+  defp exported(schema), do: schema
 
   defp header do
     organization =

@@ -181,8 +181,8 @@ defmodule QuantumBilling.Calendars do
   ## What goes on a calendar
 
   @doc """
-  What this business's calendars should show: open tasks, plus GST returns due
-  from today on.
+  What this business's calendars should show: open tasks that are not private,
+  plus GST returns due from today on.
 
   Also reads last financial year's schedule, since a return for March falls due
   after the year has rolled over.
@@ -192,8 +192,9 @@ defmodule QuantumBilling.Calendars do
   end
 
   defp task_items do
+    # A private task stays off the business's shared calendar.
     Task
-    |> where([t], t.status == "open")
+    |> where([t], t.status == "open" and not t.private)
     |> order_by([t], asc: t.due_date, asc: t.id)
     |> Repo.all()
     |> Enum.map(fn task ->

@@ -128,6 +128,31 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     end
   end
 
+  describe "the logo" do
+    test "is inline, so it never depends on a second request", %{conn: conn} do
+      name = "#{String.duplicate("c", 32)}.png"
+      path = Path.join(QuantumBilling.Uploads.directory(), name)
+      File.mkdir_p!(QuantumBilling.Uploads.directory())
+      File.write!(path, <<0x89, "PNG\r\n", 0x1A, "\n", "invoice-show-logo">>)
+      on_exit(fn -> File.rm(path) end)
+
+      {:ok, _} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"doc_logo_path" => "/uploads/#{name}"},
+          :customization
+        )
+
+      invoice = create_invoice()
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(
+               view,
+               "#invoice-document img.qb-doc__logo[src^='data:image/png;base64,']"
+             )
+    end
+  end
+
   describe "the actions drawer" do
     test "holds the status and every action, behind one header button", %{conn: conn} do
       invoice = create_invoice()

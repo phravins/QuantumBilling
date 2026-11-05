@@ -23,6 +23,21 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   Every event names a block id, and every handler ignores an id the document does
   not have. A pad left open in another tab can therefore not resurrect a block
   that has since been removed.
+
+  ## Images travel inline
+
+  The logo and every design image are shown as data URIs, as the PDF shows
+  them, rather than as `<img src="/uploads/…">`. Such a tag is a second HTTP
+  request, and the inactivity timeout only advances on HTTP requests: after an
+  hour spent inside LiveView pages that request finds the session expired and
+  the image comes back broken. Each file is read once and kept while the design
+  still uses it.
+
+  ## The logo is the company's
+
+  The Logo section of the Page panel sets the organisation's logo, the one every
+  design and Settings › Customization share. An image uploaded as a letterhead
+  can be moved there with "Use as logo instead".
   """
   use QuantumBillingWeb, :live_view
 
@@ -38,6 +53,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoiceDocument
+  alias QuantumBillingWeb.InvoicePdfGenerator
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -62,12 +78,14 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> assign(:saved_at, nil)
          |> assign(:error, nil)
          |> assign(:upload_error, nil)
+         |> assign(:logo_error, nil)
          |> assign(:sample, InvoiceDocument.sample())
-         |> assign(:logo, presence(organization.doc_logo_path))
+         |> assign_logo()
          |> put_doc(Templates.document_of(template))
          |> assign(:form, to_form(%{"name" => template.name, "accent" => template.accent}))
          |> allow_upload(:background, upload_opts(:background))
-         |> allow_upload(:image, upload_opts(:image))}
+         |> allow_upload(:image, upload_opts(:image))
+         |> allow_upload(:logo, upload_opts(:logo))}
     end
   end
 
@@ -215,6 +233,31 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     {:noreply, save(socket, Layout.put_background(doc, ""))}
   end
 
+  def handle_event("validate_logo", _params, socket) do
+    {:noreply, assign(socket, :logo_error, logo_upload_error(socket))}
+  end
+
+  def handle_event("remove_logo", _params, socket) do
+    {:noreply, put_logo(socket, nil)}
+  end
+
+  # For a logo uploaded as a letterhead: it becomes the logo and leaves the page.
+  def handle_event("use_background_as_logo", _params, socket) do
+    path = socket.assigns.doc.page.background
+
+    if path != "" and DesignAssets.owned?(path) do
+      socket = put_logo(socket, path)
+
+      if socket.assigns.logo_error do
+        {:noreply, socket}
+      else
+        {:noreply, save(socket, Layout.put_background(socket.assigns.doc, ""))}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("remove_image", _params, socket) do
     with_selected(socket, fn doc, block ->
       if block.type == :image do
@@ -272,15 +315,36 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
   # ── Saving ────────────────────────────────────────────────────────────────
 
-  # A letterhead is a scan or an export: PNG or JPEG. A stamp may be a WebP.
+  # A letterhead is a scan or an export: PNG or JPEG. A stamp or logo may be
+  # anything `Uploads.store/2` takes.
   defp upload_opts(name) do
     [
-      accept: if(name == :image, do: ~w(.png .jpg .jpeg .webp), else: ~w(.png .jpg .jpeg)),
+      accept: accepted(name),
       max_entries: 1,
       max_file_size: Uploads.max_bytes(),
       auto_upload: true,
       progress: &handle_progress/3
     ]
+  end
+
+  defp accepted(:background), do: ~w(.png .jpg .jpeg)
+  defp accepted(:image), do: ~w(.png .jpg .jpeg .webp)
+  defp accepted(:logo), do: ~w(.png .jpg .jpeg .gif .webp)
+
+  defp handle_progress(:logo, entry, socket) do
+    if entry.done? do
+      result =
+        consume_uploaded_entry(socket, entry, fn %{path: path} ->
+          {:ok, Uploads.store(path, entry.client_type)}
+        end)
+
+      case result do
+        {:ok, stored} -> {:noreply, put_logo(socket, stored)}
+        {:error, message} -> {:noreply, assign(socket, :logo_error, "That logo #{message}.")}
+      end
+    else
+      {:noreply, socket}
+    end
   end
 
   defp handle_progress(name, entry, socket) when name in [:background, :image] do
@@ -320,6 +384,63 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     end
   end
 
+  # Sets or clears the organisation's logo. A new logo with no logo block to
+  # show it in gets one, at the top.
+  defp put_logo(socket, path) do
+    organization = socket.assigns.organization
+    previous = organization.doc_logo_path
+
+    case Settings.update_section(organization, %{"doc_logo_path" => path}, :customization) do
+      {:ok, organization} ->
+        # Unlinked only once the new one is saved, and never while a design
+        # still shows the same file (uploads are content-addressed).
+        if is_binary(previous) and previous != path and not DesignAssets.recorded?(previous) do
+          Uploads.delete(previous)
+        end
+
+        socket
+        |> assign(:organization, organization)
+        |> assign(:logo_error, nil)
+        |> assign_logo()
+        |> ensure_logo_block(path)
+
+      {:error, _changeset} ->
+        assign(socket, :logo_error, "That logo could not be saved.")
+    end
+  end
+
+  defp ensure_logo_block(socket, nil), do: socket
+
+  defp ensure_logo_block(socket, _path) do
+    doc = socket.assigns.doc
+
+    if Document.has_type?(doc, :logo) do
+      socket
+    else
+      save(socket, %{doc | blocks: [Catalog.new(:logo, Document.next_id(doc)) | doc.blocks]})
+    end
+  end
+
+  defp assign_logo(socket) do
+    path = presence(socket.assigns.organization.doc_logo_path)
+
+    socket
+    |> assign(:logo_path, path)
+    |> assign(:logo, path && InvoicePdfGenerator.inline_logo(path))
+  end
+
+  defp logo_upload_error(socket) do
+    upload = socket.assigns.uploads.logo
+
+    case upload_errors(upload) ++ Enum.flat_map(upload.entries, &upload_errors(upload, &1)) do
+      [:too_large | _] -> "That logo is larger than #{div(Uploads.max_bytes(), 1_000_000)}MB."
+      [:not_accepted | _] -> "The logo has to be a PNG, JPEG, GIF or WebP image."
+      [:too_many_files | _] -> "One logo at a time."
+      [_other | _] -> "That logo could not be uploaded."
+      [] -> nil
+    end
+  end
+
   defp upload_error(socket) do
     errors =
       Enum.flat_map([:background, :image], fn name ->
@@ -338,13 +459,28 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
   # The document and what its newer blocks render with travel together.
   defp put_doc(socket, doc) do
+    extras = Extras.build(socket.assigns.sample, doc, organization: socket.assigns.organization)
+
     socket
     |> assign(:doc, doc)
-    |> assign(
-      :extras,
-      Extras.build(socket.assigns.sample, doc, organization: socket.assigns.organization)
-    )
+    |> assign(:extras, inline_images(extras, socket.assigns[:extras]))
   end
+
+  # See "Images travel inline". Extras.build has already dropped any path this
+  # business does not own; a file still in use is not read again.
+  defp inline_images(%{images: images} = extras, previous) when map_size(images) > 0 do
+    cache = (previous && previous.images) || %{}
+
+    %{
+      extras
+      | images:
+          Map.new(images, fn {path, src} ->
+            {path, Map.get(cache, path) || InvoicePdfGenerator.inline_logo(src)}
+          end)
+    }
+  end
+
+  defp inline_images(extras, _previous), do: extras
 
   # A rejected save keeps the user's change on the canvas and shows why.
   defp save(socket, doc) do
@@ -550,6 +686,8 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             uploads={@uploads}
             extras={@extras}
             upload_error={@upload_error}
+            logo={@logo}
+            logo_error={@logo_error}
           />
         </.card>
       </div>

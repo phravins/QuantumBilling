@@ -19,11 +19,14 @@ defmodule QuantumBilling.Workers.EmailWorker do
 
   require Logger
 
+  alias QuantumBilling.Compliance.ReminderEmail
+  alias QuantumBilling.Compliance.Task
   alias QuantumBilling.EWayBillNotifier
   alias QuantumBilling.EWayBills
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Mail
+  alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
   @impl QuantumBilling.Worker
@@ -77,6 +80,17 @@ defmodule QuantumBilling.Workers.EmailWorker do
     case EWayBills.get_e_way_bill(bill_id) do
       nil -> {:error, :permanent, "e-way bill #{bill_id} no longer exists"}
       bill -> EWayBillNotifier.build_email(delivery.to_email, bill)
+    end
+  end
+
+  # A task done or deleted before the queue got to it needs no reminder.
+  defp build(delivery, %{"compliance_task_id" => task_id} = args) when not is_nil(task_id) do
+    case Repo.get(Task, task_id) do
+      %Task{status: "open"} = task ->
+        {:ok, ReminderEmail.build_email(delivery.to_email, task, args["due_phrase"] || "is due")}
+
+      _gone_or_done ->
+        {:error, :permanent, "task #{task_id} is no longer open"}
     end
   end
 

@@ -18,6 +18,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.Renderer
+  alias QuantumBillingWeb.InvoicePdfGenerator
 
   def mount(%{"id" => id}, _session, socket) do
     case Invoices.get_invoice(id) do
@@ -32,7 +33,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         if connected?(socket), do: Invoices.subscribe()
 
         {doc, accent, logo} = Templates.document_for(invoice)
-        extras = Extras.build(invoice, doc)
+        {logo, extras} = inline_images(invoice, doc, logo)
 
         {:ok,
          socket
@@ -181,7 +182,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       invoice ->
         {doc, accent, logo} = Templates.document_for(invoice)
-        extras = Extras.build(invoice, doc)
+        {logo, extras} = inline_images(invoice, doc, logo)
 
         socket
         |> assign(:invoice, invoice)
@@ -190,6 +191,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         |> assign(:logo, logo)
         |> assign(:extras, extras)
     end
+  end
+
+  # The logo and design images go out inline, as on the PDF. An <img> pointing
+  # at /uploads is a request of its own, and one made after an hour spent inside
+  # LiveView pages finds the session timed out and draws a broken image.
+  defp inline_images(invoice, doc, logo) do
+    {InvoicePdfGenerator.inline_logo(logo), Extras.build(invoice, doc, inline: true)}
   end
 
   def render(assigns) do

@@ -41,6 +41,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoiceDoc.Renderer
   alias QuantumBillingWeb.InvoiceDocument
+  alias QuantumBillingWeb.InvoicePdfGenerator
 
   @saveable ~w(general invoice e_way_bill tax notifications preferences customization smtp integrations security)a
 
@@ -151,6 +152,10 @@ defmodule QuantumBillingWeb.SettingsLive do
     socket
     |> assign(:organization, Settings.with_installation_rules(organization))
     |> assign(:sample, InvoiceDocument.sample(organization))
+    # Inline, so it survives the session's /uploads request timing out; see
+    # InvoiceTemplateDesignLive. The template previews keep the path: inlining
+    # there would send the file once per preview.
+    |> assign(:logo_src, InvoicePdfGenerator.inline_logo(organization.doc_logo_path))
   end
 
   defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
@@ -745,7 +750,7 @@ defmodule QuantumBillingWeb.SettingsLive do
               <%= if @organization.doc_logo_path do %>
                 <img
                   id="company-logo"
-                  src={@organization.doc_logo_path}
+                  src={@logo_src}
                   alt={"#{company_display_name(assigns)} logo"}
                   class="max-h-full max-w-full object-contain p-1.5"
                 />
@@ -1366,7 +1371,7 @@ defmodule QuantumBillingWeb.SettingsLive do
             :if={@organization.doc_logo_path}
             class="flex h-12 w-28 items-center justify-center rounded-field border border-base-300 bg-base-100 p-1"
           >
-            <img src={@organization.doc_logo_path} alt="Current logo" class="max-h-10 max-w-full" />
+            <img src={@logo_src} alt="Current logo" class="max-h-10 max-w-full" />
           </span>
 
           <label class={[secondary_button_class(), "cursor-pointer"]}>

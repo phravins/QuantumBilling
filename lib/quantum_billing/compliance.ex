@@ -36,11 +36,17 @@ defmodule QuantumBilling.Compliance do
   alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.Audit
   alias QuantumBilling.Calendars
+  alias QuantumBilling.Compliance.ReminderEmail
   alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
 
   @max_id 9_223_372_036_854_775_807
+
+  # Offsets for the organisation timezones on offer, none of which keeps
+  # daylight saving. The app ships no timezone database, and a reminder at
+  # "9:00" has to mean nine o'clock where the business is.
+  @utc_offsets %{"Asia/Kolkata" => 19_800}
 
   @monthly [
     {"GSTR-1", "Monthly Return", :returns, 11},
@@ -352,6 +358,8 @@ defmodule QuantumBilling.Compliance do
 
   A closed list, so a forged value can neither create an atom nor crash the page.
   """
+  def category_key("custom:" <> label) when byte_size(label) in 1..160, do: {:custom, label}
+
   def category_key(value) do
     Enum.find_value(@categories, :all, fn {key, _label} ->
       if to_string(key) == value, do: key
@@ -359,31 +367,86 @@ defmodule QuantumBilling.Compliance do
   end
 
   @doc "Human label for a category key."
+  def category_label({:custom, label}), do: label
+
   def category_label(key) do
     {_key, label} = Enum.find(@categories, {key, to_string(key)}, fn {k, _l} -> k == key end)
     label
   end
 
-  @doc "The categories a task can be filed under, as select options."
-  def task_categories do
-    for {key, label} <- @categories, key != :all, do: {label, to_string(key)}
+  @doc """
+  A category key as the string a tab sends back, the reverse of `category_key/1`.
+
+  Custom ones carry their label — `"custom:Rent"` — rather than an atom.
+  """
+  def category_param({:custom, label}), do: "custom:" <> label
+  def category_param(key), do: to_string(key)
+
+  @doc """
+  The filter tabs: the built-in categories, then one for each custom category
+  among `rows`, in alphabetical order.
+  """
+  def category_tabs(rows) do
+    custom =
+      rows
+      |> Enum.flat_map(fn
+        %{category: {:custom, label} = key} -> [{key, label}]
+        _row -> []
+      end)
+      |> Enum.uniq()
+      |> Enum.sort_by(fn {_key, label} -> String.downcase(label) end)
+
+    @categories ++ custom
   end
 
-  @doc "The business's tasks, soonest first."
-  def list_tasks(%Scope{} = scope) do
-    in_business(scope, fn -> Repo.all(from t in Task, order_by: [asc: t.due_date, asc: t.id]) end)
+  @doc "The categories a task can be filed under, as select options."
+  def task_categories do
+    for({key, label} <- @categories, key != :all, do: {label, to_string(key)}) ++
+      [{"Custom…", "custom"}]
   end
+
+  @doc "How often a task can repeat, as select options."
+  def repeat_options do
+    [
+      {"Does not repeat", "none"},
+      {"Every week", "weekly"},
+      {"Every month", "monthly"},
+      {"Every quarter", "quarterly"},
+      {"Every year", "yearly"}
+    ]
+  end
+
+  @doc """
+  The business's tasks, soonest first.
+
+  Private ones are left out unless `scope`'s user wrote them.
+  """
+  def list_tasks(%Scope{} = scope) do
+    in_business(scope, fn ->
+      Task
+      |> visible_to(scope)
+      |> order_by([t], asc: t.due_date, asc: t.id)
+      |> Repo.all()
+    end)
+  end
+
+  defp visible_to(query, %Scope{user: %{id: user_id}}) do
+    where(query, [t], not t.private or t.created_by_id == ^user_id)
+  end
+
+  defp visible_to(query, _scope), do: where(query, [t], not t.private)
 
   @doc """
   One task of this business, or `nil`.
 
   Takes the raw id from a client, so a forged or oversized one finds nothing
-  rather than crashing the page.
+  rather than crashing the page. Somebody else's private task is not found
+  either.
   """
   def get_task(%Scope{} = scope, raw_id) do
     case Ecto.Type.cast(:id, raw_id) do
       {:ok, id} when is_integer(id) and id > 0 and id <= @max_id ->
-        in_business(scope, fn -> Repo.get(Task, id) end)
+        in_business(scope, fn -> Task |> visible_to(scope) |> Repo.get(id) end)
 
       _invalid ->
         nil
@@ -405,14 +468,73 @@ defmodule QuantumBilling.Compliance do
   def update_task(%Scope{} = scope, %Task{} = task, attrs) do
     in_business(scope, fn ->
       task
-      |> Task.changeset(attrs)
+      |> Task.changeset(authors_options_only(scope, task, attrs))
       |> Repo.update()
       |> after_change(scope, :update_compliance_task)
     end)
   end
 
+  @doc """
+  Marks a task done. A repeating one also gets its next occurrence, unless
+  that is already there — reopening and completing again does not add a
+  second.
+  """
   def complete_task(%Scope{} = scope, %Task{} = task) do
-    set_status(scope, task, "done", DateTime.utc_now(:second), :complete_compliance_task)
+    with {:ok, done} <-
+           set_status(scope, task, "done", DateTime.utc_now(:second), :complete_compliance_task) do
+      _ = schedule_next(scope, done)
+      {:ok, done}
+    end
+  end
+
+  @doc "When a task repeating as `repeat` next falls due after `date`; nil for none."
+  def next_due_date(%Date{} = date, "weekly"), do: Date.add(date, 7)
+  def next_due_date(%Date{} = date, "monthly"), do: shift_months(date, 1)
+  def next_due_date(%Date{} = date, "quarterly"), do: shift_months(date, 3)
+  def next_due_date(%Date{} = date, "yearly"), do: shift_months(date, 12)
+  def next_due_date(_date, _repeat), do: nil
+
+  defp schedule_next(scope, %Task{} = task) do
+    with %Date{} = due_date <- next_due_date(task.due_date, task.repeat),
+         false <- next_exists?(scope, task, due_date) do
+      in_business(scope, fn ->
+        %Task{
+          kind: task.kind,
+          created_by_id: task.created_by_id,
+          title: task.title,
+          notes: task.notes,
+          category: task.category,
+          custom_category: task.custom_category,
+          due_date: due_date,
+          remind_days_before: task.remind_days_before,
+          repeat: task.repeat,
+          private: task.private,
+          remind_at: task.remind_at,
+          email_reminder: task.email_reminder
+        }
+        |> Repo.insert()
+        |> after_change(scope, :create_compliance_task)
+      end)
+    end
+  end
+
+  defp next_exists?(scope, task, due_date) do
+    in_business(scope, fn ->
+      Repo.exists?(
+        from t in Task,
+          where:
+            t.title == ^task.title and t.kind == ^task.kind and t.due_date == ^due_date and
+              t.id != ^task.id
+      )
+    end)
+  end
+
+  # Who a private task is hidden from, and who gets its email, is its author's
+  # call; a teammate editing a shared task cannot hide it or mail the author.
+  defp authors_options_only(%Scope{user: %{id: id}}, %Task{created_by_id: id}, attrs), do: attrs
+
+  defp authors_options_only(_scope, _task, attrs) when is_map(attrs) do
+    Map.drop(attrs, ["private", "email_reminder", :private, :email_reminder])
   end
 
   def reopen_task(%Scope{} = scope, %Task{} = task) do
@@ -442,8 +564,8 @@ defmodule QuantumBilling.Compliance do
       details: %{title: task.title, due_date: task.due_date}
     )
 
-    # A task already inside its window should not wait for tomorrow's sweep.
-    remind_due_tasks(Date.utc_today())
+    # A task already inside its window should not wait for the next sweep.
+    remind_due_tasks(DateTime.utc_now())
     _ = Calendars.enqueue_sync()
 
     result
@@ -458,7 +580,7 @@ defmodule QuantumBilling.Compliance do
     %{
       type: task.title,
       subtitle: if(task.kind == "reminder", do: "Reminder", else: "Task"),
-      category: category_key(task.category),
+      category: task_category(task),
       period_label: Calendar.strftime(task.due_date, "%b %Y"),
       period_key: nil,
       due_date: task.due_date,
@@ -467,6 +589,12 @@ defmodule QuantumBilling.Compliance do
       task: task
     }
   end
+
+  defp task_category(%Task{category: "custom", custom_category: label})
+       when is_binary(label) and label != "",
+       do: {:custom, label}
+
+  defp task_category(%Task{category: category}), do: category_key(category)
 
   defp task_status(%Task{status: "done"}, _today), do: "Done"
 
@@ -477,15 +605,60 @@ defmodule QuantumBilling.Compliance do
   @doc """
   Posts to the feed, once, every open task inside its reminder window.
 
+  Given a `DateTime`, a task with a time of day waits until that time on its
+  reminder day, in the organisation's timezone. Given a `Date`, the whole day
+  counts — which is what a test, or a run for a past day, means.
+
+  A private task's notification is addressed to its author alone, and a task
+  with `email_reminder` also queues an email to its author.
+
   Returns how many were written. Runs inside the current business.
   """
-  def remind_due_tasks(%Date{} = today) do
+  def remind_due_tasks(%Date{} = today), do: remind_tasks(today, nil)
+
+  def remind_due_tasks(%DateTime{} = now) do
+    local = local_time(now)
+    remind_tasks(NaiveDateTime.to_date(local), NaiveDateTime.to_time(local))
+  end
+
+  @doc "`now` as wall-clock time where the business is."
+  def local_time(%DateTime{} = now, timezone \\ nil) do
+    timezone = timezone || organization_timezone()
+    offset = Map.get(@utc_offsets, timezone, 0)
+
+    now
+    |> DateTime.add(offset, :second)
+    |> DateTime.to_naive()
+  end
+
+  defp organization_timezone do
+    case QuantumBilling.Settings.get_organization() do
+      %{timezone: timezone} when is_binary(timezone) -> timezone
+      _none -> nil
+    end
+  end
+
+  defp remind_tasks(today, time) do
     Task
     |> where([t], t.status == "open" and is_nil(t.reminded_at))
     |> Repo.all()
-    |> Enum.filter(&(Date.diff(&1.due_date, today) <= &1.remind_days_before))
+    |> Enum.filter(&reminder_due?(&1, today, time))
     |> Enum.map(&announce_task(&1, today))
     |> Enum.count(&match?({:ok, %{}}, &1))
+  end
+
+  @doc """
+  Whether `task`'s reminder is due on `today` at `time` (nil for "any time that
+  day").
+  """
+  def reminder_due?(%Task{} = task, %Date{} = today, time) do
+    remind_on = Date.add(task.due_date, -task.remind_days_before)
+
+    case Date.compare(today, remind_on) do
+      :lt -> false
+      :gt -> true
+      :eq -> is_nil(time) or is_nil(task.remind_at) or Time.compare(time, task.remind_at) != :lt
+    end
   end
 
   defp announce_task(%Task{} = task, today) do
@@ -498,6 +671,7 @@ defmodule QuantumBilling.Compliance do
         title: "#{task.title} #{due_phrase(days_until)}",
         body: "Due #{Calendar.strftime(task.due_date, "%d %b %Y")}",
         path: "/compliance",
+        recipient_id: if(task.private, do: task.created_by_id),
         dedupe_key: "compliance_task:#{task.id}:#{task.due_date}"
       })
 
@@ -505,6 +679,11 @@ defmodule QuantumBilling.Compliance do
       task
       |> Ecto.Changeset.change(reminded_at: DateTime.utc_now(:second))
       |> Repo.update!()
+    end
+
+    # Only with a fresh notification, so a duplicate never mails twice.
+    with {:ok, %{}} <- result, true <- task.email_reminder do
+      _ = ReminderEmail.deliver_async(task, due_phrase(days_until))
     end
 
     result

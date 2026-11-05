@@ -7,13 +7,26 @@ defmodule QuantumBilling.Compliance.Task do
   lives here instead.
 
   `kind`, `status` and `created_by_id` are set in code, never taken from a form.
+
+  ## The reminder's own options
+
+    * `category` `"custom"` with `custom_category` — a label of the person's own
+      (Rent, Insurance, Trade licence), shown on the row and as a filter tab
+    * `repeat` — marking a repeating task done adds the next one; see
+      `QuantumBilling.Compliance.complete_task/2`
+    * `private` — "Only me": the task and its reminder are its author's alone
+    * `remind_at` — the time of day, in the organisation's timezone, that the
+      reminder goes out on its day; nil means first thing that morning
+    * `email_reminder` — also email the reminder to its author
   """
   use Ecto.Schema
 
   import Ecto.Changeset
 
-  @categories ~w(returns payments other)
-  @castable ~w(title notes category due_date remind_days_before)a
+  @categories ~w(returns payments other custom)
+  @repeats ~w(none weekly monthly quarterly yearly)
+  @castable ~w(title notes category custom_category due_date remind_days_before
+               repeat private remind_at email_reminder)a
 
   # A browser date input accepts year 0001, which no calendar will take.
   @earliest ~D[2000-01-01]
@@ -29,6 +42,11 @@ defmodule QuantumBilling.Compliance.Task do
     field :completed_at, :utc_datetime
     field :remind_days_before, :integer, default: 1
     field :reminded_at, :utc_datetime
+    field :custom_category, :string
+    field :repeat, :string, default: "none"
+    field :private, :boolean, default: false
+    field :remind_at, :time
+    field :email_reminder, :boolean, default: false
 
     belongs_to :created_by, QuantumBilling.Accounts.User
 
@@ -40,10 +58,13 @@ defmodule QuantumBilling.Compliance.Task do
     |> cast(attrs, @castable)
     |> update_change(:title, &trim/1)
     |> update_change(:notes, &trim/1)
-    |> validate_required([:title, :category, :due_date, :remind_days_before])
+    |> update_change(:custom_category, &trim/1)
+    |> validate_required([:title, :category, :due_date, :remind_days_before, :repeat])
     |> validate_length(:title, max: 200)
     |> validate_length(:notes, max: 2000)
     |> validate_inclusion(:category, @categories)
+    |> validate_custom_category()
+    |> validate_inclusion(:repeat, @repeats)
     |> validate_number(:remind_days_before,
       greater_than_or_equal_to: 0,
       less_than_or_equal_to: 365
@@ -51,6 +72,20 @@ defmodule QuantumBilling.Compliance.Task do
     |> validate_change(:due_date, &validate_due_date/2)
     |> reset_reminder()
   end
+
+  # A custom category needs its name; any other drops a stale one.
+  defp validate_custom_category(changeset) do
+    if get_field(changeset, :category) == "custom" do
+      changeset
+      |> validate_required(:custom_category, message: "give the category a name")
+      |> validate_length(:custom_category, max: 40)
+    else
+      put_change(changeset, :custom_category, nil)
+    end
+  end
+
+  @doc "How often a task can repeat."
+  def repeats, do: @repeats
 
   defp trim(value) when is_binary(value), do: String.trim(value)
   defp trim(value), do: value
@@ -63,9 +98,10 @@ defmodule QuantumBilling.Compliance.Task do
     end
   end
 
-  # A new date or lead time is a new reminder.
+  # A new date, lead time or hour is a new reminder.
   defp reset_reminder(changeset) do
-    if changed?(changeset, :due_date) or changed?(changeset, :remind_days_before) do
+    if changed?(changeset, :due_date) or changed?(changeset, :remind_days_before) or
+         changed?(changeset, :remind_at) do
       put_change(changeset, :reminded_at, nil)
     else
       changeset

@@ -218,6 +218,12 @@ defmodule QuantumBillingWeb.ComplianceLive do
     |> load_rows()
   end
 
+  defp repeat_label("weekly"), do: "Weekly"
+  defp repeat_label("monthly"), do: "Monthly"
+  defp repeat_label("quarterly"), do: "Quarterly"
+  defp repeat_label("yearly"), do: "Yearly"
+  defp repeat_label(_none), do: nil
+
   defp row_id(%{task: %Task{id: id}}), do: "task-#{id}"
   defp row_id(row), do: "obligation-#{row.type}-#{row.due_date}"
 
@@ -297,6 +303,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
         form={@task_form}
         kind={@task_kind}
         editing?={@editing_task.id != nil}
+        author?={@editing_task.id == nil or @editing_task.created_by_id == @current_scope.user.id}
       />
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -334,7 +341,9 @@ defmodule QuantumBillingWeb.ComplianceLive do
         />
       </div>
 
-      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <%!-- flex-1 so the two columns run to the bottom of the page instead of
+           stopping short of it; the calendar card takes up the slack on the right. --%>
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
           <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
@@ -355,7 +364,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
               </ul>
             </div>
           </div>
-          <.tabs categories={Compliance.categories()} active={@category} />
+          <.tabs categories={Compliance.category_tabs(@obligations)} active={@category} />
 
           <%!-- Shows the calendar's day filter and a way to clear it. --%>
           <div :if={@selected_date} class="mt-4 flex items-center gap-2">
@@ -433,9 +442,56 @@ defmodule QuantumBillingWeb.ComplianceLive do
                         >
                           Manual
                         </span>
+                        <span
+                          :if={row[:task] && row.task.private}
+                          id={"task-private-#{row.task.id}"}
+                          title="Only you can see this"
+                          class="shrink-0 text-base-content/45"
+                        >
+                          <.icon name="hero-lock-closed" class="size-3.5" />
+                          <span class="sr-only">Only you can see this</span>
+                        </span>
                       </p>
 
-                      <p class="text-xs text-base-content/60">{row.subtitle}</p>
+                      <p class="flex flex-wrap items-center gap-x-1.5 text-xs text-base-content/60">
+                        <span>{row.subtitle}</span>
+                        <%= if row[:task] do %>
+                          <span
+                            :if={match?({:custom, _label}, row.category)}
+                            id={"task-category-#{row.task.id}"}
+                            class="inline-flex items-center gap-1 rounded-full bg-base-200 px-1.5 text-2xs font-medium text-base-content/70"
+                          >
+                            <.icon name="hero-tag" class="size-3" />
+                            {Compliance.category_label(row.category)}
+                          </span>
+                          <span
+                            :if={row.task.repeat != "none"}
+                            id={"task-repeat-#{row.task.id}"}
+                            class="inline-flex items-center gap-1"
+                            title={"Repeats #{row.task.repeat}"}
+                          >
+                            <.icon name="hero-arrow-path" class="size-3" /> {repeat_label(
+                              row.task.repeat
+                            )}
+                          </span>
+                          <span
+                            :if={row.task.remind_at}
+                            class="inline-flex items-center gap-1"
+                            title="Reminder time"
+                          >
+                            <.icon name="hero-clock" class="size-3" />
+                            {Calendar.strftime(row.task.remind_at, "%I:%M %p")}
+                          </span>
+                          <span
+                            :if={row.task.email_reminder}
+                            class="inline-flex items-center"
+                            title="Also by email"
+                          >
+                            <.icon name="hero-envelope" class="size-3" />
+                            <span class="sr-only">Also by email</span>
+                          </span>
+                        <% end %>
+                      </p>
 
                       <p
                         :if={row[:task] && row.task.notes}
@@ -534,7 +590,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </p>
         </.card>
 
-        <div class="space-y-3">
+        <div class="flex flex-col gap-3">
           <.card>
             <div class="mb-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold tracking-tight">Upcoming Due Dates</h2>
@@ -564,7 +620,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
             />
           </.card>
 
-          <.card id="filing-calendar">
+          <.card id="filing-calendar" class="flex-1">
             <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Compliance Calendar</h2>
 
             <.month_calendar

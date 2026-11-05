@@ -338,6 +338,104 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLiveTest do
     end
   end
 
+  describe "the logo" do
+    # A different file from the Page panel's, so cleanup there cannot race this.
+    @logo_png <<0x89, "PNG\r\n", 0x1A, "\n", "logo-for-the-design-pad">>
+
+    defp upload_logo(view, content \\ @logo_png) do
+      view
+      |> file_input("#logo-upload-form", :logo, [
+        %{name: "logo.png", content: content, type: "image/png"}
+      ])
+      |> render_upload("logo.png")
+    end
+
+    defp logo_path, do: QuantumBilling.Settings.get_organization().doc_logo_path
+
+    defp upload_letterhead(view) do
+      view
+      |> file_input("#background-upload-form", :background, [
+        %{name: "letterhead.png", content: @logo_png, type: "image/png"}
+      ])
+      |> render_upload("letterhead.png")
+    end
+
+    test "uploading one sets the company logo and shows it inline", %{
+      conn: conn,
+      template: template
+    } do
+      {:ok, view, _html} = open(conn, template)
+      refute has_element?(view, "#current-logo img")
+
+      upload_logo(view)
+      path = logo_path()
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      assert QuantumBilling.DesignAssets.path?(path)
+      assert has_element?(view, "#current-logo img[src^='data:image/png;base64,']")
+      assert has_element?(view, "#canvas-blocks img.qb-doc__logo[src^='data:image/png;base64,']")
+
+      view |> element("#remove-logo") |> render_click()
+
+      assert logo_path() == nil
+      refute has_element?(view, "#current-logo img")
+      refute File.exists?(Path.join(QuantumBilling.Uploads.directory(), Path.basename(path)))
+    end
+
+    test "a design without a logo block gets one", %{conn: conn, template: template} do
+      doc = Templates.document_of(template)
+      without = %{doc | blocks: Enum.reject(doc.blocks, &(&1.type == :logo))}
+
+      {:ok, template} =
+        Templates.update_template(template, %{
+          "layout_xml" => QuantumBillingWeb.InvoiceDoc.Layout.to_xml(without)
+        })
+
+      {:ok, view, _html} = open(conn, template)
+      upload_logo(view)
+      path = logo_path()
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      assert [:logo | _rest] = types(saved(template))
+    end
+
+    test "a file that is not an image is refused", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+      upload_logo(view, "not a png")
+
+      assert has_element?(view, "#logo-error")
+      assert logo_path() == nil
+    end
+
+    test "the letterhead preview is inline too", %{conn: conn, template: template} do
+      {:ok, view, _html} = open(conn, template)
+      upload_letterhead(view)
+      path = saved(template).page.background
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      assert has_element?(view, "#current-letterhead[src^='data:image/png;base64,']")
+    end
+
+    test "a logo uploaded as the letterhead can be moved to the logo", %{
+      conn: conn,
+      template: template
+    } do
+      {:ok, view, _html} = open(conn, template)
+      upload_letterhead(view)
+      path = saved(template).page.background
+      on_exit(fn -> QuantumBilling.Uploads.delete(path) end)
+
+      view |> element("#use-background-as-logo") |> render_click()
+
+      assert logo_path() == path
+      assert saved(template).page.background == ""
+      assert has_element?(view, "#canvas-blocks img.qb-doc__logo[src^='data:image/png;base64,']")
+      refute has_element?(view, "#current-letterhead")
+      # Still recorded as a design image, so still this business's to serve.
+      assert QuantumBilling.DesignAssets.owned?(path)
+    end
+  end
+
   describe "the newer blocks" do
     test "each can be added from the palette", %{conn: conn, template: template} do
       {:ok, view, _html} = open(conn, template)

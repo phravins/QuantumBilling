@@ -66,3 +66,7 @@ mix precommit
 This checkout contains business-schema changes: browser business selection, memberships, repository scoping, public links with business identity, and business-specific live updates. Run checks against your checkout before treating the setup as verified. [Architecture](docs/technical-architecture.md) and [Business](docs/Business.md) explain entry-point ownership and remaining workflow limits.
 
 IRP and e-way-bill clients include simulated behavior, the HSN finder uses bundled data, and compliance calendars are not proof of tax filing. See the business guide for each workflow's limits.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 phravins.

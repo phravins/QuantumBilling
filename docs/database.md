@@ -446,8 +446,9 @@ Source: [design assets context](../lib/quantum_billing/design_assets.ex).
 | `body`, `path`, `dedupe_key` | `varchar(255)` | Nullable |
 | `severity` | `varchar(255)` | Required; `info` |
 | `read_at` | timestamp | Nullable; unread if null |
+| `recipient_id` | `bigint` FK to `public.users` | Nullable; deleted with the user |
 
-Notifications and their read state belong to the business, not an individual user. There is no user-notification join table. Application kinds are invoice/payment/e_way_bill/compliance/mail/client/system; severities are info/success/warning/error.
+Notifications and their read state belong to the business. A null `recipient_id`, which every older row has, means the whole team sees it; a set one limits it to that person (today, a private reminder). There is no user-notification join table. Application kinds are invoice/payment/e_way_bill/compliance/mail/client/system; severities are info/success/warning/error.
 
 Indexes cover `(inserted_at, id)` for feed ordering, unread `read_at` rows, and unique non-null `dedupe_key` to prevent repeated notices. The feed records completed events; it is not the background-job queue.
 
@@ -542,9 +543,14 @@ Tasks and reminders added by hand on the Compliance page. GST obligations are ca
 | `status` | `varchar(255)` | Required; `open` (or `done`) |
 | `completed_at`, `reminded_at` | `timestamp(0)` | Nullable |
 | `remind_days_before` | `integer` | Required; `1` |
+| `custom_category` | `varchar(255)` | Nullable; the user's own category name when `category` is `custom` |
+| `repeat` | `varchar(255)` | Required; `none` (or `weekly`, `monthly`, `quarterly`, `yearly`) |
+| `private` | `boolean` | Required; `false`. True shows the task and its reminder only to `created_by_id` |
+| `remind_at` | `time(0)` | Nullable; time of day the reminder fires, start of day if null |
+| `email_reminder` | `boolean` | Required; `false`. True also emails the reminder |
 | `created_by_id` | `bigint` FK to `public.users` | Nullable; set to null when the user is deleted |
 
-`due_date` and `status` are indexed. `reminded_at` is what makes a reminder post once.
+`due_date`, `status` and `created_by_id` are indexed. `reminded_at` is what makes a reminder post once.
 
 Source: [task schema](../lib/quantum_billing/compliance/task.ex), [compliance context](../lib/quantum_billing/compliance.ex).
 

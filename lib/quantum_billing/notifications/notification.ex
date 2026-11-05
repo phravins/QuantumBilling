@@ -16,6 +16,8 @@ defmodule QuantumBilling.Notifications.Notification do
     * `dedupe_key` — the caller's name for "this exact thing", so a producer
       that runs daily or is redelivered writes one row rather than many
     * `read_at` — shared, like the rest of the row; see the migration
+    * `recipient_id` — nil for the whole business, or the one person who may
+      see it
   """
   use Ecto.Schema
 
@@ -33,10 +35,13 @@ defmodule QuantumBilling.Notifications.Notification do
     field :dedupe_key, :string
     field :read_at, :utc_datetime
 
+    # Nil for the whole business; set for one person's own reminder.
+    belongs_to :recipient, QuantumBilling.Accounts.User
+
     timestamps(type: :utc_datetime)
   end
 
-  @castable ~w(kind title body path severity dedupe_key read_at)a
+  @castable ~w(kind title body path severity dedupe_key read_at recipient_id)a
 
   @doc """
   Builds a notification changeset.

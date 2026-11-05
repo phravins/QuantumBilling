@@ -34,7 +34,9 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   ## Tasks added by hand
 
   These are reminded about whatever the filing-reminder switch says: somebody
-  asked for each one individually, with its own lead time.
+  asked for each one individually, with its own lead time. A task with a time
+  of day waits for it; `TaskReminderWorker` runs every quarter of an hour for
+  exactly that.
   """
   use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
@@ -48,7 +50,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   def process(%Oban.Job{args: args}) do
     organization = Settings.get_organization()
 
-    Compliance.remind_due_tasks(today(args))
+    Compliance.remind_due_tasks(now(args))
 
     if organization.notify_filing_reminders == false do
       {:ok, :disabled}
@@ -118,4 +120,9 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   end
 
   defp today(_args), do: Date.utc_today()
+
+  # A fixed day in a test means the whole of it; otherwise the clock decides,
+  # so a task reminding at 4 pm is not reminded at this morning's run.
+  defp now(%{"today" => _date} = args), do: today(args)
+  defp now(_args), do: DateTime.utc_now()
 end
