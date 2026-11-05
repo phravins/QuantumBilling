@@ -2,41 +2,10 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   @moduledoc """
   Puts GST filing deadlines in the notification feed before they pass.
 
-  ## Why this exists
-
-  `organization_settings.notify_filing_reminders` and `reminder_lead_days` were
-  both saved by the notifications form and read by nothing — the last two of the
-  four switches on that panel with nothing behind them. The Compliance page has
-  always known these dates; it just required somebody to go and look at it,
-  which is precisely what does not happen on the day a return is due.
-
-  ## What it sends, and what it does not
-
-  One line per obligation, once. The `dedupe_key` carries the obligation and its
-  due date, so the same GSTR-3B deadline produces exactly one notification no
-  matter how many mornings this runs while it is still open. A feed that
-  repeated the same reminder daily would be a feed people stop reading, and the
-  Compliance page is where somebody goes to see the *standing* position.
-
-  Overdue obligations are included, and marked `error` rather than `warning` —
-  a return that is late is the one worth interrupting somebody about. They are
-  still only announced once, on the first run after the due date passes, for the
-  same reason.
-
-  ## Dates, not filings
-
-  `Compliance.filings/0` is still empty, so every obligation resolves to
-  `"Pending"` or `"Overdue"` on the calendar alone. That means a return already
-  filed at the GST portal will still be reminded about here. Stating it plainly
-  rather than hiding it: the reminder is honest about being a deadline, not a
-  status, and it stops being a nuisance the moment filing records land.
-
-  ## Tasks added by hand
-
-  These are reminded about whatever the filing-reminder switch says: somebody
-  asked for each one individually, with its own lead time. A task with a time
-  of day waits for it; `TaskReminderWorker` runs every quarter of an hour for
-  exactly that.
+  Each obligation is announced once, via a `dedupe_key` of obligation and due
+  date; overdue ones are marked `error`. Filings aren't recorded yet, so a
+  return already filed is still reminded about. Hand-added tasks are always
+  reminded, with their own lead time; timed ones go to `TaskReminderWorker`.
   """
   use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3
 
@@ -59,12 +28,7 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
     end
   end
 
-  @doc """
-  Writes a reminder for every obligation inside the lead window.
-
-  Returns how many were written. Public so a test can call it with a fixed date
-  rather than waiting for the clock.
-  """
+  @doc "Writes a reminder for every obligation inside the lead window and returns the count."
   def remind(organization, %Date{} = today) do
     lead = organization.reminder_lead_days || 7
 

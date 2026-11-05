@@ -1,15 +1,9 @@
 defmodule QuantumBilling.ApiKeys.ApiKey do
   @moduledoc """
-  A credential an external system uses to call the API.
+  A revocable API credential, issued by an owner with specific scopes.
 
-  Issued by an owner, limited to the scopes it was given, and revocable. The
-  raw key exists in exactly two places: the response to the request that
-  created it, shown once, and the system the owner pastes it into. This table
-  holds only its SHA-256, so reading the database yields no key that works.
-
-  A key belongs to one business and reaches that business's books only. It is
-  kept in `public` because a request has to find its key before it can know
-  which business it is for.
+  Only the SHA-256 is stored; the raw key is shown once. A key reaches one
+  business only, but lives in `public` so a request can find it first.
   """
   use Ecto.Schema
 
@@ -25,22 +19,11 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   # that announces what it is gets reported when it leaks.
   @key_prefix "qb_live_"
 
-  # How much of the key is kept in clear to tell keys apart in a list. Eight
-  # characters past the marker — enough to identify one, nowhere near enough to
-  # narrow a search for the rest.
+  # Characters kept in clear after the marker, to tell keys apart in a list.
   @display_length byte_size(@key_prefix) + 8
 
-  # Least privilege: a key gets the scopes it was granted and nothing implied.
-  #
-  # `invoices:payment_links` is separate from `invoices:read` because a payment
-  # link is a bearer URL — anyone holding it can open the customer's payment
-  # page. An accounting system that reads invoices has no need of it; a CRM
-  # that sends invoices to customers does.
-  #
-  # `invoices:payments` and `invoices:e_invoice` are separate from
-  # `invoices:write` for the same reason: marking an invoice paid and
-  # registering it with the government are not things every system that
-  # creates invoices should be able to do.
+  # Least privilege: no scope implies another. Payment links, payments and
+  # e-invoice registration are separate scopes from read and write.
   @scopes ~w(invoices:read invoices:write invoices:payment_links invoices:payments
              invoices:e_invoice clients:read clients:write e_way_bills:read
              credit_notes:read credit_notes:write)
@@ -65,12 +48,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   @doc "Every scope a key can be granted."
   def scopes, do: @scopes
 
-  @doc """
-  Builds a new key, returning `{raw_key, changeset}`.
-
-  The raw key is never written down; only its hash and a short display prefix
-  are stored.
-  """
+  @doc "Builds a new key: `{raw_key, changeset}`. Only the hash and a display prefix are stored."
   def build(attrs, %User{} = created_by, %Business{} = business) do
     raw = @key_prefix <> Base.url_encode64(:crypto.strong_rand_bytes(@rand_size), padding: false)
 
@@ -119,10 +97,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   def revoke_changeset(%__MODULE__{} = key),
     do: change(key, revoked_at: DateTime.utc_now(:second))
 
-  # Not `validate_length(min: 1)`: an empty list equals the field's default, so
-  # casting `[]` records no change and a length validation never runs. A key
-  # with no scopes would then be created — useless, and confusing to whoever
-  # later wonders what it was for.
+  # Not `validate_length(min: 1)`: casting `[]` records no change, so it would never run.
   defp validate_some_scope(changeset) do
     case get_field(changeset, :scopes) do
       [_ | _] -> changeset

@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.EWayBillsLive do
   @moduledoc """
-  The E-Way Bills list page: search, status filter, sortable columns and
-  pagination over the issued consignment notes.
-
-  Every one of those four happens in Postgres, through `EWayBills.page/1`, and
-  only the ten rows on screen are ever loaded. The page used to hold every
-  e-way bill in the system in the LiveView's memory — one copy per open browser
-  tab — and filter, sort and slice them in Elixir on every keystroke.
+  The E-Way Bills list: search, status filter, sorting and pagination, all in
+  the database via `EWayBills.page/1`. Only the visible rows are loaded.
   """
   use QuantumBillingWeb, :live_view
 

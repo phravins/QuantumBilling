@@ -1,13 +1,8 @@
 defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   @moduledoc """
-  The design pad's furniture: the palette, the canvas cards, the inspector, and
-  the template list that Settings shows.
+  The design pad's palette, canvas cards and inspector, and the Settings template list.
 
-  None of these draw an invoice. The canvas card is a frame around
-  `InvoiceDoc.Renderer.document/1` with `only` set to one block, and the list
-  card is a frame around `InvoiceDoc.Renderer.thumbnail/1` — so what a user drags
-  and what they see in the list is the same code that prints. A stand-in would
-  drift from the document the moment either changed.
+  Canvas and list cards wrap `InvoiceDoc.Renderer`, so they show the same markup that prints.
   """
   use Phoenix.Component
   use QuantumBillingWeb, :verified_routes
@@ -57,13 +52,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     end)
   end
 
-  @doc """
-  The blocks that can still be added.
-
-  Most blocks are singletons — a document with two totals boxes is a mistake, not
-  a layout — so the palette shrinks as they are used rather than letting a user
-  add a second and wonder why it looks wrong.
-  """
+  @doc "The blocks that can still be added. Most blocks are singletons, so the palette shrinks."
   attr :doc, :map, required: true
 
   def block_palette(assigns) do
@@ -99,12 +88,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     end)
   end
 
-  @doc """
-  One block on the canvas: the rendered block, wrapped in a selectable card.
-
-  The move buttons are the primary way to reorder — they work from the keyboard,
-  which the drag does not. The drag handle is an accelerator on top.
-  """
+  @doc "One block on the canvas in a selectable card. Move buttons work from the keyboard."
   attr :block, :map, required: true
   attr :doc, :map, required: true
   attr :invoice, :map, required: true
@@ -300,12 +284,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   @doc """
   The whole-sheet options: logo, frame, watermark and letterhead.
 
-  These sit beside the text tools rather than in them because they decide what
-  the paper looks like, not how the type reads. The background itself is set by
-  upload, never by a typed path — see `InvoiceDoc.Layout.put_background/2`.
-
-  `logo` is the company logo's `src`, already inline; the logo is the company's,
-  shared by every design.
+  The background is set by upload only. `logo` is the company logo's inline `src`.
   """
   attr :page, :map, required: true
   attr :uploads, :map, required: true
@@ -686,28 +665,12 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   ]
 
   @doc """
-  The text tools: one toolbar over every typographic setting a document has.
+  The text tools: a toolbar over every typographic setting of one design.
 
-  It writes `page[...]` fields named after the XML attributes in
-  `InvoiceDoc.Layout.page_attrs/0`, so whichever LiveView mounts it can hand
-  the params straight to `Layout.cast_page/2` without knowing what a control
-  was. Everything here is a real document setting — there is no styling in the
-  toolbar that the printed invoice does not carry.
-
-  ## It belongs to one design, not to the page
-
-  `template_id` is posted with every change, so the toolbar edits the design it
-  is drawn inside rather than whichever one happens to be the default. Settings
-  gives every design its own; the design pad, which is already looking at a
-  single template, gives none and edits the document it holds.
-
-  ## Collapsed by default where there is a list of them
-
-  A design card is not big enough for fifteen controls, so `collapsible` folds
-  the toolbar behind a summary of what it is currently set to. The open state is
-  the parent's assign rather than a `<details>` element: a re-render after each
-  change would put a `<details>` back to its markup value and snap it shut
-  mid-edit.
+  Fields are named after `InvoiceDoc.Layout.page_attrs/0`, so params go straight
+  to `Layout.cast_page/2`. `template_id` names the design being edited.
+  `collapsible` folds it behind a summary; the open state is a parent assign,
+  because a re-render would snap a `<details>` shut.
   """
   attr :id, :string, default: "text-tools"
   attr :page, :map, required: true
@@ -1074,14 +1037,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
   end
 
   @doc """
-  The template list shown on Settings → Customization.
-
-  Each card is a real render of the layout at a fraction of its size, so picking
-  one to edit does not require remembering which name went with which design.
-
-  The text tools sit inside the card, over the design they set, rather than in
-  a section of their own over the design that happens to be the default.
-  `open_tools` is the id of the one card whose toolbar is unfolded.
+  The template list on Settings › Customization: a live thumbnail per design, with its text tools. `open_tools` is the unfolded card's id.
   """
   attr :templates, :list, required: true
   attr :invoice, :map, required: true

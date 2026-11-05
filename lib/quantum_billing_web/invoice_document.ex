@@ -1,33 +1,13 @@
 defmodule QuantumBillingWeb.InvoiceDocument do
-  @moduledoc """
-  A representative invoice, for previewing a layout without a real one.
-
-  This module used to decide what an invoice document showed, because the
-  document was rendered twice from separate markup and something had to keep the
-  two honest. That job now belongs to the layout itself: `InvoiceDoc.Layout`
-  reads it, `InvoiceDoc.Renderer` renders it, and every surface goes through the
-  same component, so there is no longer a pair of markups that could disagree.
-
-  What is left is the fixture. The settings preview and the design pad have no
-  invoice to show — they are configuration screens — so they render this one.
-  It is deliberately realistic rather than empty: a preview built from blanks
-  cannot show whether the column widths work or the totals box fits.
-  """
+  @moduledoc "A realistic sample invoice for previewing layouts (settings preview, design pad)."
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
   alias QuantumBilling.Settings.Organization
 
   @doc """
-  A representative invoice for the settings preview.
-
-  Not persisted and never saved — it exists so the preview exercises the real
-  template with realistic figures instead of an empty shell.
-
-  Given an organisation, the seller half is filled in from it, so a preview or
-  a test print shows the company the invoice would actually be issued by
-  rather than "Your Company". The buyer half stays fictional — the point is to
-  exercise the layout, not to involve a real customer in a test.
+  A sample invoice, never saved. With an organisation, the seller details
+  are filled from it; the buyer stays fictional.
   """
   def sample(organization \\ nil)
 

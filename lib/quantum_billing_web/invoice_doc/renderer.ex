@@ -1,27 +1,11 @@
 defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   @moduledoc """
-  Renders an invoice from its layout.
+  Renders an invoice from its layout: the only invoice markup.
 
-  This is the only markup for the invoice document. The on-screen page, the
-  standalone print page, the settings thumbnail and the design pad's canvas all
-  render through here, so none of them can drift from the others — which is what
-  the three hand-written copies this replaces could not promise.
-
-  Styling comes from `InvoiceDoc.Stylesheet`, injected as a `<style>` tag by
-  whichever surface is rendering. Nothing here carries Tailwind classes: the
-  print page has no access to them.
-
-  ## What the layout does not get to decide
-
-  Three rules are applied here regardless of what the XML says, because they are
-  matters of law rather than taste:
-
-    * CGST and SGST print only on an intra-state supply, IGST only on an
-      inter-state one. A layout cannot put IGST on an intra-state invoice.
-    * A `non-zero` line is suppressed when its figure is zero — an always-empty
-      cess row teaches the reader nothing.
-    * An empty heading falls back to the invoice's own type, so a Credit Note
-      does not announce itself as a Tax Invoice because nobody filled the field.
+  The page, print view, thumbnails and design pad all render here. Styling
+  comes from `InvoiceDoc.Stylesheet`, not Tailwind. Whatever the layout says,
+  CGST/SGST print only intra-state and IGST only inter-state, `non-zero` lines
+  hide at zero, and an empty heading falls back to the invoice type.
   """
   use Phoenix.Component
 
@@ -34,20 +18,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :mode, :atom, default: :screen, values: [:screen, :print]
 
   @doc """
-  The document's stylesheet, in a `<style>` tag.
+  The document's stylesheet in a `<style>` tag.
 
-  Every surface renders this next to the document.
-
-  The whole tag is built as a safe value rather than written as `<style>` markup
-  with the CSS interpolated: HEEx does not interpolate inside a `<style>` element
-  at all — it emits `{...}` as literal text — and escaping the CSS as ordinary
-  content would turn the child combinator in `.qb-doc__row > .qb-doc__cell` into
-  `&gt;` and silently drop the rule.
-
-  Marking it raw is safe because nothing user-written reaches it. Every value
-  the stylesheet interpolates is a closed enum or an integer, validated by
-  `InvoiceDoc.Catalog` on the way in; the accent, which *is* user-set, never
-  enters the CSS — it arrives as an inline custom property on the element.
+  Built as a safe value because HEEx does not interpolate inside `<style>`.
+  Every interpolated value is a validated enum or integer; the user-set accent
+  arrives as an inline custom property instead.
   """
   def stylesheet(assigns) do
     assigns = assign(assigns, :tag, style_tag(assigns.doc, assigns.mode))
@@ -79,13 +54,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     default: %{payment: nil, images: %{}},
     doc: "payment details and image sources, from `InvoiceDoc.Extras.build/3`"
 
-  @doc """
-  The invoice document.
-
-  With `only`, renders a single block on its own; the pad shows each block in
-  its own card, and it shows them by rendering the real thing rather than a
-  stand-in, so what is dragged is what prints.
-  """
+  @doc "The invoice document. With `only`, renders just that block (for the design pad)."
   def document(assigns) do
     page = assigns.doc.page
     sheet? = is_nil(assigns.only)
@@ -170,13 +139,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :scale, :float, default: 0.5
   attr :extras, :map, default: %{payment: nil, images: %{}}
 
-  @doc """
-  The document at a fraction of its size, for previews and template thumbnails.
-
-  Deliberately the same markup rather than a simplified stand-in: a preview that
-  leaves detail out can agree with a setting the real document is not honouring,
-  which is the failure the whole single-renderer arrangement exists to prevent.
-  """
+  @doc "The same document scaled down, for previews and thumbnails."
   def thumbnail(assigns) do
     ~H"""
     <div class="qb-doc-frame">
@@ -529,22 +492,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     """
   end
 
-  @doc """
-  The title printed on the document.
-
-  Falls back to the invoice's own type, so a Credit Note does not announce
-  itself as a Tax Invoice just because nobody filled the heading in.
-  """
+  @doc "The title printed on the document; falls back to the invoice's own type."
   def heading(%Block{opts: %{text: text}}, %Invoice{} = invoice) do
     if present?(text), do: text, else: invoice.invoice_type
   end
 
   @doc """
-  The blocks grouped into rows.
-
-  Consecutive half-width blocks pair up; everything else takes a row of its own.
-  A half with no partner is left on its own row rather than stretched, so
-  removing one of a pair does not silently widen the other.
+  The blocks grouped into rows. Consecutive half-width blocks pair up; an
+  unpaired half keeps its own row.
   """
   def rows(document, only \\ nil)
 
@@ -579,8 +534,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
   defp align_class(_other), do: nil
 
-  # -- field vocabularies --
-  # Catch-alls render a blank for fields from a newer version.
+  # Catch-alls render blank for fields from a newer version.
 
   defp item_value(%{field: "serial"}, _item, index), do: index
   defp item_value(%{field: "description"}, item, _index), do: item.description

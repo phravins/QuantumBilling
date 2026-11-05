@@ -1,34 +1,15 @@
 defmodule QuantumBillingWeb.PaymentWebhookController do
   @moduledoc """
-  Receives payment notifications from Razorpay.
+  Receives Razorpay payment webhooks. Public, and it marks invoices paid, so:
 
-  This endpoint is unauthenticated by necessity — a payment provider has no
-  session — and it marks invoices as paid. Three things stand in for a login:
+    * a valid `x-razorpay-signature` over the raw body is required; with no
+      `RAZORPAY_WEBHOOK_SECRET` set, everything is refused
+    * each event id is claimed first, so redeliveries are handled once
+    * requests are rate limited by source
+    * only what reconciliation needs is stored, encrypted
 
-    * **A signature is required.** Every request must carry a valid
-      `x-razorpay-signature` over the exact request body, keyed with
-      `RAZORPAY_WEBHOOK_SECRET`. Previously an unset secret meant *any*
-      unauthenticated POST could mark any invoice paid, which is a worse
-      failure than the endpoint not working at all. With no secret configured
-      the endpoint now refuses everything and says so in the log.
-
-    * **Events are handled once.** The provider's event id is claimed in the
-      database before anything happens, so a redelivery — which providers do
-      routinely, and do deliberately when they get no 2xx — cannot mark an
-      invoice paid twice or send the customer a second receipt.
-
-    * **Delivery is rate limited by source.** A signature check is cheap but
-      not free, and this is a public endpoint.
-
-    * **Payer details are not kept.** The ledger stores only what reconciliation
-      needs (`Payments.webhook_record/1`), encrypted at rest.
-
-  The URL names the business by its slug (`/api/webhooks/razorpay/:slug`);
-  the bare path, which existing Razorpay dashboards point at, delivers to the
-  first business. An unknown slug is a 404 before anything else is looked at.
-
-  Successfully handled duplicates return 200: a provider that is told "already
-  done" with a 4xx will simply keep retrying.
+  `/api/webhooks/razorpay/:slug` names the business; the bare path is legacy
+  (first business). Duplicates return 200 so the provider stops retrying.
   """
   use QuantumBillingWeb, :controller
 

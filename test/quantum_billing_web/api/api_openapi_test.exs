@@ -1,10 +1,7 @@
 defmodule QuantumBillingWeb.API.OpenAPITest do
   @moduledoc """
-  `docs/openapi.json` describes the API that exists — no more, no less.
-
-  It is written by hand, so these tests are what keep it true: a route added
-  without a spec entry, a serializer field added without a schema property, or
-  a scope renamed in one place only, fails here.
+  `docs/openapi.json` matches the real routes, fields and scopes. It is written
+  by hand, so these keep it true.
   """
   use ExUnit.Case, async: true
 

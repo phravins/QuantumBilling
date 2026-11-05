@@ -1,43 +1,11 @@
 defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   @moduledoc """
-  The invoice design pad.
+  The invoice design pad: block palette, canvas and inspector.
 
-  Three columns: the palette of blocks that can be added, the canvas showing the
-  document as it will print, and the inspector for whichever block is selected.
-
-  ## The document in memory is the source of truth
-
-  The layout XML is parsed once on mount and serialised once per save. It is
-  never round-tripped per keystroke, because that would make every edit depend on
-  serialiser fidelity — a bug there would silently eat a user's work mid-session
-  rather than failing where it could be seen.
-
-  ## Every change saves
-
-  There is no Save button. Templates are small and saves are cheap, and autosave
-  removes the entire class of "I dragged six blocks and then navigated away"
-  problems. The header shows when the last save landed.
-
-  ## Blocks are addressed by id, and ids come from the server
-
-  Every event names a block id, and every handler ignores an id the document does
-  not have. A pad left open in another tab can therefore not resurrect a block
-  that has since been removed.
-
-  ## Images travel inline
-
-  The logo and every design image are shown as data URIs, as the PDF shows
-  them, rather than as `<img src="/uploads/…">`. Such a tag is a second HTTP
-  request, and the inactivity timeout only advances on HTTP requests: after an
-  hour spent inside LiveView pages that request finds the session expired and
-  the image comes back broken. Each file is read once and kept while the design
-  still uses it.
-
-  ## The logo is the company's
-
-  The Logo section of the Page panel sets the organisation's logo, the one every
-  design and Settings › Customization share. An image uploaded as a letterhead
-  can be moved there with "Use as logo instead".
+  The layout is parsed on mount and kept in memory; every change autosaves.
+  Events address blocks by server ids, and unknown ids are ignored. Images are
+  inlined as data URIs, since `/uploads` requests can hit an expired session.
+  The Logo section sets the organisation's logo, shared by every design.
   """
   use QuantumBillingWeb, :live_view
 
@@ -88,8 +56,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> allow_upload(:logo, upload_opts(:logo))}
     end
   end
-
-  # ── Blocks ────────────────────────────────────────────────────────────────
 
   @impl true
   def handle_event("add_block", %{"type" => type}, socket) do
@@ -149,12 +115,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   end
 
   @doc """
-  Reorders from the drag hook.
-
-  The incoming list is accepted only when it is an exact permutation of the ids
-  the server currently holds. A stale client — one whose page was rendered before
-  a block was added or removed — would otherwise be able to delete blocks by
-  omitting them from a drop.
+  Reorders from the drag hook. Accepted only if it is an exact permutation of the current ids.
   """
   def handle_event("reorder_blocks", %{"ids" => ids}, socket) when is_list(ids) do
     current = Document.ids(socket.assigns.doc)
@@ -178,12 +139,10 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         {:noreply, socket}
 
       block ->
-        # Through the catalogue's whitelist, never straight onto the struct.
+        # Through the catalogue's allowlist, never straight onto the struct.
         {:noreply, save(socket, Document.put_block(doc, Catalog.cast_block(block, params)))}
     end
   end
-
-  # ── Columns and total lines ───────────────────────────────────────────────
 
   def handle_event("toggle_child", %{"field" => field}, socket) do
     with_selected(socket, fn doc, block ->
@@ -221,9 +180,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     end)
   end
 
-  # ── Uploads: the letterhead and image blocks ──────────────────────────────
-
-  # The form only has to exist for the file input; progress does the work.
+  # The form exists only for the file input.
   def handle_event("validate_upload", _params, socket) do
     {:noreply, assign(socket, :upload_error, upload_error(socket))}
   end
@@ -268,8 +225,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     end)
   end
 
-  # ── Page and template ─────────────────────────────────────────────────────
-
   def handle_event("update_page", %{"page" => params}, socket) do
     doc = socket.assigns.doc
 
@@ -313,10 +268,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     {:noreply, socket |> assign(:selected_id, nil) |> save(Catalog.classic())}
   end
 
-  # ── Saving ────────────────────────────────────────────────────────────────
-
-  # A letterhead is a scan or an export: PNG or JPEG. A stamp or logo may be
-  # anything `Uploads.store/2` takes.
+  # A letterhead must be PNG or JPEG; a stamp or logo may be anything `Uploads.store/2` takes.
   defp upload_opts(name) do
     [
       accept: accepted(name),
@@ -384,16 +336,14 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     end
   end
 
-  # Sets or clears the organisation's logo. A new logo with no logo block to
-  # show it in gets one, at the top.
+  # Sets or clears the organisation's logo, adding a logo block at the top if there is none.
   defp put_logo(socket, path) do
     organization = socket.assigns.organization
     previous = organization.doc_logo_path
 
     case Settings.update_section(organization, %{"doc_logo_path" => path}, :customization) do
       {:ok, organization} ->
-        # Unlinked only once the new one is saved, and never while a design
-        # still shows the same file (uploads are content-addressed).
+        # Unlinked only after the new one is saved, and never while a design still uses the file.
         if is_binary(previous) and previous != path and not DesignAssets.recorded?(previous) do
           Uploads.delete(previous)
         end
@@ -466,8 +416,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
     |> assign(:extras, inline_images(extras, socket.assigns[:extras]))
   end
 
-  # See "Images travel inline". Extras.build has already dropped any path this
-  # business does not own; a file still in use is not read again.
+  # Extras.build has already dropped paths this business doesn't own; files in use aren't re-read.
   defp inline_images(%{images: images} = extras, previous) when map_size(images) > 0 do
     cache = (previous && previous.images) || %{}
 
@@ -550,8 +499,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   defp presence(nil), do: nil
   defp presence(""), do: nil
   defp presence(value), do: value
-
-  # ── Render ────────────────────────────────────────────────────────────────
 
   @impl true
   def render(assigns) do
@@ -659,7 +606,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         </.card>
         <.card padding="p-6" class="min-w-0 flex-1">
           <Renderer.stylesheet doc={@doc} />
-          <%!-- The hook delegates from this container and pushes an id order; no phx-update="ignore", since the server re-render moves the blocks. --%>
+          <%!-- The hook pushes the new id order; no phx-update="ignore", since the server re-render moves blocks. --%>
           <div id="canvas-blocks" phx-hook=".BlockSort" class="mx-auto max-w-[800px] space-y-1">
             <.canvas_block
               :for={{block, index} <- Enum.with_index(@doc.blocks)}

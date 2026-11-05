@@ -39,11 +39,8 @@ defmodule QuantumBillingWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: {__MODULE__, :log_level, []}
 
-  # No multipart: every file arrives through a LiveView upload, over the
-  # socket, so a multipart parser would only let anyone — signed in or not —
-  # have the server spool files to disk before any route or login check runs.
-  # 2MB is far above the largest form or API body (an API invoice of 200 lines
-  # is ~50KB) and well below Plug's 8MB default.
+  # No multipart: uploads go through LiveView, so this keeps unauthenticated
+  # requests from spooling files. 2MB covers any form or API body.
   plug Plug.Parsers,
     parsers: [:urlencoded, :json],
     length: 2_000_000,
@@ -69,15 +66,8 @@ defmodule QuantumBillingWeb.Endpoint do
   def log_level(%Plug.Conn{path_info: ["users", "settings", "confirm-email", _token]}), do: false
   def log_level(%Plug.Conn{}), do: :info
 
-  # Bandit serves every request on a keep-alive connection from one process, so
-  # the business chosen for the last request would otherwise still be set for
-  # this one — a webhook arriving after a page load would run in that page's
-  # business. Each request starts with none; the router chooses again.
-  #
-  # Whatever was set before is put back once the response is sent. In
-  # production that is only the previous request's choice, cleared again by the
-  # next one; in a test, which calls the endpoint in its own process, it is the
-  # test's business, which the test goes on querying in.
+  # Keep-alive connections reuse one process, so clear the business per request
+  # and restore the previous one afterwards (tests rely on that).
   defp forget_business(conn, _opts) do
     previous = QuantumBilling.Repo.business()
     QuantumBilling.Repo.put_business(nil)

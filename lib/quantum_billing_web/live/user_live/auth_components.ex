@@ -1,14 +1,6 @@
 defmodule QuantumBillingWeb.UserLive.AuthComponents do
   @moduledoc """
-  Presentational pieces for the sign-in / sign-up screens.
-
-  These use the same theme tokens as the rest of the app. They used to carry
-  their own `zinc-*` palette and `rounded-md` corners, which meant the sign-in
-  screen quietly drifted from the product it signs you in to — a type-scale or
-  radius change would land everywhere except the first screen anyone sees.
-
-  The look is unchanged: the app's light theme is already near-black on white,
-  so the theme tokens resolve to what these were hardcoding.
+  Presentational pieces for the sign-in and sign-up screens, using the app's theme tokens.
   """
   use Phoenix.Component
   use QuantumBillingWeb, :verified_routes

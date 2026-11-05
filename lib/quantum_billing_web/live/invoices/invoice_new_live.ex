@@ -1,25 +1,10 @@
 defmodule QuantumBillingWeb.InvoiceNewLive do
   @moduledoc """
-  The "Create New GST Invoice" form.
+  The invoice form: header actions, the form, and a live summary rail.
 
-  Follows the shape of `ClientNewLive` and `EWayBillNewLive`: header carrying
-  the actions, the form on the left and a summary rail on the right.
-
-  The summary recomputes on every change without saving anything —
-  `Invoice.recalculate/1` writes the totals onto the changeset, so the panel is
-  reading the same arithmetic that will eventually be stored rather than a
-  second implementation that could disagree with it.
-
-  Picking a client copies that client's details onto the invoice. They stay
-  editable afterwards: a particular invoice may legitimately need a one-off
-  address, and the copy is what gets stored, so overriding it here is the
-  intended way to do that.
-
-  Typing a client's exact name into "Client Name" counts as picking it, so the
-  GSTIN and PAN arrive either way. A PAN is also read out of a GSTIN whenever
-  the PAN box is empty, because characters 3–12 of a GSTIN are the PAN — there
-  is nothing for the user to look up. When the chosen client simply has no
-  GSTIN on file the GSTIN box says so, rather than staying silently blank.
+  The summary uses `Invoice.recalculate/1`, the same arithmetic that is stored.
+  Picking a client, or typing its exact name, copies its details, which stay
+  editable. An empty PAN is filled from the GSTIN.
   """
   use QuantumBillingWeb, :live_view
 
@@ -206,9 +191,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     end
   end
 
-  # `client_id` stays as the form sent it — a string — so the form's own
-  # comparisons against the picker keep working; everything else is the shared
-  # snapshot the API uses too.
+  # `client_id` stays a string so the picker comparisons work; the rest is the shared API snapshot.
   defp copy_client(params, client) do
     Map.merge(params, Map.delete(Invoices.client_snapshot(client), "client_id"))
   end

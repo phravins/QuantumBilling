@@ -1,13 +1,7 @@
 defmodule QuantumBilling.Compliance.ReminderEmail do
   @moduledoc """
-  The email a task or reminder sends its author when "Also email me" is on.
-
-  It goes through the same queue and delivery ledger as every other message —
-  `QuantumBilling.Workers.EmailWorker` — so a relay that is down retries rather
-  than losing the reminder, and Settings › SMTP shows whether it arrived.
-
-  Only ever to the task's author: the address is read from their account when
-  the email is queued, never from a form.
+  The "Also email me" reminder for a task, sent only to its author through
+  `EmailWorker` and the delivery ledger.
   """
   import Swoosh.Email
 
@@ -18,12 +12,7 @@ defmodule QuantumBilling.Compliance.ReminderEmail do
   alias QuantumBilling.Settings
   alias QuantumBilling.Workers.EmailWorker
 
-  @doc """
-  Queues the reminder email for `task`'s author.
-
-  Returns `{:ok, delivery}`, or `{:error, :no_recipient}` for a task whose
-  author has gone.
-  """
+  @doc "Queues the reminder for `task`'s author: `{:ok, delivery}` or `{:error, :no_recipient}`."
   def deliver_async(%Task{} = task, due_phrase) do
     with %User{email: email} when is_binary(email) <- author(task),
          subject = subject_line(task, due_phrase),

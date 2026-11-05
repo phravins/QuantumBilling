@@ -1,11 +1,5 @@
 defmodule QuantumBillingWeb.LogFilteringTest do
-  @moduledoc """
-  What request logging scrubs.
-
-  Phoenix's default filter is `["password"]` alone. Everything here is a
-  credential or a bearer token that was previously written to the log in clear
-  at debug level.
-  """
+  @moduledoc "Request logs scrub credentials and bearer tokens, not just `password`."
   use ExUnit.Case, async: true
 
   @filtered "[FILTERED]"

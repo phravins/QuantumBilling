@@ -1,23 +1,11 @@
 defmodule QuantumBilling.Clients.Client do
   @moduledoc """
-  A customer the tenant invoices.
+  A customer the business invoices.
 
-  Several validations here are GST rules rather than generic form checks:
-
-    * a GSTIN is only *required* for the registration types that have one —
-      an unregistered dealer or a walk-in consumer has none, and B2C invoicing
-      needs them
-    * the PAN is embedded in the GSTIN, so the two must agree
-    * a GSTIN opens with the state code of the state it was registered in, so a
-      `27…` GSTIN against a Karnataka address is a data error
-
-  Money is whole rupees (integers) throughout.
-
-  ## The Bin
-
-  Deleting a client sets `deleted_at` and leaves the row where it is, so the
-  invoices raised for it still point at it and a restore is exact. `kept/1` is
-  the filter every read goes through.
+  GST rules: a GSTIN is required only for registration types that have one,
+  its embedded PAN must match the PAN, and its state code must match the
+  state. Amounts are paise. Deleting sets `deleted_at` (the Bin); every read
+  goes through `kept/1`.
   """
   use Ecto.Schema
 
@@ -145,12 +133,7 @@ defmodule QuantumBilling.Clients.Client do
   def bin_changeset(client), do: change(client, deleted_at: DateTime.utc_now(:second))
 
   @doc """
-  Takes a client back out of the Bin.
-
-  A binned client gives up its GSTIN — the unique index only covers clients
-  that are live — so another client may have been registered under it since.
-  The constraint is declared here so that coming back into a taken GSTIN is an
-  error on the changeset rather than a raise.
+  Restores a client from the Bin. A GSTIN taken meanwhile is a changeset error, not a raise.
   """
   def restore_changeset(client) do
     client
@@ -287,7 +270,6 @@ defmodule QuantumBilling.Clients.Client do
   defp strip_spaces(value), do: value
 
   def client_types, do: @client_types
-  def gstin_types, do: @gstin_types
   def business_types, do: @business_types
   def categories, do: @categories
   def country_codes, do: @country_codes

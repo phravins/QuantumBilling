@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.API.V1.FallbackController do
   @moduledoc """
-  Any `/api/v1` path that matches no route.
-
-  A JSON 404 in the API's error shape, rather than the branded HTML page the
-  catch-all at the bottom of the router serves. Reached only after
-  authentication, so an unauthenticated caller cannot use it to map which
-  paths exist: they get the 401 for every path alike.
+  A JSON 404 for unmatched `/api/v1` paths. Reached only after auth, so
+  unauthenticated callers get 401 everywhere.
   """
   use QuantumBillingWeb, :controller
 

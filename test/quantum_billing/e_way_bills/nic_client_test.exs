@@ -1,14 +1,7 @@
 defmodule QuantumBilling.EWayBills.NICClientTest do
   @moduledoc """
-  Demo and live e-way bills.
-
-  The client used to answer a live portal's timeout or error page with a
-  locally minted number and report success, so a user with live access could
-  be handed a bill the government had never seen. A configured portal that
-  does not answer is now an error, nothing is recorded, and every bill says
-  which mode issued it.
-
-  Requests are intercepted with `Req.Test`.
+  Demo and live e-way bills. A live portal that fails is an error, never a
+  locally minted number. Requests are stubbed with `Req.Test`.
   """
   # Not async: sets NIC_EWB_API_URL and Req's default options, which every
   # process reads.

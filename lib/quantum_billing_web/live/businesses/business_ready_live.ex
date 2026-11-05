@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.BusinessReadyLive do
   @moduledoc """
-  Step two of choosing a company: the confirmation after
-  `QuantumBillingWeb.BusinessController.switch/2` has opened it.
-
-  Shows which company is now open and the user's role there, then moves on to
-  the dashboard by itself after a moment. The timer only starts once the socket
-  is connected, so the static render never redirects; the button goes straight
-  there for anyone who does not want to wait.
+  Step two of choosing a company: confirms which company is open and the role,
+  then moves to the dashboard (the timer starts only once connected).
   """
   use QuantumBillingWeb, :live_view
 

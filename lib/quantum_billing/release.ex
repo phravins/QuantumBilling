@@ -6,10 +6,7 @@ defmodule QuantumBilling.Release do
   @app :quantum_billing
 
   @doc """
-  Migrates `public`, then every business's schema.
-
-  The order matters: a new public migration can be the one that creates a
-  business table's home, and the businesses are read from `public`.
+  Migrates `public`, then every business schema. Public goes first, since businesses are listed there.
   """
   def migrate do
     load_app()
@@ -39,12 +36,8 @@ defmodule QuantumBilling.Release do
   end
 
   @doc """
-  The business schemas with tenant migrations still to run, as
-  `[{schema, [version, ...]}]`.
-
-  `Phoenix.Ecto.CheckRepoStatus` only knows the public migrations, so a schema
-  left behind otherwise surfaces later as a "column does not exist" error on
-  whichever page reads the missing column first.
+  The business schemas with pending tenant migrations, as `[{schema, [version, ...]}]`.
+  `CheckRepoStatus` only sees public migrations.
   """
   def pending_business_migrations(repo) do
     for schema <- business_schemas(repo),

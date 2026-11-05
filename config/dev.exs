@@ -6,15 +6,9 @@ config :quantum_billing, QuantumBilling.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
-# For development, we disable any cache and enable
-# debugging and code reloading.
-#
-# The watchers configuration can be used to run external
-# watchers to your application. For example, we can use it
-# to bundle .js and .css sources.
+# No caching; debugging, code reloading and asset watchers on.
 config :quantum_billing, QuantumBillingWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
+  # Loopback only; use {0, 0, 0, 0} to reach it from other machines.
   http: [ip: {127, 0, 0, 1}],
   check_origin: false,
   code_reloader: true,
@@ -25,30 +19,23 @@ config :quantum_billing, QuantumBillingWeb.Endpoint,
     tailwind: {Tailwind, :install_and_run, [:quantum_billing, ~w(--watch)]}
   ]
 
-# Payment links are simulated here rather than calling Razorpay. In production
-# a missing or rejected key is an error, not a fake link.
+# Simulated payment links; production never fakes them.
 config :quantum_billing, razorpay_sandbox: true
 
-# Enable dev routes for dashboard and mailbox
+# LiveDashboard and the mailbox preview.
 config :quantum_billing, dev_routes: true
 
-# Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 
-# Set a higher stacktrace during development. Avoid configuring such
-# in production as building large stacktraces may be expensive.
+# Deeper stacktraces; too costly for production.
 config :phoenix, :stacktrace_depth, 20
 
-# Initialize plugs at runtime for faster development compilation
 config :phoenix, :plug_init_mode, :runtime
 
 config :phoenix_live_view,
-  # Include debug annotations and locations in rendered markup.
-  # Changing this configuration will require mix clean and a full recompile.
+  # Changing these needs `mix clean`.
   debug_heex_annotations: true,
   debug_attributes: true,
-  # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
 
-# Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false

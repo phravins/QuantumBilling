@@ -2,32 +2,10 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   @moduledoc """
   One e-way bill raised against one invoice.
 
-  ## Why `status` holds only two values
-
-  A bill on the portal is Active, Cancelled or Expired, but only the first two
-  are facts about the bill. Expiry is a fact about the clock: a bill valid
-  until Tuesday becomes expired on Wednesday whether or not anything ran. So
-  `status` stores `"Active"` or `"Cancelled"`, and
-  `QuantumBilling.EWayBills.status/1` derives the third by comparing
-  `valid_until` with now. Storing it would need a job to keep it true, and a
-  job that fails would make the column lie.
-
-  ## Cancellation
-
-  Rule 138(9) allows cancellation within 24 hours of generation, with a reason,
-  after which the number is spent and a fresh bill must be raised against the
-  same document. Cancelled rows are kept: erasing them would destroy the audit
-  trail the rule exists to create. A partial unique index on `invoice_id` where
-  the status is not `"Cancelled"` is what keeps exactly one live bill per
-  invoice while still permitting the re-issue.
-
-  ## The Bin
-
-  Deleting a bill here sets `deleted_at`. That is a statement about this
-  application's records and nothing else: it is not a cancellation, the portal
-  is not told, and the number stays as live or as spent there as it was. A
-  binned bill stops counting as its invoice's live bill — the unique index
-  leaves it out — so the invoice can have another raised.
+  `status` stores only `"Active"` or `"Cancelled"`; expiry is derived from
+  `valid_until` by `EWayBills.status/1`. Cancelled rows are kept (Rule 138(9)),
+  and a partial unique index allows one live bill per invoice. Binning sets
+  `deleted_at` locally only; the portal is not told.
   """
   use Ecto.Schema
 
@@ -78,10 +56,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   def demo?(%__MODULE__{}), do: true
 
   @doc """
-  Builds a changeset for creating or updating a bill.
-
-  `invoice_id` and `portal_mode` are castable here because the context sets
-  them from a loaded invoice and the portal client, never from user input.
+  Builds a changeset for a bill. `invoice_id` and `portal_mode` come from the context, never user input.
   """
   def changeset(e_way_bill, attrs) do
     e_way_bill
@@ -99,12 +74,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     )
   end
 
-  @doc """
-  Marks a bill cancelled.
-
-  The 24-hour window of Rule 138(9) is enforced by the context, which knows
-  the current time; this records the decision.
-  """
+  @doc "Marks a bill cancelled. The context enforces the 24-hour window."
   def cancel_changeset(e_way_bill, attrs) do
     e_way_bill
     |> cast(attrs, [:cancellation_reason])
@@ -130,11 +100,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   def bin_changeset(e_way_bill), do: change(e_way_bill, deleted_at: DateTime.utc_now(:second))
 
   @doc """
-  Takes a bill back out of the Bin.
-
-  Its invoice may have had another bill raised while this one was away, and an
-  invoice carries one live bill. The constraint is declared so that coming back
-  into a taken slot is an error on the changeset rather than a raise.
+  Takes a bill out of the Bin. If its invoice already has a live bill, the changeset gets an error.
   """
   def restore_changeset(e_way_bill) do
     e_way_bill

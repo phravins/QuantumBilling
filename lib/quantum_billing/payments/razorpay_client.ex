@@ -2,22 +2,9 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   @moduledoc """
   Razorpay payment links, and the signature check for their webhooks.
 
-  ## A fake link is worse than no link
-
-  This used to answer every failure — missing credentials, a rejected key, a
-  network timeout — by inventing a link: `plink_` plus twelve random digits and
-  a `rzp.io/i/qb_INV-1234` URL that does not exist. It was recorded on the
-  invoice and put in front of customers, who clicked it and got nothing, while
-  the application reported success.
-
-  Simulated links now happen only where they were meant to: in development and
-  test, with `:razorpay_sandbox` set. Everywhere else a missing key or a failed
-  call is `{:error, reason}` and the page says what went wrong. Sandbox links
-  are also labelled as such in the id itself, so a simulated one is
-  recognisable wherever it turns up later.
-
-  Credentials come from Settings › Integrations first (encrypted at rest), then
-  from the environment.
+  Failures return `{:error, reason}`; simulated links exist only when
+  `:razorpay_sandbox` is on and are labelled as such in their id. Credentials
+  come from Settings › Integrations first, then the environment.
   """
 
   require Logger
@@ -29,9 +16,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   @receive_timeout 10_000
 
   @doc """
-  Creates a payment link for an invoice.
-
-  Returns `{:ok, %{link_id:, short_url:}}` or `{:error, message}`.
+  Creates a payment link for an invoice: `{:ok, %{link_id:, short_url:}}` or `{:error, message}`.
   """
   def create_payment_link(%Invoice{} = invoice) do
     case credentials() do
@@ -99,12 +84,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   defp maybe_put(map, _key, value) when value in [nil, ""], do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @doc """
-  Verifies the HMAC-SHA256 signature of an incoming Razorpay webhook.
-
-  Compared in constant time: a comparison that returns early leaks, through
-  timing, how much of a guessed signature was right.
-  """
+  @doc "Verifies a Razorpay webhook's HMAC-SHA256 signature, in constant time."
   def verify_webhook_signature(raw_body, signature, secret)
       when is_binary(raw_body) and is_binary(signature) and is_binary(secret) do
     computed =
@@ -117,13 +97,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
 
   def verify_webhook_signature(_raw_body, _signature, _secret), do: false
 
-  @doc """
-  The API credentials, from Settings first and the environment second.
-
-  Settings is checked first because that is where the application asks for
-  them, and where they are encrypted at rest; the environment stays supported
-  so a deployment can keep them out of the database.
-  """
+  @doc "The API credentials: Settings first (encrypted), then the environment."
   def credentials do
     organization = Settings.get_organization()
 
@@ -143,10 +117,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   end
 
   @doc """
-  Whether simulated links are allowed.
-
-  On in development and test, off in production unless `RAZORPAY_SANDBOX` says
-  otherwise — a demo environment is a legitimate reason to want them.
+  Whether simulated links are allowed: on in dev and test, in prod only via `RAZORPAY_SANDBOX`.
   """
   def sandbox? do
     case System.get_env("RAZORPAY_SANDBOX") do

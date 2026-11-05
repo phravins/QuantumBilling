@@ -1,10 +1,7 @@
 defmodule QuantumBilling.EInvoiceTest do
   @moduledoc """
-  The GST e-invoice (INV-01) data export.
-
-  Assertions are made against the re-parsed tree rather than the string. String
-  matching on generated XML passes just as happily for malformed output, which is
-  the one failure that matters here — a file an accountant cannot open.
+  The GST e-invoice (INV-01) export. Asserts on the re-parsed tree, so
+  malformed XML fails.
   """
   use QuantumBilling.DataCase, async: false
 

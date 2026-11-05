@@ -1,15 +1,8 @@
 import Config
 
-# config/runtime.exs is executed for all environments, including
-# during releases. It is executed after compilation and before the
-# system starts, so it is typically used to load production configuration
-# and secrets from environment variables or elsewhere. Do not define
-# any compile-time configuration in here, as it won't be applied.
-# The block below contains prod specific runtime configuration.
+# Runs at boot in every environment, including releases. Prod settings come from the environment.
 
-# ## Local secrets (.env)
-#
-# Loads .env if present. A real environment variable always wins over the file.
+# Loads .env if present; real environment variables win.
 env_file = Path.expand("../.env", __DIR__)
 
 if File.exists?(env_file) do
@@ -161,15 +154,7 @@ if (smtp_host = System.get_env("SMTP_HOST")) && config_env() != :test do
     retries: 0
 end
 
-# ## Using releases
-#
-# If you use `mix release`, you need to explicitly enable the server
-# by passing the PHX_SERVER=true when you start it:
-#
-#     PHX_SERVER=true bin/quantum_billing start
-#
-# Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
-# script that automatically sets the env var above.
+# Releases need PHX_SERVER=true to start the web server.
 if System.get_env("PHX_SERVER") do
   config :quantum_billing, QuantumBillingWeb.Endpoint, server: true
 end
@@ -199,12 +184,9 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
-  # TLS to PostgreSQL. `true`/`verify`: encrypted, with the server certificate
-  # and hostname checked against the system CAs, or against
-  # DATABASE_SSL_CACERTFILE for a private CA (as most managed databases use).
-  # Off by default so an existing deployment whose database has no TLS still
-  # boots — but a database on another host should never be reached in clear:
-  # the connection carries its password and every business's books.
+  # TLS to PostgreSQL. `true`/`verify` checks the certificate and hostname against
+  # the system CAs or DATABASE_SSL_CACERTFILE. Off by default for databases without
+  # TLS, but a remote database should never be reached in clear.
   database_ssl =
     case String.downcase(System.get_env("DATABASE_SSL", "false")) do
       ssl when ssl in ~w(true verify 1) ->
@@ -232,9 +214,7 @@ if config_env() == :prod do
   config :quantum_billing, QuantumBilling.Repo,
     url: database_url,
     ssl: database_ssl,
-    # Web requests and Oban jobs share this pool, and the queues in config.exs
-    # can run 32 jobs at once. Postgres must allow POOL_SIZE × app servers
-    # connections (its default max_connections is 100).
+    # Shared by web requests and Oban (up to 32 jobs). Postgres must allow POOL_SIZE × app servers connections.
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "20"),
     socket_options: maybe_ipv6,
     # Fail fast when the pool is overloaded rather than queueing for ever.
@@ -254,10 +234,7 @@ if config_env() == :prod do
   config :quantum_billing, QuantumBillingWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
+      # Binds all IPv4 and IPv6 interfaces; use {0, 0, 0, 0, 0, 0, 0, 1} for local only.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ]
 end

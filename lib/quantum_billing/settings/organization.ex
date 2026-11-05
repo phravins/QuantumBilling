@@ -1,10 +1,7 @@
 defmodule QuantumBilling.Settings.Organization do
   @moduledoc """
-  The organisation's settings — one row holding the whole configuration.
-
-  There is a changeset per section rather than one for the schema, because the
-  Settings page saves a single panel at a time: a `general_changeset/2` must not
-  reject a save because the invoice terms are blank on a different panel.
+  The organisation's settings, one row. Each Settings panel has its own
+  changeset, so saving one panel isn't blocked by another's fields.
   """
   use Ecto.Schema
 
@@ -97,11 +94,8 @@ defmodule QuantumBilling.Settings.Organization do
     field :webhook_url, :string
     field :webhook_secret, Encrypted.Secret, redact: true
 
-    # Security Settings
-    # The sign-in rules are the installation's, kept in
-    # `QuantumBilling.InstallationSettings`. They stay here, unstored, so the
-    # Security section's one form edits them beside the audit retention, which
-    # is this business's own. `QuantumBilling.Settings` loads and saves them.
+    # Security: the sign-in rules belong to `InstallationSettings` and are virtual
+    # here so one form edits them beside this business's audit retention.
     field :allowed_ips, :string, virtual: true
     field :session_timeout_minutes, :integer, default: 60, virtual: true
     field :enforce_2fa, :boolean, default: false, virtual: true
@@ -143,20 +137,13 @@ defmodule QuantumBilling.Settings.Organization do
 
   @smtp ~w(smtp_host smtp_port smtp_username smtp_password smtp_ssl smtp_from_email smtp_from_name)a
 
-  # `webhook_url` and `webhook_secret` are no longer set here: outgoing webhooks
-  # have their own endpoints (Settings › Webhooks). The columns stay, read once
-  # by the migration that carried them over.
+  # `webhook_url` and `webhook_secret` are legacy; webhooks have their own endpoints now.
   @integrations ~w(upi_vpa upi_payee_name razorpay_key_id razorpay_key_secret irp_username
                    irp_password irp_client_id)a
 
   @security ~w(allowed_ips session_timeout_minutes enforce_2fa audit_retention_days)a
 
-  @doc """
-  Builds the changeset for one section.
-
-  Dispatching by section keeps a panel's save from being blocked by a field it
-  does not show.
-  """
+  @doc "The changeset for one Settings section."
   def changeset(organization, attrs, section)
 
   def changeset(organization, attrs, :general) do
@@ -268,24 +255,11 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_allowed_ips()
   end
 
+  # Credentials for other systems: never rendered back into the settings page.
   @write_only ~w(smtp_password razorpay_key_secret irp_password webhook_secret)a
 
   @doc """
-  The fields that are never sent back to the browser.
-
-  These are credentials for other systems. The settings form is write-only for
-  them: a `password` input still renders its value into the HTML, so showing
-  the stored password would publish it in the page source of every settings
-  load — to a shoulder, a screen share, a cached page, a browser extension.
-  """
-  def secret_fields, do: @write_only
-
-  @doc """
-  The organisation with its stored credentials blanked out, for rendering.
-
-  Saving is unaffected: a blank secret in a submitted form means "leave it
-  alone" (see `keep_stored_secrets/1`), so a panel can be saved without
-  retyping credentials that were never displayed.
+  The organisation with stored secrets blanked for display. A blank secret on save keeps the stored one.
   """
   def scrub_secrets(%__MODULE__{} = organization) do
     Enum.reduce(@write_only, organization, &Map.put(&2, &1, nil))

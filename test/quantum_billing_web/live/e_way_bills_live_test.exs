@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.EWayBillsLiveTest do
   @moduledoc """
-  The e-way bill list: what it shows, what it lets you do to a bill, and the
-  two things it could not do at all while a bill was eight columns on an
-  invoice — cancel one, and record a change of vehicle.
-
-  Bills here are raised through `EWayBills.generate_e_way_bill/2` rather than
-  inserted, so the number, the validity and the audit trail are the real ones.
+  The e-way bill list: display, cancellation and vehicle changes. Bills are made
+  with `EWayBills.generate_e_way_bill/2`, so they are real.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

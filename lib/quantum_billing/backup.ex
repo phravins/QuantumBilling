@@ -2,45 +2,11 @@ defmodule QuantumBilling.Backup do
   @moduledoc """
   Exports the business data as JSON, and restores it.
 
-  ## What was wrong with the previous pair
-
-  The export handed Ecto structs to `Jason.encode!/1`, which raises on
-  `__meta__` — so the download button returned a 500 every time and no backup
-  had ever been produced. Once the encrypted credential columns arrived it
-  would also have written the SMTP password and API secrets into a plaintext
-  file that gets emailed around.
-
-  The restore was worse. It deleted invoices, line items, templates, recurring
-  profiles, credit notes and the audit trail, and then re-inserted only the
-  clients and a handful of settings fields. Restoring a backup destroyed the
-  invoices it was supposed to bring back.
-
-  ## What it does now
-
-  Export walks each table and writes explicit field maps — no structs, no
-  `__meta__`, no associations. Credentials are deliberately omitted: a backup
-  is a file people copy around, and a mail password does not belong in one.
-  They are re-entered in Settings after a restore, which the file says.
-
-  Restore replaces the business tables inside a single transaction, in an order
-  the foreign keys allow, and returns what it wrote. Anything it cannot insert
-  aborts the whole thing, so a half-restored database is not a state this can
-  produce. Users, sessions and two-factor enrolments are never touched: they
-  are how you are signed in while restoring.
-
-  ## Both directions stream
-
-  At fifty thousand invoices the previous export built a hundred-megabyte
-  string in memory and took half a minute before the first byte reached the
-  browser — long enough for the request to time out with nothing downloaded.
-  `stream_json/1` emits the file table by table, row by row, from one
-  transaction: constant memory, a consistent snapshot, and bytes moving
-  immediately.
-
-  Restore inserts in batches for a harder reason: `INSERT` takes at most 65,535
-  parameters, so a single `insert_all` of fifty thousand invoices is not slow —
-  it is rejected outright, and the restore fails at exactly the size where it
-  matters.
+  Export writes explicit field maps per table and leaves out credentials (they
+  are re-entered after a restore). It streams from one transaction, so the file
+  is a consistent snapshot. Restore replaces the business tables in one
+  transaction, in foreign-key order and in batches. Users and sessions are never
+  touched.
   """
 
   import Ecto.Query, warn: false
@@ -75,8 +41,7 @@ defmodule QuantumBilling.Backup do
     "credit_notes" => ~w(subtotal tax_total grand_total)
   }
 
-  # Credentials are excluded: encrypted columns decrypt on load. So are the
-  # sign-in rules, which belong to the installation rather than this business.
+  # Credentials are excluded, and so are sign-in rules: they belong to the installation.
   @organization_fields ~w(company_name trade_name address city pincode phone email gstin pan
                           state currency financial_year timezone date_format invoice_prefix
                           invoice_next_number invoice_number_padding invoice_due_days
@@ -127,9 +92,8 @@ defmodule QuantumBilling.Backup do
 
   @audit_fields ~w(id user_id action resource_type resource_id details ip_address inserted_at)a
 
-  # No author: the file may be restored on an installation without that user.
-  # For the same reason private tasks are not exported at all (see `exported/1`)
-  # and nor is "email me": both mean one particular person.
+  # No author: the file may be restored where that user doesn't exist. Private
+  # tasks and "email me" are skipped for the same reason.
   @compliance_task_fields ~w(id title notes category custom_category due_date kind status
                              completed_at remind_days_before remind_at repeat reminded_at
                              inserted_at)a
@@ -154,12 +118,7 @@ defmodule QuantumBilling.Backup do
 
   @stream_rows 500
 
-  @doc """
-  The whole business dataset as a JSON string.
-
-  Convenient, and fine for a small installation — but it holds the entire file
-  in memory, so anything serving a download should use `stream_json/1`.
-  """
+  @doc "The whole backup as a JSON string. Holds it all in memory; downloads use `stream_json/1`."
   def export_json do
     {:ok, iodata} = stream_json(fn chunk, acc -> [acc | chunk] end, [])
 
@@ -167,10 +126,7 @@ defmodule QuantumBilling.Backup do
   end
 
   @doc """
-  Streams the backup as JSON, folding each chunk into `acc` with `fun`.
-
-  Runs inside one transaction, so the file is a consistent snapshot rather than
-  seven tables read at seven different moments.
+  Streams the backup as JSON, folding each chunk into `acc` with `fun`, inside one transaction.
   """
   def stream_json(fun, acc) when is_function(fun, 2) do
     Repo.transaction(
@@ -202,8 +158,6 @@ defmodule QuantumBilling.Backup do
     )
   end
 
-  # A private task is one person's; a business backup restored without that
-  # person would show it to everyone.
   defp exported(ComplianceTask), do: where(ComplianceTask, [t], not t.private)
   defp exported(schema), do: schema
 
@@ -244,10 +198,7 @@ defmodule QuantumBilling.Backup do
   end
 
   @doc """
-  Replaces the business data with the contents of `json_string`.
-
-  Returns `{:ok, counts}` or `{:error, message}`. Everything happens in one
-  transaction: a backup that fails halfway leaves the database as it was.
+  Replaces the business data with `json_string` in one transaction: `{:ok, counts}` or `{:error, message}`.
   """
   def restore_json(json_string) when is_binary(json_string) do
     with {:ok, data} <- decode(json_string),
@@ -298,8 +249,7 @@ defmodule QuantumBilling.Backup do
 
   def restore_json(_not_a_string), do: {:error, "No backup file was provided."}
 
-  # An asset row is a claim on an uploaded file, so only well-formed ones are
-  # restored; anything else in the file is dropped rather than failing it.
+  # Only well-formed asset rows are restored; others are dropped.
   defp keep_valid_assets(%{"design_assets" => rows} = data) when is_list(rows) do
     valid =
       Enum.filter(rows, fn
@@ -490,9 +440,7 @@ defmodule QuantumBilling.Backup do
     Repo.rollback("#{schema} expected an object per row, got #{inspect(other)}.")
   end
 
-  # Backups written before the portal mode was recorded: the same rule as the
-  # migration that added it. Bills become demo; a simulated IRN is signed
-  # MOCK_SIGNED_JWT_.
+  # Older backups without a portal mode: bills become demo, as in the migration that added it.
   defp fill_portal_mode(EWayBill, %{portal_mode: nil} = row), do: %{row | portal_mode: "demo"}
 
   defp fill_portal_mode(Invoice, %{irn_mode: nil, irn: irn} = row) when is_binary(irn) do

@@ -1,34 +1,13 @@
 defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   @moduledoc """
-  Applies the installation's security policy to every browser request:
+  Applies the installation's security policy to browser requests:
 
-    * the IP allowlist, if one is set;
-    * the inactivity timeout on a signed-in session;
-    * mandatory two-factor enrolment — for everyone when the installation
-      requires it, and always for anyone who owns a business: an owner can
-      hand out accounts, issue API keys and export everything, so their
-      password alone must not be enough. (`:require_owner_2fa`, on unless
-      configured off.)
+    * the IP allowlist, using `ClientIP` (so `x-forwarded-for` can't spoof it)
+    * the inactivity timeout, also checked on LiveView mount in `UserAuth`
+    * mandatory 2FA: for everyone if enforced, and for business owners unless
+      `:require_owner_2fa` is off
 
-  All three read from `installation_settings`, so they are policy the owners
-  set rather than constants in the code. They belong to the installation, not to
-  any one business: they guard the sign-in page, which is reached before a
-  business is chosen, and one person works across several firms with one login.
-
-  Two details matter more than they look:
-
-  **Where the client's address comes from.** `QuantumBillingWeb.ClientIP`
-  decides, and it ignores `x-forwarded-for` unless the connection arrives from
-  a declared proxy. An allowlist that believes that header is not an allowlist
-  — the header is written by whoever sends the request.
-
-  **What the timeout measures.** The clock advances on requests that reach this
-  plug — page loads and form posts — and is *checked* again whenever a
-  LiveView mounts, in `QuantumBillingWeb.UserAuth.on_mount/4`. A LiveView
-  cannot write to the session cookie, so time spent inside one does not push
-  the window forward; what the mount check buys is that a tab left open for
-  days is signed out when it reconnects, instead of waiting for the next full
-  page load to notice.
+  Settings come from `installation_settings`, not from any one business.
   """
 
   import Plug.Conn
@@ -152,9 +131,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
       QuantumBilling.Businesses.owns_any?(user)
   end
 
-  # Confirmed, not merely started: opening the enrolment screen stores a secret
-  # before any code has been checked, and counting that would let anyone meet
-  # the requirement by starting enrolment and walking away.
+  # Only confirmed 2FA counts; starting enrolment stores a secret before any code is checked.
   defp enrolled?(user), do: QuantumBilling.Accounts.TwoFactor.enabled?(user)
 
   defp exempt_path?(path) do

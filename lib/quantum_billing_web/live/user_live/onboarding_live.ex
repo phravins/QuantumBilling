@@ -1,21 +1,10 @@
 defmodule QuantumBillingWeb.OnboardingLive do
   @moduledoc """
-  The screens a user sees once, on their first sign-in after this was added:
-  a welcome, then "About you" (name, job title, phone, bio; the sign-in email
-  shown but changed in Account settings), then "Your organisation", then a
-  finish.
+  First sign-in onboarding: welcome, about you, your organisation, finish.
 
-  Every account sees them once, old ones included, prefilled from what they
-  already have; "Skip for now" on any step ends them just the same.
-  `QuantumBillingWeb.UserAuth` sends a user here from sign-in and from every
-  business page until `onboarded_at` is set, which only
-  `QuantumBilling.Accounts.complete_onboarding/1` does.
-
-  The organisation step edits the company the user is working in, or the only
-  one they belong to. Owners edit it through the General settings' own
-  validation and audit, and the business takes the same name; staff see it
-  read-only. Someone in several companies with none chosen skips the step:
-  which company would it be?
+  Shown once to every account, prefilled and skippable. `UserAuth` redirects
+  here until `Accounts.complete_onboarding/1` sets `onboarded_at`. Owners edit
+  the current (or only) business; staff see it read-only.
   """
   use QuantumBillingWeb, :live_view
 

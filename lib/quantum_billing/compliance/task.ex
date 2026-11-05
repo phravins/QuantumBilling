@@ -1,23 +1,14 @@
 defmodule QuantumBilling.Compliance.Task do
   @moduledoc """
-  Something a person added to the Compliance page by hand.
+  A task added by hand to the Compliance page (statutory returns are generated, not stored).
 
-  Statutory returns are generated from the rules and never stored, so anything
-  they do not cover, such as a licence renewal or a note to chase the accountant,
-  lives here instead.
+  `kind`, `status` and `created_by_id` are set in code, never from a form.
 
-  `kind`, `status` and `created_by_id` are set in code, never taken from a form.
-
-  ## The reminder's own options
-
-    * `category` `"custom"` with `custom_category` — a label of the person's own
-      (Rent, Insurance, Trade licence), shown on the row and as a filter tab
-    * `repeat` — marking a repeating task done adds the next one; see
-      `QuantumBilling.Compliance.complete_task/2`
-    * `private` — "Only me": the task and its reminder are its author's alone
-    * `remind_at` — the time of day, in the organisation's timezone, that the
-      reminder goes out on its day; nil means first thing that morning
-    * `email_reminder` — also email the reminder to its author
+    * `category` `"custom"` with `custom_category` - the person's own label, also a filter tab
+    * `repeat` - completing it adds the next one (`Compliance.complete_task/2`)
+    * `private` - visible to its author only
+    * `remind_at` - time of day in the organisation's timezone; nil means morning
+    * `email_reminder` - also email the author
   """
   use Ecto.Schema
 

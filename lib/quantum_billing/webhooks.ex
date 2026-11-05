@@ -2,40 +2,10 @@ defmodule QuantumBilling.Webhooks do
   @moduledoc """
   Webhooks in both directions.
 
-  ## Incoming
-
-  `claim/3` is how a handler takes ownership of an event exactly once. It
-  inserts the event row and reports whether this caller is the one that got it
-  in: a redelivery — or two workers racing on the same event — loses the insert
-  and is told the event is a duplicate, so the side effects behind it (marking
-  an invoice paid, emailing a receipt) happen once no matter how many times the
-  provider sends it.
-
-  The uniqueness lives in the database rather than in a check-then-insert,
-  because check-then-insert is not a claim: two processes can both find nothing
-  and both proceed.
-
-  ## Outgoing
-
-  `publish/3` announces that something happened to a record. For every enabled
-  endpoint of the current business subscribed to that event, it records a
-  delivery — with one event id shared by all of them — and queues a job to send
-  it, in one transaction. Delivery is a job, so an endpoint being down slows
-  nothing here and is retried rather than lost.
-
-  Events are thin: `{id, type, created_at, data: {object, id}}`. The receiver
-  fetches the record through the API, with a key whose scopes decide what it
-  may see — so a webhook never carries more than the API would hand the same
-  integration, and the two cannot drift apart.
-
-  ### Signatures
-
-  Each attempt is signed with the endpoint's secret over `"<timestamp>.<body>"`
-  and sent as `x-quantumbilling-signature: t=<timestamp>,v1=<hex>`. The
-  timestamp is part of what is signed, so a captured delivery cannot be
-  replayed later with a fresh one; receivers should refuse anything more than
-  five minutes old and drop event ids they have already handled. While a
-  rotated secret is still in its grace period, both signatures are sent.
+  Incoming: `claim/3` inserts the event row, so each event is processed once.
+  Outgoing: `publish/3` records a delivery per subscribed endpoint and queues
+  a job. Events are thin (`{id, type, created_at, data: {object, id}}`) and
+  signed as `x-quantumbilling-signature: t=<ts>,v1=<hex>` over `"<ts>.<body>"`.
   """
 
   import Ecto.Query, warn: false
@@ -65,17 +35,10 @@ defmodule QuantumBilling.Webhooks do
   # A rotated-out secret keeps signing alongside the new one for this long.
   @rotation_grace_seconds 24 * 60 * 60
 
-  # Deliveries that end in failure, one after another, before an endpoint is
-  # switched off. An endpoint that has been down this long is not coming back
-  # by itself, and retrying it costs every other job in the queue.
+  # Consecutive failed deliveries before an endpoint is switched off.
   @failure_limit 10
 
-  @doc """
-  Claims an incoming event.
-
-  Returns `{:ok, event}` for the caller that should process it, or
-  `{:duplicate, event}` when it has already been recorded.
-  """
+  @doc "Claims an incoming event: `{:ok, event}` to process it, or `{:duplicate, event}`."
   def claim(provider, event_id, attrs \\ %{}) do
     changeset =
       WebhookEvent.changeset(%WebhookEvent{}, %{
@@ -111,24 +74,15 @@ defmodule QuantumBilling.Webhooks do
     Repo.get_by(WebhookEvent, provider: to_string(provider), event_id: to_string(event_id))
   end
 
-  @doc "The most recently received events, newest first."
-  def list_recent_events(limit \\ 20) do
-    Repo.all(from e in WebhookEvent, order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
-  end
-
-  ## Outgoing: events
+  # Outgoing: events
 
   @doc "Every event type an endpoint can subscribe to, sorted."
   def event_types, do: @event_types |> Map.keys() |> Enum.sort()
 
   @doc """
-  Announces that `event_type` happened to the record `id`, to every enabled
-  endpoint of the current business subscribed to it.
+  Announces `event_type` for record `id` to every subscribed, enabled endpoint.
 
-  `legacy_payload` is what an endpoint in the `legacy` format receives as its
-  `payload`; thin endpoints never see it. Returns `{:ok, event_id}`, or
-  `{:ok, nil}` when nobody is subscribed. Never raises for a delivery problem:
-  a write must not fail because announcing it did.
+  Returns `{:ok, event_id}` or `{:ok, nil}`. Never raises for delivery problems.
   """
   def publish(event_type, id, legacy_payload \\ nil) when is_map_key(@event_types, event_type) do
     endpoints = subscribed_endpoints(event_type)
@@ -158,11 +112,7 @@ defmodule QuantumBilling.Webhooks do
     end
   end
 
-  @doc """
-  Sends a `webhook.test` event to `endpoint` alone, whatever it subscribes to
-  and even while disabled — it is how an owner checks a fix before switching
-  the endpoint back on.
-  """
+  @doc "Sends a `webhook.test` event to `endpoint` alone, even while disabled."
   def send_test(%Endpoint{} = endpoint) do
     event_id = new_event_id()
     now = DateTime.utc_now(:second)
@@ -226,7 +176,7 @@ defmodule QuantumBilling.Webhooks do
   defp new_event_id,
     do: "evt_" <> Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
 
-  ## Outgoing: endpoints
+  # Outgoing: endpoints
 
   @doc "Every endpoint of the current business, oldest first."
   def list_endpoints, do: Repo.all(from e in Endpoint, order_by: [asc: e.id])
@@ -243,12 +193,7 @@ defmodule QuantumBilling.Webhooks do
   def change_endpoint(%Endpoint{} = endpoint \\ %Endpoint{}, attrs \\ %{}),
     do: Endpoint.changeset(endpoint, attrs, event_types())
 
-  @doc """
-  Adds an endpoint, returning `{:ok, endpoint, secret}`.
-
-  The secret is generated here and returned once, to be shown to the owner;
-  only its encrypted form is kept.
-  """
+  @doc "Adds an endpoint and returns `{:ok, endpoint, secret}`. The secret is shown once."
   def create_endpoint(attrs, %User{} = owner) do
     secret = new_secret()
 
@@ -265,19 +210,7 @@ defmodule QuantumBilling.Webhooks do
     end
   end
 
-  @doc "Changes an endpoint's URL, events or description."
-  def update_endpoint(%Endpoint{} = endpoint, attrs, %User{} = owner) do
-    with {:ok, endpoint} <-
-           endpoint |> Endpoint.changeset(attrs, event_types()) |> Repo.update() do
-      audit(:webhook_endpoint_updated, endpoint, owner)
-      {:ok, endpoint}
-    end
-  end
-
-  @doc """
-  Switches an endpoint on or off. Switching on clears the failure count and
-  the reason it was switched off.
-  """
+  @doc "Switches an endpoint on or off. Switching on clears the failure state."
   def set_enabled(%Endpoint{} = endpoint, enabled?, %User{} = owner) when is_boolean(enabled?) do
     changes =
       if enabled?,
@@ -296,10 +229,9 @@ defmodule QuantumBilling.Webhooks do
   end
 
   @doc """
-  Issues a new secret, returning `{:ok, endpoint, secret}`. The old one keeps
-  signing alongside it for a day, so the receiver can be updated in between.
-  A legacy endpoint moves to the thin format here: its receiver is being
-  changed anyway.
+  Issues a new secret and returns `{:ok, endpoint, secret}`.
+
+  The old one keeps signing for a day. Legacy endpoints move to the thin format.
   """
   def rotate_secret(%Endpoint{} = endpoint, %User{} = owner) do
     secret = new_secret()
@@ -352,7 +284,7 @@ defmodule QuantumBilling.Webhooks do
     if summary, do: QuantumBilling.SecurityAlerts.admin_event(Repo.business(), owner, summary)
   end
 
-  ## Outgoing: deliveries
+  # Outgoing: deliveries
 
   @doc "The newest deliveries to `endpoint`, newest first."
   def list_deliveries(%Endpoint{id: endpoint_id}, limit \\ 50) do
@@ -372,10 +304,7 @@ defmodule QuantumBilling.Webhooks do
     end
   end
 
-  @doc """
-  Sends a delivery again, with the same event id and body, so a receiver that
-  did get it the first time can recognise the repeat.
-  """
+  @doc "Resends a delivery with the same event id and body."
   def resend(%Delivery{} = delivery) do
     Multi.new()
     |> Multi.update(:delivery, Ecto.Changeset.change(delivery, status: "pending"))
@@ -387,10 +316,7 @@ defmodule QuantumBilling.Webhooks do
     end
   end
 
-  @doc """
-  The signature header for one attempt at `body`: `t=<timestamp>,v1=<hex>`,
-  with a second `v1` while a rotated-out secret is still in its grace period.
-  """
+  @doc "The signature header for `body`, with a second `v1` during a rotation grace period."
   def signature_header(%Endpoint{} = endpoint, body, timestamp) when is_integer(timestamp) do
     signed = "#{timestamp}.#{body}"
 
@@ -400,11 +326,7 @@ defmodule QuantumBilling.Webhooks do
     |> then(&Enum.join(["t=#{timestamp}" | &1], ","))
   end
 
-  @doc """
-  Whether `header` is a valid signature of `body` under `secret`, made within
-  `tolerance_seconds` of `now`. What a receiver does; here for the tests and
-  as the reference the docs describe.
-  """
+  @doc "Whether `header` validly signs `body` within `tolerance_seconds`. The receiver's check."
   def verify_signature(
         header,
         body,
@@ -474,7 +396,7 @@ defmodule QuantumBilling.Webhooks do
   end
 
   @doc false
-  # The endpoint said it no longer exists (410 Gone): stop sending at once.
+  # 410 Gone: stop sending at once.
   def disable_gone(%Endpoint{} = endpoint) do
     disable(endpoint, "The endpoint answered 410 Gone")
   end
@@ -526,24 +448,12 @@ defmodule QuantumBilling.Webhooks do
 
   defp now, do: DateTime.utc_now(:second)
 
-  @doc """
-  The signature an endpoint uses to tell a real delivery from a forged one.
-
-  HMAC-SHA256 over the exact bytes that are sent, keyed with the shared secret.
-  The receiver recomputes it over the raw body: anything that re-encodes the
-  JSON first is comparing a signature to a different document.
-  """
+  @doc "HMAC-SHA256 over the exact bytes sent, keyed with the shared secret."
   def sign(body, secret) when is_binary(body) and is_binary(secret) do
     "sha256=" <> Base.encode16(:crypto.mac(:hmac, :sha256, secret, body), case: :lower)
   end
 
-  @doc """
-  Whether `signature` is the signature of `body` under `secret`.
-
-  Compared in constant time: a byte-by-byte comparison that returns early
-  leaks, through timing, how much of a guessed signature was correct, which is
-  enough to construct one.
-  """
+  @doc "Whether `signature` signs `body` under `secret`, compared in constant time."
   def valid_signature?(body, signature, secret)
       when is_binary(body) and is_binary(signature) and is_binary(secret) do
     Plug.Crypto.secure_compare(sign(body, secret), signature)

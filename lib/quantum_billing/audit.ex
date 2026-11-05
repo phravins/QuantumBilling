@@ -67,20 +67,11 @@ defmodule QuantumBilling.Audit do
   end
 
   @doc """
-  One page of the audit trail, filtered and counted by the database.
+  One page of the audit trail, filtered and counted in the database.
 
   Returns `%{rows:, total:, page:, per_page:, total_pages:}`.
 
-  The trail is the fastest-growing table in the application — one row per
-  action, for ever, and nobody deletes them by hand. Reading two hundred rows
-  and filtering them in Elixir both missed older matches and got slower every
-  month; this reads only the page being looked at.
-
-  ## Options
-
-    * `:action` — exact action name, or `""` for all
-    * `:resource_type` — exact resource type, or `""` for all
-    * `:page` / `:per_page`
+  Options: `:action` and `:resource_type` (exact, `""` for all), `:page`, `:per_page`.
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, 50) |> clamp(1, 200)
@@ -105,12 +96,7 @@ defmodule QuantumBilling.Audit do
     %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
   end
 
-  @doc """
-  The distinct actions present in the trail, for a filter control.
-
-  Read from the data rather than hardcoded, so an action added anywhere in the
-  application is filterable without anybody remembering to add it to a list.
-  """
+  @doc "The distinct actions in the trail, for the filter control."
   def actions do
     Repo.all(from l in AuditLog, distinct: true, select: l.action, order_by: l.action)
   end

@@ -1,18 +1,9 @@
 defmodule QuantumBilling.Workers.EInvoiceWorker do
   @moduledoc """
-  Registers an invoice with the Invoice Registration Portal.
+  Registers an invoice with the IRP in the background.
 
-  The IRP is a government service reached over the public internet, and it is
-  slow and occasionally unavailable. Doing this inside the click that asked for
-  it meant a LiveView waiting on it, and a failure that left the invoice marked
-  `"E-Invoice Failed"` with nothing that would ever try again.
-
-  Attempts are spread over hours rather than minutes: an IRP outage is measured
-  in hours, and hammering it during one is both useless and rude.
-
-  Uniqueness is enforced on the invoice: an impatient second click, or a
-  retried request, must not attempt to register the same invoice twice. A
-  duplicate registration is a compliance problem, not a harmless repeat.
+  Retries are spread over hours, since IRP outages last hours. Jobs are unique
+  per invoice, because a duplicate registration is a compliance problem.
   """
   use QuantumBilling.Worker,
     queue: :default,

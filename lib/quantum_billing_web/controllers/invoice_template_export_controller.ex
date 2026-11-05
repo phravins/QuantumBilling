@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.InvoiceTemplateExportController do
   @moduledoc """
-  Downloads an invoice design as its layout XML.
-
-  The file is the same XML the design pad saves, so it can be imported again
-  through Settings › Customization › Import — into this company or another.
-  The template is looked up inside the current business's schema, so another
-  company's id is simply not found.
+  Downloads a design's layout XML, which can be imported again elsewhere.
+  Looked up in the current business, so other companies' ids are not found.
   """
   use QuantumBillingWeb, :controller
 

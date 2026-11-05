@@ -1,25 +1,15 @@
 defmodule QuantumBilling.RateLimiter do
   @moduledoc """
-  Counts attempts per key in fixed windows, and says when a key is over its
-  limit.
+  Fixed-window rate limiting per key, with a configurable backend:
 
-  The work is done by a backend chosen in configuration:
-
-    * `QuantumBilling.RateLimiter.Postgres` — the default. One row per key in
-      `public.rate_limits`, so every server counts against the same numbers: a
-      password-guessing script spread across nodes is limited as one, and an
-      API key's allowance does not grow with the cluster.
-    * `QuantumBilling.RateLimiter.ETS` — in memory, per node. The test suite
-      uses it; see that module for why.
+    * `RateLimiter.Postgres` (default) - shared across nodes, in `public.rate_limits`
+    * `RateLimiter.ETS` - per node, in memory; used by tests
 
       config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
   """
 
   @doc """
-  Registers a hit for `key`.
-
-  `{:ok, remaining}` within `limit`, `{:error, :rate_limited, retry_after_seconds}`
-  over it.
+  Registers a hit for `key`: `{:ok, remaining}` or `{:error, :rate_limited, retry_after_seconds}`.
   """
   @callback hit(key :: term(), limit :: pos_integer(), window_seconds :: pos_integer()) ::
               {:ok, non_neg_integer()} | {:error, :rate_limited, pos_integer()}

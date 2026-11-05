@@ -1,20 +1,10 @@
 defmodule QuantumBillingWeb.EWayBillNewLive do
   @moduledoc """
-  The "Generate New E-Way Bill" form: five numbered sections on the left, a
-  summary panel on the right that mirrors the form as it is filled in.
+  The "Generate New E-Way Bill" form, with a live summary panel.
 
-  ## It issues a real bill now
-
-  Submitting used to validate the form, mint a random twelve-digit number into
-  a flash message and throw it away: nothing was stored, no document existed,
-  and the number the user was congratulated with appeared nowhere on the
-  e-way bill list they were returned to.
-
-  A bill is raised against a document, so the form loads a consignment from an
-  invoice — `Invoices.awaiting_e_way_bill/1` — and submitting runs the real
-  `EWayBills.generate_e_way_bill/2`, which calls the portal, stores the number
-  and validity on that invoice and lands on the printed EWB-01. A document
-  number that matches no invoice is a form error, not a silent success.
+  The consignment comes from an invoice (`Invoices.awaiting_e_way_bill/1`).
+  Submitting calls `EWayBills.generate_e_way_bill/2` and opens the printed
+  EWB-01. An unknown document number is a form error.
   """
   use QuantumBillingWeb, :live_view
 

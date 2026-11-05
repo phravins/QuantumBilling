@@ -1,15 +1,7 @@
 defmodule QuantumBilling.EWayBills.EWayBillForm do
   @moduledoc """
-  The "Generate New E-Way Bill" form.
-
-  An `embedded_schema`, not a table: the multi-tenant Ecto schema is still
-  pending, so nothing is persisted yet. Modelling the form as a changeset
-  anyway buys per-field validation and error rendering through the standard
-  `<.input field={...}>` plumbing, and gives the future database schema a
-  shape to mirror.
-
-  Money is held as whole rupees (integers) so `QuantumBillingWeb.Format.rupees/2`
-  can render it.
+  The "Generate New E-Way Bill" form, as an embedded schema for validation
+  and `<.input>` errors. Amounts are paise.
   """
   use Ecto.Schema
 
@@ -137,10 +129,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   end
 
   @doc """
-  Builds the form changeset.
-
-  Pass `action: :validate` at the call site (or use `validate/2`) to surface
-  errors while the user is still typing.
+  Builds the form changeset. Use `validate/2` (or `action: :validate`) to show errors while typing.
   """
   def changeset(form, attrs \\ %{}) do
     form

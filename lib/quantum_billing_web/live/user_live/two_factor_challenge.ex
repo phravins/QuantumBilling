@@ -1,13 +1,9 @@
 defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
   @moduledoc """
-  The second step of signing in: the six-digit code from an authenticator app,
-  or one of the recovery codes issued at enrolment.
+  Second sign-in step: an authenticator code or a recovery code.
 
-  The form posts straight to `UserSessionController.verify_two_factor/2` rather
-  than being handled here. That keeps a single authoritative check: a recovery
-  code is single use, and verifying it both here and in the controller would
-  consume it twice. It also means the session cookie is written by a normal
-  request, which a LiveView cannot do.
+  The form posts to `UserSessionController.verify_two_factor/2`, the only
+  place the code is checked and where the session can be written.
   """
   use QuantumBillingWeb, :live_view
 

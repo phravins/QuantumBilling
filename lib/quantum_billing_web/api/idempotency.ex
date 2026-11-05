@@ -1,30 +1,13 @@
 defmodule QuantumBillingWeb.API.Idempotency do
   @moduledoc """
-  Makes an API write safe to retry.
+  Makes API writes safe to retry. Every POST needs an `Idempotency-Key` (1-255 chars).
 
-  Every POST must carry an `Idempotency-Key` header: any string the caller
-  chooses, up to 255 characters, unique per intended write. A UUID is the usual
-  choice. If the response is lost — a timeout, a dropped connection — the
-  caller sends the identical request with the same key, and gets the original
-  response back instead of a second invoice.
+    * first use: runs, and the response is stored for 24 hours
+    * same key and body: the stored response, with `idempotent-replayed: true`
+    * same key, different body: 422
+    * same key while the first is running: 409
 
-  The header is required rather than optional because the failure it prevents
-  is not cosmetic: every invoice consumes the next number in a statutory
-  series, and a duplicate cannot simply be deleted without leaving a gap that
-  has to be explained.
-
-  What happens to a key:
-
-    * first use — the write runs; its response (success or validation error)
-      is stored for 24 hours;
-    * the same key and the same body — the stored response is returned, with
-      `idempotent-replayed: true`;
-    * the same key and a different body — 422, because replaying the earlier
-      response would answer a different question;
-    * the same key while the first request is still running — 409.
-
-  A crash or a 5xx is not stored: that was not the request's fault, and the
-  caller should be able to retry it.
+  Crashes and 5xx responses are not stored, so they can be retried.
   """
 
   import Plug.Conn
@@ -111,9 +94,7 @@ defmodule QuantumBillingWeb.API.Idempotency do
     end
   end
 
-  # The method, the path and the decoded body. Decoded rather than raw, so a
-  # retry that re-serialises the same JSON with its keys in another order or
-  # different whitespace is still recognised as the same request.
+  # Compares the decoded body, so key order and whitespace don't matter.
   defp request_hash(conn) do
     payload = :erlang.term_to_binary(conn.body_params, [:deterministic])
     :crypto.hash(:sha256, [conn.method, " ", conn.request_path, "\n", payload])

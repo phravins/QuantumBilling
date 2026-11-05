@@ -1,27 +1,10 @@
 defmodule QuantumBilling.Encrypted.Cipher do
   @moduledoc """
-  The AES-256-GCM envelope shared by every encrypted Ecto type.
+  AES-256-GCM shared by the encrypted Ecto types (`Encrypted.Binary`, `Encrypted.Secret`).
 
-  One implementation, so `Encrypted.Binary` (two-factor secrets) and
-  `Encrypted.Secret` (SMTP and portal credentials) cannot drift apart in how
-  they frame, authenticate or key their ciphertext.
-
-  Stored layout, one binary:
-
-      <<iv::16-bytes, tag::16-bytes, ciphertext::binary>>
-
-  The IV is random per encryption, so the same plaintext encrypted twice
-  produces different bytes and the column leaks nothing by comparison. GCM is
-  authenticated: the tag travels with the ciphertext, so a tampered value fails
-  to decrypt rather than quietly decrypting to something else.
-
-  `aad` is the additional authenticated data and differs per type. It binds a
-  ciphertext to the purpose it was written for: an SMTP password copied into
-  the `totp_secret` column fails its tag check instead of being decrypted by a
-  type that was never meant to read it.
-
-  The key is read from application config at call time rather than at compile
-  time, so a release picks up the value its environment sets.
+  Stored as `<<iv::16-bytes, tag::16-bytes, ciphertext::binary>>` with a random
+  IV per write. `aad` differs per type, so a value copied into another
+  type's column fails to decrypt. The key is read from config at runtime.
   """
 
   @iv_bytes 16
@@ -39,13 +22,7 @@ defmodule QuantumBilling.Encrypted.Cipher do
     iv <> tag <> ciphertext
   end
 
-  @doc """
-  Decrypts a stored binary, or returns `:error`.
-
-  `:error` covers both a value that was not written by this cipher and one that
-  has been altered since — the caller cannot tell the two apart, and should not
-  need to: neither is usable.
-  """
+  @doc "Decrypts a stored binary, or `:error` if it is foreign or has been tampered with."
   def decrypt(
         <<iv::binary-size(@iv_bytes), tag::binary-size(@tag_bytes), ciphertext::binary>>,
         config_key,

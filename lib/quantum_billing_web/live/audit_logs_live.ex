@@ -1,13 +1,5 @@
 defmodule QuantumBillingWeb.AuditLogsLive do
-  @moduledoc """
-  The audit trail: an immutable record of the actions the system took, and who
-  asked for it.
-
-  Paged by the database rather than read into the socket. The trail only grows,
-  and filtering a fixed window of the newest rows in Elixir quietly hid every
-  older match — a filter that misses the event being looked for is worse than
-  no filter.
-  """
+  @moduledoc "The audit trail of actions and who took them, paged and filtered in the database."
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Audit

@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.API.V1.InvoiceController do
   @moduledoc """
-  `/api/v1/invoices`: list, fetch and create.
-
-  Reads and writes go through `QuantumBilling.Invoices` and nothing else, so
-  the Bin, numbering and every side effect of issuing an invoice (the realtime
-  update, the webhook, the notification) behave exactly as they do from the
-  screens.
+  `/api/v1/invoices`. Everything goes through `Invoices`, so the Bin, numbering
+  and side effects (broadcasts, webhooks, notifications) match the screens.
   """
   use QuantumBillingWeb, :controller
 
@@ -187,10 +183,8 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
     end)
   end
 
-  # The invoice's one status field carries both payment and e-invoice state:
-  # queueing stamps "Pending E-Invoice" and the outcome stamps again, so a
-  # cancelled invoice would be quietly un-cancelled and a paid one would stop
-  # saying Paid. Refused rather than allowed to lose that.
+  # Status holds both payment and e-invoice state, so registering a cancelled or
+  # paid invoice would overwrite it: refused.
   defp registrable(%{status: "Cancelled"}),
     do: {:conflict, :cancelled, "A cancelled invoice cannot be registered with the IRP."}
 

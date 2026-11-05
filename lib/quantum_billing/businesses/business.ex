@@ -1,10 +1,7 @@
 defmodule QuantumBilling.Businesses.Business do
   @moduledoc """
-  A firm kept on this installation: its own GSTIN, clients, invoices and
-  numbering, in a Postgres schema of its own.
-
-  The slug appears in payment links and the Razorpay webhook URL, so it is set
-  once, from the name, and never changes after.
+  A firm on this installation, with its own Postgres schema. The slug is
+  set once from the name (it is in payment links and webhook URLs).
   """
   use Ecto.Schema
 
@@ -30,13 +27,8 @@ defmodule QuantumBilling.Businesses.Business do
   end
 
   @doc """
-  Turns a name into a slug: lowercase letters, digits and single hyphens.
-
-      iex> QuantumBilling.Businesses.Business.slugify("  Acme Traders (Pune) Pvt. Ltd ")
-      "acme-traders-pune-pvt-ltd"
-
-      iex> QuantumBilling.Businesses.Business.slugify("।।")
-      "business"
+  Turns a name into a slug of lowercase letters, digits and single hyphens
+  (`"business"` if nothing is left).
   """
   def slugify(name) do
     slug =

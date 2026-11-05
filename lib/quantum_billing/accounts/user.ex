@@ -30,11 +30,7 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A changeset for the user's display details.
-
-  Deliberately permissive: these are shown, not trusted. The phone is not held
-  to `QuantumBilling.Clients.Client`'s ten-digit `+91` rule — that belongs to
-  Indian GST parties, and a user of this software may be anywhere.
+  A changeset for display details. Permissive: these are shown, not trusted, so any phone format is allowed.
   """
   def profile_changeset(user, attrs) do
     user
@@ -49,9 +45,7 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A changeset for the "About you" step of onboarding: the profile fields and
-  the bio, with a name required. `onboarded_at` is never cast; it is set by
-  `QuantumBilling.Accounts.complete_onboarding/2`.
+  A changeset for onboarding's "About you" step; name required. `onboarded_at` is never cast.
   """
   def onboarding_changeset(user, attrs) do
     user
@@ -76,15 +70,9 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A user changeset for registering or changing the email.
+  A changeset for registering or changing the email. The email must change.
 
-  It requires the email to change otherwise an error is added.
-
-  ## Options
-
-    * `:validate_unique` - Set to false if you don't want to validate the
-      uniqueness of the email, useful when displaying live validations.
-      Defaults to `true`.
+  Options: `:validate_unique` (default `true`), set `false` for live validation.
   """
   def email_changeset(user, attrs, opts \\ []) do
     user
@@ -120,13 +108,9 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A user changeset for the display name.
+  A changeset for the username.
 
-  ## Options
-
-    * `:validate_unique` - Set to false if you don't want to validate the
-      uniqueness of the username, useful when displaying live validations.
-      Defaults to `true`.
+  Options: `:validate_unique` (default `true`), set `false` for live validation.
   """
   def username_changeset(user, attrs, opts \\ []) do
     user
@@ -153,11 +137,9 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A user changeset for registering with a username, an email and a password.
+  A changeset for registering with a username, email and password.
 
-  Accepts the options of `username_changeset/3`, `email_changeset/3` and
-  `password_changeset/3`, e.g. `hash_password: false` and `validate_unique: false`
-  when the changeset backs live form validation.
+  Takes the options of `username_changeset/3`, `email_changeset/3` and `password_changeset/3`.
   """
   def registration_changeset(user, attrs, opts \\ []) do
     user
@@ -167,19 +149,10 @@ defmodule QuantumBilling.Accounts.User do
   end
 
   @doc """
-  A user changeset for changing the password.
+  A changeset for changing the password. Length is capped, since long passwords are costly to hash.
 
-  It is important to validate the length of the password, as long passwords may
-  be very expensive to hash for certain algorithms.
-
-  ## Options
-
-    * `:hash_password` - Hashes the password so it can be stored securely
-      in the database and ensures the password field is cleared to prevent
-      leaks in the logs. If password hashing is not needed and clearing the
-      password field is not desired (like when using this changeset for
-      validations on a LiveView form), this option can be set to `false`.
-      Defaults to `true`.
+  Options: `:hash_password` (default `true`) hashes and clears the plain password;
+  set `false` for live form validation.
   """
   def password_changeset(user, attrs, opts \\ []) do
     user
@@ -201,8 +174,7 @@ defmodule QuantumBilling.Accounts.User do
 
     if hash_password? && password && changeset.valid? do
       changeset
-      # Hashing could be done with `Ecto.Changeset.prepare_changes/2`, but that
-      # would keep the database transaction open longer and hurt performance.
+      # Hashed here rather than in `prepare_changes/2`, which would hold the transaction open longer.
       |> put_change(:hashed_password, Pbkdf2.hash_pwd_salt(password))
       |> delete_change(:password)
     else
@@ -218,12 +190,7 @@ defmodule QuantumBilling.Accounts.User do
     change(user, confirmed_at: now)
   end
 
-  @doc """
-  Verifies the password.
-
-  If there is no user or the user doesn't have a password, we call
-  `Pbkdf2.no_user_verify/0` to avoid timing attacks.
-  """
+  @doc "Verifies the password. With no user, `Pbkdf2.no_user_verify/0` keeps the timing the same."
   def valid_password?(%QuantumBilling.Accounts.User{hashed_password: hashed_password}, password)
       when is_binary(hashed_password) and byte_size(password) > 0 do
     Pbkdf2.verify_pass(password, hashed_password)

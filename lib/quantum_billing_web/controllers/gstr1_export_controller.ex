@@ -1,16 +1,7 @@
 defmodule QuantumBillingWeb.GSTR1ExportController do
   @moduledoc """
-  Downloads the GSTR-1 JSON for one return period.
-
-  The period comes from the query string and is validated before anything else
-  happens: it selects the invoices that go in the file, and it is interpolated
-  into the `content-disposition` header, so an unchecked value picks both the
-  contents and the name of a statutory filing.
-
-  With no period given it defaults to the month just gone, which is the one a
-  return is normally filed for. It used to default to a hardcoded `"032026"`,
-  and the page linked here without a period at all — so every download claimed
-  to be March 2026 whatever month it was.
+  Downloads the GSTR-1 JSON for one return period (`MMYYYY`), defaulting to last month.
+  The period is validated first, since it picks the invoices and the filename.
   """
   use QuantumBillingWeb, :controller
 

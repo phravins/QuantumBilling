@@ -1,17 +1,7 @@
 defmodule QuantumBillingWeb.HsnFinderLive do
   @moduledoc """
-  The HSN / SAC Code & GST Rate Finder: search a curated set of common codes by
-  keyword or by code, and see the applicable GST rate.
-
-  All data comes from `QuantumBilling.HsnFinder`, which is explicit about being
-  a curated reference of commonly searched codes rather than the full
-  government master list — a miss here should read as "not in this smaller
-  set," not as "this tool is broken," which is what the empty state says, and
-  why it names the official portals that do carry the full list.
-
-  `mount/3` seeds a default search so the page never opens blank; `render/1`
-  re-runs the active tab's search from raw `query`/`tab` state on every pass,
-  the same single-source-of-truth shape every other page in this app uses.
+  The HSN/SAC code and GST rate finder, over the curated set in `HsnFinder`.
+  The empty state says the set is partial and points to the official portals.
   """
   use QuantumBillingWeb, :live_view
 

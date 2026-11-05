@@ -1,17 +1,7 @@
 defmodule QuantumBilling.DataCase do
   @moduledoc """
-  This module defines the setup for tests requiring
-  access to the application's data layer.
-
-  You may define functions here to be used as helpers in
-  your tests.
-
-  Finally, if the test case interacts with the database,
-  we enable the SQL sandbox, so changes done to the database
-  are reverted at the end of every test. If you are using
-  PostgreSQL, you can even run database tests asynchronously
-  by setting `use QuantumBilling.DataCase, async: true`, although
-  this option is not recommended for other databases.
+  Case template for data-layer tests. Uses the SQL sandbox, so `async: true`
+  is safe.
   """
 
   use ExUnit.CaseTemplate
@@ -33,12 +23,8 @@ defmodule QuantumBilling.DataCase do
   end
 
   @doc """
-  Sets up the sandbox based on the test tags.
-
-  The test then works in business 1, the one every installation has, so code
-  under test reads and writes its tables as the application would after a user
-  has chosen it. A test about several businesses switches with
-  `QuantumBilling.Repo.with_business/2` or `put_business/1`.
+  Starts the sandbox from the test tags and selects business 1. Switch with
+  `Repo.with_business/2` or `put_business/1`.
   """
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(QuantumBilling.Repo, shared: not tags[:async])
@@ -47,12 +33,9 @@ defmodule QuantumBilling.DataCase do
   end
 
   @doc """
-  A helper that transforms changeset errors into a map of messages.
+  Changeset errors as a map of messages.
 
-      assert {:error, changeset} = Accounts.create_user(%{password: "short"})
-      assert "password is too short" in errors_on(changeset).password
       assert %{password: ["password is too short"]} = errors_on(changeset)
-
   """
   def errors_on(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->

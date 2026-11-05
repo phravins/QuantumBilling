@@ -1,18 +1,10 @@
 defmodule QuantumBillingWeb.SettingsLive.Team do
   @moduledoc """
-  Owner-only: who works in the current business, and who has been invited to.
+  Owner-only: members of the current business and pending invitations.
 
-  Registration is invite-only, so this page is the only way a second account
-  comes into existence. It exists because the alternative — open sign-up — gave
-  anyone who found the address full access to the books.
-
-  Everything here is the current business's. Inviting an address that already
-  has an account adds that person straight away — they sign in as they always
-  have and find the business in their switcher. Removing someone takes away
-  this business only; their account and their other businesses stay.
-
-  Both the route and the `on_mount` hook require an owner. The hook is what
-  actually protects this page: a plug alone does not, once the socket connects.
+  Inviting an existing account adds it at once. Removing someone removes only
+  this business. The `on_mount` hook is the real guard; a plug alone isn't
+  once the socket connects.
   """
   use QuantumBillingWeb, :live_view
 

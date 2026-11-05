@@ -1,19 +1,9 @@
 defmodule QuantumBillingWeb.UserLive.Settings do
   @moduledoc """
-  Account Settings: the signed-in user's own profile, password and 2FA.
+  Account settings: the user's profile, password, email and 2FA.
 
-  ## The re-authentication gate
-
-  This page used to carry `on_mount {UserAuth, :require_sudo_mode}`, which
-  redirected any visit more than ten minutes after sign-in straight to the login
-  screen — you could not so much as look at your own name. The gate now sits on
-  the two sensitive actions instead: changing the password or the email still
-  demands a recent sign-in, and says so, while the profile fields are freely
-  editable.
-
-  Tabs live in a query parameter rather than a path segment.
-  `/users/settings/:tab` would swallow the existing
-  `/users/settings/confirm-email/:token` route.
+  Only password and email changes need a recent sign-in. Tabs use a query
+  parameter, since `/users/settings/:tab` would clash with `confirm-email/:token`.
   """
   use QuantumBillingWeb, :live_view
 

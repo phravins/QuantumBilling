@@ -1,49 +1,13 @@
 defmodule QuantumBilling.Webhooks.UrlGuard do
   @moduledoc """
-  Decides whether this server may POST to a URL somebody typed into Settings.
+  Decides whether this server may POST to a user-supplied webhook URL (SSRF guard).
 
-  The webhook endpoint is the one address in this application that a user
-  supplies and the *server* then opens a connection to. Validation used to be
-  "is it http or https, and does it have a host" — which accepts
-  `http://169.254.169.254/latest/meta-data/`, the cloud instance metadata
-  service, along with `http://127.0.0.1:5432` and anything else inside the
-  network the application is deployed into.
-
-  That is server-side request forgery. The delivery worker discards the
-  response body, so it is blind — but a status code still distinguishes an open
-  port from a closed one, which is enough to map an internal network, and
-  plenty of internal services do something irreversible on a POST.
-
-  ## Checked twice, on purpose
-
-  `check/1` runs when the URL is saved, so a bad one is rejected in the form
-  where it can be corrected. It runs again in
-  `QuantumBilling.Workers.WebhookDispatchWorker` immediately before the
-  request, because DNS is not a constant: a name that resolved to a public
-  address at save time can resolve to `127.0.0.1` an hour later, which is the
-  whole trick behind DNS rebinding.
-
-  Redirects are refused by the worker rather than followed, since a redirect is
-  a second destination this never got to check.
-
-  ## Pinned at send time
-
-  Checking a name and then handing the URL to the HTTP client still leaves a
-  gap: the client resolves the name again when it connects, and a DNS server
-  that answers with a public address for the check and `127.0.0.1` for the
-  connection — a rebinding attack — gets the request inside. So the senders do
-  not check and then connect; they call `pin/1`, which resolves once, checks
-  every address, and returns the URL rewritten to the address that passed, with
-  the original name kept for the `Host` header, TLS SNI and certificate
-  verification. The connection then goes exactly where the check looked.
+  `check/1` runs on save and private, loopback and link-local addresses are
+  refused. At send time `pin/1` resolves once, checks every address and pins the
+  connection to it, which defeats DNS rebinding. Redirects are not followed.
   """
 
-  @doc """
-  `:ok` if this server may POST to `url`, `{:error, reason}` otherwise.
-
-  `reason` is a sentence for a form error, not a symbol: the person who typed
-  the URL is the one who has to fix it.
-  """
+  @doc "`:ok` if this server may POST to `url`, or `{:error, reason}` with a form-ready sentence."
   def check(url) when is_binary(url) do
     with {:ok, %URI{scheme: scheme, host: host, port: port}} <- parse(url),
          :ok <- check_scheme(scheme),
@@ -57,14 +21,11 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   def check(_url), do: {:error, "must be a full http:// or https:// URL"}
 
   @doc """
-  Resolves `url` once and fixes the connection to an address that passed.
+  Resolves `url` once and pins the connection to an address that passed.
 
-  Returns `{:ok, pinned_url, req_options}`: the URL with its host replaced by
-  the checked address, and the `Req` options that keep the original name for
-  the `Host` header, SNI and certificate verification. Pass both to `Req`.
-
-  Stricter than `check/1` about one thing: a name that does not resolve is
-  refused here, since there is nothing to pin it to.
+  Returns `{:ok, pinned_url, req_options}`; the options keep the original name
+  for `Host`, SNI and certificate checks. Unlike `check/1`, an unresolvable name
+  is refused.
   """
   def pin(url) when is_binary(url) do
     with {:ok, %URI{scheme: scheme, host: host, port: port} = uri} <- parse(url),
@@ -80,8 +41,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
 
   def pin(_url), do: {:error, "must be a full http:// or https:// URL"}
 
-  # IPv4 first: an address that passed is an address that passed, and IPv4 is
-  # the one most hosts actually serve on.
+  # IPv4 first: most hosts serve on it.
   defp first_address([]), do: {:error, "could not be resolved"}
 
   defp first_address(addresses) do
@@ -111,11 +71,8 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
 
   @resolve_timeout_ms 2_000
 
-  # An unresolvable name is allowed: it cannot be connected to either, and the worker
-  # re-checks against live DNS before connecting.
-  #
-  # The resolver can be swapped by configuration so tests do not depend on the
-  # DNS of whatever machine runs them; see `resolve_with_dns/1`.
+  # An unresolvable name is allowed here; `pin/1` refuses it at send time.
+  # The resolver is configurable so tests don't depend on real DNS.
   defp resolve(host, _port) do
     resolver = Application.get_env(:quantum_billing, :url_guard_resolver, __MODULE__)
     {:ok, resolver.resolve_with_dns(host)}
@@ -148,12 +105,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
     end
   end
 
-  @doc """
-  Whether an address is one this server may open a connection to.
-
-  Public in order to be testable: the list of ranges is the substance of this
-  module, and asserting on it through DNS would be asserting on the resolver.
-  """
+  @doc "Whether this server may connect to `address`. Public so the ranges can be tested."
   # Loopback.
   def public?({127, _, _, _}), do: false
   # "This network" — 0.0.0.0/8, which some stacks route to localhost.

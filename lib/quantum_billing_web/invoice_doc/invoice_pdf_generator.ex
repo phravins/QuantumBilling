@@ -1,21 +1,9 @@
 defmodule QuantumBillingWeb.InvoicePdfGenerator do
   @moduledoc """
-  The standalone invoice document: one HTML page, and the PDF printed from it.
+  The standalone invoice document: one self-contained HTML page, and its PDF.
 
-  ## Two things the document has to carry itself
-
-  It is read outside the application — in a browser tab with no session, in a
-  mail client, in a PDF viewer — so every asset has to travel with it. The
-  stylesheet is inlined by `Renderer.stylesheet/1`, and the logo is inlined as
-  a data URI by `inline_logo/1`: it is stored as `/uploads/…`, a path that
-  resolves only against the running server, so in an emailed document and in a
-  browser printing from a local file it was simply a broken image. Customers
-  saw an unbranded invoice and the customisation looked like it had not worked.
-
-  ## The PDF is a PDF
-
-  `generate_pdf/1` prints the page with `QuantumBillingWeb.InvoiceDoc.PDF`.
-  It used to return the HTML string, which the mailer attached as `.pdf`.
+  The stylesheet and logo are inlined (`inline_logo/1`), so the page works in
+  mail clients and saved files. `generate_pdf/1` prints it through `InvoiceDoc.PDF`.
   """
   use QuantumBillingWeb, :html
 
@@ -28,14 +16,9 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   alias QuantumBillingWeb.InvoiceDoc.Renderer
 
   @doc """
-  A standalone, self-contained HTML string of the invoice: embedded stylesheet,
-  inlined logo, document layout.
+  A standalone HTML string of the invoice, with stylesheet and logo inlined.
 
-  ## Options
-
-    * `:print_button` — show the "Print / Save as PDF" button (default `true`).
-      Off for anything being printed or attached, where a button is either
-      invisible or nonsense.
+  Option: `:print_button` (default `true`), off for anything printed or attached.
   """
   def generate_html(%Invoice{} = invoice, opts \\ []) do
     invoice = ensure_associations_loaded(invoice)
@@ -56,12 +39,7 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   end
 
   @doc """
-  Reads a stored logo off disk and returns it as a `data:` URI.
-
-  The document is read where `/uploads/logo.png` means nothing, so the bytes
-  have to be in the file. An absolute URL, a missing file or anything too large
-  to be sensible inline is left alone — a document with a broken image still
-  has to render.
+  Reads a stored logo off disk as a `data:` URI. Absolute URLs, missing or oversized files are left alone.
   """
   def inline_logo(nil), do: nil
 
@@ -121,12 +99,9 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   end
 
   @doc """
-  Prints the invoice to a PDF binary.
+  Prints the invoice to a PDF binary: `{:ok, pdf}` or `{:error, reason}`.
 
-  Returns `{:ok, pdf}` or `{:error, reason}`. `{:error, :no_renderer}` means no
-  headless browser is installed — see `QuantumBillingWeb.InvoiceDoc.PDF` — and
-  callers are expected to fall back to the HTML document rather than attach
-  something that is not a PDF.
+  On `{:error, :no_renderer}` callers fall back to the HTML document.
   """
   def generate_pdf(%Invoice{} = invoice, opts \\ []) do
     invoice

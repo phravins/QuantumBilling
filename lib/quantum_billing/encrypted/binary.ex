@@ -1,20 +1,9 @@
 defmodule QuantumBilling.Encrypted.Binary do
   @moduledoc """
-  An Ecto type that encrypts its value at rest with AES-256-GCM.
+  An encrypted Ecto type for TOTP secrets (which must be recoverable, unlike passwords).
 
-  Built for the TOTP secret. Unlike a password, which is stored as a one-way
-  hash, a TOTP secret has to be recoverable in order to check codes against it —
-  so anyone able to read the column could mint valid codes for that account
-  forever. Encrypting it means a database dump alone is not enough; the
-  application key is needed too.
-
-  The envelope itself lives in `QuantumBilling.Encrypted.Cipher`; this type
-  supplies the key and the additional authenticated data that scope it to
-  two-factor secrets.
-
-  The key comes from `TOTP_ENCRYPTION_KEY` (see `config/runtime.exs`). Rotating
-  it invalidates every existing enrolment — users would have to enrol again —
-  so it is not something to change casually.
+  Uses `Encrypted.Cipher` with `TOTP_ENCRYPTION_KEY`. Rotating that key
+  invalidates every 2FA enrolment.
   """
   use Ecto.Type
 

@@ -1,17 +1,7 @@
 defmodule QuantumBillingWeb.InvoiceDocumentTest do
   @moduledoc """
-  The invoice is rendered on two surfaces — on screen, and standalone for print.
-  These assert the two agree, because a setting that only reaches one of them is
-  worse than no setting at all.
-
-  Both now render through `InvoiceDoc.Renderer`, so agreement is structural
-  rather than maintained by hand. These stay as the contract that says so: they
-  are what caught the print page labelling its money columns differently from
-  the screen, and they are what a future change to the renderer has to survive.
-
-  What a document shows is now decided by its template rather than by the
-  organisation's `doc_*` columns, so the helpers below edit the layout and
-  re-save the draft — which is the path a user takes through the design pad.
+  Screen and print renderings of an invoice agree (both use
+  `InvoiceDoc.Renderer`). Helpers edit the template layout, as the design pad does.
   """
   # Not async: concurrent default-template seeders deadlock on the partial unique
   # index inside sandbox transactions.

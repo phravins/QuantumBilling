@@ -1,21 +1,10 @@
 defmodule QuantumBillingWeb.SettingsLive do
   @moduledoc """
-  The Settings page: a section nav down the left, the active section's panel on
-  the right.
+  The Settings page: a section nav and the active section's panel.
 
-  The section lives in the URL (`/settings/tax`) rather than in socket state, so
-  a panel can be linked to and survives a reload.
-
-  Each panel saves independently through its own section changeset, so filling
-  in Tax never trips over a blank field on General. Settings persist to
-  `organization_settings` — the first business table in the app.
-
-  Integrations shows which government portal mode is in use and connects the
-  calendars that compliance deadlines are sent to, through `Calendars`.
-
-  Customization is the one panel that is not purely a form: it carries a logo
-  upload, so `save` consumes the uploaded entry before handing the params to
-  the changeset.
+  The section is in the URL (`/settings/tax`). Each panel saves through its own
+  section changeset into `organization_settings`. Customization also handles
+  logo upload, design lists and import.
   """
   use QuantumBillingWeb, :live_view
 
@@ -110,8 +99,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Anything else — a broadcast for another page, a library's reply — is not
-  # this page's business, and must not take it down.
+  # Ignore messages meant for other pages.
   def handle_info(_message, socket), do: {:noreply, socket}
 
   def handle_params(params, _uri, socket) do
@@ -139,12 +127,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   # Backup: the download is the whole database and a restore replaces it.
   @owner_only_sections [:smtp, :integrations, :security, :backup]
 
-  @doc """
-  Whether a settings section is owner-only.
-
-  Public so the navigation can hide what it would refuse to open, rather than
-  offering a link that bounces.
-  """
+  @doc "Whether a settings section is owner-only. Public so the nav can hide it."
   def owner_only?(section), do: section in @owner_only_sections
 
   # The specimen invoice is built from the organisation, so it moves with it.
@@ -152,9 +135,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     socket
     |> assign(:organization, Settings.with_installation_rules(organization))
     |> assign(:sample, InvoiceDocument.sample(organization))
-    # Inline, so it survives the session's /uploads request timing out; see
-    # InvoiceTemplateDesignLive. The template previews keep the path: inlining
-    # there would send the file once per preview.
+    # Inlined so it survives an expired session on /uploads; template previews keep the path.
     |> assign(:logo_src, InvoicePdfGenerator.inline_logo(organization.doc_logo_path))
   end
 
@@ -225,11 +206,9 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
 
-  # ── Invoice designs ──
-  # List actions; the design itself is edited in InvoiceTemplateDesignLive.
+  # Invoice design list actions; editing happens in InvoiceTemplateDesignLive.
 
-  # ── Text tools ──
-  # Write the design's page setup, not a settings column.
+  # Text tools: write the design's page setup, not a settings column.
 
   def handle_event("toggle_text_tools", %{"id" => id}, socket) do
     open = if to_string(socket.assigns.open_tools) == id, do: nil, else: template_id(id)
@@ -245,7 +224,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {:noreply, save_page(socket, id, fn _page -> Layout.default_page() end)}
   end
 
-  # ── New design: the starter gallery and Import ──
+  # New design: the starter gallery and Import
 
   def handle_event("new_template", _params, socket) do
     {:noreply, socket |> assign(:gallery_open, true) |> assign(:import_open, false)}
@@ -359,7 +338,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       else: {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
   end
 
-  # The section is checked on navigation, but an event can be sent from any of them.
+  # Sections are checked on navigation, but an event can come from any of them.
   def handle_event("delete_delivery", %{"id" => id}, socket) do
     if Scope.owner?(socket.assigns.current_scope) do
       case Mail.delete_delivery(id) do
@@ -375,8 +354,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
-  # Like the events around them, these check the owner themselves: the section
-  # is guarded on navigation, but an event can be sent from any of them.
+  # Owner-checked here too: an event can come from any section.
   def handle_event("connect_caldav", %{"caldav" => params}, socket) do
     owner_only(socket, fn ->
       case Calendars.connect_caldav(socket.assigns.current_scope, params) do
@@ -436,8 +414,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     end)
   end
 
-  # A restore replaces every record in the business. The section is owner-only,
-  # but an event can be sent from any section, so this checks again.
+  # A restore replaces every record, so the owner is checked again here.
   def handle_event("restore_backup", _params, socket) do
     if Scope.owner?(socket.assigns.current_scope) do
       restore_backup(socket)
@@ -596,10 +573,8 @@ defmodule QuantumBillingWeb.SettingsLive do
     unless DesignAssets.recorded?(path), do: Uploads.delete(path)
   end
 
-  # ── Import ──
-  # A design file becomes a design as it is; a letterhead image becomes the
-  # background of a new Letterhead design. Either way the pad opens next, where
-  # the spacing can be set to clear the printed header and footer.
+  # Import: a design file becomes a design; a letterhead image becomes the
+  # background of a new Letterhead design. Either way the pad opens next.
 
   defp handle_import_progress(name, entry, socket) do
     if entry.done? do
@@ -1721,7 +1696,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp mode(true), do: "live"
   defp mode(false), do: "demo"
 
-  # ── Company profile helpers ──
+  # Company profile helpers
 
   attr :icon, :string, required: true
   slot :inner_block, required: true

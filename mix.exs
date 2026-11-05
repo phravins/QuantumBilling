@@ -67,19 +67,11 @@ defmodule QuantumBilling.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      # 1.14.1 fixes the HTTP/1.1, HTTP/2 and WebSocket denial-of-service and
-      # smuggling advisories published in October 2026 (GHSA-pxjf-g536-7r93,
-      # GHSA-jwh3-j29h-qfmw, GHSA-fmr8-qrvr-4ww5, GHSA-w5wc-g2hc-g7m2 and others).
+      # 1.14.1 fixes the October 2026 HTTP and WebSocket advisories (GHSA-pxjf-g536-7r93 etc.).
       {:bandit, "~> 1.14 and >= 1.14.1"},
-      # Invoice layouts and the e-invoice export are both XML. Saxy is pure
-      # Elixir with no transitive dependencies, and — unlike `:xmerl` — it has
-      # no DTD or external entity support at all, so entity-expansion attacks
-      # are absent rather than mitigated. It also serialises, which `:xmerl`
-      # effectively does not, and this codebase writes XML in two places.
+      # XML for layouts and the e-invoice export: no DTD/entity support, and it serialises.
       {:saxy, "~> 1.6"},
-      # Two factor authentication: RFC 6238 codes, and the QR that enrols them.
-      # Both are pure Elixir with no runtime services, so the secret never
-      # leaves the application.
+      # 2FA: TOTP codes and the enrolment QR, both local.
       {:nimble_totp, "~> 1.0"},
       {:eqrcode, "~> 0.2"},
       {:oban, "~> 2.18"}
@@ -96,10 +88,7 @@ defmodule QuantumBilling.MixProject do
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind quantum_billing", "esbuild quantum_billing"],
-      # `compile` first, exactly as `assets.build` does. `app.css` and `app.js`
-      # both import `phoenix-colocated/quantum_billing`, which the LiveView
-      # compiler only writes during `mix compile` — bundling before that step
-      # fails on a missing directory.
+      # Compile first: the bundles import phoenix-colocated, written by `mix compile`.
       "assets.deploy": [
         "compile",
         "tailwind quantum_billing --minify",

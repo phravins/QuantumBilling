@@ -1,64 +1,49 @@
 import Config
 
-# Only in tests, remove the complexity from the password hashing algorithm
+# Fast password hashing for tests only.
 config :pbkdf2_elixir, :rounds, 1
 
-# Configure your database. Credentials live in config/runtime.exs.
-# pool_size must exceed ExUnit's max_cases (schedulers_online() * 2), or sandbox
-# checkouts time out under load.
+# Credentials are in runtime.exs. pool_size must exceed ExUnit's max_cases.
 config :quantum_billing, QuantumBilling.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 4,
-  # A checkout that has to wait is normal here — the alternative is dropping it.
+  # Waiting for a checkout is normal under test load.
   queue_target: 500,
   queue_interval: 2_000
 
-# We don't run a server during test. If one is required,
-# you can enable the server option below.
-#
-# secret_key_base is set in config/runtime.exs from SECRET_KEY_BASE.
+# No server in tests; secret_key_base comes from runtime.exs.
 config :quantum_billing, QuantumBillingWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   server: false
 
-# In test we don't send emails
 config :quantum_billing, QuantumBilling.Mailer, adapter: Swoosh.Adapters.Test
 
-# Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
 
-# Print only warnings and errors during test
 config :logger, level: :warning
 
-# Payment links are simulated here rather than calling Razorpay. In production
-# a missing or rejected key is an error, not a fake link.
+# Simulated payment links; production never fakes them.
 config :quantum_billing, razorpay_sandbox: true
 
-# Ecto.Migrator takes an advisory lock on a connection of its own, which the
-# sandbox's single shared connection can never grant: creating a business in a
-# test would wait on itself.
+# The Migrator's advisory lock would deadlock on the sandbox's single connection.
 config :quantum_billing, :tenant_migration_lock, false
 
 # Calendar requests go to a stub instead of Google or a CalDAV server.
 config :quantum_billing, :calendar_req_options, plug: {Req.Test, QuantumBilling.Calendars}
 
-# In memory: sandboxed transactions would make async tests sharing a key wait
-# on each other. The Postgres backend has tests of its own.
+# In memory, so async tests sharing a key don't block; Postgres is tested separately.
 config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
 
 # Outbound URLs are resolved by a fake, so tests never depend on real DNS.
 config :quantum_billing, :url_guard_resolver, QuantumBilling.FakeDNS
 
-# Configure Oban for inline testing
 config :quantum_billing, Oban, testing: :inline
 
-# Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
-# Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
-# Sort query params output of verified routes for robust url comparisons
+# Stable query-param order for URL assertions.
 config :phoenix,
   sort_verified_routes_query_params: true

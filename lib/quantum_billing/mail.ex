@@ -1,44 +1,11 @@
 defmodule QuantumBilling.Mail do
   @moduledoc """
-  Everything about *how* mail leaves this application: which relay, over what
-  kind of connection, under whose address, and what is recorded about it.
+  How mail leaves the app: relay, TLS, sender address and the delivery ledger.
 
-  What each message *says* stays with whoever composes it —
-  `QuantumBilling.InvoiceNotifier` for invoices, `Accounts.UserNotifier` for
-  sign-in mail. Both hand the finished `Swoosh.Email` here, so there is exactly
-  one place that decides transport, and a change to TLS or to the sender is not
-  something that has to be repeated per message type.
-
-  ## Which relay
-
-  The organisation's own SMTP settings win when a host is configured. Nothing
-  is configured on a fresh install, so mail falls back to the application
-  mailer — the local preview in development, the `SMTP_*` environment in
-  production. Either way the caller gets the same `{:ok, meta}` or
-  `{:error, message}` with a message meant for a human.
-
-  ## TLS
-
-  Connections are verified: `verify_peer` against the system trust store, with
-  the hostname checked against the certificate. Without that, "encrypted" means
-  only that nobody *passively* reads the SMTP password — anyone in a position
-  to answer for the relay collects it, and an invoice PDF goes to them instead
-  of to the customer.
-
-  Port 465 connects with TLS immediately; everything else connects in the clear
-  and is required to upgrade with STARTTLS before credentials are sent. A relay
-  that cannot upgrade fails rather than silently sending the password in the
-  clear.
-
-  Two allowances keep that verification working with relays that OpenSSL
-  accepts and Erlang/OTP 27 does not — see `verify_cert/3` for the certificate
-  chain, and `middlebox_comp_mode: false` in `tls_options/1` for the TLS 1.3
-  handshake. Neither relaxes what is checked about the relay itself.
-
-  `SMTP_TLS_VERIFY=false` turns verification off for a relay using a
-  self-signed certificate on a trusted network. It is deliberately a
-  deployment-level switch and not a per-organisation setting: it is the kind of
-  thing that should need a deploy, not a form.
+  The organisation's SMTP settings win when a host is set; otherwise the app
+  mailer is used. Connections verify the relay's certificate (465 is implicit
+  TLS, other ports require STARTTLS). `SMTP_TLS_VERIFY=false` turns that off
+  for self-signed relays.
   """
 
   import Ecto.Query, warn: false
@@ -55,12 +22,7 @@ defmodule QuantumBilling.Mail do
 
   @connect_timeout_ms 15_000
 
-  @doc """
-  Sends `email` now, through the organisation's relay when one is configured.
-
-  Returns `{:ok, metadata}` or `{:error, message}`, where the message is
-  already phrased for the person who has to fix it.
-  """
+  @doc "Sends `email` now. Returns `{:ok, meta}` or `{:error, human_message}`."
   def deliver(email, organization \\ nil)
 
   def deliver(%Swoosh.Email{} = email, nil) do
@@ -77,14 +39,7 @@ defmodule QuantumBilling.Mail do
     exception -> {:error, error_message(exception)}
   end
 
-  @doc """
-  The Swoosh config for the organisation's relay, or `[]` to use the
-  application mailer.
-
-  Returned as a keyword list rather than applied globally: per-call config is
-  what keeps the test adapter in place during tests, and what lets two
-  organisations differ once tenancy lands.
-  """
+  @doc "The Swoosh config for the organisation's relay, or `[]` for the app mailer."
   def smtp_config(%Organization{} = organization) do
     case usable_relay(organization) do
       nil ->
@@ -118,8 +73,7 @@ defmodule QuantumBilling.Mail do
 
   def smtp_config(_no_organization), do: []
 
-  # A username without a password can never authenticate, so fall back to the
-  # application mailer rather than fail every send, sign-up and reset mail included.
+  # A username without a password can't authenticate; use the app mailer instead.
   defp usable_relay(%Organization{} = organization) do
     host = presence(organization.smtp_host)
     username = presence(organization.smtp_username)
@@ -147,12 +101,7 @@ defmodule QuantumBilling.Mail do
   def own_relay?(_organization), do: false
 
   @doc """
-  The `{name, email}` an outgoing message is sent from.
-
-  The configured sender address wins, then the organisation's own contact
-  address, then `MAILER_FROM_EMAIL`. Relays reject mail from an address they do
-  not host, so this is the setting most likely to be the real cause of a
-  delivery failure — hence one place to resolve it.
+  The `{name, email}` to send from: configured sender, then contact email, then `MAILER_FROM_EMAIL`.
   """
   def sender(organization \\ nil, fallback_name \\ nil)
 
@@ -174,15 +123,7 @@ defmodule QuantumBilling.Mail do
     {name, email}
   end
 
-  @doc """
-  Sends a test message through the configured relay, right now.
-
-  Deliberately synchronous and deliberately small: the point of the button in
-  Settings is to find out what the relay says, so the answer has to come back
-  to the person who pressed it rather than to a log. It carries no attachment,
-  so a failure is about the connection and the credentials rather than about
-  rendering a PDF.
-  """
+  @doc "Sends a small test message synchronously, so Settings can show the relay's answer."
   def send_test(recipient) when is_binary(recipient) do
     organization = Settings.get_organization()
     {from_name, from_email} = sender(organization)
@@ -219,15 +160,9 @@ defmodule QuantumBilling.Mail do
     end
   end
 
-  # ── The delivery ledger ───────────────────────────────────────────────────
+  # The delivery ledger
 
-  @doc """
-  Records that a message is about to be attempted.
-
-  Written before the job is enqueued so that a message which never reaches the
-  relay — or never reaches a worker — is still visible as something that was
-  asked for and did not arrive.
-  """
+  @doc "Records a message before its job is enqueued, so a lost send stays visible."
   def record_queued(attrs) do
     %Delivery{}
     |> Delivery.changeset(attrs)
@@ -248,13 +183,7 @@ defmodule QuantumBilling.Mail do
     |> broadcast_delivery()
   end
 
-  @doc """
-  Records a failed attempt.
-
-  `final?` separates "this attempt failed and another is coming" from "this is
-  as far as it goes", so the ledger does not show a message as failed while
-  Oban still intends to retry it.
-  """
+  @doc "Records a failed attempt. `final?` is true when no retry is coming."
   def mark_failed(%Delivery{} = delivery, reason, final?) do
     result =
       delivery
@@ -266,7 +195,7 @@ defmodule QuantumBilling.Mail do
       |> Repo.update()
       |> broadcast_delivery()
 
-    # Only on the final failure; a retry still to come is not news.
+    # Only on the final failure.
     if final? do
       Notifications.notify(%{
         kind: "mail",
@@ -284,12 +213,7 @@ defmodule QuantumBilling.Mail do
   @doc "One delivery by id, or `nil`."
   def get_delivery(id), do: Repo.get(Delivery, id)
 
-  @doc """
-  Removes one delivery from the log.
-
-  A queued message's job finds its delivery gone and is discarded by
-  `QuantumBilling.Workers.EmailWorker`, so removing it also stops the send.
-  """
+  @doc "Removes a delivery. A queued job then finds it gone and is discarded."
   def delete_delivery(id) do
     case get_delivery(id) do
       nil -> {:error, :not_found}
@@ -297,11 +221,7 @@ defmodule QuantumBilling.Mail do
     end
   end
 
-  @doc """
-  The most recent delivery attempts, newest first.
-
-  Bounded by design — this is the "did it go out?" panel, not an archive.
-  """
+  @doc "The most recent delivery attempts, newest first."
   def list_recent_deliveries(limit \\ 20) do
     Repo.all(from d in Delivery, order_by: [desc: d.inserted_at, desc: d.id], limit: ^limit)
   end
@@ -322,7 +242,7 @@ defmodule QuantumBilling.Mail do
 
   defp broadcast_delivery(result), do: result
 
-  # ── TLS ───────────────────────────────────────────────────────────────────
+  # TLS
 
   defp tls_options(host) do
     if verify_tls?() do
@@ -343,24 +263,14 @@ defmodule QuantumBilling.Mail do
     end
   end
 
-  # Some relays (mail.osworks.in among them) never send the TLS 1.3
-  # change_cipher_spec record, and OTP 27 aborts without it. Costs no security.
+  # Some relays never send TLS 1.3 change_cipher_spec, which OTP 27 requires.
 
   @doc """
-  The certificate check used on every relay connection.
+  Certificate check for relay connections.
 
-  Identical to OTP's default except for one case: a *CA* certificate whose
-  KeyUsage (`keyCertSign`, `cRLSign`) sits alongside an extendedKeyUsage of
-  `serverAuth`. OTP 27.2 rejects that pairing as `key_usage_mismatch`;
-  OpenSSL and browsers accept it, and Let's Encrypt's "ISRG Root YR" chain
-  (2026) has it, so without this every relay with a current Let's Encrypt
-  certificate fails with `tls_failed`.
-
-  Only a certificate that can sign certificates is excused. The relay's own
-  certificate, the hostname check, expiry and the chain of trust are all still
-  enforced.
-
-  Public because `config/runtime.exs` uses it for the `SMTP_*` relay too.
+  Same as OTP's default, except it accepts CA certificates with both
+  keyCertSign and serverAuth (as in Let's Encrypt's ISRG Root YR), which
+  OTP 27.2 rejects. Also used by `config/runtime.exs`.
   """
   def verify_cert(
         _cert,
@@ -398,14 +308,9 @@ defmodule QuantumBilling.Mail do
               __STACKTRACE__
   end
 
-  # ── Error messages ────────────────────────────────────────────────────────
+  # Error messages
 
-  @doc """
-  Turns a transport failure into something a person can act on.
-
-  Public because the same failures surface from the settings "send test" button
-  and from the mail worker, and both should describe them the same way.
-  """
+  @doc "Turns a transport failure into a message a person can act on."
   def error_message({:retries_exceeded, reason}),
     do: "SMTP retries exceeded: #{error_message(reason)}"
 

@@ -1,14 +1,7 @@
 defmodule QuantumBillingWeb.InvoicesLive do
   @moduledoc """
-  The Invoices list page: search, status filter, sortable columns, and
-  pagination.
-
-  All four are the database's job — `QuantumBilling.Invoices.page/1` searches,
-  filters, sorts, counts and slices in one query pair, and this LiveView holds
-  only the controls and the ten rows on screen. It used to hold every invoice
-  in the system and do the work in Elixir on every render, which meant one full
-  copy of the invoice table per open tab and a full reload whenever anything
-  changed anywhere in the application.
+  The Invoices list: search, status filter, sorting and pagination, all done
+  in the database by `Invoices.page/1`. Only the visible rows are held.
   """
   use QuantumBillingWeb, :live_view
 

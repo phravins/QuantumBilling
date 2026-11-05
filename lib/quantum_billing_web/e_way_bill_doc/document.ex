@@ -1,29 +1,10 @@
 defmodule QuantumBillingWeb.EWayBillDoc.Document do
   @moduledoc """
-  The official e-way bill — Form GST EWB-01 — as a printable document.
+  The printable e-way bill (Form GST EWB-01), laid out as the NIC portal prints it.
 
-  ## Why the application needed one
-
-  Generating an e-way bill wrote a number onto the invoice and stopped there.
-  The list page's View and Print buttons both went to `/invoices?q=<doc no>`,
-  a filtered invoice list: the one document a driver is required to carry did
-  not exist anywhere in the application. This renders it, in the layout the
-  NIC portal prints — the summary band, the consignment rows (the form's
-  Part-A), the vehicle history (its Part-B), the goods table and the QR code —
-  so what comes out of the printer is what a checkpost expects.
-
-  The two parts are not labelled "Part - A" and "Part - B" on the page. The
-  first carries no heading and numbers its rows 1 to 10; the second is headed
-  "Vehicle Details", which is what the table actually holds. The code keeps
-  the statutory names (`part_b_entries/1`, `PartBUpdate`), because that is
-  what the rules and the NIC API call them.
-
-  ## Self-contained on purpose
-
-  Like the invoice document, this carries its own stylesheet and draws no
-  icons from `app.css`: it is printed, saved and reopened away from the
-  running application, where a mask-based icon class renders as a blank box.
-  Everything the page needs is in the page.
+  Part-A is the unlabelled rows 1 to 10 and Part-B is "Vehicle Details"; the
+  code keeps the statutory names. It has its own stylesheet and no `app.css`
+  icons, so it works when saved and reopened.
   """
   use QuantumBillingWeb, :html
 
@@ -34,17 +15,10 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   alias QuantumBilling.Settings.Organization
 
   @doc """
-  The e-way bill as a standalone HTML string.
+  The e-way bill as a standalone HTML string. Preload `:invoice` and `:part_b_updates`.
 
-  Takes the bill, with its `:invoice` and `:part_b_updates` preloaded: the
-  number, validity and vehicle are facts about the bill, while the consignor,
-  consignee and goods are facts about the document it was raised against.
-
-  ## Options
-
-    * `:toolbar` — show the on-screen Print / Download bar (default `true`).
-      It carries `class="ewb-screen-only"` and never prints.
-    * `:auto_print` — open the browser's print dialog on load (default `false`)
+  Options: `:toolbar` (default `true`) shows the screen-only Print/Download bar;
+  `:auto_print` (default `false`) opens the print dialog on load.
   """
   def html(%EWayBill{} = bill, organization, opts \\ []) do
     invoice = bill.invoice
@@ -622,14 +596,7 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
     """
   end
 
-  @doc """
-  What the e-way bill's QR encodes.
-
-  The portal's printed QR carries the bill number, the GSTIN that generated it
-  and the generation date, separated by slashes — enough for an officer's app
-  to look the consignment up. Exposed so the document test can read it back
-  without parsing an SVG.
-  """
+  @doc "What the QR encodes: bill number, generating GSTIN and date, slash-separated."
   def qr_payload(%EWayBill{} = bill) do
     date =
       case bill.ewb_date do

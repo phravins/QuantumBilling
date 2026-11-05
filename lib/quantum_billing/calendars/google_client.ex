@@ -1,11 +1,9 @@
 defmodule QuantumBilling.Calendars.GoogleClient do
   @moduledoc """
-  The Google Calendar API: the OAuth code flow and writing events.
+  Google Calendar API: the OAuth code flow and writing events.
 
-  Asks for `calendar.events` only, so it can change events and nothing else in
-  the account. No access token is stored; each sync gets a new one from the
-  refresh token. Errors are plain atoms, because Google's responses and Req's
-  exceptions can carry tokens and must not reach a log or a job's error list.
+  Scope is `calendar.events` only. No access token is stored (each sync
+  refreshes). Errors are plain atoms, so no token reaches logs.
   """
 
   @authorize_url "https://accounts.google.com/o/oauth2/v2/auth"
@@ -89,11 +87,7 @@ defmodule QuantumBilling.Calendars.GoogleClient do
   end
 
   @doc """
-  Creates or updates the event with this id.
-
-  The id is ours, derived from the item, so a retry cannot add a second event.
-  Google remembers a deleted id and answers 409, which is why that case updates
-  and sets the event back to confirmed.
+  Creates or updates the event with our id, so retries don't duplicate. A 409 (deleted id) updates and re-confirms.
   """
   def put_event(token, calendar_id, event_id, item, exists?) do
     body = event_body(event_id, item)

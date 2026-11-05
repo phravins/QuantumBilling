@@ -1,30 +1,17 @@
 defmodule QuantumBillingWeb.ConnCase do
   @moduledoc """
-  This module defines the test case to be used by
-  tests that require setting up a connection.
-
-  Such tests rely on `Phoenix.ConnTest` and also
-  import other functionality to make it easier
-  to build common data structures and query the data layer.
-
-  Finally, if the test case interacts with the database,
-  we enable the SQL sandbox, so changes done to the database
-  are reverted at the end of every test. If you are using
-  PostgreSQL, you can even run database tests asynchronously
-  by setting `use QuantumBillingWeb.ConnCase, async: true`, although
-  this option is not recommended for other databases.
+  Case template for tests that need a connection. Uses the SQL sandbox, so
+  `async: true` is safe.
   """
 
   use ExUnit.CaseTemplate
 
   using do
     quote do
-      # The default endpoint for testing
       @endpoint QuantumBillingWeb.Endpoint
 
       use QuantumBillingWeb, :verified_routes
 
-      # Import conveniences for testing with connections
       import Plug.Conn
       import Phoenix.ConnTest
       import QuantumBillingWeb.ConnCase
@@ -37,12 +24,9 @@ defmodule QuantumBillingWeb.ConnCase do
   end
 
   @doc """
-  Setup helper that registers and logs in users.
+  Setup: logs in a staff user. Adds `conn`, `user` and `scope` to the context.
 
       setup :register_and_log_in_user
-
-  It stores an updated connection and a registered user in the
-  test context.
   """
   def register_and_log_in_user(%{conn: conn} = context) do
     user = QuantumBilling.AccountsFixtures.user_fixture()
@@ -57,15 +41,10 @@ defmodule QuantumBillingWeb.ConnCase do
   end
 
   @doc """
-  Setup helper that registers and logs in an account that owns the
-  installation.
+  Setup: logs in the installation owner, for owner-only pages (credential
+  panels, Team, full export). Staff stays the default.
 
       setup :register_and_log_in_owner
-
-  Use this for the owner-only areas: the credential settings panels, Team, and
-  the full data export. `register_and_log_in_user/1` logs in staff, which is
-  the right default — a page that only works for an owner should have to say
-  so.
   """
   def register_and_log_in_owner(%{conn: conn} = context) do
     user = QuantumBilling.AccountsFixtures.owner_fixture()
@@ -79,11 +58,7 @@ defmodule QuantumBillingWeb.ConnCase do
     %{conn: log_in_user(conn, user, opts), user: user, scope: scope}
   end
 
-  @doc """
-  Logs the given `user` into the `conn`.
-
-  It returns an updated `conn`.
-  """
+  @doc "Logs `user` into `conn` and returns the conn."
   def log_in_user(conn, user, opts \\ []) do
     token = QuantumBilling.Accounts.generate_user_session_token(user)
 

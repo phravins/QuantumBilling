@@ -1,8 +1,5 @@
 defmodule QuantumBilling.AccountsFixtures do
-  @moduledoc """
-  This module defines test helpers for creating
-  entities via the `QuantumBilling.Accounts` context.
-  """
+  @moduledoc "Fixtures for `QuantumBilling.Accounts`."
 
   import Ecto.Query
 
@@ -29,10 +26,7 @@ defmodule QuantumBilling.AccountsFixtures do
     })
   end
 
-  @doc """
-  Creates an unconfirmed account the way the sign-up form does: username, email
-  and password, awaiting the emailed confirmation link.
-  """
+  @doc "An unconfirmed account, as the sign-up form creates it."
   def registered_user_fixture(attrs \\ %{}) do
     {:ok, user} =
       attrs
@@ -55,10 +49,7 @@ defmodule QuantumBilling.AccountsFixtures do
     mark_onboarded(user)
   end
 
-  @doc """
-  `user` as if it had finished the first-sign-in screens. Every fixture does
-  this, so a test about onboarding asks for it with `not_onboarded/1`.
-  """
+  @doc "Marks `user` onboarded. Every fixture does this; use `not_onboarded/1` to undo it."
   def mark_onboarded(user) do
     user
     |> Ecto.Changeset.change(onboarded_at: DateTime.utc_now(:second))
@@ -87,13 +78,8 @@ defmodule QuantumBilling.AccountsFixtures do
   end
 
   @doc """
-  A confirmed account that owns business 1.
-
-  Registration is invite-only and the owner-only areas — the credential
-  settings panels, Team, the full data export — are gated on this role, so a
-  test that exercises them needs it explicitly. `user_fixture/1` deliberately
-  stays staff: that is the weaker of the two, and the one a route test should
-  be written against by default.
+  A confirmed owner of business 1, for owner-only areas. `user_fixture/1`
+  stays staff, the weaker default.
   """
   def owner_fixture(attrs \\ %{}) do
     user = attrs |> user_fixture() |> enrol_two_factor()
@@ -102,11 +88,8 @@ defmodule QuantumBilling.AccountsFixtures do
   end
 
   @doc """
-  `user` with two-factor authentication set up and confirmed.
-
-  Owners must have it (see `QuantumBillingWeb.Plugs.EnforceSecurityPolicies`),
-  so `owner_fixture/1` does this; a test about an owner who has not enrolled
-  calls `user_fixture/1` and promotes the user itself.
+  `user` with confirmed 2FA. `owner_fixture/1` does this, since owners must
+  have it.
   """
   def enrol_two_factor(user) do
     user
@@ -126,13 +109,8 @@ defmodule QuantumBilling.AccountsFixtures do
   end
 
   @doc """
-  Invites `email` into business 1 (or `:business`) and returns the raw
-  invitation token.
-
-  Registration is invite-only, so anything that exercises the sign-up form
-  past the very first account has to come through here. The token is captured
-  from the URL builder because that is the only place it exists — the database
-  keeps only its hash.
+  Invites `email` into business 1 (or `:business`) and returns the raw token,
+  captured from the URL builder since only its hash is stored.
   """
   def invitation_token_fixture(email, opts \\ []) do
     owner = Keyword.get_lazy(opts, :invited_by, &owner_fixture/0)

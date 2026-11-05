@@ -1,13 +1,5 @@
 defmodule QuantumBillingWeb.RealtimeTest do
-  @moduledoc """
-  End-to-end checks that a write in one place reaches a page open somewhere
-  else.
-
-  The test process stands in for the second browser window: it performs the
-  write, and the assertions are made against a LiveView mounted separately. If
-  PubSub were not wired up, the LiveView would simply keep showing its original
-  render and every one of these would fail.
-  """
+  @moduledoc "A write in one place reaches a separately mounted LiveView through PubSub."
   use QuantumBillingWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest

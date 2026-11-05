@@ -1,10 +1,7 @@
 defmodule QuantumBillingWeb.TenantIsolationTest do
   @moduledoc """
-  A member of one business never reaches another's records — not by forging a
-  `business_id` into their session, and not by guessing ids, which repeat
-  across businesses because each has its own schema.
-
-  Not async: creating a business runs DDL.
+  Members never reach another business, by forged session `business_id` or by
+  guessed ids. Not async: creating a business runs DDL.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

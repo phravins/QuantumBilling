@@ -1,11 +1,7 @@
 defmodule QuantumBilling.ClientBinTest do
   @moduledoc """
-  What moving a client to the Bin does, asked of every part of the application
-  that reads clients.
-
-  Kept apart from `ClientsTest`, which is about what makes a client valid, for
-  the same reason `BinTest` is one file: the risk is a read that was missed, so
-  the reads are listed together.
+  Every read of clients must skip binned ones. Listed in one file, like
+  `BinTest`, so a missed read stands out.
   """
   use QuantumBilling.DataCase, async: true
 

@@ -1,33 +1,12 @@
 defmodule QuantumBillingWeb.BinLive do
   @moduledoc """
-  The Bin: everything that has been deleted and can still be brought back.
+  The Bin: deleted invoices, clients, e-way bills, recurring profiles and designs.
 
-  Five kinds of record land here — invoices, clients, e-way bills, recurring
-  profiles and invoice designs — because those are the five the application
-  lets you delete. Each row offers the same two actions: **Restore**, which puts the record back
-  exactly as it was, and **Delete permanently**, which is the delete that
-  cannot be undone and is the only place in the application that does it.
-
-  ## One list, five sources
-
-  The rows come from five contexts and are flattened into one shape,
-  `entry/1`, so the table does not have to know which kind it is drawing. The
-  list is a stream and is reset on every change rather than patched: restoring
-  one row changes the counts on the filter chips, and a list that is re-read
-  whole cannot drift from them.
-
-  ## What cannot be purged
-
-  A design that invoices were issued under cannot be deleted permanently — the
-  row is the record of which design those invoices carry — and neither can a
-  client that credit notes were raised against. Their rows say so instead of
-  offering a button that would fail.
-
-  ## What cannot always be restored
-
-  A client comes back into its GSTIN and an e-way bill into its invoice's one
-  live slot, and either may have been taken while the record was in the Bin.
-  The restore is then refused with the reason.
+  Each row offers Restore and Delete permanently (the only hard delete in the
+  app). Rows from five contexts are flattened by `entry/1`, and the stream is
+  reset on every change so the filter counts stay right. Designs used by
+  invoices and clients with credit notes can't be purged. A restore is refused
+  when its GSTIN or invoice slot has been taken.
   """
   use QuantumBillingWeb, :live_view
 
@@ -81,9 +60,7 @@ defmodule QuantumBillingWeb.BinLive do
     {:noreply, socket |> act(fetch(type, id), &restore/2) |> load_entries()}
   end
 
-  # Purging destroys an invoice — a statutory record — for good, so it is an
-  # owner's call. Staff can bin and restore; the button is hidden from them,
-  # and the event is refused here too, since any event can be sent to a page.
+  # Purging destroys a statutory record, so only owners may; the event is checked here too.
   def handle_event("purge", %{"type" => type, "id" => id}, socket) do
     if QuantumBilling.Accounts.Scope.owner?(socket.assigns.current_scope) do
       {:noreply, socket |> act(fetch(type, id), &purge/2) |> load_entries()}

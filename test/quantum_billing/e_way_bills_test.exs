@@ -1,12 +1,7 @@
 defmodule QuantumBilling.EWayBillsTest do
   @moduledoc """
-  The e-way bill context, now that a bill is a row rather than eight columns on
-  the invoice it was raised against.
-
-  What that buys, and what is tested here: an invoice can carry a cancelled
-  bill and the one raised to replace it; a cancellation has a time, a reason
-  and a window; and a change of vehicle is recorded as a leg of a journey
-  instead of overwriting the only vehicle the bill ever had.
+  The e-way bill context: replacement bills, cancellation (time, reason,
+  window) and vehicle changes recorded as journey legs.
   """
   use QuantumBilling.DataCase, async: true
 

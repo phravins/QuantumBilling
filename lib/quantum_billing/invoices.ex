@@ -2,27 +2,9 @@ defmodule QuantumBilling.Invoices do
   @moduledoc """
   GST invoices.
 
-  ## Invoice numbering
-
-  The number is not decorative — GST requires a sequential series — so it is
-  consumed from `organization_settings.invoice_next_number` inside the same
-  transaction that inserts the invoice, and the counter is advanced in that
-  same transaction. Two people saving at the same moment therefore cannot be
-  handed the same number, and a unique index on `invoice_number` makes any
-  remaining slip loud rather than silent.
-
-  A Draft consumes a number too. There is no separate "finalise" step in this
-  flow to defer consumption to, and a gap-free series matters more than
-  reserving numbers for finished invoices.
-
-  ## Deleting
-
-  `delete_invoice/2` moves an invoice to the Bin; `restore_invoice/2` brings it
-  back and `purge_invoice/2` removes it for good. Every read in this module
-  goes through `Invoice.kept/1`, so a binned invoice is absent from the lists,
-  the totals and the lookups alike — the only ways to reach one are
-  `list_deleted_invoices/0`, `get_deleted_invoice/1` and the payment webhook's
-  `get_invoice_by_number/2`, which asks for it by name.
+  Numbers are taken from `invoice_next_number` in the same transaction as the
+  insert, so the series has no duplicates. Deleting moves an invoice to the
+  Bin; every read goes through `Invoice.kept/1`, so binned invoices are hidden.
   """
 
   import Ecto.Query, warn: false
@@ -59,41 +41,17 @@ defmodule QuantumBilling.Invoices do
   @default_per_page 10
   @max_per_page 200
 
-  @doc """
-  Every invoice, newest first, shaped for the list page.
-
-  Unbounded, so it is for callers that genuinely want all of them — a backup, a
-  test. Anything user-facing should use `page/1`, which reads one screen.
-  """
+  @doc "Every invoice, newest first. Unbounded; use `page/1` for screens."
   def list_invoices do
     Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
 
   @doc """
-  One page of invoices, filtered and sorted by the database.
+  One page of invoices, filtered and sorted in the database.
 
-  Returns `%{rows:, page:, per_page:, has_next?:}`, plus `:total` and
-  `:total_pages` with `count: true`. See `QuantumBilling.Paging` on why the
-  rows are not counted otherwise.
-
-  The searching, filtering, sorting and slicing used to happen in Elixir over
-  every invoice in the system, reloaded into the LiveView's memory on every
-  change anywhere in the application. At a few hundred invoices that is
-  invisible; at a hundred thousand it is a copy of the invoice table per open
-  browser tab. The database does all four now, and only the rows on screen are
-  ever loaded.
-
-  ## Options
-
-    * `:search` — matches the invoice number, client name or GSTIN
-    * `:status` — exact status, or `"All Status"`
-    * `:client` — a `%Clients.Client{}`, narrowing to that client's invoices
-    * `:sort_field` / `:sort_dir` — a key of the sortable allowlist, `:asc` or `:desc`
-    * `:page` / `:per_page`
-    * `:count` — also count the matching invoices
-    * `:keyset` / `:before_id` — newest-created first, below `:before_id`,
-      instead of numbered pages; see `QuantumBilling.Paging.keyset/3`
+  Options: `:search`, `:status`, `:client`, `:sort_field`, `:sort_dir`,
+  `:page`, `:per_page`, `:count`, and `:keyset`/`:before_id` for keyset paging.
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
@@ -120,18 +78,11 @@ defmodule QuantumBilling.Invoices do
     shape(result, Keyword.get(opts, :records, false))
   end
 
-  # `records: true` hands back the invoices themselves, for callers that shape
-  # their own output — the API. Same query either way, so what is visible (the
-  # Bin excluded, the filters applied) is decided in exactly one place.
+  # `records: true` returns the invoices themselves (used by the API).
   defp shape(result, true), do: result
   defp shape(result, _rows), do: %{result | rows: Enum.map(result.rows, &to_row/1)}
 
-  @doc """
-  The most recently issued invoices, as list rows.
-
-  What the dashboard's "recent invoices" table wants, expressed as a query
-  rather than as the first few of everything.
-  """
+  @doc "The most recently issued invoices, as list rows."
   def recent_invoices(limit \\ 5) do
     Invoice.kept()
     |> order_by([i], desc: i.invoice_date, desc: i.id)
@@ -141,19 +92,10 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Invoices that could still be given an e-way bill, newest first.
+  Invoices that can still get an e-way bill, newest first.
 
-  What the "Generate New E-Way Bill" page loads a consignment from: a bill is
-  raised against a document that exists, so the form picks the document rather
-  than inventing one. Cancelled invoices and invoices that already carry a live
-  bill are left out — the portal issues one live bill per document.
-
-  A *cancelled* bill does not exclude its invoice, because Rule 138(9) exists
-  precisely so a fresh bill can be raised against the same document.
-
-  No threshold is applied here: a bill below the threshold is optional, not
-  forbidden, and a picker that hid those invoices would make a legal document
-  impossible to raise. `count_requiring_e_way_bill/0` is the threshold's job.
+  Excludes cancelled invoices and those with a live bill. A cancelled bill
+  does not exclude its invoice (Rule 138(9)).
   """
   def awaiting_e_way_bill(limit \\ 50) do
     Invoice.kept()
@@ -174,15 +116,7 @@ defmodule QuantumBilling.Invoices do
     |> Repo.all()
   end
 
-  @doc """
-  How many invoices are over the configured consignment threshold and still
-  have no live e-way bill.
-
-  `organization_settings.ewb_threshold_value` is what Rule 138(1) means by "of
-  consignment value exceeding fifty thousand rupees" — the setting was saved
-  by the settings form and read by nothing, so a business that raised it to
-  ₹1,00,000 saw no difference anywhere.
-  """
+  @doc "Invoices over the e-way bill threshold that have no live bill."
   def count_requiring_e_way_bill do
     threshold = Settings.get_organization().ewb_threshold_value || 5_000_000
 
@@ -203,15 +137,9 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Counts and money totals across every invoice, computed by the database.
+  Counts and totals across every invoice: `%{count:, revenue:, tax:, outstanding:, paid_count:}`.
 
-  Returns `%{count:, revenue:, tax:, outstanding:, paid_count:}`, where
-  `revenue` is the value of everything issued and `outstanding` is the part of
-  it that is neither paid nor cancelled, **net of the notes raised against
-  it** — a credit note reduces what the customer owes and a debit note adds to
-  it. Without that, an invoice credited in full still read as fully
-  receivable, and the dashboard's figure was the one number in the application
-  a business would act on.
+  `outstanding` is net of credit and debit notes.
   """
   def totals do
     invoices = invoice_totals()
@@ -285,13 +213,7 @@ defmodule QuantumBilling.Invoices do
   @doc """
   What each client still owes, as a query of `%{client_id:, outstanding:}`.
 
-  The same rule as `totals/0`, per client: the invoices that are neither paid
-  nor cancelled, less the credit notes and plus the debit notes raised against
-  them, floored at zero. Clients who owe nothing have no row.
-
-  Pass `client_ids` to compute only those clients — one indexed lookup each,
-  which is what a page of clients needs. Without it every client is grouped,
-  which is only worth paying to sort the whole directory by what is owed.
+  Pass `client_ids` to limit the query to those clients.
   """
   def outstanding_by_client(client_ids \\ nil) do
     notes =
@@ -336,13 +258,7 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  @doc """
-  Totals for the invoices dated within `month`.
-
-  What the dashboard's "this month" cards are actually about: the tax charged
-  on what was billed this month, which is the figure that becomes a GSTR-3B
-  liability. They used to be hardcoded zeros.
-  """
+  @doc "Totals for the invoices dated within `month`."
   def month_totals(date \\ Date.utc_today()) do
     from = Date.beginning_of_month(date)
     to = Date.end_of_month(date)
@@ -379,11 +295,9 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  The CGST+SGST and IGST charged per month over the last `count` months,
-  oldest first, as `[%{label, cgst_sgst, igst}]`.
+  Tax charged per month for the last `count` months, oldest first.
 
-  Months with no invoices are included as zeros: a gap in a bar chart has to
-  read as "nothing was billed", not as a month that does not exist.
+  Months without invoices are included as zeros.
   """
   def monthly_tax_split(count \\ 6, today \\ Date.utc_today()) do
     first = today |> Date.beginning_of_month() |> shift_months(-(count - 1))
@@ -455,8 +369,7 @@ defmodule QuantumBilling.Invoices do
 
   defp client_where(query, nil), do: query
 
-  # Matched on client_id, or by name only for invoices without one.
-  # Client names are not unique, so a linked invoice is never reattributed by name.
+  # Matched on client_id, or by name for invoices without one.
   defp client_where(query, %Client{id: id, name: name}) do
     where(query, [i], i.client_id == ^id or (is_nil(i.client_id) and i.client_name == ^name))
   end
@@ -492,26 +405,14 @@ defmodule QuantumBilling.Invoices do
     }
   end
 
-  @doc """
-  Fetches an invoice with its line items, raising when it does not exist.
-
-  An invoice in the Bin does not exist as far as this is concerned.
-  """
+  @doc "Fetches a non-binned invoice with its items. Raises if missing."
   def get_invoice!(id) do
     Invoice.kept()
     |> Repo.get!(id)
     |> with_items()
   end
 
-  @doc """
-  Fetches an invoice by its unique invoice_number.
-
-  ## Options
-
-    * `:include_binned` — also find an invoice that is in the Bin. For the
-      payment webhook: money that arrives for a binned invoice has still
-      arrived, and "no such invoice" would lose the record of it.
-  """
+  @doc "Fetches an invoice by number. `include_binned: true` also finds binned ones."
   def get_invoice_by_number(invoice_number, opts \\ []) when is_binary(invoice_number) do
     query = if Keyword.get(opts, :include_binned, false), do: Invoice, else: Invoice.kept()
 
@@ -520,12 +421,7 @@ defmodule QuantumBilling.Invoices do
     |> with_items()
   end
 
-  @doc """
-  Fetches an invoice by its unique public_token for the public portal.
-
-  A binned invoice is not served: the link in a customer's inbox must stop
-  showing a document the business has withdrawn.
-  """
+  @doc "Fetches a non-binned invoice by its public token."
   def get_invoice_by_token(token) when is_binary(token) do
     Invoice.kept()
     |> Repo.get_by(public_token: token)
@@ -575,30 +471,22 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  The client details an invoice records about whom it was issued to.
+  The client details an invoice records, copied from the client.
 
-  A snapshot, copied onto the invoice rather than read live through the
-  association: a GST invoice has to keep saying what it said when it was
-  issued, whatever later happens to the client record.
-
-  One function for both the invoice form and the API, so the two cannot
-  disagree about what an invoice records — and so the API never takes a
-  client's name, GSTIN or address from the request body, where a caller could
-  put an invoice in one customer's name and another's GSTIN.
+  A snapshot, so the invoice keeps saying what it said when issued. Shared by
+  the form and the API, so neither takes client details from the request.
   """
   def client_snapshot(%QuantumBilling.Clients.Client{} = client) do
     %{
       "client_id" => client.id,
       "client_name" => client.name,
       "client_gstin" => client.gstin,
-      # Not every client has a PAN typed in, but every GSTIN contains one.
+      # Every GSTIN contains the PAN.
       "client_pan" => present(client.pan) || QuantumBilling.GST.pan_from_gstin(client.gstin),
       "client_email" => client.email,
       "client_state" => client.billing_state,
       "client_billing_address" => billing_address(client),
-      # Copied as their own fields as well as into the printed blob: the
-      # e-invoice export needs the city and the PIN separately, and reading
-      # them back out of the blob would mean parsing an address.
+      # Stored separately too: the e-invoice export needs them.
       "client_city" => client.billing_city,
       "client_pincode" => client.billing_pin
     }
@@ -625,12 +513,7 @@ defmodule QuantumBilling.Invoices do
 
   defp present(_value), do: nil
 
-  @doc """
-  Creates an invoice, assigning it the next number in the series.
-
-  The number is read and advanced in the same transaction as the insert, so
-  concurrent saves cannot collide.
-  """
+  @doc "Creates an invoice with the next number in the series."
   def create_invoice(attrs) do
     # Outside the transaction: creating the row inside it deadlocks concurrent callers.
     organization = Settings.ensure_organization() || %Organization{}
@@ -656,7 +539,7 @@ defmodule QuantumBilling.Invoices do
       Invoice.changeset(%Invoice{}, attrs, trusted)
     end)
     |> Multi.run(:advance_number, fn repo, %{organization: organization} ->
-      # A new installation has no settings row; without one every invoice would get number 1.
+      # Without a settings row every invoice would get number 1.
       organization
       |> Ecto.Changeset.change(%{
         invoice_next_number: (organization.invoice_next_number || 1) + 1
@@ -701,17 +584,8 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Updates an invoice in place.
 
-  Neither the number nor the company block is touched. The number belongs to the
-  series and reassigning it would break the sequence; the company block is a
-  snapshot of who issued the invoice at the time, and refreshing it here would
-  quietly rewrite history whenever Settings changed. Items are replaced wholesale
-  — `has_many :items, on_replace: :delete` is what makes a removed row actually
-  go.
-
-  The layout snapshot is refreshed only while the invoice is still a draft. A
-  draft has not been sent to anybody, so re-taking it is how a template change
-  reaches an invoice still being written; once it has left the building, the
-  document it was is the document it stays.
+  The number and company block never change. The layout snapshot is refreshed
+  only while the invoice is a draft.
   """
   def update_invoice(%Invoice{} = invoice, attrs) do
     invoice
@@ -730,16 +604,10 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Queues registration of an invoice with the IRP.
+  Queues IRP registration for an invoice.
 
-  Returns `{:ok, :queued}`, `{:ok, :already_registered}` for an invoice that
-  already carries an IRN, or `{:error, reason}`.
-
-  The invoice is moved to `"Pending E-Invoice"` immediately so the page shows
-  what is happening; the job replaces that with the real outcome. Registering
-  inline used to hold the request open for however long the government portal
-  took, and left `"E-Invoice Failed"` behind with nothing that would ever try
-  again.
+  Returns `{:ok, :queued}`, `{:ok, :already_registered}` or `{:error, reason}`.
+  The status becomes "Pending E-Invoice" until the job finishes.
   """
   def queue_einvoice(%Invoice{irn: irn}) when is_binary(irn) and irn != "" do
     {:ok, :already_registered}
@@ -767,18 +635,10 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Generates an E-Invoice (IRN) for the given invoice via the IRP API or sandbox emulator.
-  Updates the invoice with the returned IRN, Ack Details, and Signed QR code, transitioning its
-  status to "E-Invoice Generated".
+  Registers an invoice with the IRP and stores the IRN, ack details and QR.
 
-  Called by `QuantumBilling.Workers.EInvoiceWorker`; use `queue_einvoice/1`
-  from anything a person is waiting on.
-
-  The invoice is validated against the e-invoice schema first. It was not
-  before, so this path — the one that submits a document to the government and
-  cannot be taken back — accepted invoices that the XML download refuses to
-  even write to a file. An invoice with no line items got as far as the QR
-  builder and crashed it.
+  Called by `EInvoiceWorker`. The invoice is validated against the e-invoice
+  schema first.
   """
   def generate_einvoice(%Invoice{} = invoice) do
     invoice = Repo.preload(invoice, :items)
@@ -830,7 +690,7 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # Directly, like the other status stamps: status is not a form field.
+  # Status is not a form field, so it is set directly.
   defp mark_einvoice_failed(invoice) do
     with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
       broadcast_change(failed, :invoice_changed)
@@ -839,19 +699,10 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Cancels an invoice: it keeps its number, leaves GSTR-1, and can no longer be
-  paid.
+  Cancels an invoice. It keeps its number and leaves GSTR-1.
 
-  Refused, with the reason, when cancelling here would not be the whole story:
-
-    * `:already_cancelled`;
-    * `:paid` — money has moved; that needs a credit note, not a cancellation;
-    * `:irn_registered` — a live IRN has to be cancelled on the IRP, which this
-      application does not do;
-    * `:live_e_way_bill` — the goods are on a live e-way bill, which has to be
-      cancelled first.
-
-  `opts` takes `:user_id`, `:api_key_id` and `:ip_address` for the audit entry.
+  Refused with `:already_cancelled`, `:paid` (needs a credit note),
+  `:irn_registered` or `:live_e_way_bill`. `opts` carries audit fields.
   """
   def cancel_invoice(%Invoice{} = invoice, reason, opts \\ []) when is_binary(reason) do
     cond do
@@ -888,18 +739,9 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc """
-  Moves an invoice to the Bin.
+  Moves an invoice to the Bin. Nothing is removed and the number is not reused.
 
-  Nothing is removed: the invoice, its line items, its e-way bills and its
-  credit notes all stay in the database, and the invoice simply stops being
-  read by anything but the Bin page. `restore_invoice/2` undoes this exactly;
-  `purge_invoice/2` is the delete that cannot be undone.
-
-  The number is not returned to the series either way: `invoice_next_number`
-  only ever goes forward, so a deleted invoice leaves a gap rather than letting
-  the next save reuse a number that has already been out in the world.
-
-  `opts` may carry `:user_id`, recorded against the audit entry.
+  `opts` may carry `:user_id` for the audit entry.
   """
   def delete_invoice(%Invoice{} = invoice, opts \\ []) do
     invoice
@@ -918,13 +760,7 @@ defmodule QuantumBilling.Invoices do
     |> announce(:restore_invoice, opts)
   end
 
-  @doc """
-  Deletes an invoice for good, along with its line items.
-
-  Its e-way bills and credit notes go with it — the database cascades them —
-  which is why this is only offered from the Bin, behind a confirmation, and
-  only for an invoice that is already there.
-  """
+  @doc "Deletes a binned invoice for good. Its e-way bills and credit notes cascade."
   def purge_invoice(invoice, opts \\ [])
 
   def purge_invoice(%Invoice{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
@@ -952,8 +788,7 @@ defmodule QuantumBilling.Invoices do
 
   defp announce({:error, _changeset} = result, _action, _opts), do: result
 
-  # These build the `trusted` half of the changeset: values the application
-  # decides, which no params can override.
+  # Trusted fields: decided by the application, never by params.
   defp with_number(trusted, organization) do
     Map.put(trusted, :invoice_number, Settings.next_invoice_number(organization))
   end
@@ -962,11 +797,7 @@ defmodule QuantumBilling.Invoices do
     Map.merge(trusted, company_snapshot(organization))
   end
 
-  @doc """
-  The issuing company as `organization` describes it now, as trusted invoice
-  fields. For the form's live preview, which needs the company's state to split
-  the tax; `create_invoice/1` takes its own snapshot under the numbering lock.
-  """
+  @doc "The issuing company as trusted invoice fields, for the form's live preview."
   def company_snapshot(%Organization{} = organization) do
     %{
       company_name: organization.company_name,
@@ -987,20 +818,19 @@ defmodule QuantumBilling.Invoices do
     Map.merge(trusted, %{template_id: id, layout_xml: xml})
   end
 
-  # No design exists yet; freeze the default layout so later edits don't change this invoice.
+  # No design exists yet; freeze the default layout.
   defp with_layout_snapshot(trusted, nil, _organization) do
     Map.merge(trusted, %{template_id: nil, layout_xml: Catalog.classic() |> Layout.to_xml()})
   end
 
-  # Judged by the stored status, not the params, so a sent document is never re-frozen.
+  # Judged by the stored status, so a sent invoice is never re-frozen.
   defp refresh_layout(attrs, %Invoice{status: "Draft"}) do
     with_layout_snapshot(%{}, resolve_template(attrs), Settings.get_organization())
   end
 
   defp refresh_layout(_attrs, %Invoice{}), do: %{}
 
-  # A sent invoice keeps the design it went out with, so its template cannot be
-  # switched from the form either.
+  # A sent invoice keeps its design.
   defp drop_layout_unless_draft(attrs, %Invoice{status: "Draft"}), do: attrs
 
   defp drop_layout_unless_draft(attrs, %Invoice{}),
@@ -1030,20 +860,10 @@ defmodule QuantumBilling.Invoices do
   """
   def subscribe, do: Events.subscribe(Events.invoices_topic())
 
-  @doc """
-  Subscribes the caller to one invoice's changes only.
-
-  What an unauthenticated page must use: see `Events.invoice_topic/1`.
-  """
+  @doc "Subscribes the caller to one invoice's changes (for public pages)."
   def subscribe(invoice_id), do: Events.subscribe(Events.invoice_topic(invoice_id))
 
-  @doc """
-  Announces an invoice change to every listening page.
-
-  On two topics: the list, dashboard and report pages want every change, and
-  the public payment page wants exactly one invoice and has no business
-  receiving the rest.
-  """
+  @doc "Broadcasts an invoice change to the list topic and the invoice's own topic."
   def broadcast_change(invoice, event \\ :invoice_changed) do
     Events.broadcast(Events.invoices_topic(), {event, invoice})
 

@@ -1,34 +1,17 @@
 defmodule QuantumBilling.Money do
   @moduledoc """
-  Money is integer paise; every rule for reading, rounding and writing it lives
-  here.
+  Money is integer paise; every rule for reading, rounding and writing it lives here.
 
-  ## Why paise
-
-  Amounts used to be whole rupees, so a rate of ₹1,250.50 could not be entered
-  and each line's GST was truncated to the rupee. Paise keep the arithmetic in
-  integers — exact, fast, and summable in SQL — while carrying the two decimal
-  places an invoice needs. Columns are `bigint`: in paise, a 32-bit column
-  stops at about ₹2.1 crore.
-
-  ## Rounding
-
-  Half-up, away from zero: 0.5 paise becomes 1. The grand total is then rounded
-  to the rupee, as Indian invoices are, and the difference is shown as the
-  round-off rather than lost.
-
-  ## Boundaries
-
-  People type rupees (`"1,250.50"`) and payloads want rupees (`1250.50`);
-  `parse/1`, `to_input/1` and `to_rupees_decimal/1` are the only crossings.
+  Columns are `bigint`. Rounding is half-up, away from zero; the grand total is
+  rounded to the rupee and the difference shown as round-off. `parse/1`,
+  `to_input/1` and `to_rupees_decimal/1` are the only rupee crossings.
   """
 
   @doc """
   Reads a rupee amount as typed into a form, returning paise.
 
-  Accepts a rupee sign, Indian or Western digit grouping, surrounding spaces
-  and up to two decimal places. A number is taken as rupees too, so `5000` and
-  `"5000"` agree.
+  Accepts a rupee sign, Indian or Western grouping, spaces and up to two
+  decimals. A number is taken as rupees too.
 
   ## Examples
 
@@ -40,7 +23,6 @@ defmodule QuantumBilling.Money do
 
       iex> QuantumBilling.Money.parse("12.345")
       :error
-
   """
   def parse(rupees) when is_integer(rupees), do: {:ok, rupees * 100}
 
@@ -99,14 +81,12 @@ defmodule QuantumBilling.Money do
   @doc """
   Quantity × rate, rounded half-up to the paisa.
 
-  `quantity` is a `Decimal` (up to three places), an integer, or a numeric
-  string; anything else counts as zero.
+  `quantity` is a `Decimal`, an integer or a numeric string; anything else is zero.
 
   ## Examples
 
       iex> QuantumBilling.Money.line_amount(Decimal.new("2.5"), 9_999)
       24_998
-
   """
   def line_amount(quantity, rate_paise) when is_integer(rate_paise) do
     case quantity(quantity) do
@@ -139,10 +119,7 @@ defmodule QuantumBilling.Money do
   def tax(_amount_paise, _rate), do: 0
 
   @doc """
-  Rounds paise to the nearest whole rupee, half-up.
-
-  Returns `{rounded, round_off}` where `rounded = paise + round_off`, so the
-  round-off is what an invoice prints: never more than fifty paise either way.
+  Rounds paise to the nearest whole rupee, half-up: `{rounded, round_off}`.
 
   ## Examples
 
@@ -151,7 +128,6 @@ defmodule QuantumBilling.Money do
 
       iex> QuantumBilling.Money.round_to_rupee(1_180_050)
       {1_180_100, 50}
-
   """
   def round_to_rupee(paise) when is_integer(paise) do
     rounded = round_half_up(paise, 100) * 100

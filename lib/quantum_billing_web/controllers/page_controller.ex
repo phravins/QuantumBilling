@@ -6,13 +6,8 @@ defmodule QuantumBillingWeb.PageController do
   end
 
   @doc """
-  Renders the branded 404 for any path the router does not recognise.
-
-  Reached from the catch-all route, which exists so unknown URLs never raise
-  `Phoenix.Router.NoRouteError` — in development that exception surfaces the
-  debug page and its full listing of every route in the application.
-
-  Layouts are switched off because the template is a complete HTML document.
+  The branded 404 for the catch-all route, so unknown paths never raise
+  `NoRouteError`. The template is a full document, so layouts are off.
   """
   def not_found(conn, _params) do
     conn

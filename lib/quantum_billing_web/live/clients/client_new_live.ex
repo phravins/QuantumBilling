@@ -1,23 +1,9 @@
 defmodule QuantumBillingWeb.ClientNewLive do
   @moduledoc """
-  The client form, for both a new client and an existing one.
+  The client form, for both new and edit.
 
-  Follows the shape of `EWayBillNewLive`: header carrying Cancel and
-  Save, then the form. Nothing here needs a running summary the way an invoice
-  does, so the form takes the full width and the standing guidance sits behind
-  the header's `help_popover/1` rather than in a permanent right-hand rail.
-
-  One module for both actions rather than two, the same way `InvoiceNewLive`
-  serves `/invoices/new` and `/invoices/:id/edit`: the fields, the validation
-  and the GSTIN rule are identical, and the only thing that differs is whether
-  the changeset starts from a blank struct or a stored one. The list page had
-  no way in here at all before — its row menu was a button with nothing behind
-  it — so a client could be created and then never corrected.
-
-  The GSTIN's required marker follows the client type rather than being fixed —
-  an unregistered dealer or a walk-in consumer has no GSTIN, and B2C invoicing
-  needs them. `Clients.gstin_required?/1` is the single source of that rule, so
-  the asterisk and the changeset can never disagree.
+  The GSTIN required marker follows the client type through
+  `Clients.gstin_required?/1`, the same rule the changeset uses.
   """
   use QuantumBillingWeb, :live_view
 

@@ -1,7 +1,5 @@
 defmodule QuantumBilling.Accounts do
-  @moduledoc """
-  The Accounts context.
-  """
+  @moduledoc "Users, registration, sessions, memberships and invitations."
 
   import Ecto.Query, warn: false
 
@@ -14,129 +12,42 @@ defmodule QuantumBilling.Accounts do
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.{Business, Membership}
 
-  ## Database getters
-
-  @doc """
-  Gets a user by email.
-
-  ## Examples
-
-      iex> get_user_by_email("foo@example.com")
-      %User{}
-
-      iex> get_user_by_email("unknown@example.com")
-      nil
-
-  """
+  @doc "Gets a user by email."
   def get_user_by_email(email) when is_binary(email) do
     Repo.get_by(User, email: email)
   end
 
-  @doc """
-  Gets a user by email and password.
-
-  ## Examples
-
-      iex> get_user_by_email_and_password("foo@example.com", "correct_password")
-      %User{}
-
-      iex> get_user_by_email_and_password("foo@example.com", "invalid_password")
-      nil
-
-  """
+  @doc "Gets a user by email and password."
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
     user = Repo.get_by(User, email: email)
     if User.valid_password?(user, password), do: user
   end
 
-  @doc """
-  Gets a single user.
-
-  Raises `Ecto.NoResultsError` if the User does not exist.
-
-  ## Examples
-
-      iex> get_user!(123)
-      %User{}
-
-      iex> get_user!(456)
-      ** (Ecto.NoResultsError)
-
-  """
+  @doc "Gets a user by id. Raises if missing."
   def get_user!(id), do: Repo.get!(User, id)
 
-  @doc """
-  Gets a user by id, or `nil`.
-
-  Used where a missing user is an ordinary outcome rather than a bug — a
-  half-finished sign-in whose account was deleted in the meantime, for example.
-  """
+  @doc "Gets a user by id, or `nil`."
   def get_user(id), do: Repo.get(User, id)
 
-  ## User registration
-
-  @doc """
-  Registers a user.
-
-  ## Examples
-
-      iex> register_user(%{field: value})
-      {:ok, %User{}}
-
-      iex> register_user(%{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
+  @doc "Registers a user."
   def register_user(attrs) do
     %User{}
     |> User.email_changeset(attrs)
     |> Repo.insert()
   end
 
-  @doc """
-  Registers a user with a username, an email and a password.
-
-  The account starts unconfirmed: `deliver_user_confirmation_instructions/2`
-  emails the link that confirms it, and password login is refused until then.
-
-  ## Examples
-
-      iex> register_user_with_password(%{username: value, email: value, password: value})
-      {:ok, %User{}}
-
-      iex> register_user_with_password(%{email: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
+  @doc "Registers a user with a username, email and password. The account starts unconfirmed."
   def register_user_with_password(attrs) do
     register_user_with_password(attrs, nil)
   end
 
   @doc """
-  Registers a user with a username, an email and a password, if the
-  installation will accept one.
+  Registers a user, if the installation accepts one.
 
-  Registration is not open. Everyone in a business shares its books — there is
-  no per-user scoping on invoices or clients, by design — so membership is full
-  access to them. Letting anyone create an account meant a stranger could
-  confirm their own email address and then read every invoice and client,
-  export the whole database, and change the stored SMTP and payment
-  credentials.
-
-  Two ways in, and only two:
-
-    * **the first account.** An empty `users` table accepts one registration,
-      which becomes the owner of the first business. This is how a fresh
-      install is set up, with no seeding step.
-
-    * **an invitation.** Afterwards an owner invites an address into their
-      business, and only that address can register, once, before the
-      invitation expires. It joins that business with the invited role, and
-      any other business that has a pending invitation for the same address.
-
-  The invitation is claimed in the same transaction that inserts the user, so
-  two simultaneous submissions of one token cannot both succeed.
+  Only two ways in: the first account on an empty install (it becomes the
+  owner), or an invitation for that exact address. The invitation is claimed in
+  the same transaction as the insert, so a token cannot be used twice.
   """
   def register_user_with_password(attrs, invitation_token) do
     if bootstrap?() do
@@ -167,7 +78,7 @@ defmodule QuantumBilling.Accounts do
 
   defp insert_invited_user(attrs, invitation) do
     Ecto.Multi.new()
-    # Conditional claim: of two racing submissions, the second updates nothing and rolls back.
+    # Of two racing submissions, the second updates nothing and rolls back.
     |> Ecto.Multi.run(:claim, fn repo, _changes ->
       query =
         from(i in Invitation, where: i.id == ^invitation.id, where: is_nil(i.accepted_at))
@@ -191,9 +102,7 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  # The invitation used, and every other business's pending invitation for the
-  # same address: those cannot be used once the account exists, and the person
-  # was wanted there too.
+  # Claims every pending invitation for this address, across businesses.
   defp join_invited_businesses(repo, user, invitation) do
     now = DateTime.utc_now(:second)
 
@@ -218,7 +127,6 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  # The account gets the invited email, not any address.
   defp fetch_pending_invitation(nil), do: {:error, :closed}
   defp fetch_pending_invitation(""), do: {:error, :closed}
 
@@ -252,39 +160,21 @@ defmodule QuantumBilling.Accounts do
     |> Ecto.Changeset.add_error(:email, message)
   end
 
-  @doc """
-  Whether this installation is still waiting for its first account.
-
-  True only while `users` is empty. Checked rather than cached: a cached
-  "closed" flag that went stale would either lock out a fresh install or
-  reopen registration on a live one.
-  """
+  @doc "Whether the install has no users yet. Checked, never cached."
   def bootstrap?, do: not Repo.exists?(User)
 
-  @doc """
-  Whether a stranger can register right now.
-
-  The sign-up page asks this to decide between showing the form and explaining
-  that an invitation is needed.
-  """
+  @doc "Whether a stranger can register right now."
   def registration_open?(invitation_token \\ nil) do
     bootstrap?() or match?({:ok, _}, fetch_pending_invitation(invitation_token))
   end
 
-  @doc """
-  The address an invitation was issued to, or `nil`.
-
-  The sign-up form pre-fills and locks the email from this, so the person
-  cannot accidentally register the wrong address and burn the invitation.
-  """
+  @doc "The address an invitation was issued to, or `nil`."
   def invited_email(invitation_token) do
     case fetch_pending_invitation(invitation_token) do
       {:ok, invitation} -> invitation.email
       {:error, _reason} -> nil
     end
   end
-
-  ## Members and invitations — owner administration
 
   @doc "Everyone in `business`, oldest account first, as memberships with their user."
   def list_members(%Business{id: business_id}) do
@@ -306,13 +196,7 @@ defmodule QuantumBilling.Accounts do
     )
   end
 
-  @doc """
-  Gives `user` the role `role` in `business`.
-
-  Refuses to demote the last owner: a business with no owner has nobody who can
-  invite, administer credentials or export the data, and no way back short of
-  a console.
-  """
+  @doc "Gives `user` the role `role` in `business`. Refuses to demote the last owner."
   def set_role(%Business{} = business, %User{} = user, role) when is_binary(role) do
     case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
       nil ->
@@ -337,10 +221,7 @@ defmodule QuantumBilling.Accounts do
     |> Repo.update()
   end
 
-  @doc """
-  Takes `user` out of `business`. Their account, and their other businesses,
-  are untouched. Refuses to remove the last owner.
-  """
+  @doc "Removes `user` from `business`. Refuses to remove the last owner."
   def remove_member(%Business{} = business, %User{} = user) do
     case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
       nil ->
@@ -369,16 +250,10 @@ defmodule QuantumBilling.Accounts do
   @doc """
   Brings `email` into `business` as `role`.
 
-  An address that already has an account is added straight away and
-  `{:ok, {:added, membership}}` comes back: there is nothing for them to
-  accept, and the business appears in their switcher.
-
-  Any other address is emailed an invitation to register, and
-  `{:ok, {:invited, invitation}}` comes back; the raw token only ever exists
-  inside this function and the email it sends. Re-inviting an address replaces
-  its pending invitation to this business rather than leaving two live tokens
-  for one mailbox. When the relay refuses the email, returns
-  `{:error, {:delivery_failed, message}}` and no invitation is left pending.
+  Returns `{:ok, {:added, membership}}` for an existing account, or
+  `{:ok, {:invited, invitation}}` after emailing an invitation. Re-inviting
+  replaces the pending invitation. Returns `{:error, {:delivery_failed, msg}}`
+  if the email is refused.
   """
   def invite(%Business{} = business, email, role, %User{} = invited_by, url_fun)
       when is_function(url_fun, 1) do
@@ -430,8 +305,7 @@ defmodule QuantumBilling.Accounts do
     end)
   end
 
-  # Sent after commit so a failure stays in the delivery ledger.
-  # An invitation whose email was refused is withdrawn.
+  # Sent after commit so failures land in the delivery ledger; a refused invitation is withdrawn.
   defp send_invitation(invitation, url) do
     case UserNotifier.deliver_invitation(invitation, url) do
       {:ok, _email} ->
@@ -450,30 +324,12 @@ defmodule QuantumBilling.Accounts do
   def get_invitation(%Business{id: business_id}, id),
     do: Repo.get_by(Invitation, id: id, business_id: business_id)
 
-  @doc """
-  Returns an `%Ecto.Changeset{}` for tracking the registration form.
-
-  Neither hashes the password nor hits the database for the uniqueness check, so
-  it is safe to run on every keystroke.
-
-  ## Examples
-
-      iex> change_user_registration(%User{})
-      %Ecto.Changeset{data: %User{}}
-
-  """
+  @doc "A registration changeset. No hashing or DB check, so safe on every keystroke."
   def change_user_registration(user \\ %User{}, attrs \\ %{}) do
     User.registration_changeset(user, attrs, hash_password: false, validate_unique: false)
   end
 
-  ## Settings
-
-  @doc """
-  Checks whether the user is in sudo mode.
-
-  The user is in sudo mode when the last authentication was done no further
-  than 20 minutes ago. The limit can be given as second argument in minutes.
-  """
+  @doc "Whether the user authenticated within the last `minutes` (default 20)."
   def sudo_mode?(user, minutes \\ -20)
 
   def sudo_mode?(%User{authenticated_at: ts}, minutes) when is_struct(ts, DateTime) do
@@ -482,31 +338,12 @@ defmodule QuantumBilling.Accounts do
 
   def sudo_mode?(_user, _minutes), do: false
 
-  @doc """
-  Returns an `%Ecto.Changeset{}` for the user's display details.
-
-  ## Examples
-
-      iex> change_user_profile(user)
-      %Ecto.Changeset{data: %User{}}
-
-  """
+  @doc "A changeset for the user's display details."
   def change_user_profile(%User{} = user, attrs \\ %{}) do
     User.profile_changeset(user, attrs)
   end
 
-  @doc """
-  Updates the user's display details.
-
-  Unlike the email and password, these are not identity and need no
-  confirmation or re-authentication.
-
-  ## Examples
-
-      iex> update_user_profile(user, %{full_name: "Priya Sharma"})
-      {:ok, %User{}}
-
-  """
+  @doc "Updates the user's display details."
   def update_user_profile(%User{} = user, attrs) do
     result =
       user
@@ -537,11 +374,7 @@ defmodule QuantumBilling.Accounts do
     |> broadcast_profile()
   end
 
-  @doc """
-  Marks onboarding finished (or skipped), so it is not shown again.
-
-  Set here, never from a form. Idempotent: a second call keeps the first time.
-  """
+  @doc "Marks onboarding finished or skipped. Idempotent."
   def complete_onboarding(%User{onboarded_at: %DateTime{}} = user), do: {:ok, user}
 
   def complete_onboarding(%User{} = user) do
@@ -562,11 +395,7 @@ defmodule QuantumBilling.Accounts do
 
   defp broadcast_profile(error), do: error
 
-  @doc """
-  Gives the user's profile banner a new generated scene.
-
-  Broadcasts like a profile edit, so open pages keep `current_scope` in step.
-  """
+  @doc "Gives the profile banner a new scene and broadcasts the change."
   def shuffle_banner(%User{} = user) do
     result =
       user
@@ -585,26 +414,12 @@ defmodule QuantumBilling.Accounts do
   """
   def subscribe_user(%User{id: id}), do: Events.subscribe(Events.user_topic(id))
 
-  @doc """
-  Returns an `%Ecto.Changeset{}` for changing the user email.
-
-  See `QuantumBilling.Accounts.User.email_changeset/3` for a list of supported options.
-
-  ## Examples
-
-      iex> change_user_email(user)
-      %Ecto.Changeset{data: %User{}}
-
-  """
+  @doc "A changeset for changing the email."
   def change_user_email(user, attrs \\ %{}, opts \\ []) do
     User.email_changeset(user, attrs, opts)
   end
 
-  @doc """
-  Updates the user email using the given token.
-
-  If the token matches, the user email is updated and the token is deleted.
-  """
+  @doc "Updates the email with the given token, then deletes the token."
   def update_user_email(user, token) do
     context = "change:#{user.email}"
 
@@ -621,42 +436,17 @@ defmodule QuantumBilling.Accounts do
     end)
   end
 
-  @doc """
-  Returns an `%Ecto.Changeset{}` for changing the user password.
-
-  See `QuantumBilling.Accounts.User.password_changeset/3` for a list of supported options.
-
-  ## Examples
-
-      iex> change_user_password(user)
-      %Ecto.Changeset{data: %User{}}
-
-  """
+  @doc "A changeset for changing the password."
   def change_user_password(user, attrs \\ %{}, opts \\ []) do
     User.password_changeset(user, attrs, opts)
   end
 
-  @doc """
-  Updates the user password.
-
-  Returns a tuple with the updated user, as well as a list of expired tokens.
-
-  ## Examples
-
-      iex> update_user_password(user, %{password: ...})
-      {:ok, {%User{}, [...]}}
-
-      iex> update_user_password(user, %{password: "too short"})
-      {:error, %Ecto.Changeset{}}
-
-  """
+  @doc "Updates the password. Returns the user and the expired tokens."
   def update_user_password(user, attrs) do
     user
     |> User.password_changeset(attrs)
     |> update_user_and_delete_all_tokens()
   end
-
-  ## Session
 
   @doc """
   Generates a session token.
@@ -667,11 +457,7 @@ defmodule QuantumBilling.Accounts do
     token
   end
 
-  @doc """
-  Every session token `user` currently holds, for disconnecting their open
-  windows when their access changes. Returned as `%{token: binary}` maps, the
-  shape `QuantumBillingWeb.UserAuth.disconnect_sessions/1` takes.
-  """
+  @doc "Every session token `user` holds, as `%{token: binary}` maps for disconnecting them."
   def list_user_session_tokens(%User{id: user_id}) do
     Repo.all(
       from t in UserToken,
@@ -680,11 +466,7 @@ defmodule QuantumBilling.Accounts do
     )
   end
 
-  @doc """
-  Gets the user with the given signed token.
-
-  If the token is valid `{user, token_inserted_at}` is returned, otherwise `nil` is returned.
-  """
+  @doc "Gets `{user, token_inserted_at}` for a signed token, or `nil`."
   def get_user_by_session_token(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
     Repo.one(query)
@@ -705,26 +487,14 @@ defmodule QuantumBilling.Accounts do
   @doc """
   Logs the user in by magic link.
 
-  There are three cases to consider:
-
-  1. The user has already confirmed their email. They are logged in
-     and the magic link is expired.
-
-  2. The user has not confirmed their email and no password is set.
-     In this case, the user gets confirmed, logged in, and all tokens -
-     including session ones - are expired. In theory, no other tokens
-     exist but we delete all of them for best security practices.
-
-  3. The user has not confirmed their email but a password is set.
-     This cannot happen in the default implementation but may be the
-     source of security pitfalls. See the "Mixing magic link and password registration" section of
-     `mix help phx.gen.auth`.
+  A confirmed user is logged in and the link expires. An unconfirmed user with
+  no password is confirmed and all their tokens expire. An unconfirmed user with
+  a password is refused (session fixation).
   """
   def login_user_by_magic_link(token) do
     {:ok, query} = UserToken.verify_magic_link_token_query(token)
 
     case Repo.one(query) do
-      # Prevent session fixation attacks by disallowing magic links for unconfirmed users with password
       {%User{confirmed_at: nil, hashed_password: hash}, _token} when not is_nil(hash) ->
         raise """
         magic link log in is not allowed for unconfirmed users with a password set!
@@ -833,10 +603,7 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  @doc """
-  The user a password reset token belongs to, or `nil` when the token is
-  unknown, expired, or was sent to an address the account no longer uses.
-  """
+  @doc "The user a password reset token belongs to, or `nil`."
   def get_user_by_reset_password_token(token) do
     with {:ok, query} <- UserToken.verify_reset_password_token_query(token),
          {%User{} = user, _token} <- Repo.one(query) do
@@ -846,17 +613,7 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  @doc """
-  Sets a new password from the "forgot password" link.
-
-  Every outstanding token is expired on success, so the link is single-use and
-  any session opened with the old password is signed out — if the reset was
-  prompted by someone else being in the account, leaving their session alive
-  would defeat the point.
-
-  The account is confirmed at the same time: the link only arrives by email, so
-  following it proves the address as well as a confirmation link would.
-  """
+  @doc "Sets a new password from a reset link, expires every token and confirms the account."
   def reset_user_password(%User{} = user, attrs) do
     user
     |> User.password_changeset(attrs)
@@ -864,12 +621,7 @@ defmodule QuantumBilling.Accounts do
     |> update_user_and_delete_all_tokens()
   end
 
-  @doc """
-  Confirms a user from the token emailed at sign-up.
-
-  Every outstanding token is expired on success, so the confirmation link can
-  only be spent once.
-  """
+  @doc "Confirms a user from the sign-up token and expires every token."
   def confirm_user_by_token(token) do
     with {:ok, query} <- UserToken.verify_confirm_token_query(token),
          {%User{} = user, _token} <- Repo.one(query),
@@ -888,8 +640,6 @@ defmodule QuantumBilling.Accounts do
     Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
     :ok
   end
-
-  ## Token helper
 
   defp update_user_and_delete_all_tokens(changeset) do
     Repo.transact(fn ->

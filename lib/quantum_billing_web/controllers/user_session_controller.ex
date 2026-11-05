@@ -31,9 +31,7 @@ defmodule QuantumBillingWeb.UserSessionController do
   # email + password login
   defp create(conn, %{"user" => user_params}, info) do
     %{"email" => email, "password" => password} = user_params
-    # The client's address, not the socket's: behind the reverse proxy every
-    # request's socket is the proxy's, so keying on it locked the whole
-    # installation after ten bad passwords from anyone.
+    # Key on the client address: behind the proxy every socket is the proxy's.
     ip = QuantumBillingWeb.ClientIP.client_ip_tuple(conn)
     ip_key = {:login_ip, ip}
     email_key = {:login_email, String.downcase(String.trim(email || ""))}
@@ -119,12 +117,8 @@ defmodule QuantumBillingWeb.UserSessionController do
   end
 
   @doc """
-  Verifies the second factor for a sign-in held by
-  `UserAuth.stash_pending_two_factor/3`.
-
-  The check lives here rather than in the LiveView so there is exactly one
-  authoritative verification — a recovery code is single use, and checking it
-  in two places would burn it twice.
+  Verifies the second factor for a sign-in stashed by `UserAuth.stash_pending_two_factor/3`.
+  The only place it is checked, so a recovery code is used once.
   """
   def verify_two_factor(conn, %{"user" => %{"code" => code}}) do
     case UserAuth.pending_two_factor(conn) do

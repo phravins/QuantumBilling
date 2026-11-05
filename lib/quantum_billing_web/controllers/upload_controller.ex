@@ -1,24 +1,11 @@
 defmodule QuantumBillingWeb.UploadController do
   @moduledoc """
-  Serves uploaded files to the people they belong to.
+  Serves uploaded files to signed-in members of the business that owns them
+  (its logo or a recorded design asset). Everyone else gets the same 403
+  whether or not the file exists.
 
-  A file goes out only to someone signed in, in the business that owns it: the
-  one whose logo it is, or that recorded it as a design asset (a letterhead,
-  a stamp) through `QuantumBilling.DesignAssets`. Everyone else gets the same Forbidden page whether or not the file
-  exists, so the answer does not reveal which names are real.
-
-  Customers on a public invoice page never come through here: that page carries
-  the logo and design images inline.
-
-  The headers make the file safe on this origin:
-
-    * `Content-Disposition: attachment` downloads the file when it is opened as a
-      page. An `<img src>` is unaffected.
-
-    * `default-src 'none'; sandbox` leaves it unable to run script or load
-      anything if a browser does render it.
-
-    * `X-Content-Type-Options: nosniff` holds the browser to the declared type.
+  Headers keep the file inert on this origin: `Content-Disposition: attachment`,
+  a `default-src 'none'; sandbox` CSP and `nosniff`.
   """
   use QuantumBillingWeb, :controller
 

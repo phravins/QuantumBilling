@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.API.LeakTest do
   @moduledoc """
-  What the API says about a record, and what it must never say.
-
-  The field lists are pinned exactly: a column added to a table later does not
-  reach the API until someone changes the serializer *and* this test. The
-  sweep then plants a recognisable value in every sensitive column and checks
-  that none of them comes out of any endpoint.
+  API field lists are pinned exactly, and no sensitive column value leaves any
+  endpoint.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

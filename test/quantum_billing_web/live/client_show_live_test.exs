@@ -1,16 +1,8 @@
 defmodule QuantumBillingWeb.ClientShowLiveTest do
   @moduledoc """
-  The client detail page the eye icon on the Clients list now opens.
-
-  The assertions about invoice history are scoped to `#client-invoice-history`
-  and to the `#client-invoice-<id>` rows rather than made against the rendered
-  document. The client's own name and each invoice number are printed in the
-  header, the tiles and the notification bell as well, so a bare `html =~`
-  would be satisfied by a page whose history table had quietly stopped
-  filtering — which is the one thing most of these tests exist to rule out.
-
-  `async: false` because several of them create invoices, which broadcast, and
-  the page is subscribed to that topic.
+  The client detail page. History assertions are scoped to
+  `#client-invoice-history`, since names and numbers also appear elsewhere.
+  `async: false`: invoices broadcast to a topic the page subscribes to.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

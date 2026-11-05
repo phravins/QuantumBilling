@@ -1,10 +1,6 @@
 defmodule QuantumBillingWeb.Legal.LegalComponents do
   @moduledoc """
-  Building blocks for the public legal documents.
-
-  `blank/1` deliberately renders unfilled details with a highlight so that any
-  placeholder still left in the text is obvious on the rendered page, rather
-  than slipping into production looking like finished copy.
+  Parts for the legal pages. `blank/1` highlights unfilled placeholders so they stand out.
   """
   use Phoenix.Component
 

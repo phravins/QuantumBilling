@@ -1,19 +1,9 @@
 defmodule QuantumBilling.Workers.EmailWorker do
   @moduledoc """
-  Sends one queued message, and records what happened.
+  Sends one queued message and records each attempt in the delivery ledger.
 
-  Mail is the part of this application most likely to fail for reasons that
-  have nothing to do with it: a relay rate-limits, a certificate expires, a DNS
-  record changes. None of that should lose an invoice or stall the page that
-  asked for it, so delivery runs here — retried with exponential backoff, with
-  every attempt written to the delivery ledger.
-
-  ## Retries
-
-  Five attempts over roughly a quarter of an hour of backoff. Failures that
-  cannot improve by being repeated — a recipient that is not an address, an
-  invoice that no longer exists — are **not** retried: they return `:discard`,
-  so a permanent problem is not disguised as a slow one.
+  Five attempts with exponential backoff (about 15 minutes). Permanent
+  failures (bad address, missing invoice) return `:discard` instead of retrying.
   """
   use QuantumBilling.Worker, queue: :mailers, max_attempts: 5
 

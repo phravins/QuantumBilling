@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.Plugs.RequireScope do
   @moduledoc """
-  Refuses an API call the key was not granted the scope for.
-
-  Used per action in each API controller. A missing scope is 403, not 404:
-  the caller is authenticated and is being told plainly what their key lacks,
-  which is what an integrator needs to fix it. Nothing about the resource is
-  disclosed by that — the check happens before anything is looked up.
+  Refuses an API call whose key lacks the scope (403, checked before any lookup).
+  Used per action in the API controllers.
   """
 
   alias QuantumBilling.ApiKeys.ApiKey

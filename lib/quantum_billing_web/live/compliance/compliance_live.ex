@@ -1,21 +1,11 @@
 defmodule QuantumBillingWeb.ComplianceLive do
   @moduledoc """
-  The Compliance page: filing status across the financial year, the obligations
-  themselves, what falls due next, and a month calendar.
+  The Compliance page: filing status for the year, obligations, what is due
+  next and a month calendar.
 
-  Everything is derived from `QuantumBilling.Compliance`, which generates the
-  schedule from the statutory rules rather than storing it, narrowed to what
-  this organisation's own GST registration actually owes. Nothing is filed
-  yet — that needs the filings table — so obligations resolve to Pending or
-  Overdue on dates alone.
-
-  Tasks and reminders added by hand join the same list as rows carrying `:task`,
-  so the table, calendar and rail need no second code path. Owners and staff can
-  both manage them.
-
-  `mount/3` assigns raw filter and calendar state; `handle_event/3` only ever
-  updates that state; `render/1` re-derives the visible rows on every pass, so
-  there is a single source of truth.
+  The schedule comes from `Compliance` rules for this registration; with no
+  filings table yet, statuses come from dates. Hand-added tasks join the same
+  rows (with `:task`). `render/1` derives rows from the filter state each pass.
   """
   use QuantumBillingWeb, :live_view
 

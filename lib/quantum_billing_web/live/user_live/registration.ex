@@ -1,17 +1,10 @@
 defmodule QuantumBillingWeb.UserLive.Registration do
   @moduledoc """
-  Creating an account — which is not open to the public.
+  Account creation, which is invitation-only.
 
-  Every account on this installation shares one dataset: there is no per-user
-  scoping on invoices or clients, because the application bills for one
-  business. So an account is full access to the books, and this page used to
-  hand one to anybody who found the URL. Confirming an email proves you own
-  that mailbox; it does not prove the business wants you in its ledger.
-
-  So the page has three states: it takes the very first account on a fresh
-  installation (which becomes the owner), it takes an invited address when
-  `?token=` carries a live invitation, and otherwise it explains that an
-  invitation is needed and shows no form at all.
+  Open only for the first account on a fresh installation (which becomes the
+  owner) or for an address with a live `?token=` invitation. Otherwise it
+  explains that an invitation is needed.
   """
   use QuantumBillingWeb, :live_view
 

@@ -19,9 +19,8 @@ defmodule QuantumBilling.CreditNotes do
   end
 
   @doc """
-  One page of notes for the API, newest first, keyset-paged below
-  `:before_id` (see `QuantumBilling.Paging.keyset/3`). Notes on binned invoices
-  are left out, as from `list_credit_notes/0`.
+  One API page of notes, newest first, keyset-paged below `:before_id`
+  (`Paging.keyset/3`). Notes on binned invoices are excluded.
 
   Options: `:before_id`, `:per_page` (1..100), `:invoice_id`.
   """
@@ -61,10 +60,7 @@ defmodule QuantumBilling.CreditNotes do
   end
 
   @doc """
-  Raises a note against `invoice`.
-
-  Amounts in `attrs` are rupees, as typed into the note form; any left out
-  default to the invoice's own figures.
+  Raises a note against `invoice`. Amounts are rupees; missing ones default to the invoice's.
   """
   def create_credit_note_for_invoice(%Invoice{} = invoice, attrs \\ %{}) do
     note_type = Map.get(attrs, "note_type") || Map.get(attrs, :note_type, "Credit")

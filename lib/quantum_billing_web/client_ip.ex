@@ -1,26 +1,10 @@
 defmodule QuantumBillingWeb.ClientIP do
   @moduledoc """
-  Works out who a request actually came from, and whether that address is in a
-  list.
+  The real client address of a request, and allowlist matching.
 
-  ## Why `x-forwarded-for` is not simply believed
-
-  Anyone can send that header. An IP allowlist that reads it unconditionally is
-  not an allowlist: a request from anywhere carrying
-  `x-forwarded-for: 127.0.0.1` is admitted, and the same trick turns per-IP
-  rate limiting into no rate limiting, since every attempt can claim a
-  different source.
-
-  The header is therefore used only when the connection itself comes from a
-  proxy the deployment has declared, in `TRUSTED_PROXIES` (a comma-separated
-  list of addresses or CIDR blocks). With nothing declared — the default —
-  the peer address is used, which is the truth about where the connection came
-  from.
-
-  When the header is trusted, the **rightmost** entry that is not itself a
-  trusted proxy is taken. Reading left to right takes whatever the client
-  chose to prepend; reading from the right walks back through the proxies that
-  actually handled the request.
+  `x-forwarded-for` is trusted only when the peer is a proxy listed in
+  `TRUSTED_PROXIES` (addresses or CIDRs); otherwise anyone could claim any
+  address. When trusted, the rightmost entry that isn't a trusted proxy wins.
   """
 
   import Bitwise
@@ -51,12 +35,9 @@ defmodule QuantumBillingWeb.ClientIP do
   end
 
   @doc """
-  Whether `address` — a string or an `:inet` tuple — matches any entry in
-  `allowed`.
+  Whether `address` (string or `:inet` tuple) matches an entry in `allowed`.
 
-  Entries are single addresses or CIDR blocks, in either IP version. An
-  unparseable entry matches nothing rather than everything: a typo in the
-  allowlist must not open it up.
+  Entries are IPv4/IPv6 addresses or CIDRs. An unparseable entry matches nothing.
   """
   def allowed?(address, allowed) when is_list(allowed) do
     case parse(address) do

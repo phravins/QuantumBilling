@@ -1,28 +1,11 @@
 defmodule QuantumBillingWeb.API.InvoiceParams do
   @moduledoc """
-  What an API caller may say when creating an invoice — and nothing else.
+  The fields an API caller may set when creating an invoice.
 
-  `Invoice.changeset/2` casts more than any caller should set, because the
-  application itself writes through it: `status`, `irn`, `signed_qr_code`,
-  `razorpay_payment_id`, `razorpay_payment_url` and the rest. Passed a request
-  body unfiltered, it would let an API caller
-
-    * create an invoice already marked Paid, with an invented payment id;
-    * forge an e-invoice registration — an IRN and signed QR the government
-      never issued, printed on the document as if it had;
-    * point the payment link at any site they like, so that a customer
-      clicking *Pay Now* on the real payment page is sent there instead.
-
-  So the body is checked against a short allowlist first, and anything outside
-  it is **refused by name** rather than silently dropped. Dropping would let
-  the request appear to succeed; refusing shows the integrator exactly which
-  field the API will not accept.
-
-  The client is not described here either: `client_id` names a client, and the
-  invoice takes that client's name, GSTIN and address from the client record
-  (see `QuantumBilling.Invoices.client_snapshot/1`). A body that could set
-  `client_gstin` could issue an invoice in one customer's name under another's
-  GSTIN. The number and the issuing company come from the server too.
+  `Invoice.changeset/2` also casts internal fields (`status`, `irn`, payment
+  ids and URLs), so the body is checked against an allowlist and any other
+  field is refused by name, not silently dropped. Client details, the number
+  and the issuer come from the server (`Invoices.client_snapshot/1`).
   """
 
   alias QuantumBilling.Money
@@ -109,9 +92,7 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
 
   defp items(_items), do: {:error, %{"items" => ["must be a non-empty list of lines"]}}
 
-  # Every amount in the API is integer paise, in both directions, so a caller
-  # never rounds a float. The changeset reads a rate as rupees typed into the
-  # form, so it is handed over in that form: 125050 becomes "1250.50".
+  # API amounts are integer paise; the changeset expects rupees, so 125050 becomes "1250.50".
   defp rate(nil, _index), do: {:ok, nil}
   defp rate(paise, _index) when is_integer(paise) and paise >= 0, do: {:ok, Money.to_input(paise)}
 

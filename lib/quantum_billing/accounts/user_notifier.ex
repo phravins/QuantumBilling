@@ -6,12 +6,8 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   alias QuantumBilling.Mail
   alias QuantumBilling.Repo
 
-  # Sent now (the person is waiting for the link) but recorded in the delivery ledger.
-  #
-  # Account mail can go out before anyone has chosen a business — signing up,
-  # resetting a password — so it uses the current business's relay and ledger
-  # when there is one, and otherwise the first business's, which is the relay
-  # the installation always used.
+  # Sent immediately but recorded in the delivery ledger. Before a business is
+  # chosen (sign-up, password reset), the first business's relay is used.
   defp deliver(recipient, subject, body) do
     Repo.with_business(Repo.business() || Businesses.default!(), fn ->
       send_now(recipient, subject, body)
@@ -52,11 +48,7 @@ defmodule QuantumBilling.Accounts.UserNotifier do
   end
 
   @doc """
-  Invites someone to create an account on this installation.
-
-  Says plainly what the account is for and that the link expires, because an
-  invitation to a billing system that explains nothing looks exactly like
-  phishing.
+  Invites someone to create an account. Explains the purpose and expiry so it doesn't look like phishing.
   """
   def deliver_invitation(invitation, url) do
     days = QuantumBilling.Accounts.Invitation.validity_days()

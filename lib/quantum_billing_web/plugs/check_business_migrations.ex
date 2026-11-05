@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.Plugs.CheckBusinessMigrations do
   @moduledoc """
-  Development only: stops the request when a business schema is behind on its
-  migrations, and says which one and what to run.
-
-  `Phoenix.Ecto.CheckRepoStatus` only knows the public migrations, and its "Run
-  migrations" button only runs those. A schema left behind otherwise shows up as
-  a 500 about a missing column on whichever page reads it first.
+  Dev only: halts with instructions when a business schema has pending tenant
+  migrations (`CheckRepoStatus` only checks public ones).
   """
 
   import Plug.Conn

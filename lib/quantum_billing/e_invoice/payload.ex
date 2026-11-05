@@ -1,26 +1,10 @@
 defmodule QuantumBilling.EInvoice.Payload do
   @moduledoc """
-  Builds the INV-01 element tree for an invoice.
+  Builds the INV-01 element tree for an invoice, as XML.
 
-  ## Why INV-01, rendered as XML
-
-  The GST e-invoice schema is canonically JSON. Emitting its element names and
-  nesting as XML means a later integration with a GSP is a mechanical tree-to-
-  JSON transform of this same builder, rather than a rewrite. UBL 2.1 was the
-  alternative and is a dead end here: GSTN does not use it and no Indian GSP
-  consumes it.
-
-  ## This is not a registered e-invoice
-
-  A document becomes an e-invoice when the Invoice Registration Portal returns an
-  IRN and a digitally signed QR. Neither can be produced offline, so neither
-  appears here — see `QuantumBilling.EInvoice` for what this is for.
-
-  ## Text nodes, not bare strings
-
-  Every value goes out as `{:characters, _}`. `Saxy.encode!/2` emits a bare
-  binary child verbatim, so a client called "Smith & Sons" would otherwise
-  produce a file no parser will read.
+  INV-01 names and nesting map one-to-one to the GST JSON schema, so a GSP
+  integration is a mechanical transform. This is not a registered e-invoice
+  (no IRN or signed QR). Values are `{:characters, _}` so `Saxy` escapes them.
   """
 
   alias QuantumBilling.GST
@@ -44,11 +28,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   @doc "Every invoice type that can be exported."
   def exportable_types, do: Map.keys(@types)
 
-  @doc """
-  The `Saxy` simple-form tree for `invoice`, issued by `organization`.
-
-  Assumes `EInvoice.validate/2` has already passed; it builds what it is given.
-  """
+  @doc "The `Saxy` simple-form tree for `invoice`. Assumes `EInvoice.validate/2` has passed."
   def build(%Invoice{} = invoice, %Organization{} = organization) do
     {"Invoice", [],
      [

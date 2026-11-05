@@ -1,25 +1,17 @@
 defmodule QuantumBillingWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  Page shells: the app layout with the sidebar, and the focus, auth and legal layouts.
   """
   use QuantumBillingWeb, :html
 
   embed_templates "layouts/*"
 
   @doc """
-  Renders your app layout.
+  Renders the app layout: sidebar, top bar and page content.
 
-  This function is typically invoked from every template,
-  and it often contains your application menu, sidebar,
-  or similar.
-
-  ## Examples
-
-      <Layouts.app flash={@flash}>
+      <Layouts.app flash={@flash} current_scope={@current_scope}>
         <h1>Content</h1>
       </Layouts.app>
-
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
 
@@ -56,13 +48,7 @@ defmodule QuantumBillingWeb.Layouts do
         class="fixed inset-0 z-30 hidden bg-base-content/30 backdrop-blur-[1px] drawer-open:block lg:drawer-open:hidden"
       />
 
-      <%!--
-        Wide screens: a column that collapses to a rail of icons (data-sidebar
-        on <html>, remembered); labels become tooltips and screen-reader text.
-        Narrow: a drawer that slides over the page (data-drawer). Open, the aside
-        clips while its width animates; collapsed it does not, so the account
-        menu can open wider than the rail.
-      --%>
+      <%!-- Wide: a column that collapses to an icon rail (data-sidebar on html). Narrow: a drawer (data-drawer). --%>
       <aside
         id="app-sidebar"
         class={[
@@ -76,7 +62,7 @@ defmodule QuantumBillingWeb.Layouts do
         <div class="flex h-full w-56 flex-col lg:sidebar-collapsed:w-14">
           <div class="flex items-center justify-between gap-2 py-3 pl-4 pr-2.5 lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0">
             <.brand_mark class="lg:sidebar-collapsed:hidden" />
-            <%!-- The rail's top: the brand icon, which turns into "open" on hover. --%>
+            <%!-- Rail top: the brand icon turns into an open button on hover. --%>
             <button
               type="button"
               id="sidebar-rail-expand"
@@ -109,7 +95,7 @@ defmodule QuantumBillingWeb.Layouts do
 
             <ul class="space-y-0.5">
               <li :for={item <- @nav_items} class="group">
-                <%!-- Opens off @active_sub so the list stays unfolded across settings sections; the 0fr to 1fr row track animates the height without JS. --%>
+                <%!-- Stays open on settings pages; the 0fr to 1fr grid row animates the height. --%>
                 <input
                   :if={item.key == :settings}
                   type="checkbox"
@@ -234,7 +220,6 @@ defmodule QuantumBillingWeb.Layouts do
                 />
               </div>
 
-              <%!-- w-full: the sidebar is only 14rem wide; the rail is far narrower. --%>
               <ul
                 tabindex="0"
                 class="dropdown-content menu z-10 mb-2 w-full lg:sidebar-collapsed:w-48 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
@@ -254,7 +239,7 @@ defmodule QuantumBillingWeb.Layouts do
       <div class="flex min-w-0 flex-1 flex-col">
         <header class="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3">
           <div class="flex min-w-0 items-center gap-1.5">
-            <%!-- Narrow screens only (opens the drawer); wide ones open the rail from inside it. --%>
+            <%!-- Narrow screens only: opens the drawer. --%>
             <button
               type="button"
               id="sidebar-expand"
@@ -269,7 +254,7 @@ defmodule QuantumBillingWeb.Layouts do
             <.business_switcher scope={@current_scope} />
           </div>
 
-          <%!-- Live feed from NotificationsHook; capped and scrollable. Absent outside a business. --%>
+          <%!-- Live feed from NotificationsHook. Absent outside a business. --%>
           <div :if={business_chosen?(@current_scope)} class="dropdown dropdown-end">
             <div
               tabindex="0"
@@ -318,7 +303,7 @@ defmodule QuantumBillingWeb.Layouts do
                 class="max-h-96 divide-y divide-base-300 overflow-y-auto"
               >
                 <li :for={notification <- @notifications} id={"notification-#{notification.id}"}>
-                  <%!-- A button, not a link: the server marks it read and then navigates, so the two cannot race. --%>
+                  <%!-- A button: the server marks it read, then navigates. --%>
                   <button
                     type="button"
                     phx-click="open_notification"
@@ -362,7 +347,6 @@ defmodule QuantumBillingWeb.Layouts do
           </div>
         </header>
 
-        <%!-- A flex column so a page can give a panel flex-1 to fill the remaining height. --%>
         <main class="flex flex-1 flex-col overflow-y-auto px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5">
           {render_slot(@inner_block)}
         </main>
@@ -414,8 +398,7 @@ defmodule QuantumBillingWeb.Layouts do
 
   attr :scope, :any, required: true
 
-  # Each entry posts to the switch action: only an HTTP response can write the
-  # session, and the session is what every tab of this browser follows.
+  # Switching posts to a controller: only an HTTP response can write the session.
   defp business_switcher(assigns) do
     ~H"""
     <div :if={@scope && @scope.user} class="dropdown">
@@ -494,7 +477,7 @@ defmodule QuantumBillingWeb.Layouts do
   defp current_business?(%{business: %{id: id}}, %{id: id}), do: true
   defp current_business?(_scope, _business), do: false
 
-  # Tolerates a nil scope. Hiding panels is a courtesy; the real check is on the server.
+  # Tolerates a nil scope. Hiding panels is cosmetic; the server enforces access.
   defp visible_settings_sections(scope) do
     sections = QuantumBillingWeb.SettingsComponents.sections()
 
@@ -638,21 +621,8 @@ defmodule QuantumBillingWeb.Layouts do
   end
 
   @doc """
-  Renders the shell for one-thing-at-a-time screens: choosing a business, the
-  welcome after choosing one, and the first-sign-in onboarding.
-
-  No sidebar and no top bar, so nothing on screen competes with the choice.
-  A segmented progress bar shows where in the flow the screen sits, and the
-  `:footer` slot pins the Back / Next row to the bottom edge.
-
-  ## Examples
-
-      <Layouts.focus flash={@flash} current_scope={@current_scope} step={1} steps={2}>
-        <h1>Select your company</h1>
-        <:footer>
-          <button class={Layouts.focus_next_class()}>Continue</button>
-        </:footer>
-      </Layouts.focus>
+  Renders the shell for one-step-at-a-time screens: the business picker, its
+  success screen and onboarding. No sidebar; a progress bar and a `:footer` slot.
   """
   attr :flash, :map, required: true
   attr :current_scope, :map, default: nil
@@ -748,18 +718,7 @@ defmodule QuantumBillingWeb.Layouts do
       "hover:bg-base-200 hover:text-base-content"
   end
 
-  @doc """
-  Renders the shell used by the sign-in and sign-up pages: the form column
-  centered in the viewport, with the branding and cross-link pinned to the
-  top corners.
-
-  ## Examples
-
-      <Layouts.auth flash={@flash}>
-        <:top_link><.link navigate={~p"/users/log-in"}>Login</.link></:top_link>
-        <.form ...>
-      </Layouts.auth>
-  """
+  @doc "Renders the sign-in and sign-up shell: a centred form with branding in the corners."
   attr :flash, :map, required: true, doc: "the map of flash messages"
 
   slot :top_link, doc: "the cross-link shown in the top-right corner"
@@ -791,16 +750,7 @@ defmodule QuantumBillingWeb.Layouts do
     """
   end
 
-  @doc """
-  Renders the shell for public legal documents (terms, privacy). Reachable
-  while signed out, so it deliberately avoids the app sidebar.
-
-  ## Examples
-
-      <Layouts.legal flash={@flash} title="Terms of Service" current_scope={@current_scope}>
-        <.legal_section title="1. About these terms">...</.legal_section>
-      </Layouts.legal>
-  """
+  @doc "Renders the shell for public legal pages (terms, privacy), without the sidebar."
   attr :flash, :map, required: true
   attr :title, :string, required: true
   attr :current_scope, :map, default: nil
@@ -885,13 +835,7 @@ defmodule QuantumBillingWeb.Layouts do
     """
   end
 
-  @doc """
-  Shows the flash group with standard titles and content.
-
-  ## Examples
-
-      <.flash_group flash={@flash} />
-  """
+  @doc "Shows the flash group with standard titles and content."
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
@@ -932,11 +876,7 @@ defmodule QuantumBillingWeb.Layouts do
     """
   end
 
-  @doc """
-  Provides dark vs light theme toggle based on themes defined in app.css.
-
-  See <head> in root.html.heex which applies the theme before page load.
-  """
+  @doc "Light, dark and system theme toggle. `root.html.heex` applies the theme before paint."
   def theme_toggle(assigns) do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">

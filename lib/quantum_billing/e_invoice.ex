@@ -1,39 +1,11 @@
 defmodule QuantumBilling.EInvoice do
   @moduledoc """
-  The GST e-invoice (INV-01) data export.
+  The GST e-invoice (INV-01) data export, as a file.
 
-  ## What this is, and what it is not
-
-  An invoice becomes an *e-invoice* when the Invoice Registration Portal accepts
-  it and returns an IRN and a digitally signed QR code. That requires GSTN
-  credentials and a live call to the IRP; it cannot happen offline, and nothing
-  here pretends otherwise.
-
-  What this produces is the invoice's data, in the e-invoice schema's own
-  vocabulary, as a file — for handing to an accountant or a GSP, for archiving,
-  or as the input to a real IRP integration later. The generated file says so in
-  a comment at the top, and the UI says so beside the button.
-
-  Consequently:
-
-    * No `Irn`, `AckNo` or `SignedQRCode` element is ever emitted. An unsigned QR
-      in the place a GSTN-signed one belongs is not a placeholder, it is a forged
-      compliance artefact.
-    * The invoice's status is not changed. "E-Invoice Generated" means the IRP
-      issued an IRN; setting it because somebody clicked Download would write a
-      claim into the database that is false, and a compliance report would later
-      repeat it.
-
-  ## Validation refuses rather than guesses
-
-  `validate/2` checks what the schema requires and returns every problem it
-  finds, so a user fixes them in one pass. A silently wrong tax document is worse
-  than no document, which is why the controller refuses to download when this
-  fails.
-
-  Note that `QuantumBilling.GST` validates a GSTIN by format only — it computes
-  no checksum — so passing here means the file is well-formed, not that the IRP
-  will accept it.
+  This is the invoice's data in the e-invoice schema, not a registered
+  e-invoice: no `Irn`, `AckNo` or `SignedQRCode` is emitted and the invoice
+  status is not changed. `validate/2` returns every problem at once. GSTINs are
+  checked by format only, so passing doesn't guarantee the IRP accepts it.
   """
 
   alias QuantumBilling.EInvoice.Payload

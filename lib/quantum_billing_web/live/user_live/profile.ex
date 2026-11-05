@@ -1,13 +1,7 @@
 defmodule QuantumBillingWeb.UserLive.Profile do
   @moduledoc """
-  The signed-in user's profile: who they are, how to reach them, and what they
-  have been doing in the application.
-
-  The banner is a landscape drawn from a seed (`QuantumBillingWeb.SceneBanner`).
-  Until the user shuffles it the seed is their id, so everybody has a scene of
-  their own from the start without anything being stored.
-
-  Editing lives on Account Settings; this page only shows the profile.
+  The signed-in user's profile and recent activity (read-only; edit in Account settings).
+  The banner is a `SceneBanner` seeded by the user id until shuffled.
   """
   use QuantumBillingWeb, :live_view
 

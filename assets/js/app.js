@@ -1,5 +1,4 @@
 import "phoenix_html"
-// Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/quantum_billing"
@@ -12,32 +11,21 @@ const liveSocket = new LiveSocket("/live", Socket, {
   hooks: {...colocatedHooks},
 })
 
-// Show progress bar on live navigation and form submits
+// Progress bar on live navigation and form submits.
 topbar.config({barColors: {0: "#18181b"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
-// connect if there are any LiveViews on the page
 liveSocket.connect()
 
 window.liveSocket = liveSocket
 
-// The lines below enable quality of life phoenix_live_reload
-// development features:
-//
-//     1. stream server logs to the browser console
-//     2. click on elements to jump to their definitions in your code editor
-//
+// Dev only: server logs in the console, and c/d + click opens the editor.
 if (process.env.NODE_ENV === "development") {
   window.addEventListener("phx:live_reload:attached", ({detail: reloader}) => {
-    // Enable server log streaming to client.
-    // Disable with reloader.disableServerLogs()
     reloader.enableServerLogs()
 
-    // Open configured PLUG_EDITOR at file:line of the clicked element's HEEx component
-    //
-    //   * click with "c" key pressed to open at caller location
-    //   * click with "d" key pressed to open at function component definition location
+    // "c" + click: caller; "d" + click: component definition.
     let keyDown
     window.addEventListener("keydown", e => keyDown = e.key)
     window.addEventListener("keyup", _e => keyDown = null)

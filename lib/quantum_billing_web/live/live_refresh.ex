@@ -1,26 +1,11 @@
 defmodule QuantumBillingWeb.LiveRefresh do
   @moduledoc """
-  Throttles the reload a page does when a broadcast says its data changed.
+  Throttles page reloads triggered by change broadcasts.
 
-  ## Why
-
-  A page that re-reads on every `:invoice_changed` does one reload per write.
-  One write is fine. The nightly recurring sweep is two hundred writes in a
-  row, and the dashboard's reload is four aggregates over the whole invoice
-  table — about half a second each on a million invoices — in every tab that
-  has it open. That is minutes of database time to show a figure nobody can
-  read before the next one replaces it.
-
-  ## How
-
-  The first change reloads at once, so a single edit looks exactly as it did
-  before. It also opens a window of `window_ms/0`. Changes inside the window
-  only mark the page stale; when it closes, a stale page reloads once and
-  opens another window. A burst of any size costs one reload per window per
-  tab, and the last reload always comes after the last change, so nothing is
-  left showing old data.
-
-  ## Use
+  The first change reloads at once and opens a `window_ms/0` window; later
+  changes in it only mark the page stale, and it reloads once when the window
+  closes. A burst costs one reload per window, and the last always follows the
+  last change.
 
       def handle_info({:invoice_changed, _invoice}, socket),
         do: {:noreply, LiveRefresh.changed(socket, &load_page/1)}

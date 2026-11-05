@@ -1,11 +1,7 @@
 defmodule QuantumBilling.BinTest do
   @moduledoc """
-  What moving an invoice to the Bin does, asked of every part of the
-  application that reads invoices.
-
-  One file rather than a test in each context's own: the risk being guarded
-  against is a single read that was missed, so the reads are listed together
-  where a new one is conspicuous by its absence.
+  Every read of invoices must skip binned ones. Listed in one file so a missed
+  read stands out.
   """
   use QuantumBilling.DataCase, async: true
 

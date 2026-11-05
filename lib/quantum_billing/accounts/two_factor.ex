@@ -1,28 +1,10 @@
 defmodule QuantumBilling.Accounts.TwoFactor do
   @moduledoc """
-  Time-based one-time passwords (RFC 6238), as used by Google Authenticator,
-  Microsoft Authenticator, 1Password and the rest.
+  Time-based one-time passwords (RFC 6238).
 
-  ## Enrolment is two steps on purpose
-
-  `start_enrolment/1` stores a secret but leaves `totp_confirmed_at` empty, and
-  only `confirm_enrolment/2` — which requires a working code — turns 2FA on.
-  Enabling on the secret alone would lock out anyone who opened the setup
-  screen, never scanned the QR, and closed the tab.
-
-  ## Replay protection
-
-  A TOTP code is valid for its whole 30-second window, so the same six digits
-  could otherwise be presented twice. `totp_last_used_at` records the timestamp
-  of the last accepted code and `NimbleTOTP` refuses anything from that window
-  or earlier.
-
-  ## Recovery codes
-
-  Ten, single use, hashed with the same algorithm as passwords and shown in
-  plain text exactly once. They are the only way back into an account whose
-  authenticator is gone — there is no admin override — which is why they are
-  issued automatically at enrolment rather than being optional.
+  `start_enrolment/1` stores a secret; only `confirm_enrolment/2`, with a valid
+  code, turns 2FA on. `totp_last_used_at` blocks replaying a code within its
+  window. Ten single-use recovery codes are hashed and shown once.
   """
 
   import Ecto.Changeset
@@ -52,12 +34,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
 
   def pending?(_user), do: false
 
-  @doc """
-  Generates and stores a fresh secret, leaving 2FA switched off.
-
-  Called each time the setup screen is opened, so an abandoned enrolment never
-  leaves a stale secret that a later QR would not match.
-  """
+  @doc "Generates and stores a fresh secret, leaving 2FA off. Runs each time setup opens."
   def start_enrolment(%User{} = user) do
     user
     |> change(%{
@@ -70,10 +47,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
   end
 
   @doc """
-  Turns 2FA on once `code` proves the authenticator is set up correctly.
-
-  Returns `{:ok, user, recovery_codes}` with the codes in plain text — the only
-  time they exist outside a hash. `{:error, :invalid_code}` leaves 2FA off.
+  Turns 2FA on once `code` checks out: `{:ok, user, recovery_codes}` or `{:error, :invalid_code}`.
   """
   def confirm_enrolment(%User{totp_secret: secret} = user, code) when is_binary(secret) do
     if valid_totp?(secret, code, user.totp_last_used_at) do
@@ -98,10 +72,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
   def confirm_enrolment(%User{}, _code), do: {:error, :not_enrolling}
 
   @doc """
-  Checks a code at sign-in. Accepts either a TOTP code or a recovery code.
-
-  Returns `{:ok, user}`, and for a recovery code also consumes it so it cannot
-  be used again. `{:error, :invalid_code}` otherwise.
+  Checks a TOTP or recovery code at sign-in: `{:ok, user}` or `{:error, :invalid_code}`. Recovery codes are consumed.
   """
   def verify(%User{} = user, code) do
     code = String.trim(code)
@@ -118,11 +89,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
     end
   end
 
-  @doc """
-  Issues a fresh set of recovery codes, invalidating the previous ones.
-
-  Returns `{:ok, user, codes}` with the codes in plain text.
-  """
+  @doc "Issues fresh recovery codes, replacing the old ones: `{:ok, user, codes}`."
   def regenerate_recovery_codes(%User{} = user) do
     {plain, hashed} = generate_recovery_codes()
 
@@ -153,23 +120,12 @@ defmodule QuantumBilling.Accounts.TwoFactor do
   """
   def recovery_codes_remaining(%User{recovery_codes: codes}), do: length(codes || [])
 
-  @doc """
-  The `otpauth://` URI an authenticator app reads.
-
-  The label carries the issuer twice — once as a prefix and once as a
-  parameter — which is what makes both Google Authenticator and Microsoft
-  Authenticator show the account grouped under the right name.
-  """
+  @doc "The `otpauth://` URI an authenticator app reads, with the issuer as prefix and parameter."
   def otpauth_uri(%User{totp_secret: secret, email: email}) when is_binary(secret) do
     NimbleTOTP.otpauth_uri("#{@issuer}:#{email}", secret, issuer: @issuer)
   end
 
-  @doc """
-  The enrolment QR as inline SVG.
-
-  Rendered here rather than by an image service, so the secret never leaves the
-  application.
-  """
+  @doc "The enrolment QR as inline SVG, rendered locally so the secret never leaves the app."
   def qr_svg(%User{} = user) do
     user
     |> otpauth_uri()
@@ -177,10 +133,7 @@ defmodule QuantumBilling.Accounts.TwoFactor do
     |> EQRCode.svg(width: 200, background_color: "#ffffff", color: "#18181b")
   end
 
-  @doc """
-  The secret in the base-32 form an app expects when typed in by hand, in
-  four-character groups.
-  """
+  @doc "The secret in base-32, in four-character groups, for typing in by hand."
   def manual_entry_key(%User{totp_secret: secret}) when is_binary(secret) do
     secret
     |> Base.encode32(padding: false)
@@ -193,8 +146,6 @@ defmodule QuantumBilling.Accounts.TwoFactor do
 
   @doc "The issuer name shown in the authenticator app."
   def issuer, do: @issuer
-
-  # ── Internals ──────────────────────────────────────────────────────────────
 
   defp valid_totp?(secret, code, last_used_at) when is_binary(secret) and is_binary(code) do
     if Regex.match?(~r/^\d{6}$/, code) do

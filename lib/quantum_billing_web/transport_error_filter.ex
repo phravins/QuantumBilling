@@ -1,53 +1,13 @@
 defmodule QuantumBillingWeb.TransportErrorFilter do
   @moduledoc """
-  Drops the OTP crash reports produced when a *client* aborts its TCP
-  connection to the web server.
+  Drops the OTP crash reports logged when a client aborts its TCP connection.
 
-  ## What the reports look like
+  ThousandIsland stops a connection on `:tcp_error`/`:ssl_error` with a bare
+  reason such as `:econnaborted`, which OTP reports as a crash even though
+  nothing failed. (`silent_terminate_on_error` doesn't cover this path.)
 
-      [error] GenServer #PID<0.1582.0> terminating
-      ** (stop) :econnaborted
-      Process Label: {:thousand_island, :connection, {Bandit.DelegatingHandler, ...}}
-      Last message: {:tcp_error, #Port<0.138>, :econnaborted}
-
-  Nothing in this application failed. A browser closed a keep-alive connection
-  abruptly — the report in question had already served ten requests on that
-  connection. ThousandIsland treats a *clean* close (`:tcp_closed`) as a normal
-  shutdown and says nothing, but a transport-level *error* takes this branch:
-
-      def handle_info({msg, raw_socket, reason}, {socket, state})
-          when msg in [:tcp_error, :ssl_error] do
-        {:stop, reason, {socket, state}}
-      end
-
-  Stopping a GenServer with a reason that is neither `:normal` nor
-  `{:shutdown, _}` is, to OTP, a crash — so it prints a full crash report for
-  what is really just a peer hanging up rudely.
-
-  ## Why not `silent_terminate_on_error`
-
-  That is ThousandIsland's own option for quieting handler errors, and it is
-  the obvious-looking fix, but it does not apply here. Its documentation is
-  explicit: *"This only applies to errors returned via `{:error, reason, state}`
-  responses"*. The `handle_info` clause above never consults it. Setting it
-  would change nothing about these reports.
-
-  ## What this filter will and will not hide
-
-  Both conditions must hold before an event is dropped:
-
-    * the process is a ThousandIsland *connection* process, identified by the
-      label ThousandIsland sets on itself, and
-    * the exit reason is a bare transport atom.
-
-  A genuine crash inside a request carries a `{exception, stacktrace}` reason,
-  not a bare atom, so it fails the second test and is logged as loudly as ever.
-  Errors from any other process in the system fail the first.
-
-  This runs in every environment deliberately. Aborted connections are not a
-  development curiosity — in production, mobile clients, load-balancer health
-  checks and scanners abort connections constantly, and a log full of crash
-  reports for expected behaviour is how real errors get overlooked.
+  An event is dropped only if it comes from a ThousandIsland connection process
+  and its reason is a bare transport atom, so real request crashes still log.
   """
 
   # Excludes :timeout, which may be worth seeing.

@@ -1,23 +1,10 @@
 defmodule QuantumBilling.Workers.RecurringInvoiceWorker do
   @moduledoc """
-  Issues the invoices that recurring profiles are due for.
+  Issues invoices for due recurring profiles.
 
-  Two shapes, one worker:
-
-    * with no arguments it is the daily sweep — it finds the due profiles and
-      fans out one job per profile, so a single broken profile cannot stop the
-      rest from billing;
-    * with `%{"profile_id" => id}` it bills that one profile.
-
-  The sweep is what the Cron plugin runs, once for each business (see
-  `QuantumBilling.Worker`); a profile job is not a sweep. Cron jobs are inserted by the Oban
-  leader, one node at a time, which is the thing a plain `GenServer` timer
-  could not do: on two nodes it ran twice and every customer was invoiced
-  twice.
-
-  Per-profile jobs are unique over a period of an hour, so a retried sweep, a
-  manual run and the scheduled run cannot between them bill the same profile
-  three times in a morning.
+  With no args it is the daily Cron sweep (per business, Oban leader only),
+  fanning out one job per due profile. With `%{"profile_id" => id}` it bills
+  that profile. Profile jobs are unique for an hour, so no profile is billed twice.
   """
   use QuantumBilling.Worker,
     sweep: true,

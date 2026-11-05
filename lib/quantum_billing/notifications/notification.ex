@@ -1,23 +1,13 @@
 defmodule QuantumBilling.Notifications.Notification do
   @moduledoc """
-  One line in the in-app feed behind the bell.
+  One entry in the in-app notification feed. Writing one never fails the action it describes.
 
-  A notification is a *record* of something that already happened, not a job to
-  do: it is written after the invoice is saved, after the payment clears, after
-  the bill is raised. Nothing in the application waits on one, and a failure to
-  write one never fails the thing it was describing.
-
-  ## Fields
-
-    * `kind` — which part of the app it came from, and which icon it draws
-    * `severity` — how it reads: `info`, `success`, `warning` or `error`
-    * `path` — where clicking it goes, in-app; `nil` for a notice with nowhere
-      to send you
-    * `dedupe_key` — the caller's name for "this exact thing", so a producer
-      that runs daily or is redelivered writes one row rather than many
-    * `read_at` — shared, like the rest of the row; see the migration
-    * `recipient_id` — nil for the whole business, or the one person who may
-      see it
+    * `kind` - the source, and its icon
+    * `severity` - `info`, `success`, `warning` or `error`
+    * `path` - where clicking goes, or `nil`
+    * `dedupe_key` - so a repeated producer writes one row
+    * `read_at` - shared across the business
+    * `recipient_id` - one person, or `nil` for the whole business
   """
   use Ecto.Schema
 
@@ -43,13 +33,7 @@ defmodule QuantumBilling.Notifications.Notification do
 
   @castable ~w(kind title body path severity dedupe_key read_at recipient_id)a
 
-  @doc """
-  Builds a notification changeset.
-
-  The title is truncated rather than rejected. A notification is a side effect
-  of something that has already succeeded, and refusing to record one because a
-  client's name ran long would be the tail wagging the dog.
-  """
+  @doc "Builds a notification changeset. A long title is truncated, not rejected."
   def changeset(notification, attrs) do
     notification
     |> cast(attrs, @castable)

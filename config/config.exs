@@ -1,8 +1,4 @@
-# This file is responsible for configuring your application
-# and its dependencies with the aid of the Config module.
-#
-# This configuration file is loaded before any dependency and
-# is restricted to this project.
+# General application configuration, loaded before any dependency.
 
 # General application configuration
 import Config
@@ -43,13 +39,7 @@ config :phoenix_live_view,
 # avoid noisy warning: colocated asset symlinks require admin rights on Windows
 config :phoenix_live_view, :colocated_assets, disable_symlink_warning: true
 
-# Configure the mailer
-#
-# By default it uses the "Local" adapter which stores the emails
-# locally. You can see the emails in your browser, at "/dev/mailbox".
-#
-# For production it's recommended to configure a different adapter
-# at the `config/runtime.exs`.
+# Mailer: the Local adapter by default (see /dev/mailbox); prod sets one in runtime.exs.
 config :quantum_billing, QuantumBilling.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
@@ -75,18 +65,9 @@ config :tailwind,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-# Request parameters scrubbed from logs.
-#
-# Phoenix's default is `["password"]` alone, which left the invitation `token`
-# in the sign-up URL, the webhook and payment-gateway `secret`s posted from
-# Settings, and 2FA recovery codes in plain text in any log written at debug
-# level. Production logs at :info, which happens to skip parameters, but that
-# is a log level doing a security control's job — and the API's keys must not
-# depend on it.
-#
-# Matching is by substring, so "token" also covers `public_token`, "secret"
-# covers `razorpay_key_secret`, and "code" covers 2FA codes — at the price of
-# also blanking `hsn_code` and `country_code`, which is the safer side to err on.
+# Parameters scrubbed from logs. Substring match, so "token", "secret" and
+# "code" also cover public_token, razorpay_key_secret and 2FA codes (and blank
+# hsn_code; the safe side).
 config :phoenix,
        :filter_parameters,
        ~w(password secret token code state recovery api_key authorization)

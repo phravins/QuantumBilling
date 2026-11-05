@@ -61,16 +61,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
     end
   end
 
-  # A broadcast is taken as "this invoice changed", never as the data to show.
-  # The page re-reads through the same lookup the link itself uses, so it
-  # renders exactly what a fresh visit would: a binned invoice is gone, and the
-  # payload's shape — whether its line items happen to be loaded — cannot crash
-  # a customer's page. It also means nothing that arrived in a message is ever
-  # put on this unauthenticated screen.
-  #
-  # The id is still compared, although the per-invoice subscription makes a
-  # mismatch impossible: a guarantee that holds only while two separate places
-  # agree is not one to lean on with other customers' invoices.
+  # A broadcast only means "this invoice changed": re-read it via the link lookup
+  # so nothing from the message reaches this public page. The id check is a second guard.
   def handle_info({:invoice_changed, %{id: id}}, socket) when id == socket.assigns.invoice.id do
     {:noreply, reload(socket)}
   end
@@ -78,9 +70,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   def handle_event("pay_now", _params, socket) do
-    # Re-read through the same lookup the link itself uses rather than trusting
-    # what was loaded when the page opened: the invoice may have been binned,
-    # or paid from another tab, since.
+    # Re-read: the invoice may have been binned or paid since the page opened.
     case Invoices.get_invoice_by_token(socket.assigns.invoice.public_token) do
       nil ->
         {:noreply, invoice_gone(socket)}
@@ -94,17 +84,12 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             pay_at(socket, updated_invoice, updated_invoice.razorpay_payment_url)
 
           {:error, reason} ->
-            # The customer gets a sentence; the business gets the reason. This
-            # used to flash `inspect(reason)` to an unauthenticated visitor —
-            # a gateway error body describing how payments are configured, or
-            # a changeset carrying the invoice's own fields.
+            # Show the customer a plain message; log the reason for the business.
             Logger.error(
               "[PublicInvoice] payment link failed for invoice #{invoice.id}: #{inspect(reason)}"
             )
 
-            # Inline rather than as a flash: this page has no layout, so a
-            # flash is never rendered — a failed payment used to look like a
-            # button that did nothing.
+            # Inline, not a flash: this page has no layout to render flashes.
             {:noreply,
              assign(
                socket,

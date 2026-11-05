@@ -1,10 +1,7 @@
 defmodule QuantumBillingWeb.SettingsLive.TeamTest do
   @moduledoc """
-  The owner-only Team page, and the rules behind it.
-
-  Registration is invite-only because everyone in a business shares its
-  books — there is no per-user scoping on invoices or clients, by design. So
-  membership is full access, and this page is the only place it is granted.
+  The owner-only Team page. Membership is full access to the books, so this is
+  the only place it is granted.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

@@ -1,10 +1,7 @@
 defmodule QuantumBilling.Webhooks.UrlGuardTest do
   @moduledoc """
-  The ranges this server refuses to open a connection to.
-
-  Asserted against `public?/1` directly wherever DNS would otherwise be
-  involved: the substance here is the range list, and routing it through a
-  resolver would be testing the resolver.
+  The address ranges outbound webhooks refuse. Tested through `public?/1`
+  directly, without DNS.
   """
   use ExUnit.Case, async: true
 

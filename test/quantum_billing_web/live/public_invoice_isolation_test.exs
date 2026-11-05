@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.PublicInvoiceLiveIsolationTest do
   @moduledoc """
-  What the unauthenticated payment page is allowed to know about.
-
-  It is the one LiveView in the application that a stranger holding a link can
-  open, so it must hear about its own invoice and nothing else, stop offering
-  payment the moment that invoice is binned, and never show a visitor the
-  internals of a failed payment.
+  The public payment page hears only about its own invoice, stops offering
+  payment once binned, and hides payment failure details.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

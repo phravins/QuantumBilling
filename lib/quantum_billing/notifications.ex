@@ -1,53 +1,12 @@
 defmodule QuantumBilling.Notifications do
   @moduledoc """
-  The in-app notification feed, and the real-time delivery of it.
+  The in-app notification feed and its real-time delivery.
 
-  ## What this is for
-
-  The bell in the top bar used to be decoration: a button with a red dot
-  painted on it, no table behind it and nothing that ever cleared it. This is
-  the feed it should have been showing. Every row here records something that
-  actually happened in the business — an invoice raised, a payment cleared, an
-  e-way bill generated or cancelled, a filing falling due, an email that could
-  not be delivered.
-
-  ## Real time
-
-  `notify/1` writes the row and then publishes it on `Events.notifications_topic/0`.
-  Every authenticated page subscribes through `QuantumBillingWeb.NotificationsHook`,
-  so a notification raised by a webhook, an Oban worker or another user's window
-  appears in the bell of every open tab without a refresh and without any page
-  knowing it happened.
-
-  Publishing is deliberately the *last* thing `notify/1` does, and its result is
-  ignored: a notification must never be the reason a payment fails to
-  reconcile.
-
-  ## Scope and read state
-
-  The feed belongs to the organisation rather than to one user, which is how
-  every other record in this application works — two signed-in people are
-  looking at the same clients, the same invoices and the same books. `read_at`
-  follows from that: marking a notification read marks it read for the
-  business, not for you. Per-user read state needs a join table and belongs
-  with the rest of the per-user work.
-
-  ## Addressed to one person
-
-  A row with a `recipient_id` is that person's alone — today, the reminder for
-  a task marked "Only me". Every read here takes the viewer's user id and shows
-  the business's rows plus that viewer's own; with no id, only the business's.
-  The broadcast still goes out on the shared topic, and
-  `QuantumBillingWeb.NotificationsHook` drops one addressed to somebody else.
-
-  ## Writing one twice
-
-  Producers are not all one-shot. The filing reminder runs every morning
-  against the same deadline; a payment webhook is redelivered; a recurring
-  sweep re-raises the same invoice. Each passes a `dedupe_key` naming the thing
-  rather than the moment — `"compliance:GSTR-1:2027-02-11"` — and a repeat
-  returns `{:ok, :duplicate}` instead of adding a second identical line. That
-  makes every producer safe to call from a retrying job.
+  `notify/1` writes a row and then broadcasts it; failures are ignored so a
+  notification never breaks the caller. The feed and its read state belong to
+  the business, except rows with a `recipient_id`, which only that user sees.
+  A `dedupe_key` (e.g. `"compliance:GSTR-1:2027-02-11"`) makes repeats return
+  `{:ok, :duplicate}`, so retrying producers are safe.
   """
 
   import Ecto.Query, warn: false
@@ -59,21 +18,12 @@ defmodule QuantumBilling.Notifications do
   @feed_limit 15
 
   @doc """
-  Subscribes the caller to the notification feed.
-
-  Messages are `{:notification_created, notification}` and
-  `{:notifications_read, :all | id}`.
+  Subscribes the caller to the feed: `{:notification_created, n}` and `{:notifications_read, :all | id}`.
   """
   def subscribe, do: Events.subscribe(Events.notifications_topic())
 
   @doc """
-  Records a notification and announces it to every open page.
-
-  Returns `{:ok, notification}`, `{:ok, :duplicate}` when a row with the same
-  `dedupe_key` already exists, or `{:error, changeset}`.
-
-  Callers are expected to ignore the result. Nothing in the application should
-  behave differently because a notification could not be written.
+  Records a notification and broadcasts it: `{:ok, n}`, `{:ok, :duplicate}` or `{:error, changeset}`.
   """
   def notify(attrs) do
     %Notification{}
@@ -89,12 +39,7 @@ defmodule QuantumBilling.Notifications do
     end
   end
 
-  @doc """
-  The bell's contents: the newest notifications and how many are unread.
-
-  One call rather than two, because every page needs both on mount and both
-  again on every change, and they must agree with each other.
-  """
+  @doc "The bell's contents: the newest notifications and the unread count, in one call."
   def feed(user_id \\ nil) do
     %{notifications: recent(@feed_limit, user_id), unread_count: unread_count(user_id)}
   end
@@ -150,12 +95,7 @@ defmodule QuantumBilling.Notifications do
     end
   end
 
-  @doc """
-  Marks one notification read.
-
-  Already-read rows are left with the time they were first read rather than
-  re-stamped, so opening the same notice twice does not move it.
-  """
+  @doc "Marks one notification read. An already-read one keeps its first read time."
   def mark_read(id, user_id \\ nil) do
     case get_notification(id, user_id) do
       nil ->
@@ -172,11 +112,7 @@ defmodule QuantumBilling.Notifications do
     end
   end
 
-  @doc """
-  Marks every unread notification `user_id` can see read.
-
-  Returns the number cleared.
-  """
+  @doc "Marks every unread notification `user_id` can see as read. Returns the count."
   def mark_all_read(user_id \\ nil) do
     {count, _rows} =
       Repo.update_all(
@@ -191,14 +127,7 @@ defmodule QuantumBilling.Notifications do
     count
   end
 
-  @doc """
-  Deletes read notifications older than `days`.
-
-  Unread ones are kept whatever their age: an unread notice is still news to
-  whoever has not seen it, and silently deleting it would be the feed losing
-  the one thing it exists to hold. Called from `AuditPruneWorker` with the
-  other ledgers that grow for ever.
-  """
+  @doc "Deletes read notifications older than `days`. Unread ones are kept."
   def prune(days) when is_integer(days) and days > 0 do
     cutoff = DateTime.add(now(), -days * 24 * 60 * 60, :second)
 

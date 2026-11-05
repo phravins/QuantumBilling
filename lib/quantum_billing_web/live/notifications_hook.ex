@@ -1,65 +1,9 @@
 defmodule QuantumBillingWeb.NotificationsHook do
   @moduledoc """
-  Puts the notification bell on every authenticated page and keeps it live.
+  `on_mount` hook for the notification bell: subscribes to the business feed
+  and assigns `@notifications` (newest first) and `@unread_count`.
 
-  ## Why a hook rather than a component
-
-  The bell lives in `Layouts.app`, which every signed-in page draws, and it has
-  to do three things no function component can: subscribe to a topic, reload
-  itself when something arrives on it, and handle its own clicks. Attaching
-  those to the socket in an `on_mount` hook gives the bell to every page at
-  once, without twenty LiveViews growing a `handle_info` clause for a message
-  they have no interest in — and, as `UserAuth.watch_own_account/1` already
-  found for the sidebar, a LiveView that receives a message it has no clause
-  for does not ignore it, it crashes.
-
-  `attach_hook/4` on `:handle_event` is what lets the panel's own buttons work
-  from here. The hooks halt only on the messages and events that are theirs;
-  everything else continues to the page, untouched.
-
-  ## Which business
-
-  Notifications belong to a business, and so does the topic the bell listens
-  on. A page reached before one is chosen — the picker, the profile — gets an
-  empty bell that subscribes to nothing. The router runs this hook after
-  `UserAuth`'s `:require_business` on the business pages, so there the business
-  is already current.
-
-  ## What it assigns
-
-    * `@notifications` — the newest few, newest first
-    * `@unread_count` — what the badge shows, and whether it shows at all
-
-  A new notification is applied to both from the broadcast itself; anything
-  else re-reads them from the database. The split is deliberate. An inserted
-  row is always the newest and always unread, so prepending it and adding one
-  to the badge is not an approximation — it is exactly what a re-read would
-  return. Marking read is not: which rows it covers depends on the table, not
-  on the fifteen this socket happens to be holding, so that one is answered by
-  querying.
-
-  It matters because of who publishes what. `:notification_created` comes from
-  invoice writes, the payment webhook and the nightly workers, and reaches
-  every open window in the business at once — re-reading there would turn one
-  invoice into two queries per connected page, for a row the message already
-  carried. `:notifications_read` comes from somebody clicking the bell, once.
-
-  ## What this costs in tests
-
-  Rendering the broadcast payload rather than re-reading means the bell is not
-  inside the Ecto sandbox: PubSub is global, so in an `async: true` test a
-  notification written by a *different* test running at the same moment is
-  delivered here and drawn into this socket's panel. It cannot leak between
-  businesses in production — each one's notifications go out on a topic named
-  for its schema, and every notification is addressed to all of that business or to one
-  member of it —
-  but it does mean a LiveView assertion of the form
-  `refute render(view) =~ "Some Client"` is no longer sound, because another
-  test's invoice for a client of that name will put the string on the page.
-
-  Assert against the element you mean — the row, the table, the card — rather
-  than against the rendered document. `EWayBillsLiveTest` and `InvoicesLiveTest`
-  both carry notes at the lines where this bit.
+  PubSub is shared in async tests, so assert on specific elements.
   """
 
   import Phoenix.Component
@@ -68,8 +12,7 @@ defmodule QuantumBillingWeb.NotificationsHook do
   alias QuantumBilling.Notifications
   alias QuantumBilling.Notifications.Notification
 
-  # The feed is a business's. Pages reachable before one is chosen — the
-  # picker, the profile — get an empty bell, which the layout does not draw.
+  # Pages before a business is chosen get an empty bell.
   def on_mount(:default, _params, _session, socket) do
     if QuantumBilling.Repo.business() do
       mount_feed(socket)
@@ -90,8 +33,7 @@ defmodule QuantumBillingWeb.NotificationsHook do
     {:cont, socket}
   end
 
-  # Patched in place; a new row is unread by construction. One addressed to
-  # somebody else — their private reminder — is not this bell's.
+  # Patched in place; a new row is unread. Rows addressed to someone else are skipped.
   defp handle_feed_info({:notification_created, %Notification{} = notification}, socket) do
     if Notifications.visible?(notification, viewer_id(socket)) do
       prepend(socket, notification)

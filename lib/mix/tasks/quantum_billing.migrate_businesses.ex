@@ -4,14 +4,9 @@ defmodule Mix.Tasks.QuantumBilling.MigrateBusinesses do
   @moduledoc """
   Runs `priv/repo/tenant_migrations` in each business's schema.
 
-      $ mix quantum_billing.migrate_businesses
+      $ mix quantum_billing.migrate_businesses [--quiet]
 
-  `mix ecto.migrate` runs this after the public migrations, so it is rarely
-  needed on its own. In a release, `QuantumBilling.Release.migrate/0` does both.
-
-  ## Options
-
-    * `--quiet` - do not log each migration
+  `mix ecto.migrate` already runs it; in a release, `Release.migrate/0` does both.
   """
   use Mix.Task
 

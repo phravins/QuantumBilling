@@ -55,6 +55,5 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
   @doc "Takes a profile back out of the Bin."
   def restore_changeset(profile), do: change(profile, deleted_at: nil)
 
-  def frequencies, do: @frequencies
   def statuses, do: @statuses
 end

@@ -2,30 +2,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   @moduledoc """
   The invoice document's stylesheet, as a string.
 
-  ## Why the document carries its own CSS
-
-  The document is rendered on screen inside the application and again on a
-  standalone print page that deliberately loads none of `app.css` — the mask
-  based `hero-*` classes and the daisyUI theme are not available there, and an
-  icon rendered through them came out blank on saved PDFs.
-
-  The old answer was to write the markup twice, once in Tailwind and once in
-  inline CSS, and keep a third module honest about what appeared in each. The
-  answer here is that the print page cannot load *the application's* stylesheet,
-  but it can load one the server hands it as a string. So can the LiveView. One
-  markup, one stylesheet, injected in a `<style>` tag on whichever surface is
-  rendering.
-
-  ## Everything is scoped under `.qb-doc`
-
-  This CSS lands in the middle of a Tailwind and daisyUI page, so every selector
-  is prefixed. Nothing here can reach the application's chrome, and nothing in
-  the application's stylesheet is relied on to be present. That scoping is what
-  makes a `<style>` tag in the body harmless.
-
-  The accent is not written into these rules. It arrives as the `--qb-accent`
-  custom property, set inline on the `.qb-doc` element by the renderer, so the
-  stylesheet stays static and the colour enters the page in exactly one place.
+  Injected in a `<style>` tag on screen and on the print page, which loads no
+  `app.css`. Every selector is scoped under `.qb-doc`. The accent comes from the
+  `--qb-accent` custom property the renderer sets, so this CSS stays static.
   """
 
   alias QuantumBillingWeb.InvoiceDoc.Document
@@ -33,11 +12,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   @doc """
   The stylesheet for `document`.
 
-  ## Options
-
-    * `:mode` — `:screen` (default) or `:print`. `:print` adds the paper rules;
-      they are meaningless on screen and `@page` in particular would be a stray
-      at-rule in the middle of an application page.
+  Option: `:mode`, `:screen` (default) or `:print`, which adds the paper rules and `@page`.
   """
   @spec css(Document.t(), keyword()) :: binary()
   def css(%Document{page: page}, opts \\ []) do
@@ -261,9 +236,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
 
   defp mode_rules(_screen, _page), do: ""
 
-  # The whole-sheet options. Empty for a page at its defaults, so a stored layout
-  # gets exactly the stylesheet it had. Scoped to `--sheet`, which the renderer
-  # sets only on the full document, never on the pad's single-block cards.
+  # Whole-sheet options; empty at defaults, so stored layouts are unchanged.
+  # Scoped to `--sheet`, which only the full document sets.
   defp sheet_rules(page) do
     border = Map.get(page, :border, "none")
     top = Map.get(page, :space_top, "0mm")
@@ -308,9 +282,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   defp aspect(%{size: "Letter"}), do: "8.5 / 11"
   defp aspect(_a4), do: "210 / 297"
 
-  # A letterhead is printed edge to edge: the sheet takes the page margin as its
-  # own padding instead of sitting inside the body's, so the image reaches the
-  # paper's edges and the text still clears them.
+  # A letterhead prints edge to edge: the sheet takes the page margin as its own padding.
   defp letterhead_print(:print, %{background: "/" <> _} = page) do
     margin = page.margin
 

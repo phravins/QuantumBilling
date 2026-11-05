@@ -2,29 +2,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   @moduledoc """
   Builds the GSTR-1 JSON the GST Offline Tool accepts, for one return period.
 
-  ## What this used to do
-
-  Three things, all wrong, and the first two in a way nobody could miss once
-  they tried it:
-
-    * it read `item.hsn_code`, a field that does not exist, so the download
-      raised `KeyError` for any organisation with a single line item — the
-      export had never produced a file;
-    * it ignored the return period entirely: every invoice ever issued went
-      into the file, labelled as that month's return;
-    * it reported every line at 18%, whatever rate was actually charged.
-
-  A GSTR-1 is a legal filing. A file with the wrong period, the wrong rates or
-  cancelled invoices in it is worse than no file, because it is plausible.
-
-  ## What it does now
-
-  One query for the period, one for its credit notes. Invoices are grouped the
-  way the schema expects — B2B by counterparty GSTIN, B2CL for large
-  inter-state consumer sales, B2CS summarised by place of supply, rate and
-  supply type — and within each invoice the line items are grouped **by their
-  own tax rate**, so a bill mixing 5% goods and 18% services reports two rate
-  lines. Cancelled invoices are excluded.
+  Invoices are grouped as the schema expects: B2B by counterparty GSTIN, B2CL
+  for large inter-state consumer sales, B2CS by place of supply, rate and type.
+  Lines are grouped by their own tax rate. Cancelled invoices are excluded.
   """
 
   import Ecto.Query, warn: false
@@ -41,13 +21,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   @stream_rows 500
 
-  @doc """
-  Validates a return period of the form `MMYYYY`.
-
-  Returns `{:ok, period}` or `{:error, message}`. Everything downstream — the
-  query, the file name, the header — depends on this, so it is checked once,
-  here, rather than trusted from a query string.
-  """
+  @doc "Validates a `MMYYYY` return period: `{:ok, period}` or `{:error, message}`."
   def validate_period(period) when is_binary(period) do
     with <<month::binary-size(2), year::binary-size(4)>> <- String.trim(period),
          {month_number, ""} when month_number in 1..12 <- Integer.parse(month),
@@ -70,9 +44,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   end
 
   @doc """
-  Builds the GSTR-1 structure for `period` (`"MMYYYY"`).
-
-  Returns `{:ok, map}` or `{:error, message}`.
+  Builds the GSTR-1 structure for `period` (`"MMYYYY"`): `{:ok, map}` or `{:error, message}`.
   """
   def generate_gstr1_json(period) do
     with {:ok, %{period: period, month: month, year: year}} <- validate_period(period) do

@@ -1,17 +1,9 @@
 defmodule QuantumBilling.NotificationsTest do
   @moduledoc """
-  The feed behind the bell.
+  The notification feed: no duplicates, broadcasts, and pruning keeps unread rows.
 
-  The interesting cases are not "does an insert insert" but the three things a
-  notification has to get right to be trustworthy: it must never be written
-  twice by a producer that runs twice, it must broadcast so an open window sees
-  it, and pruning must never take one nobody has read.
-
-  Every `assert_receive`/`refute_receive` below pins the row it is about — by id
-  or by dedupe key — and never matches the bare message. The topic is global and
-  PubSub is not inside the sandbox, so a notification written by any other test
-  running at the same moment is delivered here too; a bare match would make
-  these tests pass or fail on somebody else's work.
+  Messages are matched by id or dedupe key: the PubSub topic is global, so other
+  tests' notifications arrive here too.
   """
   use QuantumBilling.DataCase, async: true
 

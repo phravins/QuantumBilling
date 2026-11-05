@@ -1,26 +1,12 @@
 defmodule QuantumBillingWeb.SettingsComponents do
   @moduledoc """
-  Building blocks for the Settings page: the labelled toggle used by the
-  boolean settings, and the panel for a section that is not built yet.
+  The Settings section list and the boolean toggle row.
 
-  The Customization panel's previews are no longer in here. They are real
-  renders of a real layout now — the design thumbnails come from
-  `QuantumBillingWeb.InvoiceTemplateComponents`, and the full-size preview and
-  test print are served by `QuantumBillingWeb.InvoicePdfController`.
-
-  `sections/0` is the single source of truth for the section list. The app
-  sidebar reads it too, which is why it lives here rather than in the LiveView.
-  Each section's title is rendered by the page header, not in here.
-
-  The labelled `field/1` these panels use lives in
-  `QuantumBillingWeb.SharedComponents` and is auto-imported.
+  `sections/0` is shared with the app sidebar, so it lives here.
   """
   use Phoenix.Component
 
-  import QuantumBillingWeb.CoreComponents, only: [icon: 1]
-
-  # short_title fits the narrow sidebar.
-  # Every icon is distinct, so the narrow sidebar can be read by icon alone.
+  # `short_title` fits the sidebar; icons are distinct so they read alone.
   @sections [
     %{
       key: :company,
@@ -117,11 +103,7 @@ defmodule QuantumBillingWeb.SettingsComponents do
   end
 
   @doc """
-  Renders a labelled on/off row for a boolean setting.
-
-  A checkbox rather than a switch: `CoreComponents.input/1` renders the hidden
-  false value that a form needs to turn a setting *off*, which a hand-rolled
-  toggle would have to reimplement.
+  A labelled checkbox row for a boolean setting. The hidden `false` input lets it turn off.
   """
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
@@ -144,30 +126,6 @@ defmodule QuantumBillingWeb.SettingsComponents do
         <span :if={@hint} class="mt-0.5 block text-xs text-base-content/45">{@hint}</span>
       </span>
     </label>
-    """
-  end
-
-  @doc """
-  Renders a panel for something that genuinely is not built yet.
-
-  Says what the section needs rather than implying it is merely unfinished, so
-  nobody goes looking for a button that cannot exist.
-  """
-  attr :title, :string, required: true
-  attr :icon, :string, required: true
-  attr :needs, :string, required: true
-
-  def unbuilt_panel(assigns) do
-    ~H"""
-    <div class="flex flex-1 flex-col items-center justify-center px-6 py-14 text-center">
-      <span class="mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
-        <.icon name={@icon} class="size-4.5" />
-      </span>
-
-      <p class="text-sm font-medium">{@title} is not available yet</p>
-
-      <p class="mt-1 max-w-sm text-sm text-base-content/60">{@needs}</p>
-    </div>
     """
   end
 end

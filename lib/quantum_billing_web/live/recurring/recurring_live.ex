@@ -1,13 +1,5 @@
 defmodule QuantumBillingWeb.RecurringLive do
-  @moduledoc """
-  LiveView page for managing recurring invoice billing schedules.
-
-  The list is paged by the database and the client picker is a bounded search.
-  Both used to be unbounded: every profile with its client preloaded was
-  reloaded on mount and again after every pause, delete and manual run, and
-  every client in the directory was rendered into the `<select>` in the new
-  profile modal.
-  """
+  @moduledoc "Recurring invoice profiles: a database-paged list and a bounded client search."
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Clients

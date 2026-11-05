@@ -2,35 +2,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   @moduledoc """
   Reads and writes the XML an invoice layout is stored as.
 
-  ## Escaping is Saxy's job, not ours
-
-  Every text value goes out as a `{:characters, _}` node and every attribute
-  through Saxy's encoder, so a client name containing `&` or a footer containing
-  `<` produces a document that parses back to the same string. A raw binary
-  child would be emitted *unescaped* by `Saxy.encode!/2` and silently produce a
-  layout nothing can read — so text content is never passed as a bare string.
-
-  ## Indentation is deliberate whitespace, not a pretty-printer
-
-  Saxy has no pretty-printer. The newline-and-indent strings between elements
-  are ordinary character nodes placed by `nl/1`; on the way back in they are
-  ignored, because `elements/1` keeps only element tuples. This buys readable
-  layouts and legible diffs without anyone hand-rolling an XML writer.
-
-  ## The round trip is byte-stable
-
-  Attributes are emitted in the order `Catalog.attrs/1` declares, never map
-  order, and every option is written whether or not it differs from the default.
-  Parsing a layout and serialising it again therefore returns the identical
-  string, which is what makes the design pad's autosave a no-op when nothing
-  changed.
-
-  ## Entities
-
-  Saxy supports no DTDs and expands no entities — an `&foo;` in a stored layout
-  comes back as the literal text `&foo;` rather than whatever it was declared to
-  mean. That is the reason this uses Saxy rather than `:xmerl`, whose scanner
-  expands internal entities by default.
+  Text goes out as `{:characters, _}` nodes so Saxy escapes it; indentation is
+  explicit whitespace that parsing ignores. Attributes are written in
+  `Catalog.attrs/1` order, so parse then serialise returns the same string.
+  Saxy expands no entities, which is why it is used instead of `:xmerl`.
   """
 
   require Logger
@@ -77,37 +52,22 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     {"space-bottom", :space_bottom, {:enum, ~w(0mm 20mm 35mm 50mm)}, "0mm"}
   ]
 
-  # Set by the server after an upload (see `put_background/2`), never from form
-  # params: a typed path could name another business's file.
+  # Set by the server after an upload, never from params: a typed path could name another business's file.
   @server_only_page ~w(background)
 
   @doc "The layout schema version this module writes."
   def version, do: @version
 
-  @doc """
-  The page setup's attribute spec, in emit order.
-
-  Exposed so the design pad's page controls cast through the same declarations
-  the parser uses, rather than keeping a second list of what a margin may be.
-  """
+  @doc "The page attribute spec, in emit order. Shared with the design pad's page controls."
   def page_attrs, do: @page_attrs
 
-  @doc """
-  The stock page setup: every attribute at the value the parser falls back to.
-
-  What "reset formatting" means, and what a document that has never been
-  touched already prints as.
-  """
+  @doc "The default page setup: every attribute at its fallback value."
   def default_page do
     Map.new(@page_attrs, fn {_xml, key, _kind, default} -> {key, default} end)
   end
 
   @doc """
-  Applies form params — keyed by the XML attribute names — to a page map.
-
-  Both the design pad and the settings toolbar edit the same page, so both
-  fold through here: a value that does not cast is left at what it was, which
-  is why a half-typed colour cannot blank the document's text.
+  Applies form params (keyed by XML attribute name) to a page map. Values that don't cast are left unchanged.
   """
   def cast_page(page, params) when is_map(params) do
     @page_attrs
@@ -123,9 +83,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   end
 
   @doc """
-  Sets or clears the page's background image. The path must already be one the
-  server stored (`QuantumBilling.DesignAssets.record/2`); a malformed one is
-  ignored.
+  Sets or clears the page background. The path must already be stored by `DesignAssets.record/2`.
   """
   def put_background(%Document{} = document, path) when is_binary(path) do
     case Catalog.cast_value(path, :upload) do
@@ -134,10 +92,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     end
   end
 
-  @doc """
-  Every uploaded image path a document refers to: the page background and any
-  image blocks. What import checks for ownership, and what rendering inlines.
-  """
+  @doc "Every uploaded image path a document uses: the background and any image blocks."
   def asset_paths(%Document{} = document) do
     block_paths =
       for %Block{type: :image, opts: opts} <- document.blocks,
@@ -151,9 +106,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   end
 
   @doc """
-  Blanks every asset path that `keep?` refuses. Import runs a foreign file
-  through this so a design exported elsewhere cannot point at a file this
-  business does not own.
+  Blanks every asset path `keep?` refuses, so imported designs can't point at another business's files.
   """
   def strip_assets(%Document{} = document, keep?) when is_function(keep?, 1) do
     page =
@@ -179,12 +132,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   end
 
   @doc """
-  Parses stored layout XML.
-
-  Unknown elements and unknown field names are dropped with a warning rather
-  than failing the parse: a layout that has lost a block is still a usable
-  document, whereas refusing to render an invoice because one attribute is
-  unrecognised would take a customer's invoice off the screen.
+  Parses stored layout XML. Unknown elements and fields are dropped with a warning, not an error.
   """
   @spec parse(binary()) :: {:ok, Document.t()} | {:error, String.t()}
   def parse(xml) when is_binary(xml) do
@@ -207,12 +155,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     end
   end
 
-  @doc """
-  Parses or raises.
-
-  For the stock layout and anything else built in this codebase, where a parse
-  failure is a bug rather than bad data.
-  """
+  @doc "Parses or raises. For built-in layouts, where a failure is a bug."
   @spec parse!(binary()) :: Document.t()
   def parse!(xml) do
     case parse(xml) do
@@ -227,12 +170,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     Saxy.encode!(document_tree(document), version: "1.0", encoding: :utf8) <> "\n"
   end
 
-  @doc """
-  Checks a document says enough to be an invoice.
-
-  Presence rules only — anything a renderer can sensibly default is defaulted
-  rather than rejected here.
-  """
+  @doc "Checks a document has the blocks an invoice needs. Anything defaultable is defaulted."
   @spec validate(Document.t()) :: :ok | {:error, [String.t()]}
   def validate(%Document{} = document) do
     missing_blocks =
@@ -259,13 +197,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     end
   end
 
-  @doc """
-  The document equivalent to an organisation's `doc_*` customization columns.
-
-  The bridge that lets the renderer replace three hand-written markups without
-  changing what anybody's invoice looks like: every one of the old booleans is
-  expressed here as the presence or absence of a block or a column.
-  """
+  @doc "The document matching an organisation's legacy `doc_*` customization columns."
   @spec from_legacy(map()) :: Document.t()
   def from_legacy(%Organization{} = organization) do
     organization |> Map.from_struct() |> from_legacy()
@@ -332,7 +264,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
     %{document | blocks: blocks}
   end
 
-  # -- serialising ----------------------------------------------------------
+  # Serialising
 
   defp document_tree(%Document{} = document) do
     {"invoice-template", [{"version", Integer.to_string(document.version)}],
@@ -402,7 +334,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
 
   defp nl(depth), do: "\n" <> String.duplicate("  ", depth)
 
-  # -- parsing --------------------------------------------------------------
+  # Parsing
 
   defp parse_version(attrs) do
     case attr(attrs, "version") do

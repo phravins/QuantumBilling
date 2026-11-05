@@ -1,16 +1,10 @@
 defmodule QuantumBilling.EWayBills.NICClient do
   @moduledoc """
-  HTTP client for the Government NIC E-Way Bill portal, using `Req`.
+  HTTP client for the NIC e-way bill portal, using `Req`.
 
-  Runs in demo mode when `NIC_EWB_API_URL` is unset, so the whole flow —
-  generate, cancel, update Part-B — is exercisable without credentials. Demo
-  mode mints plausible numbers and applies the same Rule 138(10) validity the
-  live path does, and every bill records which mode issued it (`portal_mode`).
-
-  When a portal is configured, a portal that does not answer is an error, never
-  a demo number: a failed request must not be recorded as a filed bill. Cancel
-  and Part-B follow the bill's own mode, since a demo bill does not exist on
-  the portal.
+  Without `NIC_EWB_API_URL` it runs in demo mode with plausible numbers and the
+  same validity rules; each bill records its `portal_mode`. With a portal set,
+  an unreachable portal is an error, never a demo number.
   """
 
   alias QuantumBilling.EWayBills.EWayBill
@@ -22,10 +16,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
   @part_b_path "/ewaybillapi/v1.03/ewayapi/vehewb"
 
   @doc """
-  Requests a bill number and validity from the portal.
-
-  Returns `{:ok, attrs}` where `attrs` are the fields of
-  `QuantumBilling.EWayBills.EWayBill` — the caller adds `invoice_id`.
+  Requests a bill number and validity: `{:ok, attrs}` of `EWayBill` fields; the caller adds `invoice_id`.
   """
   def generate_ewb(%Invoice{} = invoice, params \\ %{}) do
     params = stringify(params)
@@ -87,9 +78,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
   end
 
   @doc """
-  A sentence for the user about why the portal did not do what was asked, or
-  `nil` when `reason` is not a portal failure. Nothing is recorded in any of
-  these cases.
+  A sentence for the user on why the portal refused, or `nil` if `reason` isn't a portal failure.
   """
   def error_message(:portal_unavailable),
     do: "The e-way bill portal is not responding. Nothing was filed; try again shortly."
@@ -116,11 +105,7 @@ defmodule QuantumBilling.EWayBills.NICClient do
   end
 
   @doc """
-  Cancels a bill on the portal under Rule 138(9).
-
-  Returns `{:ok, response}`; the caller records the cancellation locally only
-  once the portal has accepted it, so the two cannot disagree about whether a
-  number is spent.
+  Cancels a bill on the portal (Rule 138(9)). The caller records it locally only after `{:ok, response}`.
   """
   def cancel_ewb(%EWayBill{} = bill, params \\ %{}) do
     params = stringify(params)

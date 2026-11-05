@@ -1,23 +1,15 @@
 defmodule QuantumBillingWeb.EWayBillsComponents do
   @moduledoc """
-  Building blocks specific to the e-way bill generation form: numbered
-  sections, the transaction-type radio, and the rows of the live summary panel.
-
-  The labelled `field/1` used throughout the form now lives in
-  `QuantumBillingWeb.SharedComponents`, since the Settings page needs it too.
-  It is auto-imported into every view, so the form picks it up without an
-  import here.
+  E-way bill form parts: numbered sections, the transaction-type radio and summary rows.
   """
   use Phoenix.Component
 
   import QuantumBillingWeb.SharedComponents
 
   @doc """
-  Renders one numbered form section as a card.
+  A numbered form section card.
 
-  ## Examples
-
-      <.form_section step="1" title="Transaction Details">…</.form_section>
+      <.form_section step="1" title="Transaction Details">...</.form_section>
   """
   attr :step, :string, required: true
   attr :title, :string, required: true

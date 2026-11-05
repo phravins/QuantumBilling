@@ -1,35 +1,11 @@
 defmodule QuantumBilling.Compliance do
   @moduledoc """
-  The GST compliance calendar.
+  The GST compliance calendar and hand-made tasks.
 
-  Unlike the other pages, nothing here is invented: an obligation's due date is
-  fixed by statute, so the whole schedule is *generated from the rules* rather
-  than stored. The rules implemented are:
-
-    * `GSTR-1`  — monthly return, due the 11th of the following month
-    * `GSTR-3B` — monthly return, due the 20th of the following month
-    * `CMP-08`  — composition-scheme payment statement, quarterly, due the 18th
-      of the month following the quarter
-    * `GSTR-9`  — annual return, due 31 December after the financial year ends
-    * `GSTR-9C` — reconciliation statement, same due date as `GSTR-9`
-
-  What is *not* derivable is whether a given tenant actually filed. That needs
-  the multi-tenant schema, so `filings/0` returns nothing and every obligation
-  resolves to `"Pending"` or `"Overdue"` on dates alone. Supplying filing
-  records is the only change needed to make `"Filed"` appear.
-
-  The Indian financial year runs 1 April – 31 March, which is why the year
-  boundary is computed rather than taken from `Date.year/1`.
-
-  Every function takes the reference date explicitly so callers — and tests —
-  never depend on when they run.
-
-  ## Tasks added by hand
-
-  `QuantumBilling.Compliance.Task` holds whatever the rules do not cover. A task
-  becomes a row of the same shape as an obligation through `task_row/2`, with
-  the record itself under `:task`, so the table, calendar and rail treat both
-  alike. Only the rows carrying `:task` can be edited.
+  Obligations (GSTR-1, GSTR-3B, CMP-08, GSTR-9, GSTR-9C) are generated from the
+  statutory due dates, not stored. Filing records don't exist yet, so each
+  resolves to "Pending" or "Overdue". Tasks from `Compliance.Task` become rows
+  of the same shape via `task_row/2`.
   """
   import Ecto.Query, warn: false
 
@@ -43,9 +19,7 @@ defmodule QuantumBilling.Compliance do
 
   @max_id 9_223_372_036_854_775_807
 
-  # Offsets for the organisation timezones on offer, none of which keeps
-  # daylight saving. The app ships no timezone database, and a reminder at
-  # "9:00" has to mean nine o'clock where the business is.
+  # Fixed offsets for the timezones on offer (none use daylight saving).
   @utc_offsets %{"Asia/Kolkata" => 19_800}
 
   @monthly [
@@ -67,11 +41,7 @@ defmodule QuantumBilling.Compliance do
 
   @statuses ["All Status", "Filed", "Done", "Pending", "Overdue"]
 
-  @doc """
-  The financial year containing `date`, as `{first_day, last_day}`.
-
-  April starts a new year, so January–March belong to the year before.
-  """
+  @doc "The financial year (April to March) containing `date`, as `{first, last}`."
   def financial_year(%Date{} = date) do
     start_year = if date.month >= 4, do: date.year, else: date.year - 1
     {Date.new!(start_year, 4, 1), Date.new!(start_year + 1, 3, 31)}
@@ -85,12 +55,7 @@ defmodule QuantumBilling.Compliance do
     "FY #{from.year}-#{from.year |> Kernel.+(1) |> to_string() |> String.slice(2..3)}"
   end
 
-  @doc """
-  Every obligation falling in the financial year that contains `today`.
-
-  Ordered by due date. Each entry is `%{type, subtitle, category, period_label,
-  due_date, status, filed_on}`.
-  """
+  @doc "Every obligation in the financial year containing `today`, by due date."
   def obligations(today \\ Date.utc_today()) do
     {fy_start, _fy_end} = financial_year(today)
 
@@ -101,7 +66,7 @@ defmodule QuantumBilling.Compliance do
     |> Enum.sort_by(& &1.due_date, Date)
   end
 
-  # Twelve periods from April, each due on a fixed day of the following month.
+  # Twelve periods from April, each due on a fixed day of the next month.
   defp monthly_obligations(fy_start) do
     for offset <- 0..11,
         {type, subtitle, category, due_day} <- @monthly do
@@ -125,8 +90,7 @@ defmodule QuantumBilling.Compliance do
     String.pad_leading(to_string(date.month), 2, "0") <> to_string(date.year)
   end
 
-  # Four quarters from April, each due on the 18th of the month after the
-  # quarter closes.
+  # Four quarters from April, each due on the 18th after the quarter.
   defp quarterly_obligations(fy_start) do
     for quarter <- 0..3 do
       from = shift_months(fy_start, quarter * 3)
@@ -143,7 +107,7 @@ defmodule QuantumBilling.Compliance do
     end
   end
 
-  # Annual filings are due on 31 December following the close of the year.
+  # Annual returns are due 31 December after the year closes.
   defp annual_obligations(fy_start) do
     label = financial_year_label(fy_start)
 
@@ -172,39 +136,16 @@ defmodule QuantumBilling.Compliance do
     Map.merge(obligation, %{status: status, filed_on: filed_on})
   end
 
-  # No filing records exist yet.
   defp filed_on(_obligation), do: nil
 
-  @doc """
-  Filing records for the current tenant.
-
-  Returns `[]` until the filings table exists, which is why no obligation
-  currently resolves to `"Filed"`.
-  """
+  @doc "Filing records. Always `[]` until a filings table exists."
   def filings, do: []
 
   @doc """
-  The obligations this tenant is actually tracking.
+  The obligations this business tracks, based on its registration.
 
-  `obligations/1` above is the statutory calendar in full: every return the Act
-  defines, which is the same set of rows for every business in the country.
-  What a particular business owes is narrower, and its own registration decides
-  which rows to drop:
-
-    * no GSTIN on file — nothing at all. An unregistered business files no GST
-      returns, so the page stays empty rather than inventing deadlines for
-      someone who owes none.
-    * composition scheme — `CMP-08` quarterly, and no `GSTR-1` or `GSTR-3B`. A
-      composition dealer does not file the monthly returns.
-    * regular registration — `GSTR-1` and `GSTR-3B` monthly, and no `CMP-08`,
-      which exists only for the composition scheme.
-
-  Either way the annual returns apply. This is not invented data: once a GSTIN
-  exists these dates are owed by statute whether or not the application has a
-  record of them.
-
-  Filing records are still the missing half — `filings/0` returns nothing — so
-  every row resolves to `"Pending"` or `"Overdue"` on dates alone.
+  No GSTIN: none. Composition: CMP-08 and annual returns. Regular: GSTR-1,
+  GSTR-3B and annual returns.
   """
   def tracked_obligations(today \\ Date.utc_today(), registration \\ nil) do
     if registered?(registration) do
@@ -235,12 +176,7 @@ defmodule QuantumBilling.Compliance do
   defp registration_field(nil, _key), do: nil
   defp registration_field(registration, key), do: Map.get(registration, key)
 
-  @doc """
-  Counts and percentages for the summary cards.
-
-  Percentages are of the total, rounded to one decimal, and are `0.0` for an
-  empty list rather than a division by zero.
-  """
+  @doc "Counts and percentages for the summary cards."
   def summary(obligations) do
     total = length(obligations)
     counts = Enum.frequencies_by(obligations, & &1.status)
@@ -264,18 +200,9 @@ defmodule QuantumBilling.Compliance do
   defp percentage(count, total), do: Float.round(count / total * 100, 1)
 
   @doc """
-  The `limit` open obligations closest to `today`, in date order.
+  The `limit` open obligations closest to `today`, overdue first on ties.
 
-  Closest to today, not earliest: the statutory calendar covers a whole
-  financial year and nothing is ever filed, so taking the earliest open rows
-  filled the rail with last April every time — five deadlines months past,
-  under a heading that says "Upcoming". Ranking by distance from today instead
-  gives the window that actually needs attention, the last one or two that
-  slipped and the next few coming up. A tie between an overdue date and a
-  future one the same distance away goes to the overdue one.
-
-  Each carries `days_until` — negative once the due date has passed, so the
-  caller can distinguish "Due in 5 days" from "Overdue by 12 days".
+  Each has `days_until`, negative once overdue.
   """
   def upcoming(obligations, today \\ Date.utc_today(), limit \\ 5) do
     obligations
@@ -294,8 +221,7 @@ defmodule QuantumBilling.Compliance do
   end
 
   @doc """
-  Narrows obligations by category and status. `:all` and `"All Status"` match
-  everything.
+  Filters by category and status. `:all` and "All Status" match everything.
   """
   def filter(obligations, filters) do
     obligations
@@ -311,20 +237,13 @@ defmodule QuantumBilling.Compliance do
   defp matches_status?(_obligation, "All Status"), do: true
   defp matches_status?(obligation, status), do: obligation.status == status
 
-  @doc """
-  A month laid out as whole weeks for the calendar grid.
-
-  Always returns complete Sunday-to-Saturday rows, padded with the neighbouring
-  months' days so the grid never has holes. Each cell is
-  `%{date, in_month?, obligations}`.
-  """
+  @doc "A month as whole Sunday-to-Saturday weeks of `%{date, in_month?, obligations}`."
   def calendar_weeks(year, month, obligations) do
     first = Date.new!(year, month, 1)
     last = Date.end_of_month(first)
 
     by_date = Enum.group_by(obligations, & &1.due_date)
 
-    # Back to the Sunday on or before the first of the month.
     grid_start = Date.add(first, -(Date.day_of_week(first, :sunday) - 1))
     grid_end = Date.add(last, 7 - Date.day_of_week(last, :sunday))
 
@@ -336,10 +255,7 @@ defmodule QuantumBilling.Compliance do
     |> Enum.chunk_every(7)
   end
 
-  @doc """
-  Moves `date` by `count` months, clamping the day to the target month's length
-  so the 31st never rolls into the next month.
-  """
+  @doc "Moves `date` by `count` months, clamping the day to the month's length."
   def shift_months(%Date{} = date, count) do
     total = date.year * 12 + (date.month - 1) + count
     year = div(total, 12)
@@ -353,11 +269,7 @@ defmodule QuantumBilling.Compliance do
   def categories, do: @categories
   def statuses, do: @statuses
 
-  @doc """
-  The category a client names, or `:all` for one that does not exist.
-
-  A closed list, so a forged value can neither create an atom nor crash the page.
-  """
+  @doc "The category a client names, or `:all`. A closed list, so no atoms are created."
   def category_key("custom:" <> label) when byte_size(label) in 1..160, do: {:custom, label}
 
   def category_key(value) do
@@ -375,17 +287,12 @@ defmodule QuantumBilling.Compliance do
   end
 
   @doc """
-  A category key as the string a tab sends back, the reverse of `category_key/1`.
-
-  Custom ones carry their label — `"custom:Rent"` — rather than an atom.
+  A category key as a tab value; custom ones are `"custom:Label"`.
   """
   def category_param({:custom, label}), do: "custom:" <> label
   def category_param(key), do: to_string(key)
 
-  @doc """
-  The filter tabs: the built-in categories, then one for each custom category
-  among `rows`, in alphabetical order.
-  """
+  @doc "The filter tabs: built-in categories, then custom ones from `rows`."
   def category_tabs(rows) do
     custom =
       rows
@@ -416,11 +323,7 @@ defmodule QuantumBilling.Compliance do
     ]
   end
 
-  @doc """
-  The business's tasks, soonest first.
-
-  Private ones are left out unless `scope`'s user wrote them.
-  """
+  @doc "The business's tasks, soonest first. Others' private tasks are hidden."
   def list_tasks(%Scope{} = scope) do
     in_business(scope, fn ->
       Task
@@ -436,13 +339,7 @@ defmodule QuantumBilling.Compliance do
 
   defp visible_to(query, _scope), do: where(query, [t], not t.private)
 
-  @doc """
-  One task of this business, or `nil`.
-
-  Takes the raw id from a client, so a forged or oversized one finds nothing
-  rather than crashing the page. Somebody else's private task is not found
-  either.
-  """
+  @doc "One task by raw id, or `nil`. Bad ids and others' private tasks find nothing."
   def get_task(%Scope{} = scope, raw_id) do
     case Ecto.Type.cast(:id, raw_id) do
       {:ok, id} when is_integer(id) and id > 0 and id <= @max_id ->
@@ -474,11 +371,7 @@ defmodule QuantumBilling.Compliance do
     end)
   end
 
-  @doc """
-  Marks a task done. A repeating one also gets its next occurrence, unless
-  that is already there — reopening and completing again does not add a
-  second.
-  """
+  @doc "Marks a task done. A repeating task gets its next occurrence once."
   def complete_task(%Scope{} = scope, %Task{} = task) do
     with {:ok, done} <-
            set_status(scope, task, "done", DateTime.utc_now(:second), :complete_compliance_task) do
@@ -529,8 +422,7 @@ defmodule QuantumBilling.Compliance do
     end)
   end
 
-  # Who a private task is hidden from, and who gets its email, is its author's
-  # call; a teammate editing a shared task cannot hide it or mail the author.
+  # Only the author can change privacy and email settings.
   defp authors_options_only(%Scope{user: %{id: id}}, %Task{created_by_id: id}, attrs), do: attrs
 
   defp authors_options_only(_scope, _task, attrs) when is_map(attrs) do
@@ -603,16 +495,11 @@ defmodule QuantumBilling.Compliance do
   end
 
   @doc """
-  Posts to the feed, once, every open task inside its reminder window.
+  Posts every open task inside its reminder window to the feed, once.
 
-  Given a `DateTime`, a task with a time of day waits until that time on its
-  reminder day, in the organisation's timezone. Given a `Date`, the whole day
-  counts — which is what a test, or a run for a past day, means.
-
-  A private task's notification is addressed to its author alone, and a task
-  with `email_reminder` also queues an email to its author.
-
-  Returns how many were written. Runs inside the current business.
+  With a `DateTime`, timed tasks wait for their time in the business timezone;
+  with a `Date` the whole day counts. Private reminders go to the author only.
+  Returns the number written.
   """
   def remind_due_tasks(%Date{} = today), do: remind_tasks(today, nil)
 
@@ -647,10 +534,7 @@ defmodule QuantumBilling.Compliance do
     |> Enum.count(&match?({:ok, %{}}, &1))
   end
 
-  @doc """
-  Whether `task`'s reminder is due on `today` at `time` (nil for "any time that
-  day").
-  """
+  @doc "Whether `task`'s reminder is due on `today` at `time` (nil means any time)."
   def reminder_due?(%Task{} = task, %Date{} = today, time) do
     remind_on = Date.add(task.due_date, -task.remind_days_before)
 
@@ -681,7 +565,7 @@ defmodule QuantumBilling.Compliance do
       |> Repo.update!()
     end
 
-    # Only with a fresh notification, so a duplicate never mails twice.
+    # Only for a new notification, so nothing is emailed twice.
     with {:ok, %{}} <- result, true <- task.email_reminder do
       _ = ReminderEmail.deliver_async(task, due_phrase(days_until))
     end

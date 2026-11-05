@@ -1,26 +1,12 @@
 defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   @moduledoc """
-  What a layout's newer blocks need beyond the invoice itself: the payment
-  details and the uploaded images.
+  Data a layout needs beyond the invoice, gathered before rendering:
 
-  The renderer is a pure function of its assigns, so anything read from the
-  organisation or from disk is gathered here first and handed in as one map:
+    * `:payment` - `%{upi_id, payee, qr, bank}`, or `nil` without a payment block
+    * `:images` - `%{path => src}` for the background and image blocks
 
-    * `:payment` — `%{upi_id, payee, qr, bank}`, where `qr` is an inline SVG
-      (or `""`) and `bank` is a list of `{label, value}` lines. `nil` when the
-      layout has no payment block, so pages without one pay nothing for it.
-    * `:images` — `%{path => src}` for the page background and image blocks.
-
-  ## Only this business's files
-
-  A path in a layout is only rendered when `DesignAssets.owned?/1` agrees it
-  belongs to the current business — the same rule the upload controller
-  applies. A layout cannot be made to inline another business's letterhead by
-  naming its file.
-
-  With `inline: true` (the PDF, the print page, the public pay page) each image
-  is read into a `data:` URI, because those are read where `/uploads/…` means
-  nothing or where the visitor has no session to fetch it with.
+  Only paths `DesignAssets.owned?/1` accepts are rendered. With `inline: true`
+  (PDF, print, public page) images become `data:` URIs.
   """
 
   alias QuantumBilling.DesignAssets
@@ -40,10 +26,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   @doc """
   Builds the extras for rendering `invoice` with `document`.
 
-  ## Options
-
-    * `:inline` — inline images as data URIs (default `false`).
-    * `:organization` — the organisation, when the caller already has it.
+  Options: `:inline` (default `false`), `:organization` (if already loaded).
   """
   def build(%Invoice{} = invoice, %Document{} = document, opts \\ []) do
     paths = Layout.asset_paths(document)
@@ -62,10 +45,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   end
 
   @doc """
-  The payment details for `invoice`, read from the organisation.
-
-  Public so the design pad can show the block with real values beside a sample
-  invoice.
+  The payment details for `invoice` from the organisation. Public for the design pad preview.
   """
   def payment(%Invoice{} = invoice, %Organization{} = organization) do
     %{

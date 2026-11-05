@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.RecurringLiveTest do
   @moduledoc """
-  The recurring billing page, which had no test of its own.
-
-  Both of its lists were unbounded: every profile, with its client preloaded,
-  was reloaded on mount and again after every pause, delete and manual run, and
-  the new-profile modal rendered every client in the directory as an
-  `<option>`. This covers the paging and the bounded picker that replaced them,
-  and the actions that used to trigger the full reload.
+  The recurring page: paged profiles, the bounded client picker, and the
+  profile actions.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

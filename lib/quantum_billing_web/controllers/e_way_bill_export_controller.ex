@@ -1,18 +1,7 @@
 defmodule QuantumBillingWeb.EWayBillExportController do
   @moduledoc """
-  The E-Way Bills list, as a CSV download.
-
-  The Export button on that page used to link to `/reports/export` with
-  `report_type=E-Way+Bills`. `Reports` has no such report type, so the
-  parameter fell through its catch-all clause and the user was quietly handed a
-  GST tax summary named `gst-tax-summary-this-year.csv` instead — a wrong file
-  that looks like a working download.
-
-  The filters travel in the query string so the file matches what was on
-  screen, exactly as `ReportsController` does it. Unlike the sales register
-  this is not chunked: an e-way bill exists only for a consignment in transit,
-  so the row count is bounded by how much is on the road, not by how long the
-  business has been trading.
+  The E-Way Bills list as CSV, with the on-screen filters from the query string.
+  Not chunked: only consignments in transit have bills, so the count stays small.
   """
   use QuantumBillingWeb, :controller
 

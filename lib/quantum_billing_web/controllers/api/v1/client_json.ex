@@ -1,13 +1,7 @@
 defmodule QuantumBillingWeb.API.V1.ClientJSON do
   @moduledoc """
-  A client as the API shows it, field by field.
-
-  Not exposed: `notes`, which are free text the business writes about its own
-  customer and has no reason to expect leaving the application; and
-  `opening_balance`, `outstanding` and `credit_limit`, which are the business's
-  view of what a customer owes and how far it trusts them — financial
-  judgement, not master data. `deleted_at` is internal; a binned client is not
-  returned at all.
+  A client as the API shows it, field by field. Not exposed: `notes`,
+  `opening_balance`, `outstanding`, `credit_limit` and `deleted_at`.
   """
 
   alias QuantumBilling.Clients.Client

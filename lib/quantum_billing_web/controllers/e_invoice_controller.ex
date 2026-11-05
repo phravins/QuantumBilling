@@ -1,14 +1,7 @@
 defmodule QuantumBillingWeb.EInvoiceController do
   @moduledoc """
-  Downloads an invoice's GST e-invoice (INV-01) data as XML.
-
-  A plain controller rather than a LiveView event for the same reason the PDF
-  view is one: this hands the browser a file, which is a real navigation.
-
-  When the invoice is not in a state the schema can describe, this redirects with
-  the reasons rather than writing the file anyway. A tax document that is quietly
-  wrong is worse than one that was never produced — and the messages name what to
-  fix, so refusing is actionable.
+  Downloads an invoice's e-invoice (INV-01) XML. If the invoice can't be
+  described yet, redirects with the reasons instead of writing a wrong file.
   """
   use QuantumBillingWeb, :controller
 

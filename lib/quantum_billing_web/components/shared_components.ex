@@ -1,9 +1,5 @@
 defmodule QuantumBillingWeb.SharedComponents do
-  @moduledoc """
-  UI building blocks shared across more than one feature folder: status pills,
-  summary tiles, the labelled form field, and the generic table controls
-  (sortable headers, pagination) used by every paginated list page.
-  """
+  @moduledoc "UI pieces shared across features: pills, cards, form fields, tables and pagination."
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1, input: 1]
@@ -44,7 +40,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
 
-  # The arbitrary variant outranks daisyUI's zero-specificity .table padding.
+  # Outranks daisyUI's .table padding.
   @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
                       "text-base-content/60 [&>th]:py-1.5"
 
@@ -66,13 +62,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   @doc "The small, icon-only button used inside table rows."
   def row_action_class, do: @row_action_class
 
-  @doc """
-  The bin button at the end of a table row's actions.
-
-  The same footprint as `row_action_class/0`, turning red under the pointer —
-  it sits beside buttons that only look at a record, and is the one that takes
-  it away.
-  """
+  @doc "The bin button at the end of a table row's actions."
   def row_delete_class, do: @row_delete_class
 
   @doc "A text/date/number input on an app form; same 36px footprint as the toolbar controls."
@@ -99,14 +89,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   @doc "A body `<tr>`: hairline separator, body type, hover tint."
   def table_row_class, do: @table_row_class
 
-  @doc """
-  Renders the surface every panel on the app sits on: a white, hairline-bordered
-  box with a whisper of shadow.
-
-  ## Examples
-
-      <.card class="lg:col-span-2" padding="p-6">…</.card>
-  """
+  @doc "The surface every panel sits on: a hairline-bordered white box."
   attr :class, :any, default: nil
   attr :padding, :string, default: "p-3"
   attr :as, :string, default: "div", doc: "the tag to render, e.g. `button` for clickable tiles"
@@ -130,18 +113,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  Renders the QuantumBilling mark: the bare icon with the wordmark beside it.
-
-  Shared because it appears both in the sidebar and at the head of the
-  documents the app produces, and a mark that drifts between the two stops
-  reading as one product.
-
-  ## Examples
-
-      <.brand_mark />
-      <.brand_mark icon_class="size-5" label_class="text-base font-semibold" />
-  """
+  @doc "The QuantumBilling mark: icon and wordmark."
   attr :class, :any, default: nil
   attr :icon_class, :any, default: "size-6"
   attr :label_class, :any, default: "text-sm font-semibold tracking-tight"
@@ -156,30 +128,10 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
-  Renders a small arrow that opens a panel of supporting copy when clicked.
+  A chevron that opens a panel of help text when clicked.
 
-  Guidance worth reading once but not worth a permanent column — the "what this
-  page is for" blurb and the tips beside it — lives here instead of in a
-  sidebar, so the form itself gets the full width of the page.
-
-  Driven by a hidden checkbox the chevron labels, deliberately *not* by the
-  daisyUI dropdown the filter menus use: that one opens on `:focus-within`, and
-  with the trigger in the tab order the panel sprang open whenever focus
-  happened to reach it rather than when anyone asked for it. Only a click on the
-  chevron opens this. A hook closes it on an outside click or Escape, which
-  focus-driven dropdowns get for free and this does not.
-
-  It renders as `<span>`s because the usual home for it is inside `header/1`'s
-  `<h1>`, which only accepts phrasing content.
-
-  ## Examples
-
-      <.header>
-        <span class="inline-flex items-center gap-2">
-          Add New Client
-          <.help_popover id="client-help" label="About adding a client">…</.help_popover>
-        </span>
-      </.header>
+  Uses a hidden checkbox (not focus) so only a click opens it; a hook closes it
+  on outside click or Escape. Renders spans so it fits inside an `<h1>`.
   """
   attr :id, :string, required: true
 
@@ -208,7 +160,7 @@ defmodule QuantumBillingWeb.SharedComponents do
           class="size-4 transition-transform duration-200 group-has-[:checked]:rotate-180"
         />
       </label>
-      <%!-- The trigger usually sits in an <h1>, whose type would otherwise cascade in. --%>
+      <%!-- Stops the <h1> text style cascading in. --%>
       <span class={[
         "invisible absolute left-0 top-full z-20 mt-1 block w-80 space-y-4 opacity-0",
         "rounded-box border border-base-300 bg-base-100 p-4 shadow-lg",
@@ -243,13 +195,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  Renders a status pill. Covers both GST invoice statuses and client account
-  statuses; anything unrecognized falls back to a neutral pill.
-
-  Colour is deliberately the only chroma left in the data tables, so the pills
-  stay soft: tinted background, matching hairline, no fill.
-  """
+  @doc "A status pill for invoice and client statuses; unknown ones are neutral."
   attr :status, :string, required: true
 
   def status_badge(assigns) do
@@ -281,12 +227,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Overdue"), do: @negative
   defp status_badge_class(_other), do: @neutral
 
-  @doc """
-  Says whether a government-portal result was filed or only simulated.
-
-  A demo e-way bill number or IRN looks exactly like a real one, so every place
-  that shows one says which it is. `compact` gives the short form for tables.
-  """
+  @doc "Says whether a portal result was filed for real or only simulated."
   attr :mode, :string, required: true, doc: ~s("demo" or "live")
   attr :id, :string, default: nil
   attr :compact, :boolean, default: false
@@ -325,27 +266,10 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp portal_mode_label(_demo, false), do: "Demo – not filed with the government"
 
   @doc """
-  Renders a labelled form control with its validation errors.
+  A labelled form control. Extra attrs go to `CoreComponents.input/1`,
+  which also draws the errors.
 
-  Anything not consumed here is forwarded to `CoreComponents.input/1`, so
-  `type`, `options`, `prompt`, `placeholder`, `readonly` and friends all work.
-
-  ## One error, drawn once
-
-  `input/1` already prints a field's errors, in exactly this markup. This
-  component used to print them again underneath, so every field built with
-  `<.field>` — which is most of them — showed "can't be blank" twice. The
-  errors are still computed here, because the hint hides while a field is in
-  error and the control takes an error border, but only `input/1` draws them.
-
-  ## Examples
-
-      <.field field={f[:gstin]} label="GSTIN" placeholder="27AABCA1234A1Z5" />
-
-  `type="money"` is a rupee amount: a number input in steps of a paisa that
-  shows a stored paise value as rupees, and passes back whatever was typed.
-
-      <.field field={f[:credit_limit]} label="Credit Limit (₹)" type="money" />
+  `type="money"` takes and shows a paise value in rupees.
   """
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
@@ -353,7 +277,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :required, :boolean, default: false
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
-  # autocomplete and spellcheck let password managers fill auth forms.
+  # Lets password managers fill auth forms.
   attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
                 autocomplete spellcheck)
 
@@ -410,7 +334,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   @doc """
-  Renders the shared "coming soon" empty-state card used by placeholder pages.
+  The "coming soon" card for placeholder pages.
   """
   attr :title, :string, default: "This section is under construction."
 
@@ -426,22 +350,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  Renders the "nothing here yet" state a list or panel shows when it has no
-  records.
-
-  Unlike `coming_soon/1` this is not a placeholder for unbuilt work: the screen
-  is finished, there is simply nothing to show. It renders bare rather than in
-  its own card, so it can sit inside the card a table already lives in.
-
-  ## Examples
-
-      <.empty_state title="No invoices yet" description="Create your first GST invoice.">
-        <:action>
-          <button class={action_button_class()}>Create New GST Invoice</button>
-        </:action>
-      </.empty_state>
-  """
+  @doc "The empty state for a list or panel with no records."
   attr :icon, :string, default: "hero-inbox"
   attr :title, :string, required: true
   attr :description, :string, default: nil
@@ -465,21 +374,14 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  The invoice's UPI payment QR, or an explanation of why there is none.
-
-  Shared by the invoice page, the dashboard modal and the public payment page
-  so all three agree — and so an organisation that has not set a UPI ID sees a
-  sentence saying that, rather than an empty white square that looks like a
-  broken image.
-  """
+  @doc "The invoice's UPI QR, or the reason there is none."
   attr :invoice, :any, required: true
   attr :size_class, :string, default: "size-48"
   attr :caption, :string, default: nil
   attr :caption_class, :string, default: "mt-2 text-2xs text-base-content/60"
 
   def upi_qr(assigns) do
-    # Read once for both calls; this renders per row.
+    # Read once: this renders per row.
     organization = QuantumBilling.Settings.get_organization()
 
     assigns =
@@ -521,13 +423,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  Renders a clickable `<th>` label that toggles sorting for `field`.
-
-  `uppercase` is repeated here even though the header row already sets it: a
-  `<button>` does not inherit `text-transform`, which is why these columns read
-  "Invoice Date" while the plain ones beside them read "CLIENT".
-  """
+  @doc "A `<th>` button that toggles sorting for `field`."
   attr :label, :string, required: true
   attr :field, :atom, required: true
 
@@ -550,16 +446,10 @@ defmodule QuantumBillingWeb.SharedComponents do
                        "disabled:opacity-40 disabled:pointer-events-none"
 
   @doc """
-  Renders the pager for a list: step back, the page you are on, step forward.
+  The pager: previous, current page, next.
 
-  The page number is an outlined disc rather than a filled one. Filled, it read
-  as the primary action on the row when it is not an action at all — it is just
-  where you are.
-
-  With `fit_rows`, the pager measures how many rows fit between the table's
-  header and the bottom of the screen and sends that to the LiveView as a
-  `"fit_rows"` event, so a full-height list never leaves empty space above a
-  second page. The LiveView handles it with `fit_rows_per_page/1`.
+  With `fit_rows`, it measures how many rows fit on screen and sends a
+  `"fit_rows"` event (see `fit_rows_per_page/1`).
   """
   attr :current_page, :integer, required: true
   attr :has_next, :boolean, required: true
@@ -576,7 +466,7 @@ defmodule QuantumBillingWeb.SharedComponents do
 
     ~H"""
     <div class="flex items-center gap-1.5">
-      <%!-- A static phx-hook, so the colocated ".FitRows" name gets resolved. --%>
+      <%!-- Static so the colocated ".FitRows" name resolves. --%>
       <span :if={@fit_rows} id={@id} phx-hook=".FitRows" hidden></span>
       <button
         type="button"
@@ -670,12 +560,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @doc """
-  Reads the row count a `<.pagination fit_rows>` pager sent, clamped to 5..100.
-
-  The number comes from the browser, so anything that isn't a whole number is
-  refused rather than trusted.
-  """
+  @doc "The row count from a `fit_rows` pager, clamped to 5..100; bad input is refused."
   def fit_rows_per_page(rows) when is_integer(rows), do: {:ok, rows |> max(5) |> min(100)}
 
   def fit_rows_per_page(rows) when is_binary(rows) do

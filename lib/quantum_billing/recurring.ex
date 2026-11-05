@@ -1,30 +1,11 @@
 defmodule QuantumBilling.Recurring do
   @moduledoc """
-  Recurring billing profiles: a client, a schedule, and the lines to bill.
+  Recurring billing profiles.
 
-  ## How a profile gets billed
-
-  `enqueue_due_profiles/0` runs daily from the Oban Cron plugin and queues one
-  job per due profile; each job calls `process_profile/1`. Fanning out this way
-  means a profile whose client has been deleted, or whose items no longer
-  validate, fails its own job and is retried on its own — it does not take the
-  rest of the morning's billing down with it, which a single `Enum.map/2` over
-  every due profile did.
-
-  ## Billing twice is the thing to avoid
-
-  Issuing an invoice is not an operation anybody wants repeated: it consumes a
-  number in a statutory series, and it mails a customer. Three things guard
-  against it — the job's uniqueness window, `next_run_date` being advanced in
-  the same transaction that issues the invoice, and the `:skip` path below for
-  a profile whose date has already moved on.
-
-  ## Deleting
-
-  `delete_profile/2` moves a profile to the Bin, where it stops billing — the
-  sweep does not see it, and a job already queued for it is skipped.
-  `restore_profile/2` puts it back on its schedule as it was;
-  `purge_profile/2` removes it for good.
+  `enqueue_due_profiles/0` runs daily and queues one job per due profile, so
+  one failure doesn't block the rest. Double billing is prevented by job
+  uniqueness and by advancing `next_run_date` in the invoice transaction.
+  Deleting moves a profile to the Bin, where it stops billing.
   """
 
   import Ecto.Query, warn: false
@@ -43,26 +24,14 @@ defmodule QuantumBilling.Recurring do
   @default_per_page 10
   @max_per_page 200
 
-  @doc """
-  Lists profiles, soonest first.
-
-  Unbounded, for the billing sweep and for tests. The page uses `page/1`.
-  """
+  @doc "Lists profiles, soonest first. Unbounded; the page uses `page/1`."
   def list_profiles do
     Repo.all(
       from p in RecurringProfile.kept(), order_by: [asc: p.next_run_date], preload: [:client]
     )
   end
 
-  @doc """
-  One page of profiles, soonest first.
-
-  Returns `%{rows:, page:, per_page:, has_next?:}`, the shape the invoice and
-  client lists use — see `QuantumBilling.Paging`. The page used to load every profile, with its
-  client preloaded, on mount and again after every status toggle, delete and
-  manual run — a subscription business with a few thousand arrangements
-  reloaded all of them to change one.
-  """
+  @doc "One page of profiles, soonest first."
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
 
@@ -147,13 +116,9 @@ defmodule QuantumBilling.Recurring do
   end
 
   @doc """
-  Moves a recurring profile to the Bin.
+  Moves a profile to the Bin. It stops billing; its schedule is kept.
 
-  It stops billing from this moment: `due_profiles/1` no longer returns it, and
-  `process_profile/2` skips it if a job for it was already queued. Its schedule
-  is left exactly as it was, so a restore picks up where it stopped.
-
-  `opts` may carry `:user_id`, recorded against the audit entry.
+  `opts` may carry `:user_id` for the audit entry.
   """
   def delete_profile(%RecurringProfile{} = profile, opts \\ []) do
     profile
@@ -162,12 +127,7 @@ defmodule QuantumBilling.Recurring do
     |> audited(:bin_recurring_profile, opts)
   end
 
-  @doc """
-  Takes a recurring profile back out of the Bin.
-
-  A profile whose date passed while it was binned is due straight away, and
-  bills once on the next sweep — not once per cycle it missed.
-  """
+  @doc "Restores a profile. If overdue, it bills once on the next sweep."
   def restore_profile(%RecurringProfile{} = profile, opts \\ []) do
     profile
     |> RecurringProfile.restore_changeset()
@@ -175,12 +135,7 @@ defmodule QuantumBilling.Recurring do
     |> audited(:restore_recurring_profile, opts)
   end
 
-  @doc """
-  Deletes a recurring profile for good. Only a profile already in the Bin.
-
-  The invoices it has issued are not touched: they are documents in their own
-  right and carry no reference back to the profile.
-  """
+  @doc "Deletes a binned profile for good. Its invoices are untouched."
   def purge_profile(profile, opts \\ [])
 
   def purge_profile(%RecurringProfile{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
@@ -202,14 +157,7 @@ defmodule QuantumBilling.Recurring do
 
   defp audited({:error, _changeset} = result, _action, _opts), do: result
 
-  @doc """
-  The profiles that are due to bill on `date`.
-
-  A profile whose client is in the Bin is not due. The client has been deleted
-  as far as anyone looking at the screen can tell, and an invoice going out to
-  it regardless would be the surprise. The profile's schedule is not moved, so
-  restoring the client lets it bill again from where it stopped.
-  """
+  @doc "Profiles due to bill on `date`. Profiles of binned clients are skipped."
   def due_profiles(date \\ Date.utc_today()) do
     Repo.all(
       from p in RecurringProfile.kept(),
@@ -221,13 +169,7 @@ defmodule QuantumBilling.Recurring do
     )
   end
 
-  @doc """
-  Queues one billing job per due profile, returning how many were queued.
-
-  The queue — rather than a loop — is what makes this safe to call from a
-  scheduled job: each profile's work is retried on its own, and a node dying
-  mid-sweep leaves the outstanding jobs to be picked up rather than skipped.
-  """
+  @doc "Queues one billing job per due profile and returns the count."
   def enqueue_due_profiles(date \\ Date.utc_today()) do
     date
     |> due_profiles()
@@ -248,13 +190,7 @@ defmodule QuantumBilling.Recurring do
     end)
   end
 
-  @doc """
-  Bills every due profile in line, returning a result per profile.
-
-  Kept for direct use — a console, a test, a one-off catch-up — where the
-  answer is wanted immediately rather than through the queue. Scheduled billing
-  goes through `enqueue_due_profiles/0`.
-  """
+  @doc "Bills every due profile inline. For consoles and tests."
   def process_due_profiles(date \\ Date.utc_today()) do
     date
     |> due_profiles()
@@ -262,10 +198,7 @@ defmodule QuantumBilling.Recurring do
   end
 
   @doc """
-  Issues the invoice a profile is due for and moves its schedule forward.
-
-  Returns `{:ok, invoice}`, `{:skip, reason}` when the profile is not due or no
-  longer billable, or `{:error, reason}`.
+  Issues a profile's invoice and advances its schedule: `{:ok, inv}`, `{:skip, reason}` or `{:error, reason}`.
   """
   def process_profile(profile, today \\ Date.utc_today())
 
@@ -306,7 +239,7 @@ defmodule QuantumBilling.Recurring do
     |> Multi.run(:invoice, fn _repo, _changes ->
       Invoices.create_invoice(invoice_attrs(profile, client, today))
     end)
-    # Same transaction as the invoice, so a profile is never billed twice for one cycle.
+    # Same transaction as the invoice, so a cycle is never billed twice.
     |> Multi.update(:profile, fn _changes ->
       RecurringProfile.changeset(profile, %{
         next_run_date: advance_date(profile.next_run_date || today, profile.frequency)
@@ -390,14 +323,7 @@ defmodule QuantumBilling.Recurring do
     end
   end
 
-  @doc """
-  The next billing date after `date` for a frequency.
-
-  Calendar months rather than 30-day steps: billing on the 31st of January
-  monthly should land on 28 February and then 31 March, which adding 30 days
-  does not do — it drifts, and a "monthly" profile ends up issuing thirteen
-  invoices in a year.
-  """
+  @doc "The next billing date after `date`, stepping calendar months (31 Jan → 28 Feb → 31 Mar)."
   def advance_date(%Date{} = date, "Monthly"), do: add_months(date, 1)
   def advance_date(%Date{} = date, "Quarterly"), do: add_months(date, 3)
   def advance_date(%Date{} = date, "Annually"), do: add_months(date, 12)

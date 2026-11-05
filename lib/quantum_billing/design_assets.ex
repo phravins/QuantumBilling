@@ -2,14 +2,9 @@ defmodule QuantumBilling.DesignAssets do
   @moduledoc """
   Which uploaded images belong to the current business.
 
-  Uploads share one directory and are named by a hash of their contents, so a
-  path such as `/uploads/3f…a1.png` does not say whose it is. Everything that
-  hands an image out — the upload controller, the PDF and public-page inliner,
-  the design import — asks `owned?/1` first, and the answer is "this business
-  has it as its logo, or recorded it here when it was uploaded".
-
-  Runs in the business schema the caller is already inside, like every other
-  tenant context.
+  Upload names are content hashes, so a path says nothing about its owner.
+  Everything that serves or inlines an image checks `owned?/1`: the logo, or
+  an image recorded here on upload.
   """
 
   import Ecto.Query, warn: false
@@ -44,16 +39,8 @@ defmodule QuantumBilling.DesignAssets do
     Repo.all(from a in DesignAsset, order_by: [asc: a.id], select: a.path)
   end
 
-  @doc "Every recorded asset, for the backup."
-  def list_assets do
-    Repo.all(from a in DesignAsset, order_by: [asc: a.id])
-  end
-
   @doc """
-  Whether `path` is recorded as one of this business's design images.
-
-  Files are content-addressed, so a logo and a letterhead can be the same file;
-  removing the logo must not delete a file a design still shows.
+  Whether `path` is one of this business's design images. Files are shared by hash, so check before deleting.
   """
   def recorded?(path) when is_binary(path),
     do: Repo.exists?(from a in DesignAsset, where: a.path == ^path)

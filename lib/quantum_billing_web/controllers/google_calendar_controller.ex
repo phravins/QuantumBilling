@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.GoogleCalendarController do
   @moduledoc """
-  Connects a business to Google Calendar through the OAuth code flow.
-
-  `state` is random, held in the session and used once. It stops someone tricking
-  an owner into connecting the attacker's calendar, and it records which business
-  the owner started from, so switching business in another tab midway connects
-  nothing.
+  Connects a business to Google Calendar (OAuth code flow). `state` is random,
+  single use and session-held; it also pins the business the flow started in.
   """
   use QuantumBillingWeb, :controller
 

@@ -1,23 +1,9 @@
 defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   @moduledoc """
-  The closed vocabulary of an invoice layout: which blocks exist, which options
-  each one takes, and which invoice fields they may name.
+  The closed vocabulary of an invoice layout: blocks, their options, and the invoice fields they may name.
 
-  ## Everything here is a whitelist
-
-  A layout is data the user authored, so no value out of it may become an atom
-  or a map key on trust. `String.to_atom/1` appears nowhere in this pipeline;
-  every field name in a layout is looked up in one of the lists below and
-  dropped if it is not there. The design pad casts through `cast_block/2` for
-  the same reason — a crafted `phx-value` cannot set an option a block does not
-  have.
-
-  ## Attribute order is declared, not incidental
-
-  `attrs/1` returns an ordered list, and the serialiser emits attributes in that
-  order. Map iteration order would serialise the same document differently
-  between runs, which would make the round-trip test meaningless and every
-  layout diff unreadable.
+  Every name in a layout is looked up in these allowlists and dropped if absent;
+  nothing becomes an atom. `attrs/1` is ordered, and that is the emit order.
   """
 
   alias QuantumBillingWeb.InvoiceDoc.Block
@@ -30,8 +16,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   @singleton ~w(logo heading company client invoice_meta items totals
                 amount_in_words remarks terms signature footer payment)a
 
-  # Set by the server after an upload, never from the pad's params: a path
-  # the user could type would name another business's file.
+  # Set by the server after an upload, never from the pad's params.
   @server_only ~w(path)
 
   @item_fields ~w(serial description hsn_sac quantity unit rate tax_rate amount)
@@ -216,7 +201,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def required_item_fields, do: @required_item_fields
   def required_item_field?(field), do: field in @required_item_fields
   def total_fields, do: @total_fields
-  def meta_fields, do: @meta_fields
   def types, do: Enum.map(@elements, fn {_name, type} -> type end)
   def attrs(type), do: Map.get(@attrs, type, [])
 
@@ -247,10 +231,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def child_fields(_type), do: []
 
   @doc """
-  A fresh child for `type` naming `field`, with that field's usual presentation.
-
-  Returns `nil` for a field outside the block's vocabulary, which is what makes
-  this safe to call with a value straight off the wire.
+  A fresh child for `type` naming `field`, or `nil` for a field outside the block's vocabulary.
   """
   def new_child(:items, field), do: build_child(@item_defaults, field, :items)
   def new_child(:totals, field), do: build_child(@total_defaults, field, :totals)
@@ -268,11 +249,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   end
 
   @doc """
-  A fresh block of `type` with `id`, carrying every option's default.
-
-  Composite blocks come with their full complement of children — a new totals
-  box shows every figure, and the user removes what they do not want. Starting
-  empty would put a block on the canvas that renders as nothing.
+  A fresh block of `type` with `id` and default options. Composite blocks start with every child.
   """
   def new(type, id) do
     if type in types() do
@@ -314,10 +291,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def text_types, do: [:signature, :footer, :custom_text]
 
   @doc """
-  Applies user-supplied params to a block, ignoring anything not in its spec.
-
-  This is the design pad's only route into `opts`, so an option a block does not
-  have cannot be set on it however the params arrive.
+  Applies user params to a block, ignoring anything not in its spec. The pad's only route into `opts`.
   """
   def cast_block(%Block{} = block, params) when is_map(params) do
     opts =
@@ -351,11 +325,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   defp cast_text(%Block{} = block, _params), do: block.text
 
   @doc """
-  Reads an XML attribute value into the type its spec declares.
-
-  Returns `:error` rather than a default for anything unrecognised, so the
-  caller decides whether that means "fall back" (parsing) or "ignore"
-  (casting from the pad).
+  Reads an XML attribute value into its declared type, or `:error` for anything unrecognised.
   """
   def cast_value(value, {:enum, allowed}) when is_binary(value) do
     if value in allowed, do: {:ok, value}, else: :error
@@ -363,8 +333,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
 
   def cast_value(value, :string) when is_binary(value), do: {:ok, value}
 
-  # A stored upload's path, or blank. Shape only: ownership is checked where
-  # the image is served or inlined (`QuantumBilling.DesignAssets.owned?/1`).
+  # A stored upload's path, or blank. Shape only; ownership is checked by `DesignAssets.owned?/1`.
   def cast_value("", :upload), do: {:ok, ""}
 
   def cast_value(value, :upload) when is_binary(value) do
@@ -406,18 +375,16 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def dump_value(value, _kind) when is_binary(value), do: value
   def dump_value(value, _kind), do: to_string(value)
 
-  # The stock document. Consecutive halves pack into a row.
-  # No signature block, so existing invoices print unchanged.
+  # The stock document. Consecutive halves pack into a row; no signature block.
   @classic ~w(logo heading company invoice_meta divider client items totals
               amount_in_words remarks terms footer)a
 
   @doc """
-  The stock layout — what a fresh installation prints, and what the pad's
-  "reset" restores.
+  The stock layout: what a fresh installation prints and what "reset" restores.
   """
   def classic, do: build(@classic)
 
-  # -- presets --------------------------------------------------------------
+  # Presets
 
   @presets [
     {"blank", "Blank", "Only what an invoice must have. Build up from there."},
@@ -439,13 +406,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     Enum.find_value(@presets, "Design", fn {k, name, _desc} -> if k == key, do: name end)
   end
 
-  @doc """
-  The document a preset starts from, or `nil` for a key that is not one.
-
-  Each is built from the same blocks and page options a user could set by hand,
-  so a preset is a starting point and nothing more: every part of it can be
-  changed in the pad.
-  """
+  @doc "The document a preset starts from, or `nil` for an unknown key."
   def preset("blank"), do: build(~w(invoice_meta items totals)a)
   def preset("classic"), do: classic()
 

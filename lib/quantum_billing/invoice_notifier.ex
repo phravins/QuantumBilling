@@ -1,22 +1,10 @@
 defmodule QuantumBilling.InvoiceNotifier do
   @moduledoc """
-  Composes the mail that carries an invoice to its customer.
+  Composes the email that carries an invoice to its customer; `QuantumBilling.Mail` sends it.
 
-  Transport is `QuantumBilling.Mail`'s business — this module decides what the
-  message says and what is attached to it.
-
-  ## Queued, not sent inline
-
-  `deliver_invoice_pdf_async/3` is what the application uses. Rendering a PDF
-  and waiting on a relay takes seconds that a LiveView, a webhook or a
-  recurring-billing sweep does not have: a slow relay used to stall the request
-  that triggered it, and a failed one lost the message entirely once the flash
-  faded. The work now belongs to `QuantumBilling.Workers.EmailWorker`, which
-  retries with backoff and records every attempt in the delivery ledger.
-
-  `deliver_invoice_pdf/2` still sends inline, for the one case that genuinely
-  needs the answer immediately: the "send test email" button in Settings, whose
-  entire purpose is to report what the relay said.
+  `deliver_invoice_pdf_async/3` queues the work on `EmailWorker`, which retries
+  and records each attempt. `deliver_invoice_pdf/2` sends inline, for the
+  Settings test button.
   """
 
   import Swoosh.Email
@@ -30,13 +18,7 @@ defmodule QuantumBilling.InvoiceNotifier do
   alias QuantumBillingWeb.Format
   alias QuantumBillingWeb.InvoicePdfGenerator
 
-  @doc """
-  Queues an invoice email and returns the ledger row for it.
-
-  Returns `{:ok, delivery}` once the work is durably recorded — not once the
-  mail has arrived — or `{:error, reason}` if the recipient is unusable or the
-  job cannot be enqueued.
-  """
+  @doc "Queues an invoice email: `{:ok, delivery}` once recorded, or `{:error, reason}`."
   def deliver_invoice_pdf_async(recipient_email, %Invoice{} = invoice, opts \\ []) do
     kind = Keyword.get(opts, :kind, "invoice")
 
@@ -60,10 +42,7 @@ defmodule QuantumBilling.InvoiceNotifier do
   end
 
   @doc """
-  Builds and sends the invoice email immediately.
-
-  Returns `{:ok, metadata}` or `{:error, message}`, where the message is
-  already readable — it is shown to whoever pressed the button.
+  Builds and sends the invoice email now: `{:ok, metadata}` or `{:error, message}` (readable).
   """
   def deliver_invoice_pdf(recipient_email, %Invoice{} = invoice) do
     with {:ok, recipient} <- validate_recipient(recipient_email),
@@ -73,10 +52,7 @@ defmodule QuantumBilling.InvoiceNotifier do
   end
 
   @doc """
-  The finished `Swoosh.Email` for an invoice, or `{:error, message}`.
-
-  Public so the mail worker can compose and send in one step without repeating
-  any of this.
+  The finished `Swoosh.Email` for an invoice, or `{:error, message}`. Used by the mail worker.
   """
   def build_email(recipient, %Invoice{} = invoice) do
     organization = Settings.get_organization()
@@ -214,11 +190,6 @@ defmodule QuantumBilling.InvoiceNotifier do
     |> Phoenix.HTML.safe_to_string()
   end
 
-  @doc """
-  Kept for callers that formatted their own transport errors.
-
-  Delegates to `QuantumBilling.Mail.error_message/1`, which is now the single
-  place that turns an SMTP failure into a sentence.
-  """
+  @doc "Delegates to `QuantumBilling.Mail.error_message/1`. Kept for older callers."
   defdelegate format_smtp_error(reason), to: Mail, as: :error_message
 end

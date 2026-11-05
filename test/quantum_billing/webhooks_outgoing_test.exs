@@ -1,12 +1,8 @@
 defmodule QuantumBilling.WebhooksOutgoingTest do
   @moduledoc """
-  Outgoing webhooks, v2: what is sent, how it is signed, how failures are
-  handled, and which events the rest of the application publishes.
-
-  Requests are intercepted with `Req.Test`, so the assertions are on the bytes
-  and headers that would really have gone over the wire. Oban runs inline in
-  tests, so the first attempt happens inside `publish/3`; later attempts are
-  run by calling the worker directly with the attempt number.
+  Outgoing webhooks: payload, signing, retries, and which events are published.
+  `Req.Test` captures the requests; Oban is inline, so later attempts call the
+  worker directly.
   """
   use QuantumBilling.DataCase, async: false
 

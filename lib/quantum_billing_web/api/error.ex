@@ -1,13 +1,10 @@
 defmodule QuantumBillingWeb.API.Error do
   @moduledoc """
-  The one shape every API error takes:
+  The single API error shape:
 
-      {"error": {"code": "not_found", "message": "…", "fields": {…}}}
+      {"error": {"code": "not_found", "message": "...", "fields": {...}}}
 
-  `code` is stable and meant for programs; `message` is for the person reading
-  the log. Neither ever carries a stack trace, a query, a driver message or a
-  value echoed back from the request — an error response is the easiest place
-  for an API to say more than it meant to.
+  `code` is stable for programs; `message` is for people. No traces, queries or echoed input.
   """
 
   import Plug.Conn
@@ -25,11 +22,7 @@ defmodule QuantumBillingWeb.API.Error do
   end
 
   @doc """
-  Field errors from a changeset, as `%{"field" => ["message", …]}`.
-
-  Messages only. `traverse_errors` interpolates the validation options into
-  the message, never the submitted value, so nothing the caller sent is
-  reflected back — which matters when what they sent was someone else's data.
+  Changeset errors as `%{"field" => ["message", ...]}`. Never echoes submitted values.
   """
   def changeset_fields(%Ecto.Changeset{} = changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->

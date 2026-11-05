@@ -1,19 +1,10 @@
 defmodule QuantumBillingWeb.SceneBanner do
   @moduledoc """
-  A generated landscape for the profile page's banner.
+  A generated landscape banner, drawn as inline SVG from an integer seed.
 
-  The scene is drawn on the server as inline SVG from a single integer seed:
-  the time of day and its palette, ridges of mountains built by midpoint
-  displacement and fading into the haze behind them, clouds, stars or birds,
-  and in the foreground either pines along the nearest ridge or a lake holding
-  its reflection. The same seed always draws the same picture.
-
-  Inline SVG rather than an image: there is nothing to store, nothing fetched
-  from another origin, and nothing for the content security policy to allow.
-
-  The random state is threaded through explicitly (`:rand.uniform_s/1`), never
-  kept in the process dictionary, so drawing a banner does not disturb the
-  calling process's own random numbers.
+  The same seed always draws the same scene (time of day, ridges, sky, pines
+  or a lake). Random state is threaded with `:rand.uniform_s/1`, so the
+  caller's process random state is untouched.
   """
   use Phoenix.Component
 

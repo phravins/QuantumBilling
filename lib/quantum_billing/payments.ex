@@ -1,7 +1,5 @@
 defmodule QuantumBilling.Payments do
-  @moduledoc """
-  Context module for Payment Links, UPI QR generation, and Auto-Reconciliation.
-  """
+  @moduledoc "Payment links, UPI QR payloads and Razorpay reconciliation."
 
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
@@ -14,13 +12,9 @@ defmodule QuantumBilling.Payments do
   alias QuantumBillingWeb.Format
 
   @doc """
-  `url` when it is safe to send a customer to or render as a link: an
-  `https://` URL with a host and no credentials. `nil` otherwise.
+  `url` if it is safe to link a customer to (`https://`, a host, no credentials), else `nil`.
 
-  The payment URL is written only by the gateway client today, but it ends up
-  in a redirect on an unauthenticated page and in an `href` on the invoice
-  page, where a `javascript:` or plain-http value would be an XSS or a
-  downgrade. Checked where it is used, so no future writer can get that wrong.
+  Checked where it is used, since it lands in a redirect and an `href`.
   """
   def safe_payment_url(url) when is_binary(url) do
     case URI.new(url) do
@@ -65,13 +59,11 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
-  Processes a Razorpay payment webhook payload and reconciles the invoice.
+  Processes a Razorpay payment webhook and reconciles the invoice.
 
-  A valid signature proves the event came from Razorpay, not that it pays this
-  invoice. So the payment is checked against the invoice before anything is
-  marked paid: the full amount, in the invoice's currency, and — for a payment
-  link — the link that was issued for it. A payment that fails any of these is
-  rejected, audited and raised with the owner, and the invoice stays unpaid.
+  A valid signature doesn't prove the payment is for this invoice, so the full
+  amount, currency and payment link are checked first. A mismatch is rejected,
+  audited and raised with the owner.
   """
   def process_razorpay_webhook(%{"event" => "payment_link.paid", "payload" => payload}) do
     payment_link = get_in(payload, ["payment_link", "entity"]) || %{}
@@ -176,12 +168,7 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
-  The part of a Razorpay webhook worth keeping in the ledger.
-
-  Enough to investigate a disputed payment — which event, which payment and
-  link, how much, in what currency, by what method — and nothing about the
-  payer: email, phone, UPI ID, card and bank details are dropped before the
-  event is stored, rather than being encrypted and kept for no reason.
+  The part of a Razorpay webhook kept in the ledger. Payer details (email, phone, UPI, card, bank) are dropped.
   """
   def webhook_record(params) when is_map(params) do
     payload = if is_map(params["payload"]), do: params["payload"], else: %{}
@@ -223,16 +210,10 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
-  Records a payment made outside the gateway — a bank transfer an accounting
-  system has matched, say — against `invoice`.
+  Records a payment made outside the gateway against `invoice`.
 
-  `amount` is paise and must cover the invoice: there is no partial-payment
-  ledger, so anything less is refused rather than recorded as paid in full.
-  `reference` is the payer's or bank's reference, kept as the payment id with
-  an `ext:` prefix so it is never mistaken for a Razorpay one.
-
-  Refused for an invoice already paid or cancelled. Otherwise the same as a
-  gateway payment: receipt, notification, `invoice.paid` webhook.
+  `amount` is paise and must cover the invoice (no partial payments). `reference`
+  is stored with an `ext:` prefix. Refused for paid or cancelled invoices.
   """
   def record_payment(%Invoice{} = invoice, reference, amount, audit_opts \\ [])
       when is_binary(reference) and is_integer(amount) do
@@ -245,13 +226,7 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
-  Marks an invoice paid and tells everyone who needs to know.
-
-  Already-paid invoices are left alone and reported as `{:ok, invoice}`: a
-  webhook redelivery, a manual reconciliation and a second payment
-  notification all end up here, and none of them should re-stamp the invoice,
-  re-audit the payment or send the customer another receipt. The webhook ledger
-  catches most repeats; this catches the rest.
+  Marks an invoice paid and sends the receipt, notification and webhook. Already-paid invoices return `{:ok, invoice}` untouched.
   """
   def reconcile_payment(invoice, payment_id, audit_opts \\ [])
 

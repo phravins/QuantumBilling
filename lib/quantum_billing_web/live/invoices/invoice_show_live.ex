@@ -1,9 +1,7 @@
 defmodule QuantumBillingWeb.InvoiceShowLive do
   @moduledoc """
-  A saved invoice, rendered as the document it is.
-
-  Serves preview and management actions: 1-click IRN generation, PDF downloads,
-  email notifications, and E-Invoice metadata display.
+  A saved invoice shown as its document, with actions: IRN generation, PDF,
+  email and e-invoice details.
   """
   use QuantumBillingWeb, :live_view
 
@@ -193,9 +191,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     end
   end
 
-  # The logo and design images go out inline, as on the PDF. An <img> pointing
-  # at /uploads is a request of its own, and one made after an hour spent inside
-  # LiveView pages finds the session timed out and draws a broken image.
+  # Images are inlined, as on the PDF: an `/uploads` request after a session timeout would break.
   defp inline_images(invoice, doc, logo) do
     {InvoicePdfGenerator.inline_logo(logo), Extras.build(invoice, doc, inline: true)}
   end

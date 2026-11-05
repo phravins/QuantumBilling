@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.InvoiceTemplateDesignLiveTest do
   @moduledoc """
-  The design pad.
-
-  Every event names a block by id, and the ids come from the server, so these
-  cover the stale and hostile cases as well as the happy ones: a pad left open in
-  another tab must not be able to resurrect a removed block or drop one by
-  sending a short list.
+  The design pad, including stale and hostile events: a stale tab must not
+  revive or drop blocks.
   """
   # Not async: concurrent default-template seeders deadlock in the sandbox.
   use QuantumBillingWeb.ConnCase, async: false

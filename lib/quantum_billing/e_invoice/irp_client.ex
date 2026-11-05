@@ -1,13 +1,9 @@
 defmodule QuantumBilling.EInvoice.IRPClient do
   @moduledoc """
-  HTTP Client for Government Invoice Registration Portal (IRP) / NIC E-Invoice API.
+  `Req` client for the NIC Invoice Registration Portal: auth, IRN generation and cancellation.
 
-  Handles authentication token retrieval, IRN (Invoice Reference Number) generation,
-  cancellation, and QR code payload parsing using the preferred `:req` (`Req`) HTTP library.
-
-  When production API credentials (`IRP_CLIENT_ID`, `IRP_CLIENT_SECRET`) are absent or
-  when running in sandbox mode (`IRP_SANDBOX=true`), it generates realistic NIC-compliant
-  mock responses with SHA-256 IRNs and Signed QR payloads for seamless local testing.
+  Without `IRP_CLIENT_ID`/`IRP_CLIENT_SECRET`, or with `IRP_SANDBOX=true`, it
+  returns NIC-shaped mock responses for local testing.
   """
 
   alias QuantumBilling.EInvoice

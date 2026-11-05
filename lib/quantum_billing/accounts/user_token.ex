@@ -6,15 +6,12 @@ defmodule QuantumBilling.Accounts.UserToken do
   @hash_algorithm :sha256
   @rand_size 32
 
-  # It is very important to keep the magic link token expiry short,
-  # since someone with access to the email may take over the account.
+  # Kept short: anyone with access to the mailbox could take over the account.
   @magic_link_validity_in_minutes 15
   @confirm_validity_in_days 7
   @change_email_validity_in_days 7
   @session_validity_in_days 14
-  # Shorter than a confirmation link for the same reason the magic link is
-  # shorter still: this one sets a password, so anyone who reaches the mailbox
-  # later owns the account.
+  # Shorter than confirmation: this link sets a password.
   @reset_password_validity_in_hours 4
 
   @schema_prefix "public"
@@ -29,23 +26,9 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Generates a token that will be stored in a signed place,
-  such as session or cookie. As they are signed, those
-  tokens do not need to be hashed.
+  Generates a session token. It is stored signed, so it isn't hashed.
 
-  The reason why we store session tokens in the database, even
-  though Phoenix already provides a session cookie, is because
-  Phoenix's default session cookies are not persisted, they are
-  simply signed and potentially encrypted. This means they are
-  valid indefinitely, unless you change the signing/encryption
-  salt.
-
-  Therefore, storing them allows individual user
-  sessions to be expired. The token system can also be extended
-  to store additional data, such as the device used for logging in.
-  You could then use this information to display all valid sessions
-  and devices in the UI and allow users to explicitly expire any
-  session they deem invalid.
+  Tokens are kept in the database so individual sessions can be expired.
   """
   def build_session_token(user) do
     token = :crypto.strong_rand_bytes(@rand_size)
@@ -54,12 +37,9 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Checks if the token is valid and returns its underlying lookup query.
+  Checks a session token and returns a query for `{user, token_inserted_at}`.
 
-  The query returns the user found by the token, if any, along with the token's creation time.
-
-  The token is valid if it matches the value in the database and it has
-  not expired (after @session_validity_in_days).
+  Valid if it matches the database and is younger than `@session_validity_in_days`.
   """
   def verify_session_token_query(token) do
     query =
@@ -72,17 +52,8 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Builds a token and its hash to be delivered to the user's email.
-
-  The non-hashed token is sent to the user email while the
-  hashed part is stored in the database. The original token cannot be reconstructed,
-  which means anyone with read-only access to the database cannot directly use
-  the token in the application to gain access. Furthermore, if the user changes
-  their email in the system, the tokens sent to the previous email are no longer
-  valid.
-
-  Users can easily adapt the existing code to provide other types of delivery methods,
-  for example, by phone numbers.
+  Builds an email token and its hash: the plain token is mailed, only the hash
+  is stored. Tokens stop working if the user's email changes.
   """
   def build_email_token(user, context) do
     build_hashed_token(user, context, user.email)
@@ -102,13 +73,7 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Checks if the token is valid and returns its underlying lookup query.
-
-  If found, the query returns a tuple of the form `{user, token}`.
-
-  The given token is valid if it matches its hashed counterpart in the
-  database. This function also checks whether the token has expired. The context
-  of a magic link token is always "login".
+  Checks a magic-link ("login") token and returns a query for `{user, token}`.
   """
   def verify_magic_link_token_query(token) do
     case Base.url_decode64(token, padding: false) do
@@ -129,15 +94,7 @@ defmodule QuantumBilling.Accounts.UserToken do
     end
   end
 
-  @doc """
-  Checks if the token is valid and returns its underlying lookup query.
-
-  If found, the query returns a tuple of the form `{user, token}`.
-
-  Used by the sign-up confirmation link. Kept separate from the magic link
-  context on purpose: a confirmation token belongs to an account that already
-  has a password, which `login_user_by_magic_link/1` refuses to handle.
-  """
+  @doc "Checks a sign-up confirmation token and returns a query for `{user, token}`."
   def verify_confirm_token_query(token) do
     case Base.url_decode64(token, padding: false) do
       {:ok, decoded_token} ->
@@ -158,14 +115,9 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Checks if the token is valid and returns its underlying lookup query.
+  Checks a password-reset token and returns a query for `{user, token}`.
 
-  If found, the query returns a tuple of the form `{user, token}`.
-
-  Used by the "forgot password" link. `sent_to == user.email` is what makes the
-  token follow the address it was mailed to: if the account's email is changed
-  after the link goes out, the link stops working rather than handing the
-  account to whoever still holds the old mailbox.
+  `sent_to == user.email` means the link stops working if the email changes.
   """
   def verify_reset_password_token_query(token) do
     case Base.url_decode64(token, padding: false) do
@@ -187,15 +139,7 @@ defmodule QuantumBilling.Accounts.UserToken do
   end
 
   @doc """
-  Checks if the token is valid and returns its underlying lookup query.
-
-  The query returns the user_token found by the token, if any.
-
-  This is used to validate requests to change the user
-  email.
-  The given token is valid if it matches its hashed counterpart in the
-  database and if it has not expired (after @change_email_validity_in_days).
-  The context must always start with "change:".
+  Checks a change-email token (context `"change:..."`) and returns a query for the user_token.
   """
   def verify_change_email_token_query(token, "change:" <> _ = context) do
     case Base.url_decode64(token, padding: false) do

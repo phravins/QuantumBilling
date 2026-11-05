@@ -1,14 +1,7 @@
 defmodule QuantumBillingWeb.DashboardLive do
   @moduledoc """
-  The one overview of the business: headline stats, the six-month tax trend,
-  the status breakdown, this year's tax summary and top clients, the
-  compliance calendar, and the CSV exports.
-
-  It replaced a separate Reports page that repeated the same cards, trend and
-  status donut. The two Reports panels that said something new — tax by type
-  and top clients — live here, read through `QuantumBilling.Reports` for the
-  current year, and the export links point at the same `/reports/export`
-  download.
+  The business overview: stats, six-month tax trend, status breakdown, this
+  year's tax summary and top clients, compliance calendar and CSV exports.
   """
   use QuantumBillingWeb, :live_view
 

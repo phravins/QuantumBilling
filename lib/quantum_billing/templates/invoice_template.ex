@@ -2,25 +2,10 @@ defmodule QuantumBilling.Templates.InvoiceTemplate do
   @moduledoc """
   A named invoice layout.
 
-  ## What is in the XML and what is beside it
-
-  `layout_xml` holds *structure* — which blocks the document has, in what order,
-  which columns the item table carries and what they are labelled. `accent` sits
-  beside it as a column because it is *branding*, and the two are read at
-  different times: structure is frozen onto an invoice when it is issued, while
-  branding stays live so recolouring restyles invoices already sent. Putting the
-  accent inside the layout would freeze it along with everything else.
-
-  The logo is not here at all. It belongs to the organisation — one company, one
-  logo — and a copy per template would mean uploading it three times and
-  forgetting one.
-
-  ## The XML is validated, not trusted
-
-  `changeset/2` parses `layout_xml` and runs `Layout.validate/1` over the result,
-  so a template that would render a document with no line items cannot be saved.
-  Doing it here rather than in the design pad means the same check covers a
-  duplicate, an import, or anything else that writes a row later.
+  `layout_xml` is structure, frozen onto an invoice when issued. `accent` is a
+  separate column, so recolouring restyles past invoices. The logo belongs to
+  the organisation. `changeset/2` parses and validates the XML, so every
+  write path is checked.
   """
   use Ecto.Schema
 
@@ -54,12 +39,7 @@ defmodule QuantumBilling.Templates.InvoiceTemplate do
     |> unique_constraint(:is_default, name: :invoice_templates_one_default_index)
   end
 
-  @doc """
-  Marks a template archived rather than deleting it.
-
-  Used when invoices still point at it: the row is what records which design
-  they were issued under.
-  """
+  @doc "Archives a template still used by invoices, instead of deleting it."
   def archive_changeset(template) do
     change(template, archived_at: DateTime.utc_now(:second), is_default: false)
   end

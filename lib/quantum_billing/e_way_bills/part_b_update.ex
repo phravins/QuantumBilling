@@ -1,19 +1,9 @@
 defmodule QuantumBilling.EWayBills.PartBUpdate do
   @moduledoc """
-  One Part-B entry: the vehicle a consignment moved on for one leg of its
-  journey.
+  One Part-B entry: the vehicle for one leg of a consignment's journey.
 
-  ## Why these are rows rather than columns
-
-  Form GST EWB-01 prints Part-B as a table, not a field, because a consignment
-  that changes vehicle in transit must show each leg — the rule is that Part-B
-  is updated *before* the vehicle changes, and the bill then carries both
-  entries. A single `vehicle_number` on the bill can only ever show the last
-  one, which is exactly the history a check post would ask for.
-
-  The bill's own `vehicle_number` still tracks the current vehicle, so
-  everything that just wants "what is it on now" keeps working; this table is
-  how it got there.
+  EWB-01 lists every leg, so they are rows. The bill's `vehicle_number` is
+  still the current vehicle.
   """
   use Ecto.Schema
 

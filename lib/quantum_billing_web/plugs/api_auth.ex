@@ -1,27 +1,10 @@
 defmodule QuantumBillingWeb.Plugs.ApiAuth do
   @moduledoc """
-  Authenticates an API call by its bearer key.
+  Authenticates an API call by its bearer key (`Authorization: Bearer qb_live_...`).
 
-  The key goes in `Authorization: Bearer qb_live_…` and nowhere else. A key in
-  the query string is refused outright, with a message saying why: URLs are
-  written to access logs, kept by proxies, stored in browser history and sent
-  onward in `Referer` headers, so a key that has been in one should be thought
-  of as published.
-
-  Every other failure — no key, a malformed one, an unknown one, a revoked or
-  expired one — gets the same 401 with the same body. Distinguishing them would
-  tell whoever is guessing which of their guesses came close.
-
-  ## The business
-
-  A key belongs to one business, and authenticating it is what makes that
-  business current for the request (`QuantumBilling.Repo.put_business/1`): every
-  query after this point reads that business's schema and no other. Nothing in
-  the request — no header, no parameter — can choose a different one.
-
-  The endpoint clears any business a previous request on the same connection
-  left behind (`forget_business` in `QuantumBillingWeb.Endpoint`), so a request
-  refused here runs with no business at all, and any query it tried would raise.
+  A key in the query string is refused, since URLs leak into logs. Every other
+  failure gets the same 401, so a guess reveals nothing. The key's business is
+  made current (`Repo.put_business/1`); nothing in the request can choose another.
   """
 
   import Plug.Conn

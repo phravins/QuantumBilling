@@ -1,25 +1,10 @@
 defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
   @moduledoc """
-  An invoice as the API shows it.
+  An invoice as the API shows it, built field by field from the lists below.
 
-  Built field by field from the lists below. Nothing is ever produced by
-  serialising the struct wholesale, so a column added to `invoices` later does
-  not quietly become part of the API — and the test that pins these lists
-  fails until someone decides that it should.
-
-  Never exposed, on purpose:
-
-    * `public_token`, `razorpay_payment_url`, `razorpay_payment_link_id` — each
-      is a bearer link to the customer's payment page. The page URL is shown
-      only to a key holding `invoices:payment_links`.
-    * `signed_invoice`, `signed_qr_code` — the government-signed documents. The
-      IRN, which is printed on the invoice anyway, is enough to reference one.
-    * `layout_xml`, `template_id`, `deleted_at`, `razorpay_payment_id` —
-      internal.
-    * the client's PAN, email and address. An invoice carries a client
-      summary; contact details come from `/clients`, which needs
-      `clients:read`. A key granted invoices cannot harvest customer emails
-      through them.
+  Never exposed: payment links and the public token (except the page URL with
+  `invoices:payment_links`), signed e-invoice documents, internal fields, and
+  the client's PAN, email and address (those need `clients:read`).
   """
 
   use QuantumBillingWeb, :verified_routes

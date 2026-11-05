@@ -1,26 +1,17 @@
 defmodule QuantumBilling.Workers.WebhookDeliveryWorker do
   @moduledoc """
-  Sends one recorded webhook delivery to its endpoint.
+  Sends one recorded webhook delivery.
 
-  The body was frozen when the event was published, so every attempt sends the
-  same bytes under the same event id; only the signature's timestamp is fresh.
-  The URL is checked and pinned at send time (`UrlGuard.pin/1`), and redirects
-  are not followed.
+  The body and event id are fixed at publish time; only the signature
+  timestamp is fresh. The URL is pinned at send time (`UrlGuard.pin/1`) and
+  redirects are not followed.
 
-  How an answer is taken:
+    * 2xx: delivered
+    * 410: failed, and the endpoint is switched off
+    * other 4xx (not 408/429): failed now
+    * 408, 429, 5xx, timeouts: retried for about a day
 
-    * 2xx — delivered.
-    * 410 Gone — the receiver says the endpoint no longer exists: the delivery
-      fails and the endpoint is switched off.
-    * any other 4xx except 408 and 429 — the receiver refused this request;
-      sending the same bytes again cannot change that, so it fails now.
-    * 408, 429, 5xx, a timeout, a refused connection — retried, on the schedule
-      below, for about a day.
-
-  A delivery that ends in failure counts against its endpoint; enough in a row
-  and `QuantumBilling.Webhooks` switches the endpoint off and tells the owners.
-  Nothing from the response body is stored or logged: it is the receiver's,
-  and could hold anything.
+  Repeated failures switch the endpoint off (`Webhooks`). Response bodies are never stored.
   """
   use QuantumBilling.Worker, queue: :webhooks, max_attempts: 9
 

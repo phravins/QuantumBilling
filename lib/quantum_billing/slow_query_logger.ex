@@ -1,20 +1,9 @@
 defmodule QuantumBilling.SlowQueryLogger do
   @moduledoc """
-  Logs database queries that take longer than they should.
+  Logs slow Ecto queries from telemetry, with queue time reported separately
+  (a long queue means an exhausted pool, not a slow query).
 
-  Slow queries are how a system that is fine in testing becomes unusable in
-  production, and they arrive gradually: a query that scans a table is
-  imperceptible at a thousand rows and fatal at a million. Nothing surfaces
-  that on its own — the page simply gets slower — so this watches Ecto's own
-  telemetry and says which query, how long, and how much of it was spent
-  waiting for a connection rather than running.
-
-  Queue time is reported separately on purpose. A long queue time means the
-  pool is exhausted, which is a different problem with a different fix from a
-  query that is genuinely slow.
-
-  The threshold is `:slow_query_ms` in application config (default 500ms); set
-  it to `:infinity` to switch this off.
+  Threshold: `:slow_query_ms` (default 500); `:infinity` turns it off.
   """
 
   require Logger

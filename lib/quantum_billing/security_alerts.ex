@@ -1,22 +1,14 @@
 defmodule QuantumBilling.SecurityAlerts do
   @moduledoc """
-  Tells people when something security-relevant happens.
+  Emails and logs (`[security]`) security-relevant events to whoever can act.
 
-  Three kinds of event, each sent by email to whoever can act on it and
-  written to the log under `[security]`, so a log system can alert on it too:
+    * Unusual sign-ins, to the account holder: a new address, or repeated failed
+      passwords or 2FA codes.
+    * Administrative changes, to every owner: roles, members, invites, API keys,
+      webhooks, backups.
+    * Unusual exports, to every owner: any full backup, or a burst of exports.
 
-    * **Unusual sign-ins** — to the account holder. A sign-in from an address
-      the account has not used in #{180} days, and a run of failed passwords
-      or two-factor codes (the latter meaning someone has the password).
-    * **Administrative changes** — to every owner of the business: roles
-      changed, members removed or invited, API keys and webhook endpoints
-      created, a full backup downloaded or restored.
-    * **Unusual exports** — to every owner: a full backup always, and a burst
-      of report or e-way bill exports by one person.
-
-  Nothing here may break or slow down what triggered it: alerts are queued as
-  jobs (`QuantumBilling.Workers.SecurityAlertWorker`), retried if the relay is
-  down, and any failure to raise one is logged, not raised.
+  Alerts are queued (`SecurityAlertWorker`); failures are logged, never raised.
   """
 
   import Ecto.Query
@@ -40,9 +32,7 @@ defmodule QuantumBilling.SecurityAlerts do
   ## Sign-ins
 
   @doc """
-  Records a successful sign-in, and tells the account holder when it came
-  from an address the account has not used recently. The very first sign-in
-  is not "new": there is nothing yet to compare it with.
+  Records a sign-in, alerting the account holder when it comes from an address not used recently.
   """
   def signed_in(%User{} = user, ip, user_agent, method) when is_binary(ip) do
     cutoff = DateTime.add(DateTime.utc_now(:second), -@known_address_days * 86_400, :second)
@@ -92,9 +82,7 @@ defmodule QuantumBilling.SecurityAlerts do
   end
 
   @doc """
-  Tells the account holder that their password has been guessed at enough
-  times to lock sign-in. Says nothing when no account has that email: the
-  lock already answers that caller, and this must not reveal who has one.
+  Alerts the account holder that sign-in is locked after guessed passwords. Silent for unknown emails.
   """
   def failed_passwords(email, ip) when is_binary(email) do
     Logger.warning("[security] sign-in locked after failed passwords ip=#{ip}")
@@ -177,9 +165,7 @@ defmodule QuantumBilling.SecurityAlerts do
   def admin_event(nil, _actor, _summary), do: :ok
 
   @doc """
-  Counts an export by `user`. A full backup always tells the owners; other
-  exports do when one person makes #{@export_burst} in an hour — the shape of
-  someone copying the books out.
+  Counts an export by `user`. Owners are told of any full backup, or a burst of other exports in an hour.
   """
   def exported(%Business{} = business, %User{} = user, :backup) do
     admin_event(business, user, "downloaded a full backup of the business")

@@ -1,26 +1,9 @@
 defmodule QuantumBilling.EWayBills do
   @moduledoc """
-  E-way bills: raising them, cancelling them, and updating Part-B.
+  E-way bills: raising, cancelling and Part-B updates.
 
-  ## Where the data lives
-
-  A bill is a row in `e_way_bills` belonging to an invoice. It used to be eight
-  columns on the invoice itself, which meant a document could carry exactly one
-  bill for ever — so Rule 138(9) cancellation (which spends a number and
-  expects a fresh one) and Part-B vehicle updates (which the form prints as a
-  table of legs) had nowhere to go.
-
-  ## Status
-
-  `"Active"` and `"Cancelled"` are stored. `"Expired"` is derived from
-  `valid_until` by `status/1`, because expiry is a fact about the clock rather
-  than about the bill: storing it would need a job to keep it true.
-
-  ## Deleting is not cancelling
-
-  `delete_e_way_bill/2` moves a bill to the Bin. It tidies this application's
-  list and says nothing to the portal: a bill that was Active there is still
-  Active there. `cancel_e_way_bill/2` is the one that has legal effect.
+  "Active" and "Cancelled" are stored; "Expired" is derived from `valid_until`.
+  Deleting moves a bill to the Bin and does not cancel it on the portal.
   """
 
   import Ecto.Query, warn: false
@@ -56,10 +39,7 @@ defmodule QuantumBilling.EWayBills do
   @doc """
   Raises an e-way bill against an invoice.
 
-  Returns `{:ok, %EWayBill{}}` with the invoice preloaded, or `{:error, reason}`
-  — `:already_issued` when the invoice already has a live bill, `:cancelled`
-  when the invoice itself is cancelled, a changeset, or whatever the portal
-  said.
+  Returns `{:ok, bill}` or `{:error, :already_issued | :cancelled | changeset | portal_reason}`.
   """
   def generate_e_way_bill(%Invoice{} = invoice, params \\ %{}) do
     with :ok <- ensure_issuable(invoice),
@@ -83,7 +63,7 @@ defmodule QuantumBilling.EWayBills do
             }
           )
 
-          # Not matched on: the bill already exists at the government's end.
+          # The bill already exists on the portal, so the result is not matched.
           _ = EWayBillNotifier.notify_generated(bill)
 
           if Settings.get_organization().notify_ewb_generated != false do
@@ -111,16 +91,9 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  Cancels a bill under Rule 138(9).
+  Cancels a bill under Rule 138(9): within 24 hours, with a reason.
 
-  The rule allows cancellation within twenty-four hours of generation, and
-  requires a reason. A bill that is already cancelled, or whose window has
-  closed, is refused — on the portal the number would simply stay spent, and
-  recording a cancellation here that the portal did not accept would make this
-  table disagree with the government's.
-
-  Returns `{:ok, %EWayBill{}}`, or `{:error, :already_cancelled | :window_closed}`
-  or a changeset.
+  Returns `{:ok, bill}` or `{:error, :already_cancelled | :window_closed | changeset}`.
   """
   def cancel_e_way_bill(%EWayBill{} = bill, params \\ %{}) do
     with :ok <- ensure_cancellable(bill),
@@ -160,12 +133,9 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  Records a Part-B update: the consignment has moved to another vehicle.
+  Records a Part-B update (a new vehicle) and moves the bill to it.
 
-  Writes a history row and moves the bill's own `vehicle_number` and
-  `mode_of_transport` to the new leg, so the document shows both where it is
-  now and how it got there. A cancelled or expired bill cannot be updated —
-  the portal will not accept Part-B against either.
+  Cancelled and expired bills cannot be updated.
   """
   def update_part_b(%EWayBill{} = bill, params) do
     with :ok <- ensure_updatable(bill),
@@ -204,27 +174,17 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  @doc """
-  One bill by id, with its invoice and Part-B history, or `nil`. A bill in the
-  Bin is `nil` here, and so is an id that is not a number: the id reaches this
-  from a URL or a browser event, and a malformed one is a bill that does not
-  exist rather than a reason to raise.
-  """
+  @doc "One non-binned bill with its invoice and history, or `nil` (also for bad ids)."
   def get_e_way_bill(id), do: fetch_by_id(EWayBill.kept(), id)
 
-  @doc """
-  One bill by id, raising when it does not exist or is in the Bin.
-  """
+  @doc "One non-binned bill. Raises if missing."
   def get_e_way_bill!(id) do
     EWayBill.kept()
     |> Repo.get!(id)
     |> preload_bill()
   end
 
-  @doc """
-  One bill that is in the Bin, or `nil` — including for an id that is not a
-  number.
-  """
+  @doc "One binned bill, or `nil` (also for bad ids)."
   def get_deleted_e_way_bill(id), do: fetch_by_id(EWayBill.binned(), id)
 
   defp fetch_by_id(query, id) do
@@ -234,13 +194,7 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  @doc """
-  Every bill in the Bin, most recently deleted first, with its invoice.
-
-  A bill whose invoice is also in the Bin is listed all the same: it was
-  deleted in its own right, and restoring the invoice alone would not bring it
-  back.
-  """
+  @doc "Every binned bill, most recently deleted first."
   def list_deleted_e_way_bills do
     Repo.all(
       from b in EWayBill.binned(),
@@ -250,14 +204,9 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  Moves a bill to the Bin.
+  Moves a bill to the Bin. An Active bill stays active on the portal.
 
-  Any bill may be binned, whatever its status. For one that is still Active
-  this does **not** cancel it: the portal is not called, and the consignment is
-  as covered — and the number as live — as before. The invoice is free to have
-  another bill raised against it afterwards.
-
-  `opts` may carry `:user_id`, recorded against the audit entry.
+  `opts` may carry `:user_id` for the audit entry.
   """
   def delete_e_way_bill(bill, opts \\ [])
 
@@ -270,13 +219,7 @@ defmodule QuantumBilling.EWayBills do
     |> announce(:bin_e_way_bill, opts)
   end
 
-  @doc """
-  Takes a bill back out of the Bin.
-
-  Returns `{:error, :invoice_has_live_bill}` when the bill is not cancelled and
-  its invoice has had another raised in the meantime: an invoice carries one
-  live bill, and the newer one is the one in use.
-  """
+  @doc "Restores a bill. Returns `{:error, :invoice_has_live_bill}` if a newer live bill exists."
   def restore_e_way_bill(%EWayBill{} = bill, opts \\ []) do
     bill
     |> EWayBill.restore_changeset()
@@ -288,11 +231,7 @@ defmodule QuantumBilling.EWayBills do
     |> announce(:restore_e_way_bill, opts)
   end
 
-  @doc """
-  Deletes a bill for good, along with its Part-B history.
-
-  Returns `{:error, :not_in_bin}` for a bill that has not been binned first.
-  """
+  @doc "Deletes a binned bill and its Part-B history. Returns `{:error, :not_in_bin}` otherwise."
   def purge_e_way_bill(bill, opts \\ [])
 
   def purge_e_way_bill(%EWayBill{deleted_at: nil}, _opts), do: {:error, :not_in_bin}
@@ -325,11 +264,7 @@ defmodule QuantumBilling.EWayBills do
     |> preload_bill()
   end
 
-  @doc """
-  Every e-way bill, newest first, shaped for the list page.
-
-  Unbounded: for exports and tests. The page itself uses `page/1`.
-  """
+  @doc "Every e-way bill, newest first. Unbounded; the page uses `page/1`."
   def list_e_way_bills do
     base_query()
     |> order_by([bill: b], desc: b.ewb_date, desc: b.id)
@@ -338,17 +273,9 @@ defmodule QuantumBilling.EWayBills do
   end
 
   @doc """
-  One page of e-way bills, searched, filtered and sorted by the database.
+  One page of e-way bills, filtered and sorted in the database.
 
-  Returns `%{rows:, page:, per_page:, has_next?:}`, the same shape the invoice
-  list uses, so both pages paginate identically — see `QuantumBilling.Paging`.
-
-  ## Options
-
-    * `:search` — matches the EWB number, the document number or the consignee
-    * `:status` — `"Active"`, `"Expired"`, `"Cancelled"`, or `"All Status"`
-    * `:sort_field` / `:sort_dir` — a key of `sortable_fields/0`, `:asc` or `:desc`
-    * `:page` / `:per_page`
+  Options: `:search`, `:status`, `:sort_field`, `:sort_dir`, `:page`, `:per_page`.
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
@@ -372,21 +299,13 @@ defmodule QuantumBilling.EWayBills do
         )
       end
 
-    # `records: true` hands back the bills themselves, for the API.
+    # `records: true` returns the bills themselves (used by the API).
     if Keyword.get(opts, :records, false),
       do: result,
       else: %{result | rows: Enum.map(result.rows, &to_row/1)}
   end
 
-  @doc """
-  Every bill matching the list page's filters, shaped for a CSV export.
-
-  Takes the same `:search` and `:status` options as `page/1` and deliberately
-  ignores `:page` — the file a user downloads should hold everything they are
-  looking at, not the ten rows currently on screen. The Export button used to
-  point at the reports endpoint with `report_type=E-Way+Bills`, which that
-  endpoint does not recognise, so it silently handed back a GST tax summary.
-  """
+  @doc "Every bill matching the list filters, for CSV export. Ignores `:page`."
   def export_rows(opts \\ []) do
     base_query()
     |> search_where(Keyword.get(opts, :search))
@@ -411,10 +330,7 @@ defmodule QuantumBilling.EWayBills do
   def cancellable?(%EWayBill{} = bill), do: ensure_cancellable(bill) == :ok
 
   @doc """
-  What an e-way bill's status is.
-
-  `"Cancelled"` is stored. `"Expired"` is derived by comparing `valid_until`
-  with now, because it is a fact about the clock rather than about the bill.
+  A bill's status. "Expired" is derived from `valid_until`.
   """
   def status(%EWayBill{status: "Cancelled"}), do: "Cancelled"
   def status(%EWayBill{valid_until: nil}), do: "Active"
@@ -469,7 +385,7 @@ defmodule QuantumBilling.EWayBills do
     )
   end
 
-  # Records the original vehicle as the first Part-B leg before it is replaced.
+  # Keeps the original vehicle as the first Part-B leg.
   defp ensure_first_leg(%EWayBill{} = bill) do
     recorded? = Repo.exists?(from p in PartBUpdate, where: p.e_way_bill_id == ^bill.id)
 
@@ -487,13 +403,7 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  @doc """
-  A bill by id, visible on exactly the terms `page/1` lists it: not binned
-  itself, and not raised against an invoice that is binned.
-
-  `get_e_way_bill/1` checks only the bill, so a fetch by id could return what
-  the list hides. The API uses this so the two cannot disagree.
-  """
+  @doc "A bill by id on the same terms as `page/1`: neither it nor its invoice is binned."
   def get_listed_e_way_bill(id) do
     case Integer.parse(to_string(id)) do
       {id, ""} -> Repo.one(from [bill: b] in base_query(), where: b.id == ^id)
@@ -501,7 +411,6 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  # Bills in the Bin, or whose invoice is in the Bin, are left out.
   defp base_query do
     from b in EWayBill.kept(),
       as: :bill,

@@ -2,18 +2,9 @@ defmodule QuantumBillingWeb.API.Pagination do
   @moduledoc """
   `page` and `per_page` from a list request, and the `meta` a list returns.
 
-  `per_page` defaults to 25 and is capped at 100: a single call cannot pull a
-  whole table, so a leaked key has to page — slowly, under the rate limit —
-  through anything it wants.
-
-  Lists are read the way the screens read them (`QuantumBilling.Paging`): one
-  row past the page tells whether there is a next one, and nothing is counted.
-  So `meta` says `has_next` rather than a total. Pages stop at
-  `Paging.max_page/0`, as on the screens.
-
-  Cursor mode (`paginate=cursor`, then the `next_cursor` each response gives)
-  pages newest-created first with no depth limit and no drift when records
-  are added mid-way; it is what a sync job should use.
+  `per_page` defaults to 25, max 100. Numbered pages report `has_next` (no
+  total) and stop at `Paging.max_page/0`. Cursor mode (`paginate=cursor`, then
+  `next_cursor`) pages newest first with no depth limit; sync jobs should use it.
   """
 
   alias QuantumBilling.Paging
@@ -24,11 +15,9 @@ defmodule QuantumBillingWeb.API.Pagination do
   @doc """
   The paging a list request asked for:
 
-    * `{:ok, {:cursor, before_id}, per_page}` — cursor mode, entered with
-      `paginate=cursor` (`before_id` nil: from the newest) or by passing a
-      `cursor` from a previous response;
-    * `{:ok, page, per_page}` — numbered pages;
-    * `{:error, fields}`.
+    * `{:ok, {:cursor, before_id}, per_page}` - cursor mode (`before_id` nil means newest)
+    * `{:ok, page, per_page}` - numbered pages
+    * `{:error, fields}`
   """
   def parse(%{"cursor" => cursor} = params) when is_binary(cursor) do
     with {:ok, before_id} <- decode_cursor(cursor),
@@ -60,12 +49,7 @@ defmodule QuantumBillingWeb.API.Pagination do
   end
 
   @doc """
-  The page the context returned, made honest about a page past the end.
-
-  `Paging` answers a page past the end with the last page instead, which suits
-  a screen but would loop an integration forever: asking for page 6 of 5 and
-  getting page 5 again looks like more data. Past the end, the API returns no
-  rows.
+  The page from the context, but empty past the end (`Paging` would return the last page again).
   """
   def settle(%{page: served} = page, requested) when is_integer(requested) and requested > served,
     do: %{page | rows: [], page: requested, has_next?: false}

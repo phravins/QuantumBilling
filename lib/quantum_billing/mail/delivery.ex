@@ -1,15 +1,8 @@
 defmodule QuantumBilling.Mail.Delivery do
   @moduledoc """
-  One attempt to get a message to somebody.
-
-  A row exists from the moment a message is queued, not from the moment it
-  succeeds, so "queued" with a high attempt count and a `last_error` is the
-  visible shape of a relay that is refusing mail — rather than silence.
-
-  The body is deliberately not stored. An invoice email carries the invoice as
-  a PDF, and keeping a copy of every one would turn this table into a second,
-  unindexed archive of the invoices themselves; `invoice_id` points at the real
-  one, which can be re-rendered at any time.
+  One message's delivery record, created when it is queued (so a failing relay
+  shows as attempts plus `last_error`). The body is not stored; `invoice_id`
+  points at the invoice.
   """
   use Ecto.Schema
 

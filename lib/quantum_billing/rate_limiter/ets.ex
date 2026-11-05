@@ -1,14 +1,7 @@
 defmodule QuantumBilling.RateLimiter.ETS do
   @moduledoc """
-  The rate limiter's in-memory backend: a fixed window per key, in ETS.
-
-  Counts are per node, so on several servers each one counts on its own and
-  the effective limit is multiplied by the number of servers. That is why
-  production uses `QuantumBilling.RateLimiter.Postgres`; this one serves the
-  test suite, where sandboxed database transactions would make concurrent
-  tests that share a key (one IP, say) wait on each other.
-
-  Prunes expired entries periodically so memory usage remains bounded.
+  In-memory, per-node rate limiter backend for the test suite (production uses
+  `RateLimiter.Postgres`). Expired entries are pruned periodically.
   """
   use GenServer
 

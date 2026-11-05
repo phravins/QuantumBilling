@@ -1,28 +1,14 @@
 defmodule QuantumBilling.Worker do
   @moduledoc """
-  An Oban worker that runs inside the business that queued it.
+  An Oban worker that runs in the business that queued it.
 
-  A job runs in an Oban process, which has no business of its own, so the
-  business has to travel with the job. `use QuantumBilling.Worker` in place of
-  `use Oban.Worker` (it takes the same options) and write `process/1` instead
-  of `perform/1`:
+  `use QuantumBilling.Worker` (same options as `Oban.Worker`) and implement
+  `process/1`. `new/2` stores `"business_id"` in the args; `perform/1` makes it
+  current, then restores the previous one. Jobs without it run in the first
+  business.
 
-    * `new/2` records the current business as `"business_id"` in the args;
-    * `perform/1` makes that business current, calls `process/1`, then puts back
-      whatever was current before — inline jobs in tests run in the test's own
-      process, and must not leave it pointing somewhere else.
-
-  A job queued before there were several businesses carries no `"business_id"`
-  and runs in the first business, where its records are.
-
-  ## Sweeps
-
-  The cron jobs are queued by Oban with no business at all. A worker that is
-  one passes `sweep: true`: without a `"business_id"` it queues a copy of itself
-  for every active business and stops there, so each business is swept by a
-  job of its own and one that fails is retried without repeating the others.
-  Archived businesses are not swept. A worker that is a sweep only for some
-  args overrides `sweep?/1` instead.
+  With `sweep: true` (or `sweep?/1`), a job with no business queues one copy
+  per active business instead, so each is retried on its own.
   """
 
   alias QuantumBilling.Businesses

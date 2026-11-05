@@ -1,15 +1,7 @@
 defmodule QuantumBillingWeb.NotificationsBellTest do
   @moduledoc """
-  The bell in the header, which `QuantumBillingWeb.NotificationsHook` attaches to
-  every authenticated page.
-
-  Mounted on `/clients` rather than on a page of its own: the bell has no route,
-  it is drawn by `Layouts.app`, and the point of the hook is that any page in the
-  authenticated `live_session` gets it. `/clients` is the cheapest of them.
-
-  `async: false`, so the sandbox is shared and the LiveView process can read the
-  rows this test inserts — without that the feed would mount empty every time and
-  the assertions would all be about nothing.
+  The header bell from `NotificationsHook`, mounted on `/clients` (any
+  authenticated page has it). `async: false` so the LiveView sees inserted rows.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

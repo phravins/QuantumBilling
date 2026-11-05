@@ -1,17 +1,7 @@
 defmodule QuantumBillingWeb.Plugs.ApiRateLimit do
   @moduledoc """
-  Limits each API key's request rate.
-
-  Per key, not per address: one integration should not be able to starve
-  another, and a leaked key paging through every invoice is slowed to a crawl
-  rather than emptying the table in a minute.
-
-  Writes are limited far more tightly than reads. Every invoice created takes a
-  number in a statutory series; a runaway loop doing that is worse than one
-  reading.
-
-  The counters are shared by every server (`QuantumBilling.RateLimiter`'s
-  Postgres backend), so the limit holds however many nodes serve the API.
+  Rate limits each API key, with writes far tighter than reads. Counters are
+  shared across nodes (`RateLimiter` Postgres backend).
   """
 
   import Plug.Conn

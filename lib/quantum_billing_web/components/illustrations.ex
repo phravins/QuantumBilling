@@ -1,30 +1,16 @@
 defmodule QuantumBillingWeb.Illustrations do
   @moduledoc """
-  The illustrations on the focus screens: the company picker, the "you're in"
-  screen after choosing a company, and first-sign-in onboarding.
+  Ink-style illustrations for the focus screens: the picker, the success screen and onboarding.
 
-  Hand-drawn ink style in black and white: people drawn with a bold outline
-  over paper-white fills, solid ink hair and clothes, and soft grey shapes
-  behind them. Every scene is built from the same `person/1` figure, so the
-  set reads as one hand.
-
-  Inline SVG, so there is no file to fetch and nothing for the Content
-  Security Policy to allow. "Ink" is `base-content` and "paper" is `base-100`,
-  so the drawings invert with the rest of the app in dark mode. Every colour
-  is a literal class so Tailwind emits it.
-
-  Decoration only: each SVG is `aria-hidden`, and the screen around it says in
-  words whatever the picture shows.
+  Inline SVG built from one `person/1` figure, using `base-content` and
+  `base-100` so it follows dark mode. Decorative and `aria-hidden`.
   """
   use Phoenix.Component
 
   @doc """
-  Someone at work, for a company card: at a laptop, behind a shop counter, in
-  a hard hat, carrying a box, or at a drawing board. Five, so cards side by
-  side do not look alike.
+  Someone at work, for a company card; five scenes so neighbouring cards differ.
 
-  `variant` picks the scene (any integer; it wraps), `tone` the fill of the
-  shape behind it (a literal `fill-*` class from the caller).
+  `variant` picks the scene (wraps); `tone` is a literal `fill-*` class for the backdrop.
   """
   attr :variant, :integer, default: 0
   attr :tone, :string, default: "fill-base-content/10"
@@ -324,9 +310,8 @@ defmodule QuantumBillingWeb.Illustrations do
     """
   end
 
-  # One figure, shoulders up, in a 100 × 118 frame: head centred at (50, 32),
-  # shoulders at (22, 84) and (78, 84). `arms` are drawn over the body in the
-  # same frame, `front` over everything (what the person holds, then hands).
+  # One figure, shoulders up, in a 100 × 118 frame (head at 50,32). `arms` draw
+  # over the body and `front` over everything.
   attr :x, :any, default: 0
   attr :y, :any, default: 0
   attr :s, :any, default: 1

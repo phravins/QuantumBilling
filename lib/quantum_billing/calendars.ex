@@ -1,16 +1,10 @@
 defmodule QuantumBilling.Calendars do
   @moduledoc """
-  Sends a business's compliance deadlines to the calendars it uses.
+  Sends a business's compliance deadlines to its calendars, one way only.
 
-  One way only: open tasks and upcoming GST returns go out, and nothing made in
-  the calendar comes back. Three kinds of calendar:
-
-    * Google Calendar and CalDAV are pushed to, by `CalendarSyncWorker`.
-    * The feed is a private URL that any calendar app can subscribe to. It is
-      built when asked for, so it needs no sync.
-
-  A failed sync never gets in the way of saving a task. It is recorded on the
-  connection as a fixed sentence, and the job is retried.
+  Google Calendar and CalDAV are pushed to by `CalendarSyncWorker`; the feed is
+  a private URL built on request. A failed sync never blocks saving a task: it
+  is recorded on the connection as a fixed sentence and retried.
   """
 
   import Ecto.Query, warn: false
@@ -32,7 +26,7 @@ defmodule QuantumBilling.Calendars do
   @push_providers ~w(google caldav)
   @feed_token_bytes 32
 
-  ## Connections
+  # Connections
 
   @doc "This business's connections, by provider."
   def connections(%Scope{} = scope) do
@@ -42,9 +36,7 @@ defmodule QuantumBilling.Calendars do
   def change_caldav(attrs \\ %{}), do: Connection.caldav_changeset(%Connection{}, attrs)
 
   @doc """
-  Saves a CalDAV connection, once the server has accepted the login.
-
-  A server that refuses gets the reason on the form, and nothing is stored.
+  Saves a CalDAV connection once the server accepts the login; otherwise returns the reason.
   """
   def connect_caldav(%Scope{} = scope, attrs) do
     changeset = change_caldav(attrs)
@@ -84,8 +76,7 @@ defmodule QuantumBilling.Calendars do
   end
 
   @doc """
-  Issues a new feed URL token and returns it. This is the only time it is
-  available; only its hash is kept, and any earlier URL stops working.
+  Issues a new feed token and returns it once. Only its hash is kept; older URLs stop working.
   """
   def regenerate_feed(%Scope{} = scope) do
     token = Base.url_encode64(:crypto.strong_rand_bytes(@feed_token_bytes), padding: false)
@@ -107,8 +98,7 @@ defmodule QuantumBilling.Calendars do
         |> Repo.insert_or_update()
 
       with {:ok, saved} <- result do
-        # A new login may mean a different calendar, which has none of these
-        # events. Writing them again is safe, because their ids do not change.
+        # A new login may be a different calendar; re-sending is safe since event ids are stable.
         Repo.delete_all(from l in EventLink, where: l.connection_id == ^saved.id)
         log(scope, "calendar_connected", saved)
         _ = enqueue_sync()
@@ -119,8 +109,7 @@ defmodule QuantumBilling.Calendars do
   end
 
   @doc """
-  Removes a connection and asks Google to forget its grant. Events already in
-  the calendar stay there, because they may be someone's only record of them.
+  Removes a connection and revokes the Google grant. Events already sent stay in the calendar.
   """
   def disconnect(%Scope{} = scope, provider) when provider in ["google", "caldav", "feed"] do
     in_business(scope, fn ->
@@ -151,14 +140,9 @@ defmodule QuantumBilling.Calendars do
 
   defp in_business(%Scope{business: business}, fun), do: Repo.with_business(business, fun)
 
-  ## Feed
+  # Feed
 
-  @doc """
-  The feed for this slug and token, or `:error`.
-
-  An unknown business, a wrong token and a business with no feed all look the
-  same, so the URL cannot be used to find out which businesses exist.
-  """
+  @doc "The feed for `slug` and `token`, or `:error`. Every failure looks the same."
   def feed(slug, token) when is_binary(slug) and is_binary(token) do
     with true <- Regex.match?(~r/\A[a-z0-9-]{1,100}\z/, slug),
          %{} = business <- Businesses.get_by_slug(slug) do
@@ -178,14 +162,10 @@ defmodule QuantumBilling.Calendars do
 
   defp hash(token), do: :crypto.hash(:sha256, token)
 
-  ## What goes on a calendar
+  # What goes on a calendar
 
   @doc """
-  What this business's calendars should show: open tasks that are not private,
-  plus GST returns due from today on.
-
-  Also reads last financial year's schedule, since a return for March falls due
-  after the year has rolled over.
+  Open, non-private tasks plus GST returns due from today, including last year's March returns.
   """
   def items(%Date{} = today \\ Date.utc_today()) do
     task_items() ++ obligation_items(today)
@@ -233,12 +213,9 @@ defmodule QuantumBilling.Calendars do
     "qb-#{business.id}-#{key}@quantumbilling"
   end
 
-  ## Sync
+  # Sync
 
-  @doc """
-  Queues a sync, if this business pushes to any calendar. Never raises: saving
-  a task must not depend on it.
-  """
+  @doc "Queues a sync if this business pushes to any calendar. Never raises."
   def enqueue_sync do
     if Repo.exists?(from c in Connection, where: c.provider in @push_providers) do
       %{} |> CalendarSyncWorker.new() |> Oban.insert()
@@ -250,10 +227,7 @@ defmodule QuantumBilling.Calendars do
   end
 
   @doc """
-  Syncs every calendar this business pushes to.
-
-  Returns `:ok`, or `{:error, sentence}` with the first problem, after trying
-  them all so one broken calendar does not hold up the other.
+  Syncs every pushed calendar: `:ok` or `{:error, sentence}` for the first problem, after trying all.
   """
   def sync_all(%Date{} = today \\ Date.utc_today()) do
     from(c in Connection, where: c.provider in @push_providers)
@@ -293,8 +267,7 @@ defmodule QuantumBilling.Calendars do
     |> Map.new(&{&1.item_key, &1})
   end
 
-  # Stops at the first failure. What has been sent stays recorded, so the retry
-  # carries on from there.
+  # Stops at the first failure; what was sent stays recorded, so the retry resumes.
   defp push(connection, client, items, links) do
     business = Repo.business()
 
@@ -339,8 +312,7 @@ defmodule QuantumBilling.Calendars do
     |> Repo.insert_or_update!()
   end
 
-  # Tasks leave the calendar once done or deleted. A GST deadline that has simply
-  # passed stays, as a record of when the return was due.
+  # Tasks leave once done or deleted; past GST deadlines stay as a record.
   defp remove_stale(client, items, links, today) do
     current = MapSet.new(items, & &1.key)
 
@@ -399,8 +371,7 @@ defmodule QuantumBilling.Calendars do
     {:error, message}
   end
 
-  # Fixed sentences: these are shown on the Settings page and kept in the job's
-  # error list, where a server's own words might carry a credential.
+  # Fixed sentences: a server's own error text might carry a credential.
   defp problem(:reauthorize), do: "Google no longer accepts this connection. Connect it again."
   defp problem(:unauthorized), do: "The calendar refused the saved login. Connect it again."
   defp problem(:blocked), do: "The calendar address points inside the server's own network."

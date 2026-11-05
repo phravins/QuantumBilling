@@ -1,10 +1,7 @@
 defmodule QuantumBillingWeb.API.ScopesTest do
   @moduledoc """
-  Every route, against a key holding each single scope: exactly the routes the
-  scope names answer, and every other one is a 403.
-
-  Walks the table below rather than a handful of examples, so a route added
-  later with the wrong `RequireScope` — or none — fails here.
+  Each single-scope key reaches exactly its routes; every other route is 403.
+  A new route with the wrong `RequireScope` fails here.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

@@ -1,14 +1,9 @@
 defmodule QuantumBillingWeb.BusinessNewLive do
   @moduledoc """
-  Creates a business: a name and, optionally, its GSTIN. Everything else is set
-  in that business's own Settings afterwards.
+  Creates a business (name and optional GSTIN). Owners only; staff go back to the picker.
 
-  Open to anyone who owns a business already — the person who runs the firms
-  adds the next one. Staff are sent back to the picker.
-
-  On success the page switches the browser into the new business by submitting
-  a hidden form to the switch action (`phx-trigger-action`): the choice lives in
-  the session cookie, which a LiveView cannot write.
+  On success a hidden form posts to the switch action (`phx-trigger-action`),
+  since only an HTTP request can write the session.
   """
   use QuantumBillingWeb, :live_view
 

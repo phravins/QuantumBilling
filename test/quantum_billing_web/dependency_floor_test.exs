@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.DependencyFloorTest do
   @moduledoc """
-  The versions below which a dependency has a known, published vulnerability
-  that reaches this application. A downgrade — a stale lockfile, a careless
-  `mix deps.update` — fails here instead of shipping.
-
-  Raise a floor when a new advisory lands; never lower one without the
-  advisory being withdrawn.
+  Minimum dependency versions that avoid known advisories, so a downgrade fails
+  here. Raise floors for new advisories; never lower one.
   """
   use ExUnit.Case, async: true
 

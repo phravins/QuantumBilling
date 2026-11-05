@@ -1,13 +1,6 @@
 defmodule QuantumBilling.Clients do
   @moduledoc """
-  Customers a tenant invoices.
-
-  ## Deleting
-
-  `delete_client/2` moves a client to the Bin: it leaves the directory, the
-  pickers and every lookup here, and its invoices stay exactly as they were —
-  they carry their own copy of the client's name and GSTIN. `restore_client/2`
-  brings it back and `purge_client/2` removes it for good.
+  Customers a business invoices. Deleting moves a client to the Bin; invoices keep their own copy.
   """
 
   import Ecto.Query, warn: false
@@ -21,12 +14,7 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Repo
   alias QuantumBilling.Webhooks
 
-  @doc """
-  Subscribes the caller to client changes.
-
-  See `QuantumBilling.Events` for the messages and why the topic is
-  organisation-wide rather than per user.
-  """
+  @doc "Subscribes the caller to client changes."
   def subscribe, do: Events.subscribe(Events.clients_topic())
 
   # Allowlisted: the sort field comes from the browser.
@@ -37,29 +25,15 @@ defmodule QuantumBilling.Clients do
 
   @picker_limit 50
 
-  @doc """
-  Every client, alphabetically.
-
-  Unbounded — for exports, backups and tests. Screens use `page/1`.
-  """
+  @doc "Every client, alphabetically. Unbounded; screens use `page/1`."
   def list_clients do
     Repo.all(from c in Client.kept(), order_by: [asc: c.name])
   end
 
   @doc """
-  One page of clients, searched, filtered and sorted by the database.
+  One page of clients, filtered and sorted in the database.
 
-  Returns `%{rows:, page:, per_page:, has_next?:}` — see `QuantumBilling.Paging`.
-  Same reasoning as `QuantumBilling.Invoices.page/1`: a customer directory is
-  the other table that only ever grows, and it was being copied into every open
-  browser tab.
-
-  ## Options
-
-    * `:search` — matches name, GSTIN or email
-    * `:status` — exact status, or `"All Status"`
-    * `:sort_field` / `:sort_dir`
-    * `:page` / `:per_page`
+  Options: `:search`, `:status`, `:sort_field`, `:sort_dir`, `:page`, `:per_page`.
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
@@ -86,13 +60,7 @@ defmodule QuantumBilling.Clients do
     %{result | rows: put_outstanding(result.rows)}
   end
 
-  @doc """
-  What `client` still owes, in whole rupees.
-
-  Computed from its invoices and notes on every read — see
-  `QuantumBilling.Invoices.outstanding_by_client/1` — so it can never drift
-  from them. The `outstanding` column is not maintained and stays zero.
-  """
+  @doc "What `client` still owes in whole rupees, computed from its invoices and notes."
   def outstanding(%Client{id: id}) do
     case Repo.one(Invoices.outstanding_by_client([id])) do
       %{outstanding: owed} -> owed
@@ -116,21 +84,7 @@ defmodule QuantumBilling.Clients do
   @doc "The columns the list page may sort on."
   def sortable_fields, do: Map.keys(@sortable)
 
-  @doc """
-  Clients to offer in a picker: at most `@picker_limit` of them, matching
-  `search`, with `selected_id` always included.
-
-  The invoice form used to render `list_clients/0` into a `<select>`. On an
-  account with fifty thousand customers that is fifty thousand `<option>`
-  elements in the first page load and again in every LiveView diff that touches
-  the form — megabytes over the socket for a list nobody can scroll through
-  anyway.
-
-  The selected client is fetched separately and prepended, because the invoice
-  being edited must keep showing its own client even when the current search
-  does not match it. That holds for a client that has since been moved to the
-  Bin too — the matches leave it out, the selected one does not.
-  """
+  @doc "Clients for a picker: up to `@picker_limit` matching `search`, plus `selected_id`."
   def picker_options(search \\ nil, selected_id \\ nil) do
     matches =
       Client.kept()
@@ -185,7 +139,7 @@ defmodule QuantumBilling.Clients do
 
   defp order(query, nil, _direction), do: order_by(query, [c], asc: c.name, asc: c.id)
 
-  # Outstanding is computed, not stored, so sorting by it groups every client's invoices.
+  # Outstanding is computed, so sorting by it groups every invoice.
   defp order(query, :outstanding, direction) do
     direction = if direction == :desc, do: :desc, else: :asc
 
@@ -210,18 +164,10 @@ defmodule QuantumBilling.Clients do
 
   defp clamp(_value, minimum, _maximum), do: minimum
 
-  @doc """
-  Fetches a client by id, raising when it does not exist or is in the Bin.
-  """
+  @doc "Fetches a non-binned client. Raises if missing."
   def get_client!(id), do: Repo.get!(Client.kept(), id)
 
-  @doc """
-  Fetches a client by id, or `nil` — including for one that is in the Bin.
-
-  Takes the id as a string, because that is how it arrives from a form, and
-  returns `nil` rather than raising for one that is not a number at all — a
-  select can be sent anything.
-  """
+  @doc "Fetches a non-binned client by string id, or `nil` (also for bad ids)."
   def get_client(id) when is_binary(id) do
     case Integer.parse(id) do
       {id, ""} -> get_client(id)
@@ -232,17 +178,7 @@ defmodule QuantumBilling.Clients do
   def get_client(id) when is_integer(id), do: Repo.get(Client.kept(), id)
   def get_client(_other), do: nil
 
-  @doc """
-  Fetches the client called exactly `name`, or `nil`.
-
-  The comparison ignores case and surrounding spaces, because this is what
-  answers "the user typed a client's name by hand instead of picking it" — but
-  it is never a partial match: "Apex" must not become "Apex Retail Solutions"
-  while the name is still being typed.
-
-  Names are not unique. When several clients share one, the oldest wins, so the
-  answer is at least the same every time.
-  """
+  @doc "The client named exactly `name` (case and spaces ignored), oldest first, or `nil`."
   def get_client_by_name(name) when is_binary(name) do
     case String.trim(name) do
       "" ->
@@ -301,14 +237,9 @@ defmodule QuantumBilling.Clients do
   defp announce({:error, _changeset} = result, _event), do: result
 
   @doc """
-  Moves a client to the Bin.
+  Moves a client to the Bin. Its records stay; its recurring profiles pause.
 
-  Nothing that belongs to the client is touched: its invoices, credit notes and
-  recurring profiles all stay, still pointing at it. What changes is that it
-  can no longer be picked for a new invoice, and its recurring profiles stop
-  billing until it is restored — see `QuantumBilling.Recurring.due_profiles/1`.
-
-  `opts` may carry `:user_id`, recorded against the audit entry.
+  `opts` may carry `:user_id` for the audit entry.
   """
   def delete_client(client, opts \\ [])
 
@@ -322,13 +253,7 @@ defmodule QuantumBilling.Clients do
     |> announce(:client_binned)
   end
 
-  @doc """
-  Takes a client back out of the Bin.
-
-  Returns `{:error, :gstin_taken}` when another client has been registered
-  under its GSTIN while it was away. Two live clients cannot share one, and
-  which of them is the real one is not something to guess at.
-  """
+  @doc "Restores a client. Returns `{:error, :gstin_taken}` if another now has its GSTIN."
   def restore_client(%Client{} = client, opts \\ []) do
     client
     |> Client.restore_changeset()
@@ -342,14 +267,9 @@ defmodule QuantumBilling.Clients do
   end
 
   @doc """
-  Deletes a client for good.
+  Deletes a binned client for good.
 
-  Returns `{:error, :not_in_bin}` for a client that has not been binned first,
-  and `{:error, :in_use}` while it has credit notes: a note is a tax document
-  raised against a client and cannot be left pointing at nobody.
-
-  Invoices and recurring profiles do not hold it back. They keep their own copy
-  of the client's details and simply stop being linked to a client record.
+  Returns `{:error, :not_in_bin}`, or `{:error, :in_use}` while it has credit notes.
   """
   def purge_client(client, opts \\ [])
 
@@ -397,12 +317,7 @@ defmodule QuantumBilling.Clients do
 
   defp audited(result, _action, _opts), do: result
 
-  @doc """
-  Whether a client of this type must supply a GSTIN.
-
-  The form asks this to decide whether to show the required marker, so the
-  asterisk and the changeset can never disagree.
-  """
+  @doc "Whether a client of this type must supply a GSTIN."
   defdelegate gstin_required?(client_type), to: Client
 
   defdelegate client_types(), to: Client

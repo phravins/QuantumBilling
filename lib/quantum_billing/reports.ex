@@ -1,23 +1,10 @@
 defmodule QuantumBilling.Reports do
   @moduledoc """
-  Report aggregations: the dashboard's tax summary and top clients, and the
-  CSV export.
+  Report figures and the CSV export.
 
-  Every figure — the totals, the monthly trend, the tax summary and
-  the top-clients list — is a different view of one set of invoices, and the
-  filters have to move all of them together. So this module works from
-  **row-level** invoices and derives each panel from them, rather than holding
-  per-panel display values.
-
-  `invoices/0` is a placeholder pending the multi-tenant Ecto schema. Every
-  function below it already takes a list and handles the empty case, so when the
-  schema lands only `invoices/0` changes.
-
-  A row is `%{date, client, gstin, status, tax_type, taxable_value, cgst, sgst,
-  igst, cess}`, with money as whole rupees (integers) throughout — matching
-  `QuantumBilling.EWayBills.EWayBillForm`, so `QuantumBillingWeb.Format.rupees/2`
-  can render it. `tax_type` is `"CGST + SGST"`, `"IGST"` or `"CESS"` and must
-  agree with which tax columns are non-zero.
+  Everything derives from row-level invoices, so filters move every panel
+  together. A row is `%{date, client, gstin, status, tax_type, taxable_value,
+  cgst, sgst, igst, cess}`, with money in whole rupees.
   """
 
   @report_types [
@@ -29,8 +16,6 @@ defmodule QuantumBilling.Reports do
 
   @statuses ["E-Invoice Generated", "Pending E-Invoice", "E-Invoice Failed", "Cancelled"]
 
-  @date_ranges ["This Month", "Last Month", "This Quarter", "This Year", "All Time"]
-
   @trend_months 24
 
   @client_name_limit 500
@@ -40,26 +25,13 @@ defmodule QuantumBilling.Reports do
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
-  @doc """
-  Every invoice available to report on, newest first, as report rows.
-
-  Unfiltered and unbounded, so it is only for a caller that genuinely wants the
-  lot — a test, or a console. The page uses `aggregate/1`, which never loads a
-  row into memory at all, and the CSV export uses `stream_rows/2`, which reads
-  in chunks.
-  """
+  @doc "Every invoice as report rows, newest first. Unbounded; for tests and consoles."
   def invoices do
     Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
     |> Enum.map(&to_row/1)
   end
 
-  @doc """
-  The invoices matching `filters`, newest first, as report rows.
-
-  The filtering happens in the database. It used to happen in Elixir over every
-  invoice ever issued: a report on one month still read the whole table, and
-  the cost of a report grew with the age of the business.
-  """
+  @doc "The invoices matching `filters` as report rows, newest first."
   def invoices(filters) when is_map(filters) do
     filters
     |> query()
@@ -68,14 +40,7 @@ defmodule QuantumBilling.Reports do
     |> Enum.map(&to_row/1)
   end
 
-  @doc """
-  Runs `fun` over the filtered invoices as a stream of report rows.
-
-  For exports. `Repo.stream/1` holds a database cursor and hands over rows in
-  chunks, so a sales register covering a year is written out in constant memory
-  rather than materialising every row first. It has to run inside a
-  transaction, which is what this wraps.
-  """
+  @doc "Runs `fun` over the filtered rows as a stream, inside a transaction."
   def stream_rows(filters, fun) when is_map(filters) and is_function(fun, 1) do
     Repo.transaction(
       fn ->
@@ -90,12 +55,7 @@ defmodule QuantumBilling.Reports do
     )
   end
 
-  @doc """
-  The query behind every report, with `filters` applied.
-
-  One place, so the page, the export and any future report cannot disagree
-  about what "This Quarter, Tax Liability, client X" means.
-  """
+  @doc "The query behind every report, with `filters` applied."
   def query(filters) when is_map(filters) do
     # Binned invoices are excluded from every report.
     Invoice.kept()
@@ -135,14 +95,7 @@ defmodule QuantumBilling.Reports do
 
   defp filter_report_type(query, _all_or_sales_register), do: query
 
-  @doc """
-  Every report figure for `filters`, computed by the database.
-
-  Five aggregate queries rather than one full table scan followed by five
-  passes in Elixir. What comes back is the same shape the pure list functions
-  below produce, so the page renders identically — it simply stops caring how
-  many invoices exist.
-  """
+  @doc "Every report figure for `filters`, computed by the database."
   def aggregate(filters) when is_map(filters) do
     months = monthly_breakdown(filters)
     totals = totals(filters)
@@ -192,13 +145,7 @@ defmodule QuantumBilling.Reports do
     end
   end
 
-  @doc """
-  Per-month totals for the filtered set, oldest first, with quiet months
-  carried as zeroes rather than dropped.
-
-  Feeds both the trend chart and the month-over-month deltas on the cards, so
-  the two cannot tell different stories about the same month.
-  """
+  @doc "Per-month totals for the filtered set, oldest first, with empty months as zeros."
   def monthly_breakdown(filters, today \\ nil) when is_map(filters) do
     rows =
       filters
@@ -226,8 +173,7 @@ defmodule QuantumBilling.Reports do
     fill_months(rows, range_bounds(filters[:date_range], today), today)
   end
 
-  # Fills months with no invoices so the chart's axis is continuous.
-  # With no rows at all, returns [] so the panel can say there is nothing to show.
+  # Fills empty months so the chart axis is continuous; [] when there are no rows.
   defp fill_months([], _bounds, _today), do: []
 
   defp fill_months(rows, bounds, today) do
@@ -327,7 +273,7 @@ defmodule QuantumBilling.Reports do
     |> Enum.reject(&(&1.value == 0))
   end
 
-  # Same rule as to_row/1, in SQL so grouping happens in the database.
+  # Same rule as to_row/1, in SQL.
   @tax_type_sql """
   CASE
     WHEN COALESCE(cgst_amount, 0) > 0 OR COALESCE(sgst_amount, 0) > 0 THEN 'CGST + SGST'
@@ -381,16 +327,10 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  @doc """
-  Tax rows by tax type for the filtered set, ending in a totals row: the same
-  rows `aggregate/1` returns as `:tax_rows`, without its other queries.
-  """
+  @doc "Tax rows by type plus a totals row (`aggregate/1`'s `:tax_rows`)."
   def tax_rows(filters) when is_map(filters), do: tax_rows_from(tax_type_totals(filters))
 
-  @doc """
-  The `limit` clients with the highest invoice value in the filtered set: the
-  same rows `aggregate/1` returns as `:top_clients`, without its other queries.
-  """
+  @doc "The `limit` clients with the highest invoice value (`aggregate/1`'s `:top_clients`)."
   def top_client_totals(filters, limit \\ 5) when is_map(filters),
     do: top_client_rows(filters, limit)
 
@@ -464,10 +404,7 @@ defmodule QuantumBilling.Reports do
   def to_row(row) when is_map(row), do: row
 
   @doc """
-  Narrows `invoices` by the active filters.
-
-  Unset filters, and the "All …" sentinel options, match everything. GSTIN is a
-  case-insensitive substring match so a partial code still narrows.
+  Narrows `invoices` by the active filters. "All …" options match everything.
   """
   def filter(invoices, filters) do
     {from, to} = range_bounds(filters[:date_range])
@@ -503,12 +440,7 @@ defmodule QuantumBilling.Reports do
     String.contains?(String.upcase(row.gstin), String.upcase(String.trim(gstin)))
   end
 
-  @doc """
-  Totals for the four metric cards, with a month-over-month delta for each.
-
-  The delta compares the latest month present in `invoices` against the month
-  before it, which is what the cards' "from last month" caption claims.
-  """
+  @doc "Totals for the metric cards, each with a month-over-month delta."
   def summary(invoices) when is_list(invoices) do
     taxable = sum_by(invoices, & &1.taxable_value)
     tax = sum_by(invoices, &row_tax/1)
@@ -529,7 +461,7 @@ defmodule QuantumBilling.Reports do
 
   defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
 
-  # nil when there is nothing to compare, so the caption is omitted.
+  # nil when there is nothing to compare.
   defp delta([], _measure), do: nil
 
   defp delta(invoices, measure) do
@@ -549,10 +481,7 @@ defmodule QuantumBilling.Reports do
 
   defp month_key(row), do: {row.date.year, row.date.month}
 
-  @doc """
-  Monthly invoice value for the trend chart, oldest month first, as
-  `[%{label, value}]` with `label` like `"Jan"`.
-  """
+  @doc "Monthly invoice value for the trend chart, oldest first."
   def monthly_trend(invoices) when is_list(invoices) do
     invoices
     |> Enum.group_by(&month_key/1)
@@ -565,10 +494,7 @@ defmodule QuantumBilling.Reports do
     end)
   end
 
-  @doc """
-  Invoice counts per status for the donut, in a fixed order so the ring's
-  colours stay stable as the data changes. Statuses with no rows are dropped.
-  """
+  @doc "Invoice counts per status, in a fixed order. Empty statuses are dropped."
   def status_breakdown(invoices) when is_list(invoices) do
     counts = Enum.frequencies_by(invoices, & &1.status)
 
@@ -581,12 +507,7 @@ defmodule QuantumBilling.Reports do
     |> Enum.reject(&(&1.value == 0))
   end
 
-  @doc """
-  One row per tax type plus a totals row, shaped for the tax summary table.
-
-  `nil` in a column means "not applicable to this tax type" and renders as a
-  dash — CGST/SGST never apply to an inter-state supply, and vice versa.
-  """
+  @doc "One row per tax type plus a totals row. `nil` means not applicable."
   def tax_summary(invoices) when is_list(invoices) do
     groups = Enum.group_by(invoices, & &1.tax_type)
 
@@ -633,7 +554,7 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  # Only columns that applied to some row are totalled, so unused ones show a dash.
+  # Only columns used by some row are totalled.
   defp sum_present(rows, fun) do
     case Enum.filter(rows, &(fun.(&1) != nil)) do
       [] -> nil
@@ -655,10 +576,7 @@ defmodule QuantumBilling.Reports do
   end
 
   @doc """
-  Resolves a named range to `{from, to}` dates, or `{nil, nil}` for "All Time".
-
-  Relative to today. Pass `today` explicitly to make a test deterministic rather
-  than dependent on when it runs.
+  Resolves a named range to `{from, to}`, or `{nil, nil}` for "All Time".
   """
   def range_bounds(range, today \\ nil)
 
@@ -715,35 +633,16 @@ defmodule QuantumBilling.Reports do
 
   def report_types, do: @report_types
   def statuses, do: ["All Status" | @statuses]
-  def date_ranges, do: @date_ranges
 
   @doc """
-  Names for the client filter.
+  Names for the client filter: "All Clients", then distinct names from
+  clients and invoices, sorted and limited to `client_name_limit/0`.
 
-  Returns "All Clients" followed by distinct client names — from the client
-  directory and from the names snapshotted onto invoices, since an invoice
-  keeps the name it was issued under even if the client is later renamed or
-  deleted — alphabetically, at most `client_name_limit/0` of them.
-
-  The database does the union, the dedupe, the sort and the limit. This used to
-  read every client name *and every invoice's client name* into memory and
-  dedupe them in Elixir: on fifty thousand invoices that was fifty-two thousand
-  strings and eleven megabytes of process memory, on every load of the Reports
-  page, to arrive at two thousand distinct names. It grew with the age of the
-  business, and every one of those names was also rendered as an `<option>`.
-
-  ## Why the invoice names are a skip scan
-
-  A plain `UNION` still had to sort every invoice's client name to dedupe
-  them: on a million invoices, a 44 MB on-disk sort and two seconds per
-  Reports load. The invoice side therefore walks `invoices_client_name_index`
-  one distinct name at a time — "the first name after the last one" — so the
-  cost is one index probe per name returned, however many invoices share it.
-  Only the first `client_name_limit/0` names of each side can make the final
-  list, so each side stops there before the two are merged.
+  The invoice side is a skip scan over `invoices_client_name_index`, one probe
+  per distinct name.
   """
   def client_names do
-    # Raw SQL skips Ecto's prefix, so the business's schema is named here.
+    # Raw SQL skips Ecto's prefix, so the schema is named here.
     schema = Repo.business_schema!()
 
     %{rows: rows} =

@@ -1,17 +1,10 @@
 defmodule QuantumBilling.RateLimiter.Postgres do
   @moduledoc """
-  The rate limiter's shared backend: one row per key in `public.rate_limits`.
+  The shared rate limiter backend: one row per key in `public.rate_limits`.
 
-  Each hit is a single `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so the
-  increment and the window check are one atomic statement in the database
-  every server talks to. Two nodes counting the same key cannot both read the
-  old count; a request spread across a cluster is counted once per request.
-
-  Keys are stored as a SHA-256 of the key term, not the key: they are IP
-  addresses and email addresses, and a table of who tried to sign in from
-  where is not something to keep in clear.
-
-  Expired rows are swept once a minute by the process this module runs.
+  Each hit is one atomic `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`.
+  Keys are stored as SHA-256 hashes (they are IPs and emails). Expired rows
+  are swept every minute.
   """
   use GenServer
 

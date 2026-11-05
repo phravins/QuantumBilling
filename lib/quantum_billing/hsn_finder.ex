@@ -1,38 +1,10 @@
 defmodule QuantumBilling.HsnFinder do
   @moduledoc """
-  A curated reference of common HSN (goods) and SAC (services) codes and their
-  current GST rates.
+  A curated list of common HSN (goods) and SAC (services) codes and their GST rates.
 
-  Held as module attributes, the same way `QuantumBilling.Compliance` holds the
-  statutory filing calendar — this is shared reference data with no per-tenant
-  variation, not something to CRUD, and not fabricated the way the app's old
-  sample invoices and clients once were.
-
-  ## Why ~45 entries, not the real ~22,000
-
-  The actual government HSN/SAC master runs to roughly twenty-two thousand
-  codes, and nothing available here can reliably import that. This is a
-  curated set of commonly searched codes instead, correctly rated and clearly
-  presented as a starting point — the UI's empty state exists specifically to
-  send a miss to the real official source rather than implying the tool is
-  broken.
-
-  ## Why these rates, specifically
-
-  GST was restructured on 22 September 2025 ("GST 2.0"): the previous five-tier
-  0/5/12/18/28 slab structure collapsed to essentially 0/5/18/40, with 12% and
-  28% retired and items redistributed. Every rate below reflects that current
-  structure, verified against multiple current tax-compliance sources rather
-  than assumed — training-data recall alone would have gotten restaurant
-  services (now 18%, not the pre-reform 5%) and individual life/health
-  insurance (now exempt, not merely reduced) wrong.
-
-  Deliberately excluded: categories whose real rate is conditional rather than
-  flat — hotel accommodation (varies by declared tariff), GTA road transport
-  (varies by the carrier's ITC election), works contracts and real estate
-  (vary by contract type). Asserting one number for those would be actively
-  wrong for a real fraction of cases; leaving them out is more honest than
-  guessing.
+  About 45 entries, not the full ~22,000-code master. Rates follow the GST 2.0
+  slabs (0/5/18/40) from 22 September 2025. Categories with conditional rates
+  (hotels, GTA, works contracts, real estate) are left out.
   """
 
   @gst_2_0_date ~D[2025-09-22]
@@ -332,11 +304,7 @@ defmodule QuantumBilling.HsnFinder do
     }
   ]
 
-  @doc """
-  Every entry, resolved to its full display shape: the tax split, effective
-  date and source added once here rather than duplicated on every literal
-  above.
-  """
+  @doc "Every entry in full display shape, with the tax split, effective date and source added."
   def entries, do: Enum.map(@entries, &resolve/1)
 
   defp resolve(entry) do
@@ -351,11 +319,7 @@ defmodule QuantumBilling.HsnFinder do
   end
 
   @doc """
-  Searches descriptions and keyword aliases, case-insensitively.
-
-  Matches on a plain-language term ("laptop") as well as the formal customs
-  wording ("automatic data processing machines") the entry itself carries —
-  that gap is exactly what `keywords` on each entry exists to close.
+  Searches descriptions and keyword aliases, case-insensitively (e.g. "laptop").
   """
   def search_by_keyword(query) when is_binary(query) do
     needle = query |> String.trim() |> String.downcase()

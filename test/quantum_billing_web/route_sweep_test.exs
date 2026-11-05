@@ -1,20 +1,7 @@
 defmodule QuantumBillingWeb.RouteSweepTest do
   @moduledoc """
-  Walks every page in the application with real records behind it.
-
-  Most pages in this application were written before there was anything to put
-  on them, and several of them only ever ran empty: the e-way bill list
-  rendered fields no schema had and raised `KeyError` the moment one genuine
-  bill existed, and the GSTR-1 download raised on the first line item it was
-  asked to summarise. Both were reachable in a browser and neither had a test
-  that gave it a row to render.
-
-  So this is deliberately not a unit test. It seeds one of everything — a
-  client, an intra-state invoice with items, an inter-state one, a credit
-  note, an e-way bill, a recurring profile, an audit entry, a template — and
-  then asks for every route, asserting only that the application answers
-  rather than falling over. It is the cheapest guard against a page that works
-  until it has data.
+  Seeds one of every record and requests every route, asserting each answers.
+  Guards against pages that only work while empty.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

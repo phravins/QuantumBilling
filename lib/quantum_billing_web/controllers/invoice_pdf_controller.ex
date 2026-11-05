@@ -1,22 +1,11 @@
 defmodule QuantumBillingWeb.InvoicePdfController do
   @moduledoc """
-  The invoice as a document: a printable page, and a PDF download.
+  The invoice as a document, outside the app layout.
 
-  `show/2` renders the standalone print-styled page — the browser's own "Save
-  as PDF" works from it, and it needs nothing installed on the server.
-
-  `download/2` returns an actual PDF file, printed server-side by
-  `QuantumBillingWeb.InvoiceDoc.PDF`. Where no headless browser is installed it
-  redirects to the print view and says so, rather than sending something that
-  is not a PDF — which is what the mail attachment used to do.
-
-  `public/2` is the same document for a customer, addressed by the invoice's
-  public token rather than its id. The public payment page used to link to the
-  signed-in route, so "Download PDF" sent the customer to a login screen for an
-  application they have no account on.
-
-  Every one of them renders outside the app layout on purpose: the sidebar and
-  page chrome have no business on a document going to a client.
+    * `show/2` - the print page (the browser can save it as PDF)
+    * `download/2` - a server-side PDF via `InvoiceDoc.PDF`, or a redirect to
+      the print page when no headless browser is installed
+    * `public/2` - the same for a customer, by public token
   """
   use QuantumBillingWeb, :controller
 

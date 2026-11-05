@@ -2,19 +2,10 @@ defmodule QuantumBilling.Repo do
   @moduledoc """
   The repository, and which business it is working for.
 
-  Each business keeps its records in a Postgres schema of its own (`biz_1`,
-  `biz_2`, …), with its own copy of the business tables. The process that is
-  serving a business — a request, a LiveView, a job — says so once with
-  `put_business/1`, and every query and write it makes goes to that schema.
-  Nothing else in the application names a schema.
-
-  Accounts and the businesses themselves live in `public`, shared by all of
-  them. Those schemas declare `@schema_prefix "public"`, which wins over the
-  business for reads, and the write functions below leave them alone.
-
-  With no business chosen, a query on a business table raises rather than
-  guessing. The tables are no longer in `public`, so Postgres would refuse it
-  anyway; the error here says why.
+  Each business has its own Postgres schema (`biz_1`, `biz_2`, ...). A process
+  calls `put_business/1` once and every query goes there. Accounts and
+  businesses live in `public` (`@schema_prefix "public"`). With no business
+  chosen, a business-table query raises.
   """
 
   use Ecto.Repo,
@@ -24,10 +15,7 @@ defmodule QuantumBilling.Repo do
   @key {__MODULE__, :business}
 
   @doc """
-  Makes `business` the one this process works for; `nil` clears it.
-
-  A request process can be reused for the next request on the same connection,
-  so whoever sets this for a request must clear it first.
+  Makes `business` current for this process; `nil` clears it. Clear it per request, since processes are reused.
   """
   def put_business(nil) do
     Process.delete(@key)
@@ -50,12 +38,7 @@ defmodule QuantumBilling.Repo do
     end
   end
 
-  @doc """
-  Runs `fun` for `business`, then puts back whatever was current before.
-
-  For jobs and sweeps that work through several businesses in one process,
-  and for anything that must not disturb the caller's own business.
-  """
+  @doc "Runs `fun` for `business`, then restores the previous one. For jobs that span businesses."
   def with_business(business, fun) when is_function(fun, 0) do
     previous = business()
     put_business(business)
@@ -77,10 +60,8 @@ defmodule QuantumBilling.Repo do
       Keyword.get(opts, :oban) ->
         {query, opts}
 
-      # A migration's data queries go where the migration does: `public` for
-      # the main ones (whose business tables were still there before the move),
-      # the business's schema for the tenant ones. Ecto runs each migration in
-      # a task of its own, so this never outlives it.
+      # Migration data queries follow the migration: `public` for main ones, the
+      # business schema for tenant ones.
       migration = Process.get(:ecto_migration) ->
         {query, migration_prefix(opts, migration)}
 
@@ -116,10 +97,8 @@ defmodule QuantumBilling.Repo do
     end)
   end
 
-  # Writes. An explicit `:prefix` takes precedence over a schema's own prefix
-  # for writes, so it is only added for a business record that is new to the
-  # database: a loaded record already knows where it came from, and accounts
-  # say `public` themselves.
+  # Writes: `:prefix` is added only for new business records; loaded records
+  # and `public` schemas already know their prefix.
 
   defoverridable insert: 1,
                  insert: 2,

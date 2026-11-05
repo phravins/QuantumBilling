@@ -1,34 +1,11 @@
 defmodule QuantumBilling.Templates do
   @moduledoc """
-  Named invoice layouts.
+  Named invoice layouts (designs).
 
-  ## Seeded on read
-
-  The first design is created by `ensure_default/0`, the first time something
-  needs to write one. An installation that had customised its invoices before
-  designs existed had those settings captured into a template by the migration
-  that dropped the old columns, so this only ever runs for an installation that
-  has none.
-
-  Nothing on a read path calls it. Rendering an invoice is a read and a page view
-  must not insert a row; issuing an invoice must not either, because two saves
-  racing to create the first design contend on the partial unique index over
-  `is_default` and deadlock. Both fall back to the stock layout instead.
-
-  ## Structure and branding are resolved separately
-
-  `document_for/1` returns the layout, the accent and the logo as three values
-  because they come from three places and are read at different times. The
-  layout is frozen onto the invoice at issue; the accent is read live from the
-  template; the logo is read live from the organisation. See
-  `QuantumBilling.Templates.InvoiceTemplate` for why.
-
-  ## Deleting
-
-  `delete_template/2` archives: the design leaves the settings list and shows in
-  the Bin. `restore_template/2` brings it back and `purge_template/2` removes it
-  for good — which is refused while an invoice still points at it, because the
-  row is the record of which design that invoice was issued under.
+  The first design is created by `ensure_default/0` on the first write; read
+  paths never insert. `document_for/1` returns layout, accent and logo
+  separately: the layout is frozen on the invoice, the accent and logo are read
+  live. Deleting archives a design into the Bin.
   """
 
   import Ecto.Query, warn: false
@@ -88,23 +65,12 @@ defmodule QuantumBilling.Templates do
     )
   end
 
-  @doc """
-  The default template, creating it from the organisation's settings first time.
-
-  Call this from anything that is about to write — the settings panel, the
-  design pad. Read paths should use `default_template/0` or `document_for/1`,
-  which do not insert.
-  """
+  @doc "The default template, created on first use. Only for write paths."
   def ensure_default do
     case default_template() do
       nil -> seed_default()
       template -> template
     end
-  end
-
-  @doc "Builds a changeset, for forms."
-  def change_template(%InvoiceTemplate{} = template, attrs \\ %{}) do
-    InvoiceTemplate.changeset(template, attrs)
   end
 
   @doc "Creates a template."
@@ -123,12 +89,7 @@ defmodule QuantumBilling.Templates do
     |> broadcast()
   end
 
-  @doc """
-  Copies a template under a fresh name.
-
-  The copy is never the default: duplicating a design to experiment with should
-  not change what the next invoice comes out as.
-  """
+  @doc "Copies a template under a new name. The copy is never the default."
   def duplicate_template(%InvoiceTemplate{} = template) do
     create_template(%{
       "name" => copy_name(template.name),
@@ -138,13 +99,7 @@ defmodule QuantumBilling.Templates do
     })
   end
 
-  @doc """
-  Creates a design from a parsed document, under `name` or the first free
-  variant of it ("Modern", "Modern 2", …).
-
-  The XML is serialised here from the document rather than taken from anywhere
-  else, so what is stored is always what the parser and the allowlist produced.
-  """
+  @doc "Creates a design from a parsed document under `name` or the next free variant."
   def create_from_document(%QuantumBillingWeb.InvoiceDoc.Document{} = document, name) do
     name = name |> to_string() |> String.trim() |> String.slice(0, 50)
     name = if name == "", do: "Design", else: name
@@ -173,11 +128,8 @@ defmodule QuantumBilling.Templates do
   @doc """
   Creates a design from an exported layout file.
 
-  The file is parsed with the same parser and allowlist as a stored layout —
-  unknown blocks and options are dropped, entities are never expanded — and a
-  file that declares a DTD is refused outright. Image paths the current business
-  does not own (`keep?`, by default `DesignAssets.owned?/1`) are blanked, so a
-  file exported from another business cannot be used to show its letterhead.
+  Parsed with the same allowlist; DTDs are refused. Image paths this business
+  doesn't own are blanked.
   """
   def import_layout(xml, name, keep? \\ &QuantumBilling.DesignAssets.owned?/1)
 
@@ -217,13 +169,7 @@ defmodule QuantumBilling.Templates do
     end
   end
 
-  @doc """
-  Makes `template` the default, clearing the previous one.
-
-  A transaction because the partial unique index on `is_default` is not
-  deferrable: setting the new flag before clearing the old one violates it
-  mid-statement, so the two updates have to be ordered inside one transaction.
-  """
+  @doc "Makes `template` the default, clearing the previous one in one transaction."
   def set_default(%InvoiceTemplate{} = template) do
     Multi.new()
     |> Multi.update_all(
@@ -240,12 +186,7 @@ defmodule QuantumBilling.Templates do
     end
   end
 
-  @doc """
-  Archives a template so it stops appearing without losing what it recorded.
-
-  Used instead of deletion when invoices point at it: the row is the record of
-  which design they were issued under.
-  """
+  @doc "Archives a template without losing its record."
   def archive_template(%InvoiceTemplate{} = template) do
     template
     |> InvoiceTemplate.archive_changeset()
@@ -253,16 +194,7 @@ defmodule QuantumBilling.Templates do
     |> broadcast()
   end
 
-  @doc """
-  Moves a template to the Bin by archiving it.
-
-  It used to be removed outright when no invoice pointed at it and archived
-  otherwise. It is always archived now, so that a design deleted by mistake can
-  be brought back whichever of the two it was; `purge_template/2` is the delete
-  that cannot be undone.
-
-  `opts` may carry `:user_id`, recorded against the audit entry.
-  """
+  @doc "Moves a template to the Bin. `opts` may carry `:user_id` for the audit entry."
   def delete_template(template, opts \\ [])
 
   def delete_template(%InvoiceTemplate{archived_at: %DateTime{}} = template, _opts) do
@@ -276,15 +208,7 @@ defmodule QuantumBilling.Templates do
   end
 
   @doc """
-  Takes a template back out of the Bin.
-
-  Names are unique among live templates only, so the name an archived design
-  carries may have been taken since. It then comes back as "Name (restored)"
-  rather than failing: the point of restoring is to get the design back, and
-  it can be renamed afterwards.
-
-  It never comes back as the default — archiving cleared that flag, and another
-  design has been the default since.
+  Restores a template, renamed "Name (restored)" if the name was taken. Never as default.
   """
   def restore_template(%InvoiceTemplate{} = template, opts \\ []) do
     template
@@ -295,13 +219,7 @@ defmodule QuantumBilling.Templates do
     |> audited(:restore_invoice_template, opts)
   end
 
-  @doc """
-  Deletes an archived template for good.
-
-  Returns `{:error, :in_use}` while any invoice — binned ones included — was
-  issued under it, and `{:error, :not_in_bin}` for a template that has not been
-  archived first.
-  """
+  @doc "Deletes an archived template. Returns `{:error, :in_use}` or `{:error, :not_in_bin}`."
   def purge_template(template, opts \\ [])
 
   def purge_template(%InvoiceTemplate{archived_at: nil}, _opts), do: {:error, :not_in_bin}
@@ -332,21 +250,10 @@ defmodule QuantumBilling.Templates do
   defp audited(result, _action, _opts), do: result
 
   @doc """
-  What to render `invoice` with: its layout, its accent, and the logo.
+  What to render `invoice` with: `{layout, accent, logo}`.
 
-  ## Resolution order
-
-  Structure comes from the invoice's own frozen `layout_xml` when it has one,
-  then from the template it was issued under, then from the default, and finally
-  from the stock layout. The first step is what stops a template edit rewriting
-  documents that have already been sent.
-
-  Branding does *not* follow that order — the accent is read live from the
-  template and the logo live from the organisation, so a rebrand reaches every
-  invoice rather than only the next one.
-
-  An invoice issued before this column existed has no snapshot and falls through
-  to the default, which at that point is the layout it was printed with.
+  The layout comes from the invoice's snapshot, then its template, the default,
+  then the stock layout. The accent and logo are always read live.
   """
   @spec document_for(Invoice.t()) ::
           {QuantumBillingWeb.InvoiceDoc.Document.t(), String.t(), String.t() | nil}
@@ -370,13 +277,7 @@ defmodule QuantumBilling.Templates do
   defp template_of(%Invoice{template_id: nil}), do: nil
   defp template_of(%Invoice{template_id: id}), do: get_template(id)
 
-  @doc """
-  The parsed layout of a template.
-
-  A row whose XML no longer parses renders the stock layout rather than raising:
-  a saved invoice being unopenable is a worse failure than it being drawn with
-  the wrong design, and the changeset already refuses to *write* invalid XML.
-  """
+  @doc "The parsed layout of a template, or the stock layout if the XML no longer parses."
   def document_of(%InvoiceTemplate{layout_xml: xml}), do: parse_or_classic(xml)
 
   defp parse_or_classic(xml) do
@@ -402,7 +303,7 @@ defmodule QuantumBilling.Templates do
 
   defp referenced?(%InvoiceTemplate{id: nil}), do: false
 
-  # Includes binned invoices, which can be restored and need their design.
+  # Includes binned invoices, which may be restored.
   defp referenced?(%InvoiceTemplate{} = template) do
     if :template_id in Invoice.__schema__(:fields) do
       Repo.exists?(from i in Invoice, where: i.template_id == ^template.id)
@@ -419,7 +320,7 @@ defmodule QuantumBilling.Templates do
     free_name([name, "#{name} (restored)" | Enum.map(2..50, &"#{name} (restored #{&1})")], name)
   end
 
-  # Archived names don't count: the unique index covers live templates only.
+  # Archived names don't count.
   defp free_name(candidates, name) do
     taken = Repo.all(from t in InvoiceTemplate, where: is_nil(t.archived_at), select: t.name)
 

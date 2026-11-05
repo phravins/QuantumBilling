@@ -1,14 +1,7 @@
 defmodule QuantumBillingWeb.ClientsLive do
   @moduledoc """
-  The Clients list page: search, status filter, sortable columns, and
-  pagination over the full client base.
-
-  Clients come from `QuantumBilling.Clients`, which has nothing to return until
-  the multi-tenant Ecto schema lands. `mount/3` loads them once;
-  `handle_event/3` only ever updates raw filter/sort/page state, and `render/1`
-  re-derives the visible rows fresh on every render so there is a single source
-  of truth. The search, sort and pagination code below is already correct at
-  zero rows and needs no change when real records arrive.
+  The Clients list: search, status filter, sorting and pagination, all in
+  the database via `Clients.page/1`.
   """
   use QuantumBillingWeb, :live_view
 

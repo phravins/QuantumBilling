@@ -1,17 +1,10 @@
 defmodule QuantumBilling.Accounts.Invitation do
   @moduledoc """
-  An invitation to work in one business on this installation, for an address
-  that has no account yet. (Someone who already has an account is simply added
-  to the business; there is nothing for them to accept.)
+  An invitation to one business for an address with no account yet (existing
+  accounts are added directly). Registration is invite-only.
 
-  Registration is invite-only, so this is the only route to a second account.
-  The token is hashed before it is stored, for the same reason `UserToken`
-  hashes its own: whoever can read this table must not come away holding
-  working invitations.
-
-  An invitation is bound to the address it was sent to. Accepting it with a
-  different email would turn one invitation into an open door, which is the
-  thing being closed.
+  The token is stored hashed, and an invitation only works for the address it
+  was sent to.
   """
   use Ecto.Schema
 
@@ -44,12 +37,7 @@ defmodule QuantumBilling.Accounts.Invitation do
   @doc "How many days an invitation stays usable."
   def validity_days, do: @validity_days
 
-  @doc """
-  Builds an invitation, returning `{raw_token, changeset}`.
-
-  The raw token goes in the email and is never written down; only its hash is
-  stored, so the invitation cannot be reconstructed from the database.
-  """
+  @doc "Builds an invitation: `{raw_token, changeset}`. Only the token's hash is stored."
   def build(email, role, invited_by, %Business{} = business) when is_binary(email) do
     token = :crypto.strong_rand_bytes(@rand_size)
 
@@ -77,11 +65,7 @@ defmodule QuantumBilling.Accounts.Invitation do
   end
 
   @doc """
-  The query matching a usable invitation for `raw_token`.
-
-  Usable means: the hash matches, it has not been accepted, and it has not
-  expired. Returns `:error` for anything that is not even a token, so a
-  malformed value never reaches the database.
+  Query for a usable invitation (matching, unaccepted, unexpired), or `:error` for a malformed token.
   """
   def by_token_query(raw_token) when is_binary(raw_token) do
     case Base.url_decode64(raw_token, padding: false) do
@@ -102,11 +86,6 @@ defmodule QuantumBilling.Accounts.Invitation do
   end
 
   def by_token_query(_raw_token), do: :error
-
-  @doc "Marks an invitation accepted."
-  def accept_changeset(%__MODULE__{} = invitation) do
-    change(invitation, accepted_at: DateTime.utc_now() |> DateTime.truncate(:second))
-  end
 
   @doc "Whether this invitation can still be used."
   def pending?(%__MODULE__{accepted_at: nil, expires_at: expires_at}) do

@@ -1,40 +1,10 @@
 defmodule QuantumBillingWeb.ClientShowLive do
   @moduledoc """
-  One client: who they are, what they owe, and every invoice raised against
-  them.
+  One client: the full record, tiles for what they owe, and their invoice history.
 
-  ## Why this page exists
-
-  The Clients list had an eye icon on every row that navigated to
-  `/invoices?q=<name>` — the invoice list, filtered by a name search. An eye on
-  a directory row means "open this record", the way it does on the Invoices
-  list two pages over, so the icon promised a client and delivered a filtered
-  list of something else. The row menu already carried a separate "View
-  invoices" item doing exactly that, so the eye was both wrong and redundant.
-
-  There was nowhere else for it to point: `/clients/:id/edit` was the only way
-  into a client, which meant the only way to read one was to open it in a form
-  and be careful not to save. That is what this page fixes.
-
-  ## What it shows
-
-  The stored record in full — identity, contact, both addresses, commercial
-  terms, notes — and the invoice history underneath, paginated through
-  `Invoices.page/1` with its `:client` option rather than a second query of its
-  own. See `Invoices.page/1` on why that option matches an unlinked invoice by
-  name: a client whose invoices were typed rather than picked would otherwise
-  read as having none.
-
-  The tiles across the top are deliberately derived from what is already
-  loaded — the client row and the page's own `total` — so opening a client
-  costs the two queries the page already makes and no aggregate on top.
-
-  ## Live updates
-
-  Subscribed to both topics. An edit in another window rewrites the record here
-  (but only for *this* client), and an invoice written anywhere re-reads the
-  history, because whether a new invoice belongs on this screen is a question
-  about the filter rather than about the row.
+  History comes from `Invoices.page/1` with `:client`, which also matches
+  unlinked invoices by name. Tiles use already-loaded data. Edits to this
+  client and any invoice change update the page live.
   """
   use QuantumBillingWeb, :live_view
 

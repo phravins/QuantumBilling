@@ -1,16 +1,9 @@
 defmodule QuantumBilling.ApiKeys do
   @moduledoc """
-  Keys for the external API, and the idempotency records that make its writes
-  safe to retry.
+  External API keys and the idempotency records that make writes safe to retry.
 
-  Keys are issued by a business's owner only — see
-  `QuantumBillingWeb.SettingsLive.ApiKeys` — and every issue and revocation is
-  audited. A key belongs to one business and is a credential onto all of that
-  business's books within its scopes, so it is treated with that weight.
-
-  Every function that lists or changes keys takes the business, and only ever
-  sees that business's keys: an owner of one firm on a shared installation must
-  not be able to read, or revoke, another firm's.
+  Only owners issue keys, and every issue and revocation is audited. Every
+  function is scoped to one business and sees only that business's keys.
   """
 
   import Ecto.Query, warn: false
@@ -21,16 +14,11 @@ defmodule QuantumBilling.ApiKeys do
   alias QuantumBilling.Businesses.Business
   alias QuantumBilling.Repo
 
-  # `last_used_at` is for an owner deciding whether a key is still in use, so a
-  # minute's precision is plenty — and writing it on every request would turn
-  # each API read into a database write.
+  # `last_used_at` is updated at most once a minute, so reads don't all become writes.
   @touch_interval_seconds 60
 
-  # How long a write's response is kept for replay. Long enough to cover any
-  # sensible retry policy, short enough that the table stays small.
+  # How long a write's response is kept for replay.
   @idempotency_ttl_seconds 24 * 60 * 60
-
-  ## Keys
 
   @doc "Every key of `business`, newest first."
   def list_keys(%Business{id: business_id}) do
@@ -57,10 +45,7 @@ defmodule QuantumBilling.ApiKeys do
   end
 
   @doc """
-  Issues a key, returning `{:ok, %{key: key, raw: raw}}`.
-
-  `raw` is the only time the full key exists outside the system it is given to.
-  It is returned to be shown once and is never logged or stored.
+  Issues a key: `{:ok, %{key: key, raw: raw}}`. `raw` is shown once and never stored or logged.
   """
   def create_key(attrs, %User{} = owner, %Business{} = business) do
     {raw, changeset} = ApiKey.build(attrs, owner, business)
@@ -96,16 +81,9 @@ defmodule QuantumBilling.ApiKeys do
   end
 
   @doc """
-  The usable key for a raw bearer token, or `:error`.
-
-  `:error` is the single answer for a malformed, unknown, revoked or expired
-  key. Telling those apart to the caller would tell an attacker which guesses
-  were close.
+  The usable key for a raw bearer token, or `:error` for any malformed, unknown, revoked or expired key.
   """
-  #
-  # The key comes back with its business, which must still be active: archiving
-  # a business takes it off every picker and out of every sweep, and its keys
-  # stop with it.
+  # The key's business must still be active; archiving a business stops its keys.
   def authenticate(raw) do
     with true <- ApiKey.well_formed?(raw),
          %ApiKey{} = key <-
@@ -138,24 +116,16 @@ defmodule QuantumBilling.ApiKeys do
     :ok
   end
 
-  ## Idempotency
-
   @doc """
-  Claims an idempotency key for a write about to be performed.
+  Claims an idempotency key for a write.
 
-    * `{:proceed, record}` — first sight of this key: do the work, then call
-      `complete_idempotent/3` (or `abandon_idempotent/1` if it failed in a way
-      worth retrying).
-    * `{:replay, status, body}` — this exact request was already handled;
-      return the stored response instead of doing it again.
-    * `{:error, :in_progress}` — the first request with this key has not
-      finished yet.
-    * `{:error, :mismatch}` — the key was used for a *different* request.
-      Replaying that response would answer a question nobody asked.
+    * `{:proceed, record}` - first use: do the work, then `complete_idempotent/3`
+      (or `abandon_idempotent/1` on a retryable failure).
+    * `{:replay, status, body}` - already handled: return the stored response.
+    * `{:error, :in_progress}` - the first request hasn't finished.
+    * `{:error, :mismatch}` - the key was used for a different request.
 
-  The claim is an insert against a unique index, so of two simultaneous
-  retries exactly one proceeds — which is the whole point when the write
-  consumes a number in a statutory invoice series.
+  A unique index makes exactly one of two simultaneous retries proceed.
   """
   def begin_idempotent(%ApiKey{} = api_key, key, request_hash)
       when is_binary(key) and is_binary(request_hash) do
@@ -188,19 +158,14 @@ defmodule QuantumBilling.ApiKeys do
   end
 
   @doc """
-  Releases a claim, so the same key can be retried.
-
-  For failures that were not the request's fault — a crash, a timeout. A
-  validation error is the request's fault and is stored instead: sending it
-  again will fail the same way, and should say so the same way.
+  Releases a claim so the key can be retried. For crashes and timeouts, not validation errors.
   """
   def abandon_idempotent(%IdempotencyKey{} = record) do
     Repo.delete_all(from i in IdempotencyKey, where: i.id == ^record.id)
     :ok
   end
 
-  # A record past its lifetime is treated as never having existed, so a key
-  # reused after a day starts afresh rather than replaying yesterday.
+  # An expired record counts as absent, so a reused key starts afresh.
   defp expire_idempotent(api_key, key) do
     cutoff = DateTime.add(DateTime.utc_now(), -@idempotency_ttl_seconds, :second)
 
@@ -210,10 +175,7 @@ defmodule QuantumBilling.ApiKeys do
     )
   end
 
-  @doc """
-  Deletes `business`'s idempotency records past their lifetime. Run daily, by
-  the per-business sweep.
-  """
+  @doc "Deletes `business`'s expired idempotency records. Run daily."
   def prune_idempotency_keys(%Business{id: business_id}) do
     cutoff = DateTime.add(DateTime.utc_now(), -@idempotency_ttl_seconds, :second)
     keys = from k in ApiKey, where: k.business_id == ^business_id, select: k.id

@@ -1,14 +1,9 @@
 defmodule QuantumBilling.Invoices.InvoiceItem do
   @moduledoc """
-  One line on an invoice.
+  One invoice line, with its own GST rate (one invoice can mix slabs).
 
-  Each line carries its own GST rate rather than inheriting an invoice-wide
-  one — a single invoice can legitimately mix slabs (18% on services, 5% on
-  goods), and the tax has to be worked out per line for that to come out right.
-
-  `rate` is typed in rupees and held in paise (`QuantumBilling.Money.Paise`);
-  `amount` is worked out here, also in paise. `quantity` carries up to three
-  decimal places, so 2.5 kg or 1.75 hours can be billed.
+  `rate` is typed in rupees and held in paise; `amount` is computed in paise.
+  `quantity` allows three decimal places.
   """
   use Ecto.Schema
 

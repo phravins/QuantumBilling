@@ -1,25 +1,10 @@
 defmodule QuantumBilling.Encrypted.Secret do
   @moduledoc """
-  An Ecto type for the credentials the organisation hands to other systems:
-  the SMTP password, the Razorpay key secret, the IRP password and the webhook
-  signing secret.
+  An Ecto type for credentials the app presents to other systems (SMTP,
+  Razorpay, IRP, webhook signing), encrypted with `SECRETS_ENCRYPTION_KEY`.
 
-  These are not passwords to check — they have to be presented verbatim to a
-  mail relay or an API, so they cannot be hashed. Encrypting them means the
-  settings table is no longer a list of usable credentials for anyone who can
-  read the database: a dump on its own gets an attacker nothing without
-  `SECRETS_ENCRYPTION_KEY` from the application environment.
-
-  Separate from `Encrypted.Binary`, which holds two-factor secrets, in both key
-  and additional authenticated data. Rotating one does not invalidate the
-  other, and neither type can decrypt the other's columns.
-
-  ## Blank values
-
-  An empty string means "not configured" rather than "a secret that happens to
-  be empty", so it is stored as `NULL`. Otherwise clearing a field in the
-  settings form would write ciphertext that decrypts to `""`, and every
-  `nil`-check downstream would start seeing a configured credential.
+  Keyed separately from `Encrypted.Binary`. An empty string is stored as `NULL`,
+  so a cleared field means "not configured".
   """
   use Ecto.Type
 

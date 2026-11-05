@@ -1,27 +1,9 @@
 defmodule QuantumBilling.EWayBillNotifier do
   @moduledoc """
-  Tells the business when an e-way bill has been raised.
+  Emails the business, not the customer, when an e-way bill is raised.
 
-  ## Why this exists
-
-  `organization_settings.notify_ewb_generated` was saved by the notifications
-  form and read by nothing: a switch that had never been connected to anything.
-  It now gates this.
-
-  ## Who it goes to
-
-  The organisation's own address, not the customer's. An e-way bill is a
-  transport document between the consignor, the transporter and the check-post
-  — the buyer has no use for it, and mailing it to them would put a number
-  they can cancel in their inbox.
-
-  ## Queued, never inline
-
-  Same reasoning as `QuantumBilling.InvoiceNotifier`: generating a bill already
-  involves a call to the NIC portal, and a slow relay on top of that would
-  stall the click. Failure here must never fail the bill — the bill exists at
-  the government's end whatever this module does — so `notify_generated/1`
-  always returns `:ok`-ish and logs instead of raising.
+  Gated by `notify_ewb_generated` and queued like `InvoiceNotifier`. A failure
+  here never fails the bill: it is logged, not raised.
   """
 
   import Swoosh.Email
@@ -33,12 +15,7 @@ defmodule QuantumBilling.EWayBillNotifier do
   alias QuantumBilling.Settings
   alias QuantumBilling.Workers.EmailWorker
 
-  @doc """
-  Queues the "e-way bill generated" notice, if the setting is on.
-
-  Returns `{:ok, delivery}`, `{:ok, :skipped}` when the notification is turned
-  off or the organisation has no address on file, or `{:error, reason}`.
-  """
+  @doc "Queues the notice if enabled: `{:ok, delivery}`, `{:ok, :skipped}` or `{:error, reason}`."
   def notify_generated(%EWayBill{} = bill) do
     organization = Settings.get_organization()
 
@@ -70,12 +47,7 @@ defmodule QuantumBilling.EWayBillNotifier do
     end
   end
 
-  @doc """
-  The finished `Swoosh.Email` for a generated bill.
-
-  Public for the same reason `InvoiceNotifier.build_email/2` is: the worker
-  composes and sends in one step.
-  """
+  @doc "The finished `Swoosh.Email` for a generated bill. Used by the mail worker."
   def build_email(recipient, %EWayBill{} = bill) do
     organization = Settings.get_organization()
     {from_name, from_email} = Mail.sender(organization, bill.invoice && bill.invoice.company_name)

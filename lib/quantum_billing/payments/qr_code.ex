@@ -1,22 +1,9 @@
 defmodule QuantumBilling.Payments.QRCode do
   @moduledoc """
-  QR codes for UPI payment and for the government's signed e-invoice payload.
+  QR codes for UPI payment and the signed e-invoice payload.
 
-  ## Two things had to be true for these to work
-
-  `EQRCode.encode/1` returns the matrix itself and raises on input it cannot
-  encode — it never returns `{:ok, _}`. Matching on `{:ok, qr}` therefore fell
-  through to the catch-all on every single call, and every QR on the invoice
-  page, the public payment page and the dashboard rendered as an empty string.
-  That is fixed here, and the encode is wrapped rather than matched, because
-  raising is how this library reports "too long" and "nil".
-
-  The payment QR also has to be a *UPI intent*, not a picture of an email
-  address. It used to fall back to the organisation's contact address as the
-  payee VPA, which every UPI app rejects: a VPA is `name@handle` issued by a
-  bank or PSP, and `accounts@company.com` is not one. A QR that scans into an
-  error is worse than no QR, so without a configured VPA
-  (Settings › Integrations) none is drawn and the page says why.
+  `EQRCode.encode/1` raises on bad input, so it is wrapped. A payment QR needs a
+  real UPI VPA from Settings › Integrations; without one, none is drawn.
   """
 
   require Logger
@@ -30,11 +17,7 @@ defmodule QuantumBilling.Payments.QRCode do
   @vpa_format ~r/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/
 
   @doc """
-  The UPI intent URI for an invoice, or `{:error, reason}`.
-
-  Public because the public payment page also offers it as a link — on a phone
-  the link opens the UPI app directly, which is more useful than a QR code the
-  same phone would have to photograph.
+  The UPI intent URI for an invoice, or `{:error, reason}`. Also offered as a link on phones.
   """
   def upi_uri(invoice, organization \\ nil)
 
@@ -67,12 +50,7 @@ defmodule QuantumBilling.Payments.QRCode do
 
   def upi_uri(_invoice, _organization), do: {:error, :no_upi_id}
 
-  @doc """
-  Whether a payment QR can be drawn at all.
-
-  Lets a page explain the absence — "add a UPI ID in Settings" — instead of
-  leaving a blank square where a QR should be.
-  """
+  @doc "Whether a payment QR can be drawn, so a page can explain why not."
   def upi_configured?(organization \\ nil)
 
   def upi_configured?(nil), do: upi_configured?(Settings.get_organization())
@@ -91,11 +69,7 @@ defmodule QuantumBilling.Payments.QRCode do
   end
 
   @doc """
-  An inline SVG QR of any string — a signed e-invoice payload, a URL.
-
-  Returns `""` for content that cannot be encoded (empty, or past the format's
-  2,952-character ceiling) rather than taking the page down with it: a QR is
-  decoration on a page that has the same information in text beside it.
+  An inline SVG QR of any string, or `""` if it can't be encoded (empty or over 2,952 characters).
   """
   def generate_svg(content, opts \\ [])
 

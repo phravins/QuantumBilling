@@ -1,9 +1,6 @@
 defmodule QuantumBillingWeb.ReportsController do
   @moduledoc """
-  Report downloads, linked from the Dashboard.
-
-  The export takes the Reports filter parameters (the Dashboard links pass this
-  year), so the file matches the tax summary the Dashboard shows.
+  Report downloads linked from the Dashboard, using the same filters as its tax summary.
   """
   use QuantumBillingWeb, :controller
 
@@ -29,15 +26,7 @@ defmodule QuantumBillingWeb.ReportsController do
     "Grand Total"
   ]
 
-  @doc """
-  Streams the filtered report as a CSV download.
-
-  A sales register is sent as chunks straight from a database cursor: the rows
-  never all exist at once, in the database result, in this process, or in the
-  response buffer. Building the whole file in memory first — which is what
-  `send_download/3` does — is fine for a summary of a handful of rows and is a
-  way to run a server out of memory on a year of invoices.
-  """
+  @doc "Streams the filtered report as CSV, straight from a database cursor."
   def export(conn, params) do
     filters = filters_from(params)
 

@@ -1,15 +1,7 @@
 defmodule QuantumBillingWeb.EWayBillDocumentTest do
   @moduledoc """
-  The official e-way bill, end to end: the routes that serve it and what the
-  page an officer reads actually says.
-
-  Generating a bill used to write a number onto the invoice and nothing else —
-  the list page's View and Print buttons both went to a filtered invoice list,
-  so Form GST EWB-01 existed nowhere in the application.
-
-  The document is now addressed by the **bill's** id rather than the invoice's,
-  because an invoice may carry a cancelled bill and the one raised to replace
-  it, and a URL meaning "the invoice's bill" could not name which.
+  The official e-way bill (Form GST EWB-01): its routes and contents. Addressed
+  by the bill's id, since an invoice can carry several bills.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

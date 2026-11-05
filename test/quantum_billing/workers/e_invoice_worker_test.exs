@@ -1,13 +1,7 @@
 defmodule QuantumBilling.Workers.EInvoiceWorkerTest do
   @moduledoc """
-  Registering an invoice with the Invoice Registration Portal, which had no
-  test at all.
-
-  What matters here is not the happy path — that is the IRP client's job — but
-  the three ways this worker must refuse to act: an invoice that has gone, an
-  invoice already carrying an IRN, and a job with nothing to work on. A
-  duplicate registration is a compliance problem rather than a harmless repeat,
-  so "already registered" has to end the job rather than retry it.
+  IRP registration worker refusals: a deleted invoice, one with an IRN, or no
+  work. "Already registered" ends the job instead of retrying.
   """
   use QuantumBilling.DataCase, async: false
 

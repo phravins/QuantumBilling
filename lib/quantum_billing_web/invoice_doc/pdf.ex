@@ -1,35 +1,11 @@
 defmodule QuantumBillingWeb.InvoiceDoc.PDF do
   @moduledoc """
-  Turns an invoice's HTML document into an actual PDF.
+  Turns an invoice's HTML document into a PDF with headless Chromium.
 
-  ## Why this exists
-
-  `generate_pdf/1` used to return the HTML string unchanged, and the mailer
-  attached it as `INV-1234.pdf`. What customers received was an HTML file with
-  a PDF extension: some mail clients refuse to open it, some open it as text,
-  and printing it gives whatever the client felt like. The attachment on a tax
-  document has to be the document.
-
-  ## How
-
-  Headless Chromium prints the same HTML the print view shows, honouring the
-  `@page` size and the print stylesheet the layout already carries — so the PDF
-  and the browser's own "Save as PDF" produce the same page, which is the whole
-  point of having one renderer.
-
-  The binary is found in this order: the `PDF_CHROME_PATH` environment
-  variable, then `:pdf_chrome_path` in application config, then the usual names
-  on `PATH`. When none is present, `render/2` returns `{:error, :no_renderer}`
-  and callers fall back to something honest — the mailer attaches HTML, named
-  `.html`, rather than pretending.
-
-  ## Sandboxing
-
-  Chromium's own sandbox needs kernel privileges a container usually withholds,
-  so it is disabled here. That is safe *because of what is being rendered*: our
-  own template, from our own database, with no scripts and no network fetches
-  (`--disable-*` flags below), reading one file from a directory this process
-  just created. It is not a browser someone can point at a page they chose.
+  The browser comes from `PDF_CHROME_PATH`, then `:pdf_chrome_path` config,
+  then `PATH`; without one `render/2` returns `{:error, :no_renderer}`.
+  Chromium's sandbox is disabled, which is safe only because it renders our own
+  template with scripts and network turned off.
   """
 
   require Logger
@@ -39,13 +15,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
   @doc """
   Renders `html` to a PDF binary.
 
-  Returns `{:ok, pdf}`, or `{:error, reason}` — `:no_renderer` when no browser
-  is installed, `:timeout` when one hangs, `{:exit, status, output}` when it
-  fails outright.
-
-  ## Options
-
-    * `:timeout` — milliseconds to wait for the browser (default 20,000)
+  Returns `{:ok, pdf}` or `{:error, reason}`: `:no_renderer`, `:timeout` or
+  `{:exit, status, output}`. Option: `:timeout` in ms (default 20,000).
   """
   def render(html, opts \\ []) when is_binary(html) do
     case executable() do
@@ -75,19 +46,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
     end
   end
 
-  @doc """
-  Whether a PDF can be produced at all.
-
-  Lets a page offer "Download PDF" only when it would work, and lets the mailer
-  decide what to attach before it builds the message.
-  """
+  @doc "Whether a PDF can be produced at all."
   def available?, do: executable() != nil
 
   @doc """
-  The browser this will use, or `nil`.
-
-  Looked up per call rather than cached in a module attribute: a release is
-  compiled somewhere that is not where it runs.
+  The browser to use, or `nil`. Looked up per call, since releases run elsewhere than they build.
   """
   def executable do
     configured =

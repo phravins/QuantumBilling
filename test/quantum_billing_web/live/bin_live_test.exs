@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.BinLiveTest do
   @moduledoc """
-  The Bin page: what has been deleted, and the two things that can be done
-  with it.
-
-  Rows are addressed by id — `#bin-invoice-<id>`, `#bin-recurring-<id>`,
-  `#bin-template-<id>` — and never by searching the page for a name. The bell in
-  the layout lists a notification for every invoice created, naming its number
-  and its client, so text on the page says nothing about what the table holds.
+  The Bin page: restore and permanent delete. Rows are found by id, because the
+  notification bell also prints invoice numbers and client names.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

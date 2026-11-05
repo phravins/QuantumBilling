@@ -2,27 +2,10 @@ defmodule QuantumBilling.Invoices.Invoice do
   @moduledoc """
   A GST invoice.
 
-  ## Intra-state versus inter-state
-
-  Which taxes apply is decided by comparing the place of supply against the
-  issuing company's state. Same state, and the tax splits into CGST and SGST;
-  different states, and the whole amount is IGST. Both values come from
-  `EWayBillForm.states()`, the same list `Client.billing_state` and
-  `Organization.state` already use, so this is a plain comparison rather than
-  anything that needs its own lookup.
-
-  ## The totals are stored, not derived on read
-
-  `recalculate/1` writes the totals into the changeset at save time. A saved
-  invoice must keep showing what was actually billed even if this logic is
-  changed later.
-
-  ## The Bin
-
-  Deleting an invoice sets `deleted_at` rather than removing the row. A binned
-  invoice is out of every list, total, report and export — `kept/1` is the one
-  filter all of them go through — but its number stays consumed and everything
-  that hangs off it stays where it is, so restoring it is exact.
+  Same state as the issuing company splits tax into CGST and SGST; otherwise
+  it is IGST. Totals are computed by `recalculate/1` at save time and stored,
+  so an invoice keeps what was billed. Deleting sets `deleted_at` (the Bin);
+  `kept/1` filters binned invoices out of every read.
   """
   use Ecto.Schema
 
@@ -99,7 +82,7 @@ defmodule QuantumBilling.Invoices.Invoice do
 
     field :status, :string, default: "Draft"
 
-    # Government E-Invoice (IRP) Details
+    # Government e-invoice (IRP)
     field :irn, :string
     field :ack_number, :string
     field :ack_date, :utc_datetime
@@ -110,18 +93,18 @@ defmodule QuantumBilling.Invoices.Invoice do
 
     has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
-    # Multi-Currency & LUT Export Details
+    # Multi-currency and LUT export
     field :currency, :string, default: "INR"
     field :exchange_rate, :decimal, default: 1.0
     field :export_type, :string, default: "DOMESTIC"
     field :lut_number, :string
 
-    # Razorpay / UPI Details
+    # Razorpay / UPI
     field :razorpay_payment_link_id, :string
     field :razorpay_payment_url, :string
     field :razorpay_payment_id, :string
 
-    # Public Client Portal Access Token
+    # Token for the public payment page
     field :public_token, :string
 
     # The design this was issued under, frozen at issue.
@@ -137,10 +120,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     timestamps(type: :utc_datetime)
   end
 
-  # No IRN/acknowledgement or Razorpay fields: those are written only from the
-  # IRP's and Razorpay's answers (einvoice_changeset/2, Payments), never from a
-  # form, so a crafted submission cannot plant a fake IRN or payment.
-  # What a person (through the form) or an integration (through the API) may set.
+  # Fields a person (form) or integration (API) may set. IRN and Razorpay
+  # fields are excluded: only the IRP's and Razorpay's answers write them.
   @castable ~w(invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
@@ -148,23 +129,15 @@ defmodule QuantumBilling.Invoices.Invoice do
                remarks terms template_id
                currency exchange_rate export_type lut_number)a
 
-  # What only the application sets: the number from the series, the issuing
-  # company as it stood, the frozen layout, the status. Passed to `changeset/3`
-  # as `trusted`, never read from params — a crafted form post could otherwise
-  # mark an invoice Paid with no payment behind it, renumber it out of series,
-  # or issue it under another company's GSTIN.
+  # Set only by the application (number, company snapshot, layout, status) and
+  # passed as `trusted`, never read from params.
   @trusted ~w(invoice_number company_name company_address company_gstin company_state
               status template_id layout_xml)a
 
   @doc """
   Builds an invoice changeset, including its line items.
 
-  `sort_param` and `drop_param` are what let the form add and remove item rows
-  before anything is saved.
-
-  `attrs` is what the caller sent and is cast against the fields a person may
-  set. `trusted` is what the application decided — see `@trusted` — and is
-  applied as-is, after `attrs`, so it wins.
+  `attrs` is cast against `@permitted`; `trusted` is applied afterwards and wins.
   """
   def changeset(invoice, attrs, trusted \\ %{}) do
     invoice
@@ -190,14 +163,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     )
   end
 
-  @doc """
-  Narrows `query` to invoices that are not in the Bin.
-
-  Every read of invoices starts here. A binned invoice that still showed up in
-  a total or a GSTR-1 export would be worse than one that could not be binned
-  at all, so the rule lives in one place rather than in a `where` each caller
-  has to remember.
-  """
+  @doc "Narrows `query` to invoices not in the Bin. Every invoice read starts here."
   def kept(query \\ __MODULE__) do
     from i in query, where: is_nil(i.deleted_at)
   end
@@ -220,10 +186,7 @@ defmodule QuantumBilling.Invoices.Invoice do
   def demo_irn?(%__MODULE__{irn: irn, irn_mode: mode}), do: is_binary(irn) and mode != "live"
 
   @doc """
-  Records the IRP's answer on the invoice.
-
-  Not part of `changeset/2`: `irn_mode` is set from the IRP client, never from
-  form input.
+  Records the IRP's answer on the invoice. `irn_mode` comes from the IRP client, never a form.
   """
   def einvoice_changeset(invoice, attrs) do
     invoice
@@ -253,12 +216,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  @doc """
-  Writes the computed totals onto the changeset.
-
-  Public so the form can call it on every keystroke to drive the live summary
-  panel without saving anything.
-  """
+  @doc "Writes the computed totals onto the changeset. The form calls it for the live summary."
   def recalculate(changeset) do
     items = get_field(changeset, :items) || []
     totals = totals(items, intra_state?(changeset))
@@ -275,12 +233,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> put_change(:grand_total, totals.grand_total)
   end
 
-  @doc """
-  The totals for a set of items.
-
-  `intra_state?` decides whether the tax splits into CGST/SGST or lands
-  entirely in IGST.
-  """
+  @doc "The totals for `items`; `intra_state?` picks CGST/SGST or IGST."
   def totals(items, intra_state?) do
     items = Enum.reject(items, &is_nil/1)
 
@@ -319,12 +272,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     }
   end
 
-  @doc """
-  Whether the supply is within the issuing company's own state.
-
-  Defaults to intra-state when the company's state is not configured — a fresh
-  installation has no organisation set up yet, and CGST/SGST is the common case.
-  """
+  @doc "Whether the supply is within the company's own state. Intra-state if the state is unset."
   def intra_state?(%Ecto.Changeset{} = changeset) do
     intra_state?(get_field(changeset, :place_of_supply), get_field(changeset, :company_state))
   end
@@ -359,15 +307,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  @doc """
-  A fresh token for the public `/pay/:token` page.
-
-  The token is the only thing standing between a URL and an invoice's client
-  name, GSTIN, address and amounts, so it is a bearer credential and comes from
-  the cryptographic generator. 24 random bytes is 192 bits — far past guessing,
-  and past reconstructing from any number of issued tokens, which is what the
-  VM's `Enum.random/1` generator would not have survived.
-  """
+  @doc "A fresh 192-bit random token for the public payment page. It is a bearer credential."
   def generate_public_token do
     "inv_" <> Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
   end

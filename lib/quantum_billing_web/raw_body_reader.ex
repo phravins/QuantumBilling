@@ -1,18 +1,7 @@
 defmodule QuantumBillingWeb.RawBodyReader do
   @moduledoc """
-  Keeps the exact bytes of a webhook request body so its signature can be
-  checked.
-
-  A signature covers the body as it was sent. Once `Plug.Parsers` has decoded
-  the JSON, re-encoding the params gives a different document — different key
-  order, different number formatting, different escaping — and its HMAC does
-  not match. Verification against re-encoded params therefore fails for honest
-  requests and, worse, invites the "if it doesn't match, skip the check"
-  workaround.
-
-  Only webhook paths are captured. Holding a copy of every uploaded file and
-  every form submission in memory, for requests that will never be verified,
-  is a memory cost with no purpose.
+  Keeps the raw body of webhook requests so signatures can be checked
+  (re-encoded params would not match). Other paths are not captured.
   """
 
   @capture_prefixes ["/api/webhooks"]
@@ -20,13 +9,7 @@ defmodule QuantumBillingWeb.RawBodyReader do
   # Caps memory spent buffering; webhooks are a few kilobytes.
   @max_capture_bytes 1_000_000
 
-  @doc """
-  Reads the body, stashing it in `conn.private[:raw_body]` on webhook paths.
-
-  Chunked reads are accumulated: `Plug.Conn.read_body/2` returns `:more` for a
-  body larger than its read length, and keeping only the first chunk would
-  produce a signature mismatch on exactly the large payloads that matter.
-  """
+  @doc "Reads the body, keeping all chunks in `conn.private[:raw_body]` on webhook paths."
   def read_body(conn, opts) do
     if capture?(conn) do
       read_and_capture(conn, opts, [], 0)

@@ -1,12 +1,8 @@
 defmodule QuantumBillingWeb.BusinessController do
   @moduledoc """
-  Switches the business a browser works in.
-
-  A controller rather than a LiveView event because the choice lives in the
-  session cookie, and only an HTTP response can write that. Every tab of the
-  browser follows: see `QuantumBillingWeb.UserAuth.broadcast_business_switch/2`.
-  This tab goes on to `QuantumBillingWeb.BusinessReadyLive`, which names the
-  company now open, so no flash is needed.
+  Switches the browser's business. A controller because the choice is in the
+  session; other tabs follow (`UserAuth.broadcast_business_switch/2`), and this
+  one goes on to `BusinessReadyLive`.
   """
   use QuantumBillingWeb, :controller
 

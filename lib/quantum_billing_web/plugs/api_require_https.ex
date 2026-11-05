@@ -1,19 +1,10 @@
 defmodule QuantumBillingWeb.Plugs.ApiRequireHttps do
   @moduledoc """
-  Refuses API calls made over plain http, instead of redirecting them.
+  Refuses plain-http API calls instead of redirecting them: by the time a
+  redirect is sent, the key has already crossed in clear.
 
-  The browser side of the application redirects http to https, and for a
-  browser that is right. For an API client it is wrong: by the time a redirect
-  is sent, the request — key and all — has already crossed the network in
-  clear, and a client that follows the redirect then *works*, so nobody ever
-  notices that every call is exposing the key. A refusal fails loudly, once,
-  and gets the configuration fixed.
-
-  `config/prod.exs` excludes `/api/v1` from `force_ssl`'s redirect so that
-  this plug is what answers. `rewrite_on` still applies there, so behind a TLS
-  proxy that sets `x-forwarded-proto` the scheme seen here is the real one.
-
-  Off outside production, which runs over http.
+  `config/prod.exs` excludes `/api/v1` from `force_ssl` so this plug answers.
+  Off outside production.
   """
 
   alias QuantumBillingWeb.API.Error
@@ -34,12 +25,7 @@ defmodule QuantumBillingWeb.Plugs.ApiRequireHttps do
     end
   end
 
-  @doc """
-  Whether a request is an API call, for `force_ssl`'s `:exclude`.
-
-  Takes the conn because that is what `Plug.SSL`'s `{:conn, mfa}` exclusion
-  passes.
-  """
+  @doc "Whether a request is an API call, for `force_ssl`'s `:exclude` (`{:conn, mfa}`)."
   def api_request?(%Plug.Conn{path_info: ["api", "v1" | _rest]}), do: true
   def api_request?(_conn), do: false
 end

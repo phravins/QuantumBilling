@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.API.TenancyTest do
   @moduledoc """
-  A key reaches its own business's books and no other's.
-
-  Each business keeps its records in a schema of its own, where ids start again
-  from 1 — so business 1's invoice 5 and business 2's invoice 5 are different
-  invoices with the same id. These tests make the ids collide on purpose.
-
-  Not async: creating a business runs DDL.
+  A key reaches only its own business. Ids repeat across business schemas, so
+  these make them collide on purpose. Not async: creating a business runs DDL.
   """
   use QuantumBillingWeb.ConnCase, async: false
 

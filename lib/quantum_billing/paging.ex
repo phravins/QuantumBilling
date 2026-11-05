@@ -1,28 +1,10 @@
 defmodule QuantumBilling.Paging do
   @moduledoc """
-  One page of a list query, for the Previous / Next pager.
+  One page of a list query, for the Previous/Next pager.
 
-  ## Why there is no count
-
-  The list pages used to count every matching row before reading the page,
-  only to know whether Next should be enabled — the number was never shown.
-  On a million invoices that count was a hundred of the hundred and five
-  milliseconds the page took. A page here reads one row more than it shows
-  instead: if that row exists, there is a next page.
-
-  A page that comes back empty past the first — its last row was deleted, or
-  the rows per page grew — is counted once and read again at the real last
-  page, so the reader is never left on a blank page.
-
-  Pass `count: true` where the total is displayed; the result then carries
-  `:total` and `:total_pages` as well.
-
-  ## Why pages stop at `max_page/0`
-
-  The page number arrives from the browser and skipping rows costs time in
-  proportion to how many are skipped, so it is capped. The pager only steps
-  one page at a time, and a person looking for something further than a
-  thousand pages in searches for it instead.
+  Reads one row more than it shows to know if there's a next page, rather than
+  counting (pass `count: true` where the total is shown). An empty page past
+  the first is re-read at the real last page. Pages are capped at `max_page/0`.
   """
 
   import Ecto.Query, warn: false
@@ -35,17 +17,12 @@ defmodule QuantumBilling.Paging do
   def max_page, do: @max_page
 
   @doc """
-  Reads one page of `query`, ordered by `order`.
+  Reads one page of `query` ordered by `order`: `%{rows:, page:, per_page:, has_next?:}`.
 
-  `query` carries the filters only; `order` adds the ordering, so the
-  occasional count runs without it. Returns
-  `%{rows:, page:, per_page:, has_next?:}`.
-
-  ## Options
-
-    * `:per_page` — required, already clamped by the caller
-    * `:page` — defaults to 1; clamped to `1..max_page/0`
-    * `:count` — also return `:total` and `:total_pages`
+  Options:
+    * `:per_page` - required, already clamped by the caller
+    * `:page` - defaults to 1; clamped to `1..max_page/0`
+    * `:count` - also return `:total` and `:total_pages`
   """
   def page(query, order, opts) when is_function(order, 1) do
     per_page = Keyword.fetch!(opts, :per_page)
@@ -59,12 +36,8 @@ defmodule QuantumBilling.Paging do
   end
 
   @doc """
-  Reads `per_page` rows of `query` with ids below `before_id` (or the newest,
-  for `nil`), newest id first. Returns `%{rows:, per_page:, has_next?:}`.
-
-  Keyset paging, for the API: it costs the same at any depth, and a row
-  inserted while a caller is paging cannot shift the next page. The id
-  compared is the query's first binding's.
+  Keyset paging for the API: `per_page` rows with ids below `before_id` (or the
+  newest, for `nil`), newest first. Returns `%{rows:, per_page:, has_next?:}`.
   """
   def keyset(query, before_id, per_page) when is_integer(per_page) and per_page > 0 do
     query = if before_id, do: where(query, [row], row.id < ^before_id), else: query

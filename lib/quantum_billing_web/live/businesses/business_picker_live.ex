@@ -1,21 +1,10 @@
 defmodule QuantumBillingWeb.BusinessPickerLive do
   @moduledoc """
-  Every business the signed-in user belongs to, to choose which to work in.
+  Choose which business to work in (a focus screen, no sidebar).
 
-  Where a user lands when they belong to several and have not chosen, and
-  reachable from the top bar at any time. A focus screen, without the app
-  sidebar: pick a card, then Continue, which posts to
-  `QuantumBillingWeb.BusinessController.switch/2`. That leads on to
-  `QuantumBillingWeb.BusinessReadyLive`, step two of two.
-
-  Each card shows the business's own logo when it has uploaded one, and
-  otherwise one of the buildings from `QuantumBillingWeb.Illustrations`.
-  Logos are inlined as data URIs: `/uploads/` only serves the logo of the
-  business the browser is working in, and a picker shows all of them.
-
-  Owners also rename and archive their businesses here, and restore archived
-  ones. Each of those reloads the page, so the top bar's list of businesses —
-  read once, when the page mounts — follows too.
+  Continue posts to `BusinessController.switch/2`, then `BusinessReadyLive`.
+  Cards show the business logo inlined (`/uploads` serves only the current
+  business's), or an illustration. Owners can rename, archive and restore here.
   """
   use QuantumBillingWeb, :live_view
 
@@ -456,9 +445,7 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
 
   defp card_count(entries, can_create?), do: length(entries) + if(can_create?, do: 1, else: 0)
 
-  # Literal class strings so Tailwind emits them. The app's greys, a shade
-  # apart, so cards side by side differ without leaving the plain theme. By id,
-  # so a business keeps its shade when the list changes around it.
+  # Literal classes so Tailwind emits them; picked by id so a card keeps its shade.
   @scene_tones {
     "bg-base-200/60",
     "bg-base-200/40",

@@ -1,33 +1,10 @@
 defmodule QuantumBillingWeb.Plugs.ContentSecurityPolicy do
   @moduledoc """
-  Declares where this application's pages may load things from.
+  Sets the Content-Security-Policy for every page.
 
-  There was no policy at all before, which meant that any injected script
-  anywhere — a stored one from an upload, a reflected one from a field that
-  escaped badly — ran with nothing standing in its way.
-
-  ## The nonce
-
-  The root layout carries one inline `<script>`: it reads the saved theme and
-  sets it before the first paint, so the page does not flash the wrong colours.
-  That cannot move into the bundle without reintroducing the flash, and
-  allowing it with `'unsafe-inline'` would allow every *other* inline script
-  too, which is most of what a policy is for.
-
-  So each response gets a random nonce, the layout stamps it on that one tag,
-  and the policy trusts only that. The nonce is per response, so an injected
-  script cannot carry a valid one — it would have to know a value generated
-  after the page it is injecting into was requested.
-
-  ## Why styles are not nonced
-
-  `style-src` keeps `'unsafe-inline'`. The invoice document builds its
-  stylesheet as an inline `<style>` tag, and the accent colour arrives as an
-  inline custom property on an element. Both are deliberate (see
-  `QuantumBillingWeb.InvoiceDoc.Renderer`), both are built from validated
-  values — the accent is matched against `^#[0-9A-Fa-f]{6}$` — and CSS
-  injection does not execute code. Nonce-ing the tag would still leave the
-  style *attributes*, which need `'unsafe-inline'` regardless.
+  Scripts: only the bundle and the one nonced inline theme script in the root
+  layout, with a fresh nonce per response. Styles keep `'unsafe-inline'` for
+  the invoice document's `<style>` tag and its validated accent property.
   """
 
   import Plug.Conn
@@ -61,12 +38,8 @@ defmodule QuantumBillingWeb.Plugs.ContentSecurityPolicy do
   end
 
   @doc """
-  Where the page may connect: itself and the LiveView socket, which `'self'` does
-  not cover in every browser.
-
-  Served over https, that is this host's `wss:` alone, so an injected script has
-  nowhere else to send what it reads. Development and test run on plain http,
-  often under another hostname, and keep the wider form.
+  Where the page may connect: itself and the LiveView socket. Over https that's
+  this host's `wss:` only; dev and test keep a wider form.
   """
   def connect_src(url) do
     case {url[:scheme], url[:host]} do

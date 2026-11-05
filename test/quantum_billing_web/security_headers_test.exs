@@ -1,12 +1,7 @@
 defmodule QuantumBillingWeb.SecurityHeadersTest do
   @moduledoc """
-  The headers that stand between an injected script and the rest of the
-  application.
-
-  There was no Content-Security-Policy at all, and `/uploads` — the one prefix
-  whose contents a user chooses — went out with no security headers whatsoever,
-  because `Plug.Static` runs in the endpoint, ahead of the router pipeline that
-  sets them.
+  Security headers and the CSP, including on `/uploads`, which `Plug.Static`
+  serves before the router.
   """
   use QuantumBillingWeb.ConnCase, async: true
 

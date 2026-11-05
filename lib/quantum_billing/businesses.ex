@@ -1,10 +1,8 @@
 defmodule QuantumBilling.Businesses do
   @moduledoc """
-  The firms kept on this installation, and who may work in each.
+  The firms on this installation and their members.
 
-  A business's records live in a Postgres schema of its own; see
-  `QuantumBilling.Repo` for how the current one is chosen. This module creates
-  those schemas and keeps the `public` rows that describe them.
+  Each business's records live in its own Postgres schema (see `QuantumBilling.Repo`).
   """
   import Ecto.Query
 
@@ -27,10 +25,7 @@ defmodule QuantumBilling.Businesses do
   end
 
   @doc """
-  The business a public link or webhook URL names by its slug, or `nil`.
-
-  Links handed out before there were several businesses carry no slug; they
-  lead to the first business, where their invoices are.
+  The business a public link or webhook names by slug, or `nil`. No slug means the first business.
   """
   def from_link(nil), do: default!()
   def from_link(slug) when is_binary(slug), do: get_by_slug(slug)
@@ -105,11 +100,8 @@ defmodule QuantumBilling.Businesses do
   end
 
   @doc """
-  Archives `business`, which `user` must own: it leaves every picker and is no
-  longer swept by the daily jobs, and its records stay where they are.
-
-  The first business cannot be archived. Payment links and jobs from before
-  there were several businesses lead there, and must keep working.
+  Archives `business` (owned by `user`): it leaves pickers and daily jobs; its records stay.
+  The first business cannot be archived, since old links lead there.
   """
   def archive(%User{}, %Business{id: 1}), do: {:error, :first_business}
 
@@ -156,17 +148,11 @@ defmodule QuantumBilling.Businesses do
   end
 
   @doc """
-  Creates a business owned by `creator`: its row, its schema and tables, its
-  settings and default invoice template.
+  Creates a business owned by `creator`: row, schema, tables, settings and default template.
 
-  `attrs` takes `"name"` and, optionally, `"gstin"`. Returns `{:ok, business}`,
-  or `{:error, changeset}` — a `Business` changeset for the name, an
-  `Organization` one for the GSTIN.
-
-  The tables are built by the tenant migrator, which works in processes and
-  transactions of its own, so this cannot be one transaction. Instead each step
-  that fails undoes the ones before it: the schema is dropped and the row
-  deleted, and nothing half-made is left behind.
+  `attrs` takes `"name"` and optionally `"gstin"`. Returns `{:ok, business}` or
+  `{:error, changeset}`. The migrator runs its own transactions, so each failed
+  step undoes the earlier ones instead.
   """
   def create(%User{} = creator, attrs) do
     with {:ok, business} <- insert_business(attrs) do

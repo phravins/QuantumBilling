@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.ComplianceComponents do
   @moduledoc """
-  Building blocks for the Compliance page: the category tabs, the month
-  calendar and the upcoming-due-dates rail.
-
-  Colour here is confined to status — the pills and the calendar's day markers —
-  which is the one place `QuantumBillingWeb.SharedComponents.status_badge/1`
-  already sanctions it. Everything else stays monochrome.
+  Compliance page parts: category tabs, month calendar and upcoming-dates rail.
+  Colour is used only for status.
   """
   use Phoenix.Component
 
@@ -51,11 +47,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     """
   end
 
-  @doc """
-  Renders one entry of the upcoming-due-dates rail.
-
-  `days_until` is signed: negative means the due date has passed.
-  """
+  @doc "One entry of the upcoming rail. `days_until` is negative once the date has passed."
   attr :obligation, :map, required: true
 
   def due_date_row(assigns) do
@@ -127,9 +119,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   defp dot_tone(_other), do: "bg-base-content/30"
 
   @doc """
-  Renders a month grid marking the days that carry an obligation.
-
-  `weeks` comes from `QuantumBilling.Compliance.calendar_weeks/3`.
+  A month grid marking days with an obligation. `weeks` comes from `Compliance.calendar_weeks/3`.
   """
   attr :weeks, :list, required: true
   attr :year, :integer, required: true
@@ -222,12 +212,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     """
   end
 
-  @doc """
-  Renders the detail panel shown when a row's view action is used.
-
-  With no filing record there is nothing to download, so this explains the
-  obligation instead: what it is, the period it covers and when it is due.
-  """
+  @doc "The detail panel for a row: what the obligation is, its period and due date."
   attr :obligation, :map, required: true
 
   def obligation_detail(assigns) do

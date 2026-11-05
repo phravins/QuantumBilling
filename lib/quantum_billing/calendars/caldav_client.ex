@@ -1,11 +1,9 @@
 defmodule QuantumBilling.Calendars.CaldavClient do
   @moduledoc """
-  CalDAV: one `.ics` resource per event, under the calendar's collection URL.
+  CalDAV client: one `.ics` resource per event under the collection URL.
 
-  The URL is typed by an owner, so `UrlGuard` checks and pins it before every request and
-  redirects are refused, for the same reasons as webhooks. A URL that is not
-  https is refused too, because the password goes with every request. Errors are
-  plain atoms, so neither the password nor a server's reply can reach a log.
+  The URL must be https and is checked and pinned by `UrlGuard`; redirects are
+  refused. Errors are plain atoms, so no password or reply is logged.
   """
 
   alias QuantumBilling.Webhooks.UrlGuard

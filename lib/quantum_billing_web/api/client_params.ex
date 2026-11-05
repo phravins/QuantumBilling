@@ -1,14 +1,8 @@
 defmodule QuantumBillingWeb.API.ClientParams do
   @moduledoc """
-  What an API caller may say when creating a client.
-
-  The same shape the API returns, so a client read from one installation can
-  be posted to another. Unknown fields are refused by name, as for invoices.
-
-  Not settable from outside: `status`, `notes`, `credit_limit`,
-  `opening_balance` and `outstanding`. A new client starts Active with nothing
-  owed and no limit; how far the business trusts a customer is decided in the
-  application by a person, not by whatever integration created the record.
+  The fields an API caller may set when creating a client (the shape the API
+  returns). Unknown fields are refused by name. `status`, `notes`,
+  `credit_limit`, `opening_balance` and `outstanding` are not settable.
   """
 
   @top ~w(type name display_name legal_name gstin pan business_type category email

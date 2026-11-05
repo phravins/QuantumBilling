@@ -1,16 +1,7 @@
 defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
   @moduledoc """
-  Owner-only: the keys other systems use to reach the API.
-
-  A key is access to the books without a person signing in, so issuing one is
-  an owner's decision, as handing out accounts is. Both the route and the
-  `on_mount` hook require an owner of the business being worked in, and the
-  page shows and changes that business's keys only — a key issued here reaches
-  this business's books and no other's.
-
-  The key itself is shown once, straight after it is created, and never again:
-  only its SHA-256 hash is stored, so there is nothing to show later. Lose it
-  and the answer is to revoke it and issue another.
+  Owner-only: API keys for the current business (route and `on_mount` both check).
+  A new key is shown once; only its hash is stored, so a lost key is revoked and reissued.
   """
   use QuantumBillingWeb, :live_view
 

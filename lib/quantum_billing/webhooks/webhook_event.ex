@@ -1,12 +1,7 @@
 defmodule QuantumBilling.Webhooks.WebhookEvent do
   @moduledoc """
-  One webhook received from an outside system.
-
-  The row exists to answer two questions: has this event already been handled,
-  and what did it say. The first is what makes the handler idempotent — payment
-  providers retry until they get a 2xx and may deliver the same event twice
-  regardless — and the second is what makes a disputed payment investigable
-  without asking the provider to resend anything.
+  One webhook received from an outside system: records that it was handled
+  (so redeliveries are ignored) and what it said.
   """
   use Ecto.Schema
 

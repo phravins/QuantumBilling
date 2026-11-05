@@ -1,15 +1,9 @@
 defmodule QuantumBilling.Encrypted.Map do
   @moduledoc """
-  An Ecto type for a JSON map encrypted at rest with AES-256-GCM.
+  An encrypted JSON map Ecto type, for the payment webhook ledger.
 
-  Built for the webhook ledger. A payment provider's event describes a real
-  person's payment, so even trimmed to what reconciliation needs, the row should
-  not be readable from a database dump on its own.
-
-  Encoded as JSON, so it loads back with string keys exactly as a `:map` field
-  would. Keyed with `SECRETS_ENCRYPTION_KEY`, under its own additional
-  authenticated data, so a ciphertext from another encrypted column cannot be
-  substituted for one of these.
+  Loads with string keys like `:map`. Keyed by `SECRETS_ENCRYPTION_KEY` with
+  its own AAD, so other encrypted columns can't be swapped in.
   """
   use Ecto.Type
 

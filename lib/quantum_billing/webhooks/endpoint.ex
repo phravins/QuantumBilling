@@ -2,18 +2,10 @@ defmodule QuantumBilling.Webhooks.Endpoint do
   @moduledoc """
   One URL this business sends events to.
 
-  The secret is generated here, never typed: it is shown to the owner once,
-  stored encrypted, and used to sign every delivery. Rotating it keeps the old
-  one valid for a day (`previous_secret`), so the receiver can be updated
-  without dropping events in between.
-
-  Two body formats:
-
-    * `thin` — every endpoint created from now on: `{id, type, created_at,
-      data: {object, id}}`, signed over the timestamp and the body. The receiver
-      fetches the record itself through the API.
-    * `legacy` — only the endpoint carried over from the old single webhook
-      setting, so its receiver keeps getting what it was built for.
+  The signing secret is generated, shown once and stored encrypted. Rotation
+  keeps `previous_secret` valid for a day. Formats: `thin` (`{id, type,
+  created_at, data: {object, id}}`; the receiver fetches the record) and
+  `legacy` (only the endpoint migrated from the old single webhook).
   """
   use Ecto.Schema
 

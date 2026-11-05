@@ -1,18 +1,11 @@
 defmodule QuantumBilling.Uploads do
   @moduledoc """
-  Stores user-supplied files on local disk and hands back the path to serve them
-  from.
+  Stores uploaded files on local disk and returns the path they are served from.
 
-  Files land in `priv/static/uploads`, which `QuantumBillingWeb.static_paths/0`
-  leaves out on purpose: `QuantumBillingWeb.UploadController` serves them, after
-  checking who is asking. The stored name is derived from the
-  file's own contents rather than the name it arrived with: a user-supplied
-  filename has no business reaching the filesystem, and hashing means uploading
-  the same image twice costs one file instead of two.
-
-  Local disk rather than object storage because it works the moment you clone
-  the repo. The seam is `store/2` and `delete/1` — swapping in S3 later means
-  reimplementing those two, not chasing call sites.
+  Files go to `priv/static/uploads`, which is not a static path:
+  `UploadController` serves them after checking access. Names are content
+  hashes, never the uploaded filename. `store/2` and `delete/1` are the seam
+  for moving to object storage.
   """
 
   # Bitmap formats only. SVG is refused: a blocklist cannot make it safe to serve
@@ -26,9 +19,6 @@ defmodule QuantumBilling.Uploads do
 
   @max_bytes 2_000_000
 
-  @doc "The content types `store/2` accepts, for `allow_upload/3`."
-  def accepted_content_types, do: Map.keys(@content_types)
-
   @doc "The file extensions `store/2` accepts, for `allow_upload/3`."
   def accepted_extensions, do: Map.values(@content_types)
 
@@ -36,11 +26,7 @@ defmodule QuantumBilling.Uploads do
   def max_bytes, do: @max_bytes
 
   @doc """
-  Copies the file at `source_path` into the uploads directory.
-
-  Returns `{:ok, "/uploads/<hash>.<ext>"}` — a path, not a filesystem location,
-  because that is what a template needs. `content_type` decides the extension;
-  the caller gets it from the upload entry rather than from the filename.
+  Copies `source_path` into uploads: `{:ok, "/uploads/<hash>.<ext>"}`. `content_type` sets the extension.
   """
   def store(source_path, content_type) do
     with {:ok, extension} <- extension_for(content_type),
@@ -71,13 +57,7 @@ defmodule QuantumBilling.Uploads do
     {:error, "does not look like a #{type} image"}
   end
 
-  @doc """
-  Removes a previously stored file, given the path `store/2` returned.
-
-  Succeeds when the file is already gone: the caller's intent is that it should
-  not be there, and a settings row pointing at a deleted file is exactly when
-  this gets called.
-  """
+  @doc "Removes a stored file by its path. Succeeds if it is already gone."
   def delete(nil), do: :ok
 
   def delete("/uploads/" <> name) do
@@ -96,9 +76,7 @@ defmodule QuantumBilling.Uploads do
   def delete(_other), do: {:error, "not a stored upload"}
 
   @doc """
-  The file on disk and its content type for a stored upload's name, or `:error`
-  for a name that is not one. A name comes from the URL, so one with a path in
-  it, or a type `store/2` would never have written, stops here.
+  The file and content type for a stored upload's name, or `:error` for anything else (paths, unknown types).
   """
   def locate(name) when is_binary(name) do
     with false <- String.contains?(name, ["/", "\\", "..", <<0>>]),

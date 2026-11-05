@@ -2,14 +2,9 @@ defmodule QuantumBilling.Webhooks.Delivery do
   @moduledoc """
   One event on its way to one endpoint.
 
-  `event_id` is the event's, shared by every endpoint that receives it and
-  unchanged across retries, so a receiver can drop a repeat by remembering the
-  ids it has handled. `body` is frozen when the event is published: a retry
-  sends the same bytes, and only the signature's timestamp is new.
-
-  Statuses: `pending` (queued or retrying), `succeeded`, `failed` (gave up, or
-  refused by the endpoint), `cancelled` (the endpoint was disabled or removed
-  before it went).
+  `event_id` is shared by all endpoints and stable across retries, so receivers
+  can dedupe. `body` is fixed at publish time. Statuses: `pending`,
+  `succeeded`, `failed`, `cancelled`.
   """
   use Ecto.Schema
 

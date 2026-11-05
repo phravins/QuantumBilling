@@ -1,19 +1,13 @@
 defmodule QuantumBillingWeb.DashboardComponents do
   @moduledoc """
-  UI building blocks for the QuantumBilling dashboard: stat cards, an inline
-  CSS bar chart, an inline SVG donut chart, status pills, the compliance
-  calendar date badge, and the tax summary and top-client rows.
+  Dashboard building blocks: stat cards, area and donut charts, date badges and summary rows.
   """
   use Phoenix.Component
 
   import QuantumBillingWeb.CoreComponents, only: [icon: 1]
   import QuantumBillingWeb.SharedComponents, only: [card: 1]
 
-  @doc """
-  Renders a single dashboard stat card with an icon badge, label, value,
-  and an optional trend line underneath the value (`delta_text`, styled by
-  `delta_class` and optionally preceded by a `delta_icon` heroicon).
-  """
+  @doc "Renders a stat card: icon badge, label, value and an optional trend line (`delta_text`)."
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :icon, :string, required: true
@@ -63,27 +57,10 @@ defmodule QuantumBillingWeb.DashboardComponents do
   @doc """
   Renders a smooth multi-series area chart.
 
-  `series` is a list of `%{label:, tone:, values:}`, all sharing the `labels`
-  x-axis. `tone` is `:blue`, `:violet` or `:emerald`.
-
-  ## How it is drawn
-
-  The plot lives in a 0-100 user-space viewBox stretched with
-  `preserveAspectRatio="none"`, so it fills whatever box it is given. Strokes
-  carry `vector-effect="non-scaling-stroke"` so the stretch does not thicken
-  them, and the point markers are HTML rather than SVG circles — a circle in a
-  non-uniformly scaled viewBox renders as an ellipse.
-
-  Points run edge to edge: the first sits on the left frame and the last on the
-  right, so the fill reaches both sides of the card. Inset points left a bare
-  strip down either side of the plot and gave the area a hard vertical edge
-  that read as a chart that had failed to finish drawing.
-
-  The draw-in is a clip that sweeps across, not a dashed stroke. A dash pattern
-  cannot be used on these paths: `vector-effect: non-scaling-stroke` makes the
-  browser measure dashes in screen pixels, and it then ignores `pathLength`,
-  so whatever length the dash was given, the far end of a wide chart stayed
-  inside the gap and the line stopped before its last reading.
+  `series` is a list of `%{label:, tone:, values:}` sharing the `labels` x-axis;
+  `tone` is `:blue`, `:violet` or `:emerald`. The plot is a stretched 0-100
+  viewBox with non-scaling strokes; markers are HTML so they stay round, and
+  the draw-in is a sweeping clip (dash animations break with non-scaling strokes).
   """
   attr :id, :string, required: true, doc: "namespaces the gradient defs"
   attr :series, :list, required: true
@@ -267,8 +244,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp x_at(i, count) when count > 1, do: i / (count - 1) * 100
   defp x_at(_i, _count), do: 50.0
 
-  # Monotone cubic (Fritsch-Carlson) as beziers. Unlike Catmull-Rom it never
-  # overshoots, so the curve never shows revenue that was not invoiced.
+  # Monotone cubic (Fritsch-Carlson) curves: unlike Catmull-Rom they never overshoot the data.
   defp curve([]), do: ""
   defp curve([{x, y}]), do: "M #{fmt(x)} #{fmt(y)}"
 
@@ -353,18 +329,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp plain_number(value), do: format_number(value)
 
   @doc """
-  Formats an amount held in paise for a chart axis or tooltip, in Indian
-  units.
-
-  Public because the Reports chart labels its axis the same way, and two
-  copies of this would drift into labelling the same number differently on
-  two pages.
-
-  ## Examples
-
-      iex> QuantumBillingWeb.DashboardComponents.money_axis_label(250_000_000)
-      "₹25L"
-
+  Formats paise for a chart axis or tooltip in Indian units, e.g. `"₹25L"`. Shared with Reports.
   """
   def money_axis_label(paise), do: axis_label(paise / 100)
 
@@ -408,19 +373,9 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp dot_fill_class(:emerald), do: "bg-emerald-500"
 
   @doc """
-  Renders an SVG donut chart with a centered total and an adjacent legend,
-  from a list of `%{label:, value:, tone:}` maps.
-
-  `tone` is one of `:strong`, `:medium`, `:positive`, `:soft` or `:faint`.
-
-  `palette` picks how those tones are rendered:
-
-    * `:mono` (default) — a monochrome ramp, so the segments read as one series
-      rather than four unrelated colors. This is what the dashboard uses.
-    * `:color` — a categorical palette, for the dashboard charts, where charts are
-      the one place colour is allowed.
-
-  The default keeps every existing caller monochrome.
+  Renders an SVG donut chart with a centred total and a legend, from
+  `%{label:, value:, tone:}` maps. `tone` is `:strong`, `:medium`, `:positive`,
+  `:soft` or `:faint`; `palette` is `:mono` (default) or `:color`.
   """
   attr :segments, :list, required: true
   attr :total, :integer, required: true
@@ -575,10 +530,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
     """
   end
 
-  @doc """
-  Renders the dash the tax summary shows for a column that does not apply to
-  that tax type, or the formatted amount when it does.
-  """
+  @doc "The amount for a tax summary column, or a dash when it doesn't apply to that tax type."
   attr :amount, :integer, default: nil
 
   def tax_cell(assigns) do

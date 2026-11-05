@@ -9,12 +9,8 @@ defmodule QuantumBillingWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {QuantumBillingWeb.Layouts, :root}
     plug :protect_from_forgery
-    # On top of Phoenix's defaults. `frame-ancestors 'none'` in the policy is
-    # what modern browsers obey; X-Frame-Options is the same rule for older
-    # ones. Nothing here uses the camera, microphone, location or payment
-    # APIs, so no page — or anything injected into one — may ask for them.
-    # Cross-origin-opener isolates the window from pages it opens or that
-    # open it, which is what cross-window attacks rely on.
+    # Extra headers: no framing (older browsers), no device or payment APIs,
+    # and an isolated window.
     plug :put_secure_browser_headers, %{
       "x-frame-options" => "DENY",
       "permissions-policy" =>
@@ -33,11 +29,8 @@ defmodule QuantumBillingWeb.Router do
     plug QuantumBillingWeb.Plugs.ApiResponseHeaders
   end
 
-  # The external API. No session, no cookies, no CSRF token and no CORS: it is
-  # for server-to-server calls with a bearer key, and a browser has no business
-  # making them. Order matters — https before the key is looked at, the key
-  # before the rate limit (which is per key), and the scope check per action in
-  # each controller.
+  # Server-to-server API with a bearer key: no session, CSRF or CORS.
+  # Order matters: https, then the key, then the per-key rate limit.
   pipeline :api_v1 do
     plug :accepts, ["json"]
     plug QuantumBillingWeb.Plugs.ApiResponseHeaders
@@ -46,9 +39,7 @@ defmodule QuantumBillingWeb.Router do
     plug QuantumBillingWeb.Plugs.ApiRateLimit
   end
 
-  # Calendar apps send no cookies and ask for `text/calendar`, so this has neither
-  # a session nor the `accepts` check of `:api`. The token in the URL is the access
-  # control, and the rate limit makes guessing it pointless.
+  # Calendar apps send no cookies: the URL token is the access control, rate limited.
   pipeline :calendar_feed do
     plug QuantumBillingWeb.Plugs.CalendarFeedRateLimit
   end
@@ -61,8 +52,7 @@ defmodule QuantumBillingWeb.Router do
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
       live "/terms", TermsLive, :index
       live "/privacy", PrivacyLive, :index
-      # The slug names the business the invoice belongs to. `/pay/:token`
-      # links were handed out before there were several, and lead to the first.
+      # `/pay/:token` is the legacy link, for the first business.
       live "/p/:slug/:token", PublicInvoiceLive, :show
       live "/pay/:token", PublicInvoiceLive, :show
     end
@@ -85,19 +75,13 @@ defmodule QuantumBillingWeb.Router do
         {QuantumBillingWeb.NotificationsHook, :default}
       ] do
       live "/settings/team", SettingsLive.Team, :index
-      # Keys reach the books without anyone signing in, so issuing them is the
-      # owner's call, like handing out accounts.
       live "/settings/api-keys", SettingsLive.ApiKeys, :index
-      # A webhook sends the business's activity to a server someone typed in.
       live "/settings/webhooks", SettingsLive.Webhooks, :index
-      # Every member's actions and addresses: the record an investigation
-      # starts from, and personal data about the staff themselves.
       live "/settings/audit-logs", AuditLogsLive, :index
     end
   end
 
-  # Controllers, because they write the OAuth state to the session and redirect
-  # off-site. Connecting a calendar is an owner's call inside a chosen business.
+  # Controllers: they write OAuth state to the session and redirect off-site.
   scope "/", QuantumBillingWeb do
     pipe_through [:browser, :require_authenticated_user, :require_business, :require_owner]
 
@@ -184,9 +168,7 @@ defmodule QuantumBillingWeb.Router do
     get "/calendar/:slug/:token", CalendarFeedController, :show
   end
 
-  # Before the "/api" scope below and the catch-all at the bottom, so that
-  # every /api/v1 path — including ones that do not exist — is answered in
-  # JSON, and only after the key has been checked.
+  # Before "/api" and the catch-all, so every /api/v1 path answers JSON after the key check.
   scope "/api/v1", QuantumBillingWeb.API.V1 do
     pipe_through :api_v1
 
@@ -212,8 +194,7 @@ defmodule QuantumBillingWeb.Router do
   scope "/api", QuantumBillingWeb do
     pipe_through :api
 
-    # The slug names the business the payment belongs to; the bare path, which
-    # Razorpay dashboards were set up with before, delivers to the first.
+    # The bare path is legacy and delivers to the first business.
     post "/webhooks/razorpay/:slug", PaymentWebhookController, :handle_razorpay
     post "/webhooks/razorpay", PaymentWebhookController, :handle_razorpay
   end
@@ -243,9 +224,8 @@ defmodule QuantumBillingWeb.Router do
       live "/users/profile", UserLive.Profile, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
-      # First sign-in screens: a signed-in user, but no business chosen yet.
+      # Signed in, but no business chosen yet.
       live "/onboarding", OnboardingLive, :show
-      # Choosing or creating a business needs a signed-in user but no business yet.
       live "/businesses", BusinessPickerLive, :index
       live "/businesses/new", BusinessNewLive, :new
     end

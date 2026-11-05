@@ -1,11 +1,7 @@
 defmodule QuantumBillingWeb.InvoiceDoc.DesignBlocksTest do
   @moduledoc """
-  The newer design options: starter presets, the custom text, spacer, payment
-  and image blocks, and the page border, watermark and letterhead background.
-
-  Two rules matter most. A layout saved before these existed must print exactly
-  as it did, and an image path can only reach a page through the server — never
-  from a form, and never one that belongs to another business.
+  Presets, the newer blocks and page options. Old layouts must print unchanged,
+  and image paths only come from the server, never another business.
   """
   use QuantumBilling.DataCase, async: false
 
