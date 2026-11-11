@@ -117,11 +117,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
     .qb-doc__items--plain td { border-bottom: 0; }
     .qb-doc__items--zebra tbody tr:nth-child(even) { background: #fafafa; }
 
+    .qb-doc__vat-summary { margin-top: 12px; }
+
     .qb-doc__totals { margin-left: auto; margin-top: 16px; }
     .qb-doc--left .qb-doc__totals { margin-left: 0; margin-right: auto; }
     .qb-doc--center .qb-doc__totals { margin-left: auto; margin-right: auto; }
     .qb-doc__total-line { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; }
     .qb-doc__total-line--strong { font-weight: 600; }
+    .qb-doc__legend { margin-top: 8px; font-size: 10px; text-align: right; }
     .qb-doc__total-line--accent {
       border-top: 2px solid var(--qb-accent);
       margin-top: 6px;

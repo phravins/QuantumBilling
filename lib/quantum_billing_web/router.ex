@@ -77,6 +77,7 @@ defmodule QuantumBillingWeb.Router do
       live "/settings/team", SettingsLive.Team, :index
       live "/settings/api-keys", SettingsLive.ApiKeys, :index
       live "/settings/webhooks", SettingsLive.Webhooks, :index
+      live "/settings/data-model", SettingsLive.DataModel, :index
       live "/settings/audit-logs", AuditLogsLive, :index
     end
   end

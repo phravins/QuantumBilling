@@ -15,6 +15,7 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.Compliance.Task, as: ComplianceTask
   alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.CustomFields.FieldDefinition
   alias QuantumBilling.DesignAssets
   alias QuantumBilling.DesignAssets.DesignAsset
   alias QuantumBilling.EWayBills.EWayBill
@@ -25,12 +26,27 @@ defmodule QuantumBilling.Backup do
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.TaxRates.TaxRate
   alias QuantumBilling.Templates.InvoiceTemplate
 
-  @version "3.0"
+  @version "3.2"
 
   # Older files are still restored; upgrade/1 brings them to the current shape.
-  @readable_versions ["2.0", "2.1", @version]
+  @readable_versions ["2.0", "2.1", "3.0", "3.1", @version]
+
+  # Before 3.2 every record was GST; these are the VAT columns' values for it.
+  @gst_defaults %{
+    "invoices" => %{
+      "tax_regime" => "gst",
+      "vat_amount" => 0,
+      "tax_breakdown" => [],
+      "reverse_charge" => false,
+      "prices_include_tax" => false,
+      "round_to_whole_units" => true
+    },
+    "credit_notes" => %{"tax_regime" => "gst", "tax_breakdown" => []},
+    "clients" => %{"country" => "IN"}
+  }
 
   # Before 3.0 these held whole rupees (credit notes, two-place decimals); now paise.
   @rupee_fields %{
@@ -51,13 +67,15 @@ defmodule QuantumBilling.Backup do
                           notify_filing_reminders reminder_lead_days language rows_per_page
                           upi_vpa upi_payee_name razorpay_key_id irp_username irp_client_id
                           audit_retention_days doc_logo_path bank_account_name bank_name
-                          bank_account_number bank_ifsc bank_branch)a
+                          bank_account_number bank_ifsc bank_branch tax_regime vat_number
+                          vat_country prices_include_tax round_to_whole_units)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city
                     billing_state billing_pin shipping_same_as_billing shipping_line1
                     shipping_line2 shipping_city shipping_state shipping_pin credit_limit
-                    payment_terms_days opening_balance notes status outstanding deleted_at)a
+                    payment_terms_days opening_balance notes status outstanding deleted_at
+                    custom_fields tax_number country)a
 
   @invoice_fields ~w(id invoice_number invoice_type invoice_date due_date payment_terms
                      place_of_supply client_id client_name client_gstin client_pan
@@ -68,13 +86,16 @@ defmodule QuantumBilling.Backup do
                      signed_qr_code signed_invoice irn_mode currency
                      exchange_rate export_type lut_number razorpay_payment_link_id
                      razorpay_payment_url razorpay_payment_id public_token template_id
-                     layout_xml deleted_at)a
+                     layout_xml deleted_at custom_fields tax_regime vat_amount tax_breakdown
+                     company_tax_number client_tax_number reverse_charge prices_include_tax
+                     round_to_whole_units)a
 
-  @item_fields ~w(id invoice_id description hsn_sac quantity unit rate tax_rate amount position)a
+  @item_fields ~w(id invoice_id description hsn_sac quantity unit rate tax_rate amount position
+                  custom_fields tax_rate_id tax_rate_bp tax_category tax_name)a
 
   @e_way_bill_fields ~w(id invoice_id ewb_number ewb_date valid_until status distance_km
                         mode_of_transport vehicle_number transporter_id transporter_name
-                        cancelled_at cancellation_reason deleted_at portal_mode)a
+                        cancelled_at cancellation_reason deleted_at portal_mode custom_fields)a
 
   @part_b_fields ~w(id e_way_bill_id vehicle_number mode_of_transport place reason updated_on)a
 
@@ -82,10 +103,17 @@ defmodule QuantumBilling.Backup do
 
   # deleted_at travels with the backup so binned records stay in the Bin.
   @profile_fields ~w(id title frequency next_run_date status auto_send_email client_id
-                     items_json deleted_at)a
+                     items_json deleted_at custom_fields)a
 
   @credit_note_fields ~w(id note_number note_type invoice_id client_id reason subtotal tax_total
-                         grand_total status)a
+                         grand_total status custom_fields tax_regime tax_breakdown)a
+
+  @tax_rate_fields ~w(id name category rate_bp exemption_reason is_default position archived_at
+                      inserted_at)a
+
+  @field_definition_fields ~w(id object key label type options required help_text position
+                              show_in_list filterable show_on_invoice include_in_api archived_at
+                              inserted_at)a
 
   # Which uploaded images this business may show: its letterheads and stamps.
   @design_asset_fields ~w(id path kind inserted_at)a
@@ -100,6 +128,8 @@ defmodule QuantumBilling.Backup do
 
   # Parents before children, so foreign keys resolve on restore.
   @sections [
+    {:field_definitions, FieldDefinition, @field_definition_fields},
+    {:tax_rates, TaxRate, @tax_rate_fields},
     {:clients, Client, @client_fields},
     {:templates, InvoiceTemplate, @template_fields},
     {:design_assets, DesignAsset, @design_asset_fields},
@@ -203,7 +233,7 @@ defmodule QuantumBilling.Backup do
   def restore_json(json_string) when is_binary(json_string) do
     with {:ok, data} <- decode(json_string),
          :ok <- check_version(data) do
-      data = data |> upgrade() |> keep_valid_assets()
+      data = data |> upgrade() |> keep_valid_assets() |> keep_valid_definitions()
 
       # No timeout: a large restore is one long transaction.
       Repo.transaction(
@@ -220,6 +250,8 @@ defmodule QuantumBilling.Backup do
           Repo.delete_all(InvoiceTemplate)
           Repo.delete_all(DesignAsset)
           Repo.delete_all(Client)
+          Repo.delete_all(TaxRate)
+          Repo.delete_all(FieldDefinition)
 
           counts =
             Map.new(@sections, fn {key, schema, fields} ->
@@ -230,7 +262,7 @@ defmodule QuantumBilling.Backup do
 
           # Rows keep their ids, so move every sequence past them.
           Enum.each(
-            ~w(clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
+            ~w(field_definitions tax_rates clients invoices invoice_items e_way_bills e_way_bill_part_b_updates
                invoice_templates design_assets recurring_profiles credit_notes compliance_tasks
                audit_logs),
             &resync_sequence/1
@@ -264,6 +296,23 @@ defmodule QuantumBilling.Backup do
   end
 
   defp keep_valid_assets(data), do: data
+
+  # Field definitions skip their changeset on restore, so the shape is checked here.
+  defp keep_valid_definitions(%{"field_definitions" => rows} = data) when is_list(rows) do
+    valid =
+      Enum.filter(rows, fn
+        %{"object" => object, "key" => key, "type" => type, "label" => label} ->
+          object in FieldDefinition.objects() and type in FieldDefinition.types() and
+            is_binary(label) and is_binary(key) and String.match?(key, ~r/^[a-z][a-z0-9_]{0,62}$/)
+
+        _other ->
+          false
+      end)
+
+    Map.put(data, "field_definitions", valid)
+  end
+
+  defp keep_valid_definitions(data), do: data
 
   defp decode(json_string) do
     case Jason.decode(json_string) do
@@ -310,6 +359,22 @@ defmodule QuantumBilling.Backup do
 
     data
     |> Map.update("organization", nil, &rupees_to_paise(&1, ~w(ewb_threshold_value)))
+    |> Map.put("version", "3.0")
+    |> upgrade()
+  end
+
+  # 3.0 had no custom fields; cast_row/3 fills `custom_fields` with %{}.
+  defp upgrade(%{"version" => "3.0"} = data), do: data |> Map.put("version", "3.1") |> upgrade()
+
+  # 3.1 had no VAT: every record is GST, and there are no tax rates.
+  defp upgrade(%{"version" => "3.1"} = data) do
+    @gst_defaults
+    |> Enum.reduce(data, fn {section, defaults}, acc ->
+      Map.update(acc, section, [], fn
+        rows when is_list(rows) -> Enum.map(rows, &put_defaults(&1, defaults))
+        other -> other
+      end)
+    end)
     |> Map.put("version", @version)
   end
 
@@ -331,6 +396,9 @@ defmodule QuantumBilling.Backup do
   end
 
   defp rupees_to_paise(other, _fields), do: other
+
+  defp put_defaults(row, defaults) when is_map(row), do: Map.merge(defaults, row)
+  defp put_defaults(other, _defaults), do: other
 
   # Leaves an unreadable value for cast_row/3 to reject by name.
   defp paise(rupees) do
@@ -426,6 +494,7 @@ defmodule QuantumBilling.Backup do
     cast =
       for field <- fields, into: %{} do
         value = Map.get(row, Atom.to_string(field), Map.get(row, field))
+        value = if field == :custom_fields and is_nil(value), do: %{}, else: value
 
         case Ecto.Type.cast(stored_type(schema, field), value) do
           {:ok, cast} -> {field, cast}

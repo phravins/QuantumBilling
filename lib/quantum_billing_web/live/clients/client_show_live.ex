@@ -9,8 +9,10 @@ defmodule QuantumBillingWeb.ClientShowLive do
   use QuantumBillingWeb, :live_view
 
   import QuantumBillingWeb.ClientsComponents
+  import QuantumBillingWeb.CustomFieldComponents, only: [any_values?: 2, custom_details: 1]
 
   alias QuantumBilling.Clients
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices
   alias QuantumBillingWeb.LiveRefresh
 
@@ -18,6 +20,8 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
   # Redirect on a missing id: the link may be stale.
   def mount(%{"id" => id}, _session, socket) do
+    socket = assign(socket, :currency, QuantumBilling.Settings.currency_code())
+
     case Clients.get_client(id) do
       nil ->
         {:ok,
@@ -36,6 +40,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
          |> assign(:page_title, client.name)
          |> assign(:active_nav, :clients)
          |> assign(:client, client)
+         |> assign(:custom_definitions, CustomFields.active_definitions("client"))
          |> assign(:page, 1)
          |> load_invoices()}
     end
@@ -230,7 +235,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         <.summary_tile
           id="client-outstanding"
           label="Outstanding"
-          value={rupees(@outstanding, decimals: 2, space: true)}
+          value={money(@outstanding, @currency, decimals: 2, space: true)}
           hint="Unpaid balance carried on this account"
         />
 
@@ -244,7 +249,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
         <.summary_tile
           id="client-credit-limit"
           label="Credit limit"
-          value={rupees(@client.credit_limit, decimals: 2, space: true)}
+          value={money(@client.credit_limit, @currency, decimals: 2, space: true)}
           hint="0 means no limit is enforced"
         />
 
@@ -262,6 +267,12 @@ defmodule QuantumBillingWeb.ClientShowLive do
 
           <dl class="mt-3 space-y-2.5">
             <.detail label="GSTIN" value={@client.gstin} mono />
+            <.detail :if={@client.tax_number} label="VAT No. / TRN" value={@client.tax_number} mono />
+            <.detail
+              :if={@client.country not in [nil, "IN"]}
+              label="Country"
+              value={QuantumBilling.Tax.country_name(@client.country) || @client.country}
+            />
             <.detail label="PAN" value={@client.pan} mono />
             <.detail label="Legal name" value={@client.legal_name} />
             <.detail label="Business type" value={@client.business_type} />
@@ -282,7 +293,7 @@ defmodule QuantumBillingWeb.ClientShowLive do
           <dl class="mt-3 space-y-2.5">
             <.detail
               label="Opening balance"
-              value={rupees(@client.opening_balance, decimals: 2, space: true)}
+              value={money(@client.opening_balance, @currency, decimals: 2, space: true)}
             />
             <.detail label="Added" value={format_date(DateTime.to_date(@client.inserted_at))} />
           </dl>
@@ -314,6 +325,21 @@ defmodule QuantumBillingWeb.ClientShowLive do
       <.card :if={@client.notes not in [nil, ""]} id="client-notes" class="mt-4">
         <h2 class="text-sm font-semibold tracking-tight">Notes</h2>
         <p class="mt-2 whitespace-pre-line text-sm text-base-content/70">{@client.notes}</p>
+      </.card>
+
+      <.card
+        :if={any_values?(@custom_definitions, @client.custom_fields)}
+        id="client-custom-fields"
+        class="mt-4"
+      >
+        <h2 class="mb-3 text-sm font-semibold tracking-tight">Details</h2>
+        <.custom_details
+          id="client-custom-values"
+          definitions={@custom_definitions}
+          values={@client.custom_fields}
+          currency={@currency}
+          class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3"
+        />
       </.card>
 
       <.card id="client-invoice-history" class="mt-4" padding="p-0">
@@ -365,7 +391,9 @@ defmodule QuantumBillingWeb.ClientShowLive do
                 <td class="font-medium">{invoice.number}</td>
                 <td class="text-base-content/60">{format_date(invoice.invoice_date)}</td>
                 <td class="text-base-content/60">{format_date(invoice.due_date)}</td>
-                <td class="font-medium">{rupees(invoice.amount, decimals: 2, space: true)}</td>
+                <td class="font-medium">
+                  {money(invoice.amount, invoice.currency, decimals: 2, space: true)}
+                </td>
                 <td><.status_badge status={invoice.status} /></td>
 
                 <td>

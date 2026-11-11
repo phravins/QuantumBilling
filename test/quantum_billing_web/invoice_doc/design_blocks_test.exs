@@ -6,7 +6,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.DesignBlocksTest do
   use QuantumBilling.DataCase, async: false
 
   import Phoenix.LiveViewTest
+  import QuantumBilling.AccountsFixtures
 
+  alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Businesses
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.DesignAssets
   alias QuantumBilling.Settings
   alias QuantumBilling.Uploads
@@ -254,6 +258,78 @@ defmodule QuantumBillingWeb.InvoiceDoc.DesignBlocksTest do
       html = render_doc(%Document{blocks: [block]}, InvoiceDocument.sample(), Extras.empty())
 
       assert html =~ "height: 400px"
+    end
+  end
+
+  describe "custom fields" do
+    setup do
+      user = owner_fixture()
+      business = Businesses.default!()
+
+      scope =
+        Scope.put_membership(Scope.for_user(user), Businesses.get_membership(user, business.id))
+
+      field = fn object, attrs ->
+        {:ok, definition} = CustomFields.create_definition(scope, object, attrs)
+        definition
+      end
+
+      field.("invoice", %{"label" => "PO Number", "type" => "text", "show_on_invoice" => true})
+      field.("invoice", %{"label" => "Internal note", "type" => "text"})
+      field.("invoice_item", %{"label" => "Batch", "type" => "text", "show_on_invoice" => true})
+      :ok
+    end
+
+    defp with_values(invoice, values, item_values) do
+      items = Enum.map(invoice.items, &%{&1 | custom_fields: item_values})
+      %{invoice | custom_fields: values, items: items}
+    end
+
+    test "the block prints only the fields marked to show, escaped" do
+      doc = with_block(:custom_fields)
+
+      invoice =
+        with_values(
+          InvoiceDocument.sample(),
+          %{"po_number" => "PO-<77>", "internal_note" => "secret"},
+          %{}
+        )
+
+      html = render_doc(doc, invoice, Extras.build(invoice, doc))
+
+      assert html =~ "PO Number"
+      assert html =~ "PO-&lt;77&gt;"
+      refute html =~ "secret"
+    end
+
+    test "item fields with a value become a column before Amount" do
+      doc = Catalog.classic()
+      invoice = with_values(InvoiceDocument.sample(), %{}, %{"batch" => "B-12"})
+
+      html = render_doc(doc, invoice, Extras.build(invoice, doc))
+
+      assert html =~ "Batch"
+      assert html =~ "B-12"
+    end
+
+    test "an old layout with no values prints exactly as before" do
+      doc = Catalog.classic()
+      invoice = InvoiceDocument.sample()
+
+      assert Extras.build(invoice, doc) == Extras.empty()
+
+      assert render_doc(doc, invoice, Extras.build(invoice, doc)) ==
+               render_doc(doc, invoice, Extras.empty())
+    end
+
+    test "the block survives the file format" do
+      block = Catalog.new(:custom_fields, "cf1")
+      block = %{block | opts: %{block.opts | label: "Order"}}
+      classic = Catalog.classic()
+      doc = %{classic | blocks: classic.blocks ++ [block]}
+
+      assert Layout.validate(doc) == :ok
+      assert Layout.parse!(Layout.to_xml(doc)) == doc
     end
   end
 end

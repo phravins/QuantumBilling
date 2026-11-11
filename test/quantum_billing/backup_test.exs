@@ -65,7 +65,7 @@ defmodule QuantumBilling.BackupTest do
       json = Backup.export_json()
       data = Jason.decode!(json)
 
-      assert data["version"] == "3.0"
+      assert data["version"] == "3.2"
       assert [%{"name" => "Acme Corp"}] = data["clients"]
       assert [%{"invoice_number" => number}] = data["invoices"]
       assert is_binary(number)
@@ -172,6 +172,152 @@ defmodule QuantumBilling.BackupTest do
       assert item.description == "Consulting"
       assert restored.grand_total == invoice.grand_total
       assert restored.client_id
+    end
+
+    test "brings back field definitions and the values they hold" do
+      owner = QuantumBilling.AccountsFixtures.owner_fixture()
+      business = QuantumBilling.Businesses.default!()
+
+      scope =
+        QuantumBilling.Accounts.Scope.put_membership(
+          QuantumBilling.Accounts.Scope.for_user(owner),
+          QuantumBilling.Businesses.get_membership(owner, business.id)
+        )
+
+      {:ok, definition} =
+        QuantumBilling.CustomFields.create_definition(scope, "client", %{
+          "label" => "PO Number",
+          "type" => "text"
+        })
+
+      {:ok, client} =
+        Clients.update_client(client_fixture(), %{"custom_fields" => %{"po_number" => "PO-9"}})
+
+      json = Backup.export_json()
+
+      Repo.delete_all(QuantumBilling.Clients.Client)
+      Repo.delete_all(QuantumBilling.CustomFields.FieldDefinition)
+
+      assert {:ok, counts} = Backup.restore_json(json)
+      assert counts.field_definitions == 1
+
+      assert [%{key: "po_number", label: "PO Number"}] =
+               QuantumBilling.CustomFields.active_definitions("client")
+
+      assert Clients.get_client(client.id).custom_fields == %{"po_number" => "PO-9"}
+
+      # A malformed definition in the file is dropped, not restored.
+      tampered =
+        json
+        |> Jason.decode!()
+        |> update_in(["field_definitions"], fn [row] ->
+          [row, %{row | "id" => definition.id + 1, "key" => "Bad Key", "type" => "script"}]
+        end)
+        |> Jason.encode!()
+
+      assert {:ok, %{field_definitions: 1}} = Backup.restore_json(tampered)
+    end
+
+    test "a 3.0 file, from before custom fields, restores with empty values" do
+      client = client_fixture()
+      invoice_fixture(client)
+
+      legacy =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("version", "3.0")
+        |> Map.delete("field_definitions")
+        |> update_in(["clients"], fn rows -> Enum.map(rows, &Map.delete(&1, "custom_fields")) end)
+        |> update_in(["invoices"], fn rows -> Enum.map(rows, &Map.delete(&1, "custom_fields")) end)
+        |> Jason.encode!()
+
+      assert {:ok, _counts} = Backup.restore_json(legacy)
+      assert Clients.get_client(client.id).custom_fields == %{}
+    end
+
+    test "a 3.1 file, from before VAT, restores everything as GST" do
+      client = client_fixture()
+      invoice = invoice_fixture(client)
+
+      drop = fn rows, keys -> Enum.map(rows, &Map.drop(&1, keys)) end
+
+      legacy =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.put("version", "3.1")
+        |> Map.delete("tax_rates")
+        |> update_in(["clients"], &drop.(&1, ~w(tax_number country)))
+        |> update_in(
+          ["invoice_items"],
+          &drop.(&1, ~w(tax_rate_id tax_rate_bp tax_category tax_name))
+        )
+        |> update_in(
+          ["invoices"],
+          &drop.(&1, ~w(tax_regime vat_amount tax_breakdown company_tax_number client_tax_number
+                       reverse_charge prices_include_tax round_to_whole_units))
+        )
+        |> Jason.encode!()
+
+      assert {:ok, %{tax_rates: 0}} = Backup.restore_json(legacy)
+
+      restored = Invoices.get_invoice!(invoice.id)
+      assert restored.tax_regime == "gst"
+      assert restored.vat_amount == 0
+      assert restored.tax_breakdown == []
+      assert restored.grand_total == invoice.grand_total
+      assert Clients.get_client(client.id).country == "IN"
+    end
+
+    test "a VAT business keeps its rates and each line's rate snapshot" do
+      owner = QuantumBilling.AccountsFixtures.owner_fixture()
+      business = QuantumBilling.Businesses.default!()
+
+      scope =
+        QuantumBilling.Accounts.Scope.for_user(owner)
+        |> QuantumBilling.Accounts.Scope.put_membership(
+          QuantumBilling.Businesses.get_membership(owner, business.id)
+        )
+
+      {:ok, _} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"tax_regime" => "vat", "vat_country" => "AE", "vat_number" => "100123456700003"},
+          :tax
+        )
+
+      {:ok, _rates} = QuantumBilling.TaxRates.ensure_presets(scope, "AE")
+      standard = QuantumBilling.TaxRates.default_rate()
+
+      {:ok, invoice} =
+        Invoices.create_invoice(%{
+          "invoice_date" => "2026-11-02",
+          "client_name" => "Gulf Trading LLC",
+          "client_tax_number" => "100200300400003",
+          "reverse_charge" => "false",
+          "items" => %{
+            "0" => %{
+              "description" => "Consulting",
+              "quantity" => "1",
+              "rate" => "1000",
+              "tax_rate_id" => to_string(standard.id)
+            }
+          }
+        })
+
+      json = Backup.export_json()
+
+      assert {:ok, counts} = Backup.restore_json(json)
+      assert counts.tax_rates == 4
+
+      restored = Invoices.get_invoice!(invoice.id)
+      assert restored.tax_regime == "vat"
+      assert restored.vat_amount == 5_000
+      assert restored.client_tax_number == "100200300400003"
+      assert [%{"rate_bp" => 500, "tax" => 5_000}] = restored.tax_breakdown
+      assert [%{tax_rate_id: id, tax_rate_bp: 500, tax_name: "Standard 5%"}] = restored.items
+      assert id == standard.id
+      assert QuantumBilling.TaxRates.default_rate().id == standard.id
+      assert Settings.get_organization().tax_regime == "vat"
     end
 
     test "brings back compliance tasks, without saying who made them" do
@@ -537,7 +683,7 @@ defmodule QuantumBilling.BackupTest do
 
       # Streamed: the download starts on the first chunk and is never held in memory whole.
       assert length(chunks) > 25
-      assert hd(chunks) =~ ~s("version":"3.0")
+      assert hd(chunks) =~ ~s("version":"3.2")
 
       document = chunks |> Enum.join() |> Jason.decode!()
       assert length(document["invoices"]) == 25

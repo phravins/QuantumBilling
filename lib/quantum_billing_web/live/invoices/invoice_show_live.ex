@@ -5,6 +5,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CustomFieldComponents,
+    only: [any_values?: 2, custom_details: 1, custom_inputs: 1]
+
+  alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
@@ -13,6 +19,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Settings
+  alias QuantumBilling.Tax
   alias QuantumBilling.Templates
   alias QuantumBillingWeb.InvoiceDoc.Extras
   alias QuantumBillingWeb.InvoiceDoc.Renderer
@@ -38,13 +45,21 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:page_title, invoice.invoice_number)
          |> assign(:active_nav, :invoices)
          |> assign(:invoice, invoice)
+         # Archived too: an issued invoice keeps the values it was issued with.
+         |> assign(
+           :custom_definitions,
+           CustomFields.list_definitions("invoice", archived: :include)
+         )
          |> assign(:doc, doc)
          |> assign(:accent, accent)
          |> assign(:logo, logo)
          |> assign(:extras, extras)
          |> assign(:e_way_bill, EWayBills.live_bill_for_invoice(invoice.id))
+         |> assign(:gst_tools?, gst_tools?(socket.assigns.current_scope, invoice))
          |> assign(:ewb_defaults, Settings.get_organization())
-         |> assign(:show_qr_modal, false)}
+         |> assign(:show_qr_modal, false)
+         |> assign(:cn_definitions, CustomFields.active_definitions("credit_note"))
+         |> assign_cn_form(CreditNote.changeset(%CreditNote{}, %{}))}
     end
   end
 
@@ -68,6 +83,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       {:ok, :already_registered} ->
         {:noreply, put_flash(socket, :info, "This invoice already has an IRN.")}
+
+      {:error, :gst_only} ->
+        {:noreply, put_flash(socket, :error, Tax.gst_only_message(:e_invoice))}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not queue the E-Invoice: #{inspect(reason)}")}
@@ -119,6 +137,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         {:noreply,
          put_flash(socket, :error, "A cancelled invoice cannot be given an e-way bill.")}
 
+      {:error, :gst_only} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, Tax.gst_only_message(:e_way_bills))
+         |> assign(:show_ewb_modal, false)}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to generate E-Way Bill: #{inspect(reason)}")}
     end
@@ -132,6 +156,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> put_flash(:info, "Razorpay / UPI Payment link generated successfully!")
          |> assign(:invoice, updated_invoice)}
 
+      {:error, :unsupported_currency} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           QuantumBilling.Payments.unavailable_message(socket.assigns.invoice)
+         )}
+
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Failed to generate Payment Link: #{inspect(reason)}")}
@@ -139,12 +171,29 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   end
 
   def handle_event("issue_credit_note", params, socket) do
+    # Custom inputs are named credit_note[custom_fields][key].
+    params =
+      case params do
+        %{"credit_note" => %{"custom_fields" => values}} ->
+          Map.put(params, "custom_fields", values)
+
+        _other ->
+          params
+      end
+
     case QuantumBilling.CreditNotes.create_credit_note_for_invoice(socket.assigns.invoice, params) do
       {:ok, cn} ->
         {:noreply,
          socket
          |> put_flash(:info, "#{cn.note_type} Note #{cn.note_number} issued successfully!")
-         |> assign(:show_cn_modal, false)}
+         |> assign(:show_cn_modal, false)
+         |> assign_cn_form(CreditNote.changeset(%CreditNote{}, %{}))}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Please fix the highlighted fields before issuing the note.")
+         |> assign_cn_form(changeset)}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to issue Credit Note: #{inspect(reason)}")}
@@ -372,6 +421,21 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       </div>
 
       <%!-- A portrait A4 sheet on a desk; aspect-ratio is only a minimum, so a long invoice grows downward. The id lets tests target the document rather than the notification bell. --%>
+      <.card
+        :if={any_values?(@custom_definitions, @invoice.custom_fields)}
+        id="invoice-custom-fields"
+        class="mb-3"
+      >
+        <h2 class="mb-3 text-sm font-semibold tracking-tight">Details</h2>
+        <.custom_details
+          id="invoice-custom-values"
+          definitions={@custom_definitions}
+          values={@invoice.custom_fields}
+          currency={@invoice.currency}
+          class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"
+        />
+      </.card>
+
       <div id="invoice-sheet-desk" class="rounded-box bg-base-200 p-3 sm:p-8">
         <div
           id="invoice-document"
@@ -388,7 +452,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
 
-      <.actions_drawer invoice={@invoice} e_way_bill={@e_way_bill} />
+      <.actions_drawer invoice={@invoice} e_way_bill={@e_way_bill} gst_tools={@gst_tools?} />
 
       <div
         :if={@show_qr_modal}
@@ -400,7 +464,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h3 class="text-base font-bold">QR Codes & Payments</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@invoice.invoice_number} &bull; Total Due:
-                <strong class="text-emerald-600">{rupees(@invoice.grand_total)}</strong>
+                <strong class="text-emerald-600">{money(@invoice.grand_total, @invoice.currency)}</strong>
               </p>
             </div>
             <button
@@ -419,7 +483,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.upi_qr
               invoice={@invoice}
               size_class="w-48 h-48"
-              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay #{rupees(@invoice.grand_total)}"}
+              caption={"Scan with GPay, PhonePe, Paytm, BHIM or any UPI app to pay #{money(@invoice.grand_total, @invoice.currency)}"}
               caption_class="mt-2 text-xs text-center font-medium text-base-content/80"
             />
           </div>
@@ -558,7 +622,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
-          <form phx-submit="issue_credit_note" class="space-y-3">
+          <form id="credit-note-form" phx-submit="issue_credit_note" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Note Type</label>
               <select name="note_type" class="select select-bordered w-full text-xs">
@@ -577,7 +641,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               />
             </div>
             <div>
-              <label class="block text-xs font-semibold mb-1">Grand Total Amount (₹)</label>
+              <label class="block text-xs font-semibold mb-1">Grand Total Amount ({currency_symbol(
+                @invoice.currency
+              )})</label>
               <input
                 type="number"
                 name="grand_total"
@@ -588,6 +654,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 required
               />
             </div>
+            <.custom_inputs
+              :if={@cn_definitions != []}
+              form={@cn_form}
+              definitions={@cn_definitions}
+              class="grid grid-cols-1 gap-3 border-t border-base-200 pt-3 sm:grid-cols-2"
+            />
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
               <button type="button" phx-click="toggle_cn_modal" class="btn btn-sm btn-ghost">Cancel</button>
               <button type="submit" class="btn btn-sm btn-warning">Issue Note</button>
@@ -599,8 +671,15 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     """
   end
 
+  # IRN and e-way bills are India GST: off for a VAT business or a VAT invoice.
+  defp gst_tools?(scope, invoice), do: not Scope.vat?(scope) and invoice.tax_regime != "vat"
+
+  defp assign_cn_form(socket, changeset),
+    do: assign(socket, :cn_form, to_form(changeset, as: "credit_note", id: "cn-form"))
+
   attr :invoice, :map, required: true
   attr :e_way_bill, :map, default: nil
+  attr :gst_tools, :boolean, default: true, doc: "whether IRN and e-way bill actions apply"
 
   # Every action on the invoice, in a panel that slides in from the right.
   # Opening and closing are client-only JS, so they survive LiveView patches.
@@ -647,7 +726,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       </div>
 
       <div class="flex-1 space-y-4 overflow-y-auto p-3">
-        <section :if={@invoice.status != "E-Invoice Generated" or is_nil(@e_way_bill)}>
+        <section
+          :if={@gst_tools and (@invoice.status != "E-Invoice Generated" or is_nil(@e_way_bill))}
+          id="drawer-gst-tools"
+        >
           <h3 class={drawer_group_class()}>E-Invoice &amp; E-Way Bill</h3>
 
           <.drawer_item
@@ -672,7 +754,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <h3 class={drawer_group_class()}>Payments</h3>
 
           <.drawer_item
-            :if={!@invoice.razorpay_payment_url}
+            :if={!@invoice.razorpay_payment_url and QuantumBilling.Payments.online_payable?(@invoice)}
             id="drawer-payment-link"
             icon="hero-qr-code"
             label="Razorpay / UPI Link"

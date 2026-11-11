@@ -8,7 +8,8 @@ defmodule QuantumBilling.Accounts.Scope do
 
   # `business` and `membership` are the business being worked in and the
   # caller's place in it; `businesses` is every one they may switch to.
-  defstruct user: nil, business: nil, membership: nil, businesses: []
+  # `tax_regime` is that business's, read once when it is chosen.
+  defstruct user: nil, business: nil, membership: nil, businesses: [], tax_regime: nil
 
   @doc "A scope for `user`, or `nil` without one."
   def for_user(%User{} = user) do
@@ -27,4 +28,12 @@ defmodule QuantumBilling.Accounts.Scope do
   """
   def owner?(%__MODULE__{membership: membership}), do: Membership.owner?(membership)
   def owner?(_scope), do: false
+
+  @doc "The scope with the business's tax regime (`\"gst\"` or `\"vat\"`) recorded."
+  def put_tax_regime(%__MODULE__{} = scope, regime) when regime in ["gst", "vat"],
+    do: %{scope | tax_regime: regime}
+
+  @doc "Whether the current business charges VAT, so the India GST features are off."
+  def vat?(%__MODULE__{tax_regime: "vat"}), do: true
+  def vat?(_scope), do: false
 end

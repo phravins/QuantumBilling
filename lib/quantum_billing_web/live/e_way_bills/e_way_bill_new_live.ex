@@ -8,8 +8,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
   """
   use QuantumBillingWeb, :live_view
 
-  import QuantumBillingWeb.EWayBillsComponents
+  on_mount {QuantumBillingWeb.GSTOnly, :e_way_bills}
 
+  import QuantumBillingWeb.EWayBillsComponents
+  import QuantumBillingWeb.CustomFieldComponents, only: [custom_fields_section: 1]
+
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.EWayBillForm
@@ -39,6 +43,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
      |> assign(:page_title, "Generate New E-Way Bill")
      |> assign(:active_nav, :e_way_bills)
      |> assign(:selected_invoice_id, nil)
+     |> assign(:custom_definitions, CustomFields.active_definitions("e_way_bill"))
      |> assign_invoice_options()
      |> assign_form(changeset)}
   end
@@ -106,6 +111,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
          |> put_flash(:info, generated_message(bill))
          |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")}
 
+      {:error, :gst_only} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, QuantumBilling.Tax.gst_only_message(:e_way_bills))
+         |> assign_form(changeset)}
+
       {:error, reason} ->
         message =
           NICClient.error_message(reason) ||
@@ -151,6 +162,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()
+    |> Map.put("custom_fields", form.custom_fields || %{})
   end
 
   defp document_error(changeset, message) do
@@ -477,6 +489,16 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
               <p class="mt-1 text-right text-2xs text-base-content/45">
                 {@remarks_length} / 500
               </p>
+
+              <.custom_fields_section
+                id="e-way-bill-custom-fields"
+                form={f}
+                definitions={@custom_definitions}
+                object="e_way_bill"
+                current_scope={@current_scope}
+                class="mt-4 border-t border-base-300 pt-4"
+                grid_class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+              />
             </.form_section>
           </.form>
         </div>

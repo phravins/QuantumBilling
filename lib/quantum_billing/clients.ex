@@ -8,6 +8,7 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices
   alias QuantumBilling.Paging
@@ -33,7 +34,8 @@ defmodule QuantumBilling.Clients do
   @doc """
   One page of clients, filtered and sorted in the database.
 
-  Options: `:search`, `:status`, `:sort_field`, `:sort_dir`, `:page`, `:per_page`.
+  Options: `:search`, `:status`, `:sort_field`, `:sort_dir`, `:page`, `:per_page`,
+  and `:custom`, a map of custom-field filters (see `CustomFields.filter_where/3`).
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
@@ -45,6 +47,7 @@ defmodule QuantumBilling.Clients do
       Client.kept()
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
+      |> custom_where(Keyword.get(opts, :custom))
 
     # `:keyset` pages newest-created first below `:before_id`, for the API.
     result =
@@ -130,12 +133,18 @@ defmodule QuantumBilling.Clients do
     where(
       query,
       [c],
-      ilike(c.name, ^pattern) or ilike(c.gstin, ^pattern) or ilike(c.email, ^pattern)
+      ilike(c.name, ^pattern) or ilike(c.gstin, ^pattern) or ilike(c.email, ^pattern) or
+        ilike(c.tax_number, ^pattern)
     )
   end
 
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query
   defp status_where(query, status), do: where(query, [c], c.status == ^status)
+
+  defp custom_where(query, filters) when filters in [nil, %{}], do: query
+
+  defp custom_where(query, filters),
+    do: CustomFields.filter_where(query, CustomFields.active_definitions("client"), filters)
 
   defp order(query, nil, _direction), do: order_by(query, [c], asc: c.name, asc: c.id)
 
@@ -198,8 +207,8 @@ defmodule QuantumBilling.Clients do
   @doc """
   Builds a changeset for a client form.
   """
-  def change_client(%Client{} = client \\ %Client{}, attrs \\ %{}) do
-    Client.changeset(client, attrs)
+  def change_client(%Client{} = client \\ %Client{}, attrs \\ %{}, regime \\ nil) do
+    Client.changeset(client, attrs, regime || tax_regime())
   end
 
   @doc """
@@ -207,7 +216,7 @@ defmodule QuantumBilling.Clients do
   """
   def create_client(attrs) do
     %Client{}
-    |> Client.changeset(attrs)
+    |> Client.changeset(attrs, tax_regime())
     |> Repo.insert()
     |> announce(:client_created)
   end
@@ -217,10 +226,16 @@ defmodule QuantumBilling.Clients do
   """
   def update_client(%Client{} = client, attrs) do
     client
-    |> Client.changeset(attrs)
+    |> Client.changeset(attrs, tax_regime())
     |> Repo.update()
     |> announce(:client_updated)
   end
+
+  # The business's regime decides which tax identity a client needs.
+  defp tax_regime,
+    do:
+      QuantumBilling.Settings.get_organization()
+      |> QuantumBilling.Settings.Organization.tax_regime()
 
   defp announce({:ok, client} = result, event) do
     Events.broadcast(Events.clients_topic(), {event, client})

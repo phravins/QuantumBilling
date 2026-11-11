@@ -7,16 +7,22 @@ defmodule QuantumBilling.Money do
   `to_input/1` and `to_rupees_decimal/1` are the only rupee crossings.
   """
 
+  # A leading ISO code, as in "AED 1,250", after an optional minus sign.
+  @code_prefix ~r/^(-?)(?:#{Enum.join(QuantumBilling.Currency.codes(), "|")})/i
+
   @doc """
   Reads a rupee amount as typed into a form, returning paise.
 
-  Accepts a rupee sign, Indian or Western grouping, spaces and up to two
-  decimals. A number is taken as rupees too.
+  Accepts a currency sign or code (`₹`, `£`, `AED`), Indian or Western
+  grouping, spaces and up to two decimals. A number is taken as rupees too.
 
   ## Examples
 
       iex> QuantumBilling.Money.parse("₹ 1,250.50")
       {:ok, 125_050}
+
+      iex> QuantumBilling.Money.parse("AED 1,250")
+      {:ok, 125_000}
 
       iex> QuantumBilling.Money.parse(18)
       {:ok, 1_800}
@@ -35,7 +41,11 @@ defmodule QuantumBilling.Money do
   def parse(rupees) when is_float(rupees), do: rupees |> Decimal.from_float() |> parse()
 
   def parse(rupees) when is_binary(rupees) do
-    cleaned = rupees |> String.replace(["₹", ",", " "], "") |> String.trim()
+    cleaned =
+      rupees
+      |> String.replace(["₹", "£", "€", "$", ",", " "], "")
+      |> String.replace(@code_prefix, "\\1")
+      |> String.trim()
 
     if Regex.match?(~r/^-?\d+(\.\d{1,2})?$/, cleaned),
       do: cleaned |> Decimal.new() |> parse(),
@@ -117,6 +127,35 @@ defmodule QuantumBilling.Money do
   end
 
   def tax(_amount_paise, _rate), do: 0
+
+  @doc """
+  The tax at `rate_bp` basis points (750 is 7.5%) on `amount`, rounded half-up.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.tax_bp(10_000, 750)
+      750
+
+      iex> QuantumBilling.Money.tax_bp(333, 500)
+      17
+
+  """
+  def tax_bp(amount, rate_bp) when is_integer(amount) and is_integer(rate_bp),
+    do: round_half_up(amount * rate_bp, 10_000)
+
+  def tax_bp(_amount, _rate_bp), do: 0
+
+  @doc """
+  The amount before tax inside a tax-inclusive `gross`, rounded half-up.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.net_of_tax(10_500, 500)
+      10_000
+
+  """
+  def net_of_tax(gross, rate_bp) when is_integer(gross) and is_integer(rate_bp),
+    do: round_half_up(gross * 10_000, 10_000 + rate_bp)
 
   @doc """
   Rounds paise to the nearest whole rupee, half-up: `{rounded, round_off}`.

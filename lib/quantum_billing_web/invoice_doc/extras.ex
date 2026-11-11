@@ -4,11 +4,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
 
     * `:payment` - `%{upi_id, payee, qr, bank}`, or `nil` without a payment block
     * `:images` - `%{path => src}` for the background and image blocks
+    * `:custom` - `%{invoice: defs, items: defs}`, the custom fields marked
+      "Show on invoice" for the custom-fields block and extra item columns
 
   Only paths `DesignAssets.owned?/1` accepts are rendered. With `inline: true`
   (PDF, print, public page) images become `data:` URIs.
   """
 
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.DesignAssets
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Payments.QRCode
@@ -18,7 +21,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoicePdfGenerator
 
-  @empty %{payment: nil, images: %{}}
+  @no_custom %{invoice: [], items: []}
+  @empty %{payment: nil, images: %{}, custom: @no_custom}
 
   @doc "Extras for a page with none of the newer blocks."
   def empty, do: @empty
@@ -31,17 +35,44 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   def build(%Invoice{} = invoice, %Document{} = document, opts \\ []) do
     paths = Layout.asset_paths(document)
     payment? = Document.has_type?(document, :payment)
+    custom = custom(invoice, document)
 
     if paths == [] and not payment? do
-      @empty
+      %{@empty | custom: custom}
     else
       organization = Keyword.get_lazy(opts, :organization, &Settings.get_organization/0)
 
       %{
         payment: if(payment?, do: payment(invoice, organization)),
-        images: images(paths, Keyword.get(opts, :inline, false))
+        images: images(paths, Keyword.get(opts, :inline, false)),
+        custom: custom
       }
     end
+  end
+
+  @doc """
+  The printable custom fields for `invoice`. Archived fields are included so
+  an issued invoice keeps printing its values. Nothing is read unless the
+  layout has a custom-fields block or an item holds a value.
+  """
+  def custom(%Invoice{} = invoice, %Document{} = document) do
+    items = if is_list(invoice.items), do: invoice.items, else: []
+
+    %{
+      invoice:
+        if(Document.has_type?(document, :custom_fields), do: printable("invoice"), else: []),
+      items:
+        if(Enum.any?(items, &(&1.custom_fields not in [nil, %{}])),
+          do: printable("invoice_item"),
+          else: []
+        )
+    }
+  end
+
+  defp printable(object) do
+    object
+    |> CustomFields.list_definitions(archived: :include)
+    |> Enum.filter(& &1.show_on_invoice)
   end
 
   @doc """

@@ -260,7 +260,7 @@ defmodule QuantumBillingWeb.BinLive do
       title: invoice.invoice_number,
       subtitle: invoice.client_name,
       details:
-        "#{format_date(invoice.invoice_date)} · #{rupees(invoice.grand_total || 0)} · #{invoice.status}",
+        "#{format_date(invoice.invoice_date)} · #{money(invoice.grand_total || 0, invoice.currency)} · #{invoice.status}",
       deleted_at: invoice.deleted_at,
       locked: nil,
       purge_confirm:

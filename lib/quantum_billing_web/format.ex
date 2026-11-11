@@ -1,6 +1,7 @@
 defmodule QuantumBillingWeb.Format do
   @moduledoc "Display formatting helpers. Amounts are in paise (see `QuantumBilling.Money`)."
 
+  alias QuantumBilling.Currency
   alias QuantumBilling.Money
 
   @doc """
@@ -9,28 +10,45 @@ defmodule QuantumBillingWeb.Format do
   Options: `:decimals` (0 rounds to whole rupees, 2 shows paise) and `:space`
   (a space after the rupee sign).
   """
-  def rupees(paise, opts \\ []) when is_integer(paise) do
-    space = if Keyword.get(opts, :space, false), do: " ", else: ""
-
-    "₹" <> space <> figure(paise, Keyword.get(opts, :decimals, 0))
-  end
+  def rupees(paise, opts \\ []) when is_integer(paise), do: money(paise, "INR", opts)
 
   @doc """
-  Paise as a grouped number without the rupee sign, e.g. `"-1,23,456.78"`.
-  """
-  def figure(paise, decimals \\ 0)
+  Formats minor units in `currency` (an ISO code; nil is INR), e.g.
+  `"₹1,50,000"`, `"£150,000.00"`, `"AED 150,000.00"`.
 
-  def figure(paise, 0) when is_integer(paise) do
-    {rupees, _round_off} = Money.round_to_rupee(paise)
-    group_indian(div(rupees, 100))
+  Options as `rupees/2`. A letter symbol such as `AED` always takes a space.
+  """
+  def money(minor, currency, opts \\ []) when is_integer(minor) do
+    %{symbol: symbol, grouping: grouping} = Currency.get(currency)
+
+    space =
+      if Keyword.get(opts, :space, false) or Currency.letter_symbol?(currency),
+        do: " ",
+        else: ""
+
+    symbol <> space <> figure(minor, Keyword.get(opts, :decimals, 0), grouping)
   end
 
-  def figure(paise, 2) when is_integer(paise) do
+  @doc "The currency symbol for an ISO code, for column headings such as `Rate (₹)`."
+  def currency_symbol(currency), do: Currency.symbol(currency)
+
+  @doc """
+  Minor units as a grouped number without a symbol, e.g. `"-1,23,456.78"`.
+  Grouping is `:indian` (default) or `:western`.
+  """
+  def figure(paise, decimals \\ 0, grouping \\ :indian)
+
+  def figure(paise, 0, grouping) when is_integer(paise) do
+    {rupees, _round_off} = Money.round_to_rupee(paise)
+    group(div(rupees, 100), grouping)
+  end
+
+  def figure(paise, 2, grouping) when is_integer(paise) do
     sign = if paise < 0, do: "-", else: ""
     paise = abs(paise)
     fraction = paise |> rem(100) |> Integer.to_string() |> String.pad_leading(2, "0")
 
-    sign <> group_indian(div(paise, 100)) <> "." <> fraction
+    sign <> group(div(paise, 100), grouping) <> "." <> fraction
   end
 
   @doc "The value a rupee input shows: stored paise as rupees, typed text as is."
@@ -99,6 +117,49 @@ defmodule QuantumBillingWeb.Format do
     end
   end
 
+  @doc """
+  Spells an amount out in `currency`: INR as `rupees_in_words/1`, others in
+  Western numbering, e.g. "Dirhams One Thousand and Fifty Fils Only".
+  """
+  def amount_in_words(minor, currency) when is_integer(minor) do
+    case Currency.get(currency) do
+      %{code: "INR"} -> rupees_in_words(minor)
+      %{major: major, minor: minor_name} -> western_words(minor, major, minor_name)
+    end
+  end
+
+  defp western_words(minor, major, minor_name) when minor < 0,
+    do: "Minus " <> western_words(-minor, major, minor_name)
+
+  defp western_words(0, major, _minor_name), do: major <> " Zero Only"
+
+  defp western_words(minor, _major, minor_name) when minor < 100,
+    do: String.trim(western(minor)) <> " " <> minor_name <> " Only"
+
+  defp western_words(minor, major, minor_name) do
+    whole = major <> " " <> String.trim(western(div(minor, 100)))
+
+    case rem(minor, 100) do
+      0 ->
+        whole <> " Only"
+
+      fraction ->
+        whole <> " and " <> String.trim(western(fraction)) <> " " <> minor_name <> " Only"
+    end
+  end
+
+  # Western grouping: billion, million, thousand, then hundreds.
+  defp western(n) when n >= 1_000_000_000,
+    do: western(div(n, 1_000_000_000)) <> " Billion" <> western(rem(n, 1_000_000_000))
+
+  defp western(n) when n >= 1_000_000,
+    do: western(div(n, 1_000_000)) <> " Million" <> western(rem(n, 1_000_000))
+
+  defp western(n) when n >= 1_000,
+    do: western(div(n, 1_000)) <> " Thousand" <> western(rem(n, 1_000))
+
+  defp western(n), do: in_words(n)
+
   # Indian grouping: crore, lakh, then hundreds.
   defp in_words(0), do: ""
 
@@ -123,6 +184,23 @@ defmodule QuantumBillingWeb.Format do
   end
 
   defp in_words(n), do: " " <> Enum.at(@ones, n)
+
+  # 1500000 -> "1,500,000"
+  defp group(amount, :western) do
+    sign = if amount < 0, do: "-", else: ""
+
+    digits =
+      amount
+      |> abs()
+      |> Integer.to_string()
+      |> String.reverse()
+      |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+      |> String.reverse()
+
+    sign <> digits
+  end
+
+  defp group(amount, _indian), do: group_indian(amount)
 
   # 1500000 -> "15,00,000"
   defp group_indian(amount) do

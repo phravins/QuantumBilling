@@ -30,6 +30,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     {:signature, "Signature", "hero-pencil"},
     {:footer, "Footer", "hero-bars-3-bottom-left"},
     {:payment, "Payment Details", "hero-qr-code"},
+    {:custom_fields, "Custom Fields", "hero-squares-plus"},
     {:custom_text, "Custom Text", "hero-chat-bubble-bottom-center-text"},
     {:image, "Image or Stamp", "hero-photo"},
     {:spacer, "Spacer", "hero-arrows-up-down"}
@@ -523,6 +524,9 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     </label>
     """
   end
+
+  # The layout keeps the "show-gstin" name; it shows a VAT number on VAT invoices.
+  defp option_label("show-gstin"), do: "Show GSTIN / VAT No."
 
   defp option_label(xml) do
     xml |> String.replace("-", " ") |> String.capitalize()

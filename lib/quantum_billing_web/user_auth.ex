@@ -10,6 +10,8 @@ defmodule QuantumBillingWeb.UserAuth do
   alias QuantumBilling.Events
   alias QuantumBilling.InstallationSettings
   alias QuantumBilling.Repo
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
 
   @owner_only_message "That area is limited to account owners."
 
@@ -138,6 +140,7 @@ defmodule QuantumBillingWeb.UserAuth do
       %Scope{user: %Accounts.User{}} = scope ->
         scope = choose_business(scope, get_session(conn, :business_id))
         Repo.put_business(scope.business)
+        scope = put_tax_regime(scope)
 
         conn
         |> assign(:current_scope, scope)
@@ -449,12 +452,22 @@ defmodule QuantumBillingWeb.UserAuth do
       end)
 
     case socket.assigns.current_scope do
-      %Scope{business: business} -> Repo.put_business(business)
-      nil -> Repo.put_business(nil)
-    end
+      %Scope{business: business} = scope ->
+        Repo.put_business(business)
+        Phoenix.Component.assign(socket, :current_scope, put_tax_regime(scope))
 
-    socket
+      nil ->
+        Repo.put_business(nil)
+        socket
+    end
   end
+
+  # Read once per request or mount, after `Repo` points at the business, so the
+  # sidebar and the GST-only pages need no query of their own.
+  defp put_tax_regime(%Scope{business: %{}, tax_regime: nil} = scope),
+    do: Scope.put_tax_regime(scope, Organization.tax_regime(Settings.get_organization()))
+
+  defp put_tax_regime(scope), do: scope
 
   @doc "Returns the path to redirect to after log in."
   # Already logged in: redirect to settings.

@@ -76,9 +76,7 @@ defmodule QuantumBilling.CreditNotes do
         Map.get(
           attrs,
           :tax_total,
-          Money.to_rupees_decimal(
-            (invoice.cgst_amount || 0) + (invoice.sgst_amount || 0) + (invoice.igst_amount || 0)
-          )
+          Money.to_rupees_decimal(invoice_tax(invoice))
         )
 
     grand_total =
@@ -99,8 +97,15 @@ defmodule QuantumBilling.CreditNotes do
       status: "Issued"
     }
 
-    %CreditNote{}
+    params =
+      case Map.get(attrs, "custom_fields", Map.get(attrs, :custom_fields)) do
+        values when is_map(values) -> Map.put(params, :custom_fields, values)
+        _none -> params
+      end
+
+    %CreditNote{tax_regime: invoice.tax_regime || "gst"}
     |> CreditNote.changeset(params)
+    |> put_breakdown(invoice)
     |> Repo.insert()
     |> case do
       {:ok, note} = result ->
@@ -110,5 +115,39 @@ defmodule QuantumBilling.CreditNotes do
       error ->
         error
     end
+  end
+
+  defp invoice_tax(invoice) do
+    (invoice.cgst_amount || 0) + (invoice.sgst_amount || 0) + (invoice.igst_amount || 0) +
+      (invoice.vat_amount || 0)
+  end
+
+  # The invoice's VAT breakdown, scaled to the note's own taxable value and tax.
+  defp put_breakdown(changeset, %Invoice{tax_breakdown: [_ | _] = breakdown} = invoice) do
+    taxable = Ecto.Changeset.get_field(changeset, :subtotal) || 0
+    tax = Ecto.Changeset.get_field(changeset, :tax_total) || 0
+
+    scaled =
+      breakdown
+      |> Enum.map(fn line ->
+        line
+        |> Map.put("taxable", scale(line["taxable"], taxable, invoice.taxable_value))
+        |> Map.put("tax", scale(line["tax"], tax, invoice_tax(invoice)))
+      end)
+      |> settle("taxable", taxable)
+      |> settle("tax", tax)
+
+    Ecto.Changeset.put_change(changeset, :tax_breakdown, scaled)
+  end
+
+  defp put_breakdown(changeset, _invoice), do: changeset
+
+  defp scale(_value, _part, whole) when whole in [nil, 0], do: 0
+  defp scale(value, part, whole), do: round((value || 0) * part / whole)
+
+  # Puts any rounding difference on the first line, so lines sum to the total.
+  defp settle([first | rest] = lines, key, total) do
+    diff = total - Enum.sum(Enum.map(lines, &(&1[key] || 0)))
+    [Map.update(first, key, diff, &(&1 + diff)) | rest]
   end
 end

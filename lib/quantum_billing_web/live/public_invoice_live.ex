@@ -83,6 +83,9 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           {:ok, updated_invoice} ->
             pay_at(socket, updated_invoice, updated_invoice.razorpay_payment_url)
 
+          {:error, :unsupported_currency} ->
+            {:noreply, assign(socket, :payment_error, Payments.unavailable_message(invoice))}
+
           {:error, reason} ->
             # Show the customer a plain message; log the reason for the business.
             Logger.error(
@@ -157,7 +160,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
               Issued on {@invoice.invoice_date} | Total Due:
-              <strong class="text-emerald-600">{rupees(@invoice.grand_total)}</strong>
+              <strong class="text-emerald-600">{money(@invoice.grand_total, @invoice.currency)}</strong>
             </p>
           </div>
 
@@ -178,8 +181,16 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               <.icon name="hero-check-circle" class="size-4" /> PAID
             </span>
 
+            <span
+              :if={@invoice.status != "Paid" and not Payments.online_payable?(@invoice)}
+              id="payment-unavailable"
+              class="text-xs text-base-content/60"
+            >
+              {Payments.unavailable_message(@invoice)}
+            </span>
+
             <button
-              :if={@invoice.status != "Paid"}
+              :if={@invoice.status != "Paid" and Payments.online_payable?(@invoice)}
               type="button"
               phx-click="pay_now"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition transform hover:-translate-y-0.5"
@@ -202,12 +213,12 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 font-medium flex items-center gap-2"
         >
           <.icon name="hero-check-badge" class="size-5 shrink-0" />
-          <span>Payment of {rupees(@invoice.grand_total)} was successfully received. Transaction Ref:
+          <span>Payment of {money(@invoice.grand_total, @invoice.currency)} was successfully received. Transaction Ref:
           <strong class="font-mono">{@invoice.razorpay_payment_id || "Direct Receipt"}</strong></span>
         </div>
 
         <div
-          :if={@invoice.status != "Paid"}
+          :if={@invoice.status != "Paid" and Payments.online_payable?(@invoice)}
           class="bg-base-100 p-6 rounded-2xl border border-emerald-500/30 shadow-md flex flex-col sm:flex-row items-center justify-between gap-6"
         >
           <div class="space-y-2 flex-1 text-center sm:text-left">
@@ -215,7 +226,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               <.icon name="hero-qr-code" class="size-4" /> Instant UPI Payment
             </div>
             <h2 class="text-lg font-bold text-base-content">
-              Scan & Pay {rupees(@invoice.grand_total)}
+              Scan & Pay {money(@invoice.grand_total, @invoice.currency)}
             </h2>
             <p class="text-xs text-base-content/70">
               Open Google Pay, PhonePe, Paytm, BHIM, or any banking app on your phone and scan this QR code to complete payment instantly.

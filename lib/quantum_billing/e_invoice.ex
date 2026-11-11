@@ -14,6 +14,7 @@ defmodule QuantumBilling.EInvoice do
   alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax
 
   @doc """
   The XML for `invoice`, or every reason it cannot be produced.
@@ -112,7 +113,16 @@ defmodule QuantumBilling.EInvoice do
   Everything that would stop this invoice being submitted, in one list.
   """
   @spec validate(Invoice.t(), Organization.t()) :: :ok | {:error, [String.t()]}
+  def validate(%Invoice{tax_regime: "vat"}, _organization),
+    do: {:error, [Tax.gst_only_message(:e_invoice)]}
+
   def validate(%Invoice{} = invoice, %Organization{} = organization) do
+    if Organization.vat?(organization),
+      do: {:error, [Tax.gst_only_message(:e_invoice)]},
+      else: gst_problems(invoice, organization)
+  end
+
+  defp gst_problems(invoice, organization) do
     problems =
       [
         status(invoice),

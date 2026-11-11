@@ -23,6 +23,9 @@ defmodule QuantumBillingWeb.SettingsLive do
   alias QuantumBilling.Mail
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax
+  alias QuantumBilling.TaxRates
+  alias QuantumBilling.TaxRates.TaxRate
   alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
   alias QuantumBilling.DesignAssets
@@ -80,11 +83,13 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   # Only other windows get this. Re-read rather than trusting the payload.
+  # Another session saved: reload, but never over what this user is typing.
   def handle_info({:settings_updated, _organization}, socket) do
-    {:noreply,
-     socket
-     |> assign_organization(Settings.get_organization())
-     |> assign_form(socket.assigns.section)}
+    socket = assign_organization(socket, Settings.get_organization())
+
+    if editing?(socket.assigns[:form]),
+      do: {:noreply, socket},
+      else: {:noreply, assign_form(socket, socket.assigns.section)}
   end
 
   def handle_info({:invoice_template_changed, _template}, socket) do
@@ -105,30 +110,49 @@ defmodule QuantumBillingWeb.SettingsLive do
   def handle_params(params, _uri, socket) do
     section = section_from(params["section"])
 
-    if owner_only?(section) and not Scope.owner?(socket.assigns.current_scope) do
-      # Credentials and security policy: owners only.
-      {:noreply,
-       socket
-       |> put_flash(:error, "Those settings are limited to account owners.")
-       |> push_patch(to: ~p"/settings/general")}
-    else
-      {:noreply,
-       socket
-       |> assign(:section, section)
-       |> assign(:page_title, section(section).title)
-       |> assign_form(section)
-       |> assign_templates(section)
-       |> assign_deliveries(section)
-       |> assign_calendars(section)
-       |> assign_company(section)}
+    cond do
+      owner_only?(section) and not Scope.owner?(socket.assigns.current_scope) ->
+        # Credentials and security policy: owners only.
+        {:noreply,
+         socket
+         |> put_flash(:error, "Those settings are limited to account owners.")
+         |> push_patch(to: ~p"/settings/general")}
+
+      gst_only?(section) and Scope.vat?(socket.assigns.current_scope) ->
+        {:noreply,
+         socket
+         |> put_flash(:error, Tax.gst_only_message(:e_way_bills))
+         |> push_patch(to: ~p"/settings/general")}
+
+      true ->
+        show_section(socket, section)
     end
+  end
+
+  defp show_section(socket, section) do
+    {:noreply,
+     socket
+     |> assign(:section, section)
+     |> assign(:page_title, section(section).title)
+     |> assign_form(section)
+     |> assign_templates(section)
+     |> assign_deliveries(section)
+     |> assign_calendars(section)
+     |> assign_company(section)
+     |> assign_tax_rates(section)}
   end
 
   # Backup: the download is the whole database and a restore replaces it.
   @owner_only_sections [:smtp, :integrations, :security, :backup]
 
+  # India GST only: hidden and refused once the business charges VAT.
+  @gst_only_sections [:e_way_bill]
+
   @doc "Whether a settings section is owner-only. Public so the nav can hide it."
   def owner_only?(section), do: section in @owner_only_sections
+
+  @doc "Whether a settings section is for India GST only. Public so the nav can hide it."
+  def gst_only?(section), do: section in @gst_only_sections
 
   # The specimen invoice is built from the organisation, so it moves with it.
   defp assign_organization(socket, organization) do
@@ -137,6 +161,19 @@ defmodule QuantumBillingWeb.SettingsLive do
     |> assign(:sample, InvoiceDocument.sample(organization))
     # Inlined so it survives an expired session on /uploads; template previews keep the path.
     |> assign(:logo_src, InvoicePdfGenerator.inline_logo(organization.doc_logo_path))
+    |> assign_tax_regime(organization)
+  end
+
+  # The sidebar follows a regime change at once, not on the next page load.
+  defp assign_tax_regime(socket, organization) do
+    case socket.assigns[:current_scope] do
+      %Scope{business: %{}} = scope ->
+        regime = Organization.tax_regime(organization)
+        assign(socket, :current_scope, Scope.put_tax_regime(scope, regime))
+
+      _no_business ->
+        socket
+    end
   end
 
   defp assign_deliveries(socket, :smtp), do: assign_deliveries(socket)
@@ -165,6 +202,20 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp assign_company(socket, _section), do: socket
+
+  defp assign_tax_rates(socket, :tax), do: socket |> assign(:rate_dialog, nil) |> reload_rates()
+  defp assign_tax_rates(socket, _section), do: assign(socket, :rate_dialog, nil)
+
+  defp reload_rates(socket) do
+    rates = TaxRates.list_rates()
+    archived = TaxRates.list_rates(archived: :only)
+
+    socket
+    |> assign(:rate_count, length(rates))
+    |> assign(:archived_rate_count, length(archived))
+    |> stream(:tax_rates, rates, reset: true)
+    |> stream(:archived_rates, archived, reset: true)
+  end
 
   defp assign_caldav_form(socket, changeset) do
     assign(socket, :caldav_form, to_form(changeset, as: :caldav))
@@ -205,6 +256,9 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
+
+  defp editing?(%Phoenix.HTML.Form{source: %Ecto.Changeset{changes: changes}}), do: changes != %{}
+  defp editing?(_form), do: false
 
   # Invoice design list actions; editing happens in InvoiceTemplateDesignLive.
 
@@ -282,6 +336,8 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   def handle_event("validate", %{"organization" => params}, socket) do
+    params = restrict_params(params, socket)
+
     changeset =
       socket.assigns.organization
       |> Organization.scrub_secrets()
@@ -293,6 +349,7 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   def handle_event("save", %{"organization" => params}, socket) do
     {params, socket} = put_uploaded_logo(params, socket)
+    params = restrict_params(params, socket)
 
     case Settings.update_section(socket.assigns.organization, params, socket.assigns.section) do
       {:ok, organization} ->
@@ -300,6 +357,7 @@ defmodule QuantumBillingWeb.SettingsLive do
          socket
          |> assign_organization(organization)
          |> assign_form(socket.assigns.section)
+         |> add_preset_rates(organization)
          |> put_flash(:info, "#{section(socket.assigns.section).title} saved.")}
 
       {:error, changeset} ->
@@ -423,6 +481,67 @@ defmodule QuantumBillingWeb.SettingsLive do
     end
   end
 
+  # Tax rates (VAT): owners only, enforced again in TaxRates.
+
+  def handle_event("new_rate", _params, socket) do
+    owner_only(socket, fn -> open_rate_dialog(socket, %TaxRate{}) end)
+  end
+
+  def handle_event("edit_rate", %{"id" => id}, socket) do
+    owner_only(socket, fn -> open_rate_dialog(socket, TaxRates.get_rate!(id)) end)
+  end
+
+  def handle_event("close_rate", _params, socket),
+    do: {:noreply, assign(socket, :rate_dialog, nil)}
+
+  def handle_event("validate_rate", %{"tax_rate" => params}, socket) do
+    case socket.assigns.rate_dialog do
+      %{rate: rate} ->
+        changeset = rate |> TaxRates.change_rate(params) |> Map.put(:action, :validate)
+        {:noreply, assign(socket, :rate_dialog, rate_dialog(rate, changeset))}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("save_rate", %{"tax_rate" => params}, socket) do
+    with %{rate: rate} <- socket.assigns.rate_dialog do
+      scope = socket.assigns.current_scope
+
+      result =
+        if rate.id,
+          do: TaxRates.update_rate(scope, rate, params),
+          else: TaxRates.create_rate(scope, params)
+
+      case result do
+        {:ok, saved} ->
+          {:noreply,
+           socket
+           |> assign(:rate_dialog, nil)
+           |> reload_rates()
+           |> put_flash(:info, "#{saved.name} saved.")}
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply, assign(socket, :rate_dialog, rate_dialog(rate, changeset))}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, rate_error(reason))}
+      end
+    else
+      nil -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("archive_rate", %{"id" => id}, socket),
+    do: rate_action(socket, id, &TaxRates.archive_rate/2, "archived")
+
+  def handle_event("restore_rate", %{"id" => id}, socket),
+    do: rate_action(socket, id, &TaxRates.restore_rate/2, "restored")
+
+  def handle_event("default_rate", %{"id" => id}, socket),
+    do: rate_action(socket, id, &TaxRates.set_default/2, "is now the default")
+
   defp send_test_email(socket) do
     recipient = test_recipient(socket.assigns)
 
@@ -448,6 +567,51 @@ defmodule QuantumBillingWeb.SettingsLive do
          )}
     end
   end
+
+  defp open_rate_dialog(socket, rate),
+    do: assign(socket, :rate_dialog, rate_dialog(rate, TaxRates.change_rate(rate)))
+
+  defp rate_dialog(rate, changeset), do: %{rate: rate, form: to_form(changeset, as: :tax_rate)}
+
+  defp rate_action(socket, id, fun, done) do
+    rate = TaxRates.get_rate!(id)
+
+    case fun.(socket.assigns.current_scope, rate) do
+      {:ok, _rate} ->
+        {:noreply, socket |> reload_rates() |> put_flash(:info, "#{rate.name} #{done}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, rate_error(reason))}
+    end
+  end
+
+  defp rate_error(:unauthorized), do: "Tax rates are limited to account owners."
+  defp rate_error(:limit_reached), do: "A business can have at most 50 active tax rates."
+  defp rate_error(:archived), do: "Restore that rate before making it the default."
+  defp rate_error(_reason), do: "That rate could not be changed."
+
+  # The tax system and VAT identity decide every invoice's tax: owners only.
+  @owner_tax_fields ~w(tax_regime vat_number vat_country prices_include_tax round_to_whole_units)
+
+  defp restrict_params(params, %{assigns: %{section: :tax, current_scope: scope}}) do
+    if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_tax_fields)
+  end
+
+  defp restrict_params(params, _socket), do: params
+
+  # Switching to VAT starts the business on its country's rates.
+  defp add_preset_rates(%{assigns: %{section: :tax}} = socket, organization) do
+    scope = socket.assigns.current_scope
+
+    if Organization.vat?(organization) and Scope.owner?(scope) do
+      TaxRates.ensure_presets(scope, organization.vat_country)
+      reload_rates(socket)
+    else
+      socket
+    end
+  end
+
+  defp add_preset_rates(socket, _organization), do: socket
 
   defp owner_only(socket, action) do
     if Scope.owner?(socket.assigns.current_scope) do
@@ -686,6 +850,19 @@ defmodule QuantumBillingWeb.SettingsLive do
           {render_panel(assigns)}
         </.card>
 
+        <.card
+          :if={@section == :tax and Organization.vat?(@organization)}
+          padding="p-0"
+          id="tax-rates-card"
+        >
+          <.tax_rates
+            streams={@streams}
+            rate_count={@rate_count}
+            archived_rate_count={@archived_rate_count}
+            owner?={Scope.owner?(@current_scope)}
+          />
+        </.card>
+
         <.card :if={@section == :general} padding="p-4">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -702,7 +879,231 @@ defmodule QuantumBillingWeb.SettingsLive do
           </div>
         </.card>
       </div>
+
+      <.rate_dialog :if={@section == :tax && @rate_dialog} dialog={@rate_dialog} />
     </Layouts.app>
+    """
+  end
+
+  # Tax's lists are `{code, label}`; a select wants `{label, value}`.
+  defp select_options(pairs), do: Enum.map(pairs, fn {code, label} -> {label, code} end)
+
+  defp regime_label(organization) do
+    code = Organization.tax_regime(organization)
+    Enum.find_value(Tax.regimes(), code, fn {c, label} -> if c == code, do: label end)
+  end
+
+  attr :streams, :map, required: true
+  attr :rate_count, :integer, required: true
+  attr :archived_rate_count, :integer, required: true
+  attr :owner?, :boolean, required: true
+
+  defp tax_rates(assigns) do
+    ~H"""
+    <div class="flex items-center justify-between gap-3 border-b border-base-300 px-4 py-3">
+      <div>
+        <h2 class="text-sm font-semibold tracking-tight">VAT Rates</h2>
+        <p class="mt-0.5 text-xs text-base-content/60">
+          Each invoice line picks one. Editing a rate never changes an issued invoice.
+        </p>
+      </div>
+      <button
+        :if={@owner?}
+        id="new-rate"
+        type="button"
+        phx-click="new_rate"
+        class={secondary_button_class()}
+      >
+        <.icon name="hero-plus" class="size-4" /> Add Rate
+      </button>
+    </div>
+
+    <ul id="tax-rates" phx-update="stream" class="divide-y divide-base-300">
+      <li
+        id="tax-rates-empty"
+        class="hidden px-4 py-6 text-center text-sm text-base-content/50 only:block"
+      >
+        No rates yet.
+      </li>
+      <li
+        :for={{dom_id, rate} <- @streams.tax_rates}
+        id={dom_id}
+        class="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-base-200/40"
+      >
+        <span class="w-14 shrink-0 text-right font-mono text-sm tabular-nums">
+          {Tax.percent_label(rate.rate_bp)}
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span class="truncate text-sm font-medium">{rate.name}</span>
+            <span
+              :if={rate.is_default}
+              class="rounded-field bg-base-content px-1.5 py-0.5 text-[11px] text-base-100"
+            >
+              Default
+            </span>
+          </div>
+          <p class="mt-0.5 truncate text-xs text-base-content/50">
+            {Tax.category_label(rate.category)}
+            <span :if={rate.exemption_reason}>· {rate.exemption_reason}</span>
+          </p>
+        </div>
+        <div
+          :if={@owner?}
+          class="flex shrink-0 gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100"
+        >
+          <button
+            :if={not rate.is_default}
+            id={"default-rate-#{rate.id}"}
+            type="button"
+            phx-click="default_rate"
+            phx-value-id={rate.id}
+            class="btn btn-xs btn-ghost"
+          >
+            Make default
+          </button>
+          <button
+            id={"edit-rate-#{rate.id}"}
+            type="button"
+            phx-click="edit_rate"
+            phx-value-id={rate.id}
+            class="btn btn-xs btn-ghost"
+          >
+            Edit
+          </button>
+          <button
+            id={"archive-rate-#{rate.id}"}
+            type="button"
+            phx-click="archive_rate"
+            phx-value-id={rate.id}
+            data-confirm={"Archive #{rate.name}? New lines can't use it; issued invoices keep it."}
+            class="btn btn-xs btn-ghost"
+          >
+            Archive
+          </button>
+        </div>
+      </li>
+    </ul>
+
+    <details
+      :if={@archived_rate_count > 0}
+      id="archived-rates"
+      class="group/archived border-t border-base-300"
+    >
+      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-4 py-2.5 text-xs font-medium text-base-content/60 transition-colors hover:text-base-content">
+        <.icon
+          name="hero-chevron-right"
+          class="size-3.5 transition-transform duration-150 group-open/archived:rotate-90"
+        /> Archived ({@archived_rate_count})
+      </summary>
+      <ul id="archived-rate-list" phx-update="stream" class="divide-y divide-base-300">
+        <li
+          :for={{dom_id, rate} <- @streams.archived_rates}
+          id={dom_id}
+          class="flex items-center gap-3 px-4 py-2.5"
+        >
+          <span class="w-14 shrink-0 text-right font-mono text-sm tabular-nums text-base-content/45">
+            {Tax.percent_label(rate.rate_bp)}
+          </span>
+          <span class="min-w-0 flex-1 truncate text-sm text-base-content/70">{rate.name}</span>
+          <button
+            :if={@owner?}
+            id={"restore-rate-#{rate.id}"}
+            type="button"
+            phx-click="restore_rate"
+            phx-value-id={rate.id}
+            class="btn btn-xs btn-ghost"
+          >
+            Restore
+          </button>
+        </li>
+      </ul>
+    </details>
+    """
+  end
+
+  attr :dialog, :map, required: true
+
+  defp rate_dialog(assigns) do
+    assigns =
+      assign(assigns,
+        form: assigns.dialog.form,
+        rate: assigns.dialog.rate,
+        untaxed?: Tax.untaxed_category?(to_string(assigns.dialog.form[:category].value))
+      )
+
+    ~H"""
+    <div
+      id="rate-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rate-dialog-title"
+      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
+      phx-window-keydown="close_rate"
+      phx-key="escape"
+    >
+      <div class="fixed inset-0 bg-base-content/30 backdrop-blur-sm" phx-click="close_rate" />
+      <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-box border border-base-300 bg-base-100 p-5 shadow-xl">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <h2 id="rate-dialog-title" class="text-sm font-semibold tracking-tight">
+            {if @rate.id, do: "Edit #{@rate.name}", else: "Add a VAT rate"}
+          </h2>
+          <button
+            type="button"
+            phx-click="close_rate"
+            class="flex size-7 items-center justify-center rounded-field text-base-content/45 transition-colors hover:bg-base-200 hover:text-base-content"
+            aria-label="Close"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
+        </div>
+
+        <.form for={@form} id="rate-form" phx-change="validate_rate" phx-submit="save_rate">
+          <div class="space-y-3">
+            <.field
+              field={@form[:name]}
+              label="Name"
+              maxlength="60"
+              placeholder="e.g. Standard 5%"
+              phx-mounted={JS.focus()}
+              required
+            />
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <.field
+                field={@form[:category]}
+                label="Category"
+                type="select"
+                options={select_options(Tax.categories())}
+              />
+              <.field
+                :if={not @untaxed?}
+                field={@form[:percent]}
+                label="Rate (%)"
+                inputmode="decimal"
+                placeholder="e.g. 5 or 7.5"
+                required
+              />
+            </div>
+            <.field
+              :if={@untaxed?}
+              field={@form[:exemption_reason]}
+              label="Reason printed on the invoice"
+              maxlength="200"
+              placeholder="e.g. Exempt supply under Article 46"
+            />
+          </div>
+
+          <div class="mt-5 flex justify-end gap-2">
+            <button type="button" phx-click="close_rate" class={secondary_button_class()}>
+              Cancel
+            </button>
+            <button id="save-rate" type="submit" class={action_button_class()}>
+              <.icon name="hero-check" class="size-4" /> Save Rate
+            </button>
+          </div>
+        </.form>
+      </div>
+    </div>
     """
   end
 
@@ -1019,30 +1420,97 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :tax} = assigns) do
+    assigns =
+      assigns
+      |> assign(:owner?, Scope.owner?(assigns.current_scope))
+      |> assign(:vat?, Tax.vat?(to_string(assigns.form[:tax_regime].value)))
+
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <.field
-          field={f[:default_gst_rate]}
-          label="Default GST Rate (%)"
-          type="select"
-          options={Organization.gst_rates()}
-          hint="The statutory slabs."
-        />
+        <%= if @owner? do %>
+          <.field
+            field={f[:tax_regime]}
+            label="Tax System"
+            type="select"
+            options={select_options(Tax.regimes())}
+            hint="Invoices already issued keep the system they were made under."
+          />
+        <% else %>
+          <div id="tax-regime-summary">
+            <p class="mb-1.5 text-xs font-medium text-base-content/60">Tax System</p>
+            <p class="text-sm">
+              {regime_label(@organization)}
+              <span :if={Organization.vat?(@organization) and @organization.vat_country}>
+                · {Tax.country_name(@organization.vat_country)}
+              </span>
+            </p>
+            <p class="mt-0.5 text-xs text-base-content/45">Only account owners can change it.</p>
+          </div>
+        <% end %>
+
+        <%= if not @vat? do %>
+          <.field
+            field={f[:default_gst_rate]}
+            label="Default GST Rate (%)"
+            type="select"
+            options={Organization.gst_rates()}
+            hint="The statutory slabs."
+          />
+        <% end %>
       </div>
 
-      <div class="mt-4 space-y-3">
-        <.toggle
-          field={f[:cess_enabled]}
-          label="Enable cess"
-          hint="Adds a cess column to invoices and the tax summary."
-        />
-        <.toggle
-          field={f[:composition_scheme]}
-          label="Registered under the composition scheme"
-          hint="Files CMP-08 quarterly instead of GSTR-1 and GSTR-3B monthly."
-        /> <.toggle field={f[:tds_enabled]} label="Deduct TDS on applicable invoices" />
-      </div>
+      <%= if @vat? do %>
+        <div :if={@owner?} id="vat-identity" class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <.field
+            field={f[:vat_country]}
+            label="VAT Country"
+            type="select"
+            options={select_options(Tax.countries())}
+            prompt="Choose a country"
+            required
+          />
+          <.field
+            field={f[:vat_number]}
+            label="VAT No. / TRN"
+            placeholder="e.g. 100123456700003"
+            hint="Printed on every invoice."
+          />
+        </div>
+
+        <div :if={@owner?} class="mt-4 space-y-3">
+          <.toggle
+            field={f[:prices_include_tax]}
+            label="Prices include VAT"
+            hint="Item rates are entered gross; the VAT is worked out of them."
+          />
+          <.toggle
+            field={f[:round_to_whole_units]}
+            label="Round totals to whole units"
+            hint="Adds a round-off line so the total has no minor units."
+          />
+        </div>
+
+        <p
+          :if={@owner? and not Organization.vat?(@organization)}
+          class="mt-4 rounded-field bg-base-200 px-3.5 py-3 text-xs text-base-content/70"
+        >
+          Save to switch to VAT. The country's standard rates are added for you to edit.
+        </p>
+      <% else %>
+        <div class="mt-4 space-y-3">
+          <.toggle
+            field={f[:cess_enabled]}
+            label="Enable cess"
+            hint="Adds a cess column to invoices and the tax summary."
+          />
+          <.toggle
+            field={f[:composition_scheme]}
+            label="Registered under the composition scheme"
+            hint="Files CMP-08 quarterly instead of GSTR-1 and GSTR-3B monthly."
+          /> <.toggle field={f[:tds_enabled]} label="Deduct TDS on applicable invoices" />
+        </div>
+      <% end %>
     </.form>
     """
   end

@@ -7,6 +7,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
   import Ecto.Changeset
 
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.GST
   alias QuantumBilling.Money.Paise
 
@@ -126,6 +127,9 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
 
     # 5. Other details
     field :remarks, :string
+
+    # The bill's custom fields, passed on to the saved bill.
+    field :custom_fields, :map, default: %{}
   end
 
   @doc """
@@ -153,6 +157,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     |> validate_gstin(:to_gstin)
     |> validate_transporter_id()
     |> validate_length(:remarks, max: 500)
+    |> CustomFields.cast("e_way_bill", attrs)
   end
 
   @doc """
@@ -203,7 +208,7 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
   end
 
   @doc "Every castable field, in schema order."
-  def all_fields, do: __MODULE__.__schema__(:fields)
+  def all_fields, do: __MODULE__.__schema__(:fields) -- [:custom_fields]
 
   def supply_types, do: @supply_types
   def sub_types, do: @sub_types

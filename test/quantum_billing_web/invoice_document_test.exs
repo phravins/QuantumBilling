@@ -376,4 +376,28 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       end
     end
   end
+
+  describe "currency" do
+    test "an INR invoice prints rupees as before", %{conn: conn, invoice: invoice} do
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert "Rate (₹)" in item_columns(html)
+        assert html =~ "Rupees One Thousand One Hundred Eighty Only"
+      end
+    end
+
+    test "another currency prints its symbol and units", %{conn: conn, invoice: invoice} do
+      {:ok, invoice} = Invoices.update_invoice(invoice, %{"currency" => "AED"})
+      %{screen: screen, printed: printed} = both(conn, invoice)
+
+      for html <- [screen, printed] do
+        assert "Rate (AED)" in item_columns(html)
+        assert html =~ "AED 1,180.00"
+        assert html =~ "Dirhams One Thousand One Hundred Eighty Only"
+        refute html =~ "Rupees"
+        refute "Rate (₹)" in item_columns(html)
+      end
+    end
+  end
 end

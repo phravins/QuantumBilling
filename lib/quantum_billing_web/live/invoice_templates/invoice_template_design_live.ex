@@ -47,7 +47,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> assign(:error, nil)
          |> assign(:upload_error, nil)
          |> assign(:logo_error, nil)
-         |> assign(:sample, InvoiceDocument.sample())
+         |> assign(:sample, InvoiceDocument.pad_sample(organization))
          |> assign_logo()
          |> put_doc(Templates.document_of(template))
          |> assign(:form, to_form(%{"name" => template.name, "accent" => template.accent}))

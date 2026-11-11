@@ -2,27 +2,31 @@ defmodule QuantumBillingWeb.API.V1.ClientJSON do
   @moduledoc """
   A client as the API shows it, field by field. Not exposed: `notes`,
   `opening_balance`, `outstanding`, `credit_limit` and `deleted_at`.
+  `custom_fields` holds only the fields marked "Include in API".
   """
 
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.CustomFields
 
-  @fields ~w(id type name display_name legal_name gstin pan business_type category
-             email phone billing_address shipping_address payment_terms_days status
-             created_at updated_at)a
+  @fields ~w(id type name display_name legal_name gstin pan tax_number country business_type
+             category email phone billing_address shipping_address payment_terms_days status
+             custom_fields created_at updated_at)a
 
   @doc "The fields of a client, for the test that pins them."
   def fields, do: @fields
 
   def index(%{page: page}) do
     %{
-      data: Enum.map(page.rows, &client/1),
+      data: Enum.map(page.rows, &client(&1, definitions())),
       meta: QuantumBillingWeb.API.Pagination.meta(page)
     }
   end
 
-  def show(%{client: client}), do: %{data: client(client)}
+  def show(%{client: client}), do: %{data: client(client, definitions())}
 
-  defp client(%Client{} = client) do
+  defp definitions, do: CustomFields.api_definitions("client")
+
+  defp client(%Client{} = client, definitions) do
     billing = %{
       line1: client.billing_line1,
       line2: client.billing_line2,
@@ -39,6 +43,8 @@ defmodule QuantumBillingWeb.API.V1.ClientJSON do
       legal_name: client.legal_name,
       gstin: client.gstin,
       pan: client.pan,
+      tax_number: client.tax_number,
+      country: client.country,
       business_type: client.business_type,
       category: client.category,
       email: client.email,
@@ -57,6 +63,7 @@ defmodule QuantumBillingWeb.API.V1.ClientJSON do
         ),
       payment_terms_days: client.payment_terms_days,
       status: client.status,
+      custom_fields: CustomFields.visible_values(client.custom_fields, definitions),
       created_at: client.inserted_at,
       updated_at: client.updated_at
     }

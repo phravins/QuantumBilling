@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "QuantumBilling API",
-    "version": "1.1.0",
-    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is integer paise."
+    "version": "1.2.0",
+    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is an integer in the invoice currency's minor unit (paise for INR, fils for AED, pence for GBP, cents for EUR; 100 = one unit)."
   },
   "servers": [
     {
@@ -97,6 +97,11 @@
         },
         "additionalProperties": false
       },
+      "CustomFields": {
+        "type": "object",
+        "description": "The business's own fields marked \"Include in API\" in Settings › Data model, keyed by field key. Values: text, long_text, email, phone and url are strings; number is a decimal string; money is integer minor units of the currency (paise for INR); date is YYYY-MM-DD; boolean is true or false; select is a choice id; multi_select is a list of choice ids. When writing, a select or multi_select also accepts choice labels (any case), null clears a value, and any key not marked for the API is refused.",
+        "additionalProperties": true
+      },
       "Invoice": {
         "type": "object",
         "properties": {
@@ -126,11 +131,61 @@
             "nullable": true
           },
           "place_of_supply": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "GST: the state supplied to. VAT: usually null"
           },
           "currency": {
             "type": "string",
             "nullable": true
+          },
+          "tax_regime": {
+            "type": "string",
+            "enum": [
+              "gst",
+              "vat"
+            ],
+            "description": "The regime the invoice was raised under; changing the business setting never changes it"
+          },
+          "reverse_charge": {
+            "type": "boolean",
+            "description": "VAT only: the customer accounts for the VAT, so none is charged"
+          },
+          "tax_breakdown": {
+            "type": "array",
+            "description": "VAT only: one row per rate used. Empty for GST",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "reduced",
+                    "zero",
+                    "exempt",
+                    "reverse_charge",
+                    "out_of_scope"
+                  ]
+                },
+                "rate_bp": {
+                  "type": "integer",
+                  "description": "Basis points (750 = 7.5%)"
+                },
+                "taxable": {
+                  "type": "integer",
+                  "description": "Taxable amount (minor units)"
+                },
+                "tax": {
+                  "type": "integer",
+                  "description": "VAT at this rate (minor units)"
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "client": {
             "type": "object",
@@ -146,6 +201,11 @@
                 "type": "string",
                 "nullable": true
               },
+              "tax_number": {
+                "type": "string",
+                "nullable": true,
+                "description": "VAT: the customer's VAT number or TRN"
+              },
               "state": {
                 "type": "string",
                 "nullable": true
@@ -158,31 +218,35 @@
             "properties": {
               "taxable_value": {
                 "type": "integer",
-                "description": "taxable_value (paise; 100 = ₹1)"
+                "description": "taxable_value (minor units; 100 = one unit)"
               },
               "cgst": {
                 "type": "integer",
-                "description": "cgst (paise; 100 = ₹1)"
+                "description": "cgst (minor units; 100 = one unit)"
               },
               "sgst": {
                 "type": "integer",
-                "description": "sgst (paise; 100 = ₹1)"
+                "description": "sgst (minor units; 100 = one unit)"
               },
               "igst": {
                 "type": "integer",
-                "description": "igst (paise; 100 = ₹1)"
+                "description": "igst (minor units; 100 = one unit)"
               },
               "cess": {
                 "type": "integer",
-                "description": "cess (paise; 100 = ₹1)"
+                "description": "cess (minor units; 100 = one unit)"
+              },
+              "vat": {
+                "type": "integer",
+                "description": "vat (minor units; 0 on GST invoices)"
               },
               "round_off": {
                 "type": "integer",
-                "description": "round_off (paise; 100 = ₹1)"
+                "description": "round_off (minor units; 100 = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (paise; 100 = ₹1)"
+                "description": "grand_total (minor units; 100 = one unit)"
               }
             },
             "additionalProperties": false
@@ -223,6 +287,9 @@
             "type": "string",
             "nullable": true
           },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -261,15 +328,38 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (paise; 100 = ₹1)"
+                  "description": "Rate (minor units; 100 = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
-                  "description": "Percent"
+                  "description": "GST slab, percent. 0 on VAT lines"
+                },
+                "tax_rate_id": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "VAT: the business tax rate chosen"
+                },
+                "tax_rate_bp": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "VAT: the rate when saved, in basis points (750 = 7.5%)"
+                },
+                "tax_category": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "VAT: standard, reduced, zero, exempt, reverse_charge or out_of_scope"
+                },
+                "tax_name": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "VAT: the rate's name when saved"
                 },
                 "amount": {
                   "type": "integer",
-                  "description": "Line amount (paise; 100 = ₹1)"
+                  "description": "Line amount (minor units; 100 = one unit)"
+                },
+                "custom_fields": {
+                  "$ref": "#/components/schemas/CustomFields"
                 }
               },
               "additionalProperties": false
@@ -305,6 +395,16 @@
           "pan": {
             "type": "string",
             "nullable": true
+          },
+          "tax_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "VAT number or TRN"
+          },
+          "country": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 3166-1 alpha-2"
           },
           "business_type": {
             "type": "string",
@@ -379,6 +479,9 @@
           },
           "status": {
             "type": "string"
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
           },
           "created_at": {
             "type": "string",
@@ -498,15 +601,15 @@
             "properties": {
               "subtotal": {
                 "type": "integer",
-                "description": "subtotal (paise; 100 = ₹1)"
+                "description": "subtotal (minor units; 100 = one unit)"
               },
               "tax_total": {
                 "type": "integer",
-                "description": "tax_total (paise; 100 = ₹1)"
+                "description": "tax_total (minor units; 100 = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (paise; 100 = ₹1)"
+                "description": "grand_total (minor units; 100 = one unit)"
               }
             },
             "additionalProperties": false
@@ -560,13 +663,18 @@
             "type": "string"
           },
           "place_of_supply": {
-            "type": "string"
+            "type": "string",
+            "description": "Required for GST"
           },
           "remarks": {
             "type": "string"
           },
           "terms": {
             "type": "string"
+          },
+          "reverse_charge": {
+            "type": "boolean",
+            "description": "VAT only"
           },
           "items": {
             "type": "array",
@@ -596,10 +704,18 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (paise; 100 = ₹1)"
+                  "description": "Rate (minor units; 100 = one unit)"
                 },
                 "tax_rate": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "GST only: slab percent"
+                },
+                "tax_rate_id": {
+                  "type": "integer",
+                  "description": "VAT only: a business tax rate id; defaults to the default rate"
+                },
+                "custom_fields": {
+                  "$ref": "#/components/schemas/CustomFields"
                 }
               },
               "additionalProperties": false,
@@ -607,15 +723,18 @@
                 "description"
               ]
             }
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
           }
         },
         "additionalProperties": false,
         "required": [
           "client_id",
           "invoice_date",
-          "place_of_supply",
           "items"
-        ]
+        ],
+        "description": "The business's tax regime decides the tax fields. GST: each line takes tax_rate and place_of_supply is required. VAT: each line takes tax_rate_id (else the default rate) and the invoice may set reverse_charge. Fields of the other regime are refused."
       },
       "ClientCreate": {
         "type": "object",
@@ -637,6 +756,14 @@
           },
           "pan": {
             "type": "string"
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "VAT businesses: the client's VAT number, checked against country"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2, e.g. AE or GB"
           },
           "business_type": {
             "type": "string"
@@ -707,6 +834,9 @@
           },
           "payment_terms_days": {
             "type": "integer"
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
           }
         },
         "additionalProperties": false,
@@ -725,7 +855,7 @@
           },
           "amount": {
             "type": "integer",
-            "description": "Must cover the grand total (paise; 100 = ₹1)"
+            "description": "Must cover the grand total (minor units; 100 = one unit)"
           }
         },
         "additionalProperties": false,
@@ -762,15 +892,15 @@
           },
           "subtotal": {
             "type": "integer",
-            "description": "Defaults to the invoice's (paise; 100 = ₹1)"
+            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
           },
           "tax_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (paise; 100 = ₹1)"
+            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
           },
           "grand_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (paise; 100 = ₹1)"
+            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
           }
         },
         "additionalProperties": false,
@@ -1421,6 +1551,7 @@
     "/invoices/{id}/e-invoice": {
       "post": {
         "summary": "Queue IRN registration",
+        "description": "India GST only. A VAT invoice, or any invoice of a VAT business, is refused with 409 and code `gst_only`.",
         "responses": {
           "202": {
             "description": "Queued",

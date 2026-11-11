@@ -24,6 +24,10 @@ defmodule QuantumBilling.Payments.QRCode do
   def upi_uri(%Invoice{} = invoice, nil),
     do: upi_uri(invoice, Settings.get_organization())
 
+  # UPI settles in rupees only.
+  def upi_uri(%Invoice{currency: currency}, _organization) when currency not in [nil, "INR"],
+    do: {:error, :unsupported_currency}
+
   def upi_uri(%Invoice{} = invoice, %Organization{} = organization) do
     case payee_vpa(organization) do
       nil ->
@@ -37,7 +41,7 @@ defmodule QuantumBilling.Payments.QRCode do
             pa: vpa,
             pn: name,
             am: amount(invoice.grand_total),
-            cu: invoice.currency || "INR",
+            cu: "INR",
             tn: note(invoice),
             tr: reference(invoice)
           ]

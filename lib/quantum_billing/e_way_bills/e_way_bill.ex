@@ -12,6 +12,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
   import Ecto.Changeset
   import Ecto.Query, only: [from: 2]
 
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills.PartBUpdate
   alias QuantumBilling.Invoices.Invoice
 
@@ -42,6 +43,9 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     belongs_to :invoice, Invoice
     has_many :part_b_updates, PartBUpdate, foreign_key: :e_way_bill_id
 
+    # Values for the business's own fields. Written only by CustomFields.cast/4.
+    field :custom_fields, :map, default: %{}
+
     timestamps(type: :utc_datetime)
   end
 
@@ -66,6 +70,7 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     |> validate_inclusion(:mode_of_transport, @transport_modes)
     |> validate_inclusion(:portal_mode, @portal_modes)
     |> validate_number(:distance_km, greater_than_or_equal_to: 0, less_than_or_equal_to: 4_000)
+    |> CustomFields.cast("e_way_bill", attrs)
     |> foreign_key_constraint(:invoice_id)
     |> unique_constraint(:ewb_number)
     |> unique_constraint(:invoice_id,

@@ -329,14 +329,21 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp plain_number(value), do: format_number(value)
 
   @doc """
-  Formats paise for a chart axis or tooltip in Indian units, e.g. `"₹25L"`. Shared with Reports.
+  A short amount for a chart axis or tooltip: Indian units for INR (`"₹25L"`),
+  thousands and millions otherwise (`"AED 2.5M"`).
   """
-  def money_axis_label(paise), do: axis_label(paise / 100)
+  def money_axis_label(minor, currency \\ "INR") do
+    symbol = QuantumBillingWeb.Format.currency_symbol(currency)
+    symbol = if QuantumBilling.Currency.letter_symbol?(currency), do: symbol <> " ", else: symbol
+    symbol <> axis_label(minor / 100, QuantumBilling.Currency.get(currency).grouping)
+  end
 
-  defp axis_label(rupees) when rupees >= 10_000_000, do: "₹" <> short(rupees / 10_000_000) <> "Cr"
-  defp axis_label(rupees) when rupees >= 100_000, do: "₹" <> short(rupees / 100_000) <> "L"
-  defp axis_label(rupees) when rupees >= 1_000, do: "₹" <> short(rupees / 1_000) <> "K"
-  defp axis_label(rupees), do: "₹#{round(rupees)}"
+  defp axis_label(major, :indian) when major >= 10_000_000, do: short(major / 10_000_000) <> "Cr"
+  defp axis_label(major, :indian) when major >= 100_000, do: short(major / 100_000) <> "L"
+  defp axis_label(major, _grouping) when major >= 1_000_000_000, do: short(major / 1.0e9) <> "B"
+  defp axis_label(major, _grouping) when major >= 1_000_000, do: short(major / 1_000_000) <> "M"
+  defp axis_label(major, _grouping) when major >= 1_000, do: short(major / 1_000) <> "K"
+  defp axis_label(major, _grouping), do: "#{round(major)}"
 
   defp short(number) do
     number
@@ -532,11 +539,12 @@ defmodule QuantumBillingWeb.DashboardComponents do
 
   @doc "The amount for a tax summary column, or a dash when it doesn't apply to that tax type."
   attr :amount, :integer, default: nil
+  attr :currency, :string, default: "INR"
 
   def tax_cell(assigns) do
     ~H"""
     <span :if={is_nil(@amount)} class="text-base-content/35">&mdash;</span>
-    <span :if={@amount}>{QuantumBillingWeb.Format.rupees(@amount, decimals: 2)}</span>
+    <span :if={@amount}>{QuantumBillingWeb.Format.money(@amount, @currency, decimals: 2)}</span>
     """
   end
 end

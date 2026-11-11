@@ -7,7 +7,11 @@ defmodule QuantumBillingWeb.ClientsLive do
 
   import QuantumBillingWeb.ClientsComponents
 
+  import QuantumBillingWeb.CustomFieldComponents,
+    only: [custom_cell: 1, custom_filters: 1, list_definitions: 1, put_filter: 4]
+
   alias QuantumBilling.Clients
+  alias QuantumBilling.CustomFields
 
   @per_page 10
 
@@ -16,9 +20,15 @@ defmodule QuantumBillingWeb.ClientsLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Clients.subscribe()
 
+    definitions = CustomFields.active_definitions("client")
+
     {:ok,
      socket
+     |> assign(:column_definitions, list_definitions(definitions))
+     |> assign(:filter_definitions, CustomFields.filter_definitions(definitions))
+     |> assign(:custom_filter, %{})
      |> assign(:page_title, "Clients")
+     |> assign(:currency, QuantumBilling.Settings.currency_code())
      |> assign(:active_nav, :clients)
      |> assign(:search, "")
      |> assign(:status_filter, "All Status")
@@ -35,6 +45,18 @@ defmodule QuantumBillingWeb.ClientsLive do
 
   def handle_event("filter_status", %{"status" => status}, socket) do
     {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1) |> load_page()}
+  end
+
+  def handle_event("filter_custom", %{"key" => key} = params, socket) do
+    filters =
+      put_filter(
+        socket.assigns.custom_filter,
+        socket.assigns.filter_definitions,
+        key,
+        params["value"]
+      )
+
+    {:noreply, socket |> assign(:custom_filter, filters) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
@@ -143,6 +165,7 @@ defmodule QuantumBillingWeb.ClientsLive do
       Clients.page(
         search: socket.assigns.search,
         status: socket.assigns.status_filter,
+        custom: socket.assigns.custom_filter,
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
@@ -200,7 +223,13 @@ defmodule QuantumBillingWeb.ClientsLive do
           />
         </form>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <.custom_filters
+            id="client-custom-filters"
+            definitions={@filter_definitions}
+            filters={@custom_filter}
+          />
+
           <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class={filter_button_class()}>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
@@ -229,171 +258,190 @@ defmodule QuantumBillingWeb.ClientsLive do
           class="flex-1 justify-center"
           icon="hero-users"
           title={
-            if @search == "" and @status_filter == "All Status",
+            if @search == "" and @status_filter == "All Status" and @custom_filter == %{},
               do: "No clients yet",
               else: "No clients match these filters"
           }
           description={
-            if @search == "" and @status_filter == "All Status",
+            if @search == "" and @status_filter == "All Status" and @custom_filter == %{},
               do: "Customers you invoice will appear here.",
               else: "Try a different search term or status."
           }
         />
         <div :if={not @empty?}>
-          <table class="table table-fixed">
-            <thead>
-              <tr class={table_head_class()}>
-                <th class="w-12">S.No</th>
+          <div class={@column_definitions != [] && "overflow-x-auto"}>
+            <table class={["table table-fixed", @column_definitions != [] && "min-w-[64rem]"]}>
+              <thead>
+                <tr class={table_head_class()}>
+                  <th class="w-12">S.No</th>
 
-                <th>
-                  <.sortable_th
-                    label="Client Name"
-                    field={:name}
-                  />
-                </th>
+                  <th>
+                    <.sortable_th
+                      label="Client Name"
+                      field={:name}
+                    />
+                  </th>
 
-                <th class="w-44">GSTIN</th>
+                  <th class="w-44">GSTIN</th>
 
-                <th class="w-56">Email</th>
+                  <th class="w-56">Email</th>
 
-                <th class="w-36">Phone</th>
+                  <th class="w-36">Phone</th>
 
-                <th class="w-36">
-                  <.sortable_th
-                    label="Outstanding"
-                    field={:outstanding}
-                  />
-                </th>
+                  <th class="w-36">
+                    <.sortable_th
+                      label="Outstanding"
+                      field={:outstanding}
+                    />
+                  </th>
 
-                <th class="w-28">Status</th>
+                  <th
+                    :for={definition <- @column_definitions}
+                    id={"client-col-#{definition.key}"}
+                    class="w-36 truncate"
+                    title={definition.label}
+                  >
+                    {definition.label}
+                  </th>
 
-                <th class="w-32">Actions</th>
-              </tr>
-            </thead>
+                  <th class="w-28">Status</th>
 
-            <tbody>
-              <tr
-                :for={{row, index} <- Enum.with_index(@rows)}
-                id={"client-#{row.id}"}
-                class={table_row_class()}
-              >
-                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
-                  {@row_offset + index + 1}
-                </td>
+                  <th class="w-32">Actions</th>
+                </tr>
+              </thead>
 
-                <td>
-                  <div class="flex min-w-0 items-center gap-3">
-                    <.client_avatar name={row.name} />
-                    <span class="truncate font-medium" title={row.name}>{row.name}</span>
-                  </div>
-                </td>
+              <tbody>
+                <tr
+                  :for={{row, index} <- Enum.with_index(@rows)}
+                  id={"client-#{row.id}"}
+                  class={table_row_class()}
+                >
+                  <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                    {@row_offset + index + 1}
+                  </td>
 
-                <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
-                  {row.gstin}
-                </td>
+                  <td>
+                    <div class="flex min-w-0 items-center gap-3">
+                      <.client_avatar name={row.name} />
+                      <span class="truncate font-medium" title={row.name}>{row.name}</span>
+                    </div>
+                  </td>
 
-                <td class="truncate whitespace-nowrap text-base-content/60" title={row.email}>
-                  {row.email}
-                </td>
+                  <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
+                    {row.gstin || Map.get(row, :tax_number)}
+                  </td>
 
-                <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
-                  {row.phone}
-                </td>
+                  <td class="truncate whitespace-nowrap text-base-content/60" title={row.email}>
+                    {row.email}
+                  </td>
 
-                <td class="whitespace-nowrap font-medium tabular-nums">
-                  {rupees(row.outstanding, decimals: 2, space: true)}
-                </td>
+                  <td class="truncate whitespace-nowrap text-base-content/60 tabular-nums">
+                    {row.phone}
+                  </td>
 
-                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
+                  <td class="whitespace-nowrap font-medium tabular-nums">
+                    {money(row.outstanding, @currency, decimals: 2, space: true)}
+                  </td>
 
-                <td>
-                  <div class="flex gap-1">
-                    <.link
-                      id={"view-client-#{row.id}"}
-                      navigate={~p"/clients/#{row.id}"}
-                      class={row_action_class()}
-                      aria-label={"View #{row.name}"}
-                    >
-                      <.icon name="hero-eye" class="size-4" />
-                    </.link>
+                  <td :for={definition <- @column_definitions} class="min-w-0">
+                    <.custom_cell
+                      definition={definition}
+                      values={row.custom_fields}
+                      currency={@currency}
+                    />
+                  </td>
 
-                    <%!-- Opens upward on the lower rows so the menu stays inside the card. --%>
-                    <div class={[
-                      "dropdown dropdown-end",
-                      index >= div(length(@rows), 2) && "dropdown-top"
-                    ]}>
-                      <div
-                        tabindex="0"
-                        role="button"
+                  <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
+
+                  <td>
+                    <div class="flex gap-1">
+                      <.link
+                        id={"view-client-#{row.id}"}
+                        navigate={~p"/clients/#{row.id}"}
                         class={row_action_class()}
-                        aria-label={"More actions for #{row.name}"}
+                        aria-label={"View #{row.name}"}
                       >
-                        <.icon name="hero-ellipsis-vertical" class="size-4" />
+                        <.icon name="hero-eye" class="size-4" />
+                      </.link>
+
+                      <%!-- Opens upward on the lower rows so the menu stays inside the card. --%>
+                      <div class={[
+                        "dropdown dropdown-end",
+                        index >= div(length(@rows), 2) && "dropdown-top"
+                      ]}>
+                        <div
+                          tabindex="0"
+                          role="button"
+                          class={row_action_class()}
+                          aria-label={"More actions for #{row.name}"}
+                        >
+                          <.icon name="hero-ellipsis-vertical" class="size-4" />
+                        </div>
+
+                        <ul
+                          tabindex="0"
+                          class="dropdown-content menu z-20 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                        >
+                          <li>
+                            <.link navigate={~p"/clients/#{row.id}/edit"}>
+                              <.icon name="hero-pencil-square" class="size-4" /> Edit client
+                            </.link>
+                          </li>
+
+                          <li>
+                            <.link navigate={~p"/invoices?q=#{row.name}"}>
+                              <.icon name="hero-document-text" class="size-4" /> View invoices
+                            </.link>
+                          </li>
+
+                          <li>
+                            <.link navigate={~p"/invoices/new"}>
+                              <.icon name="hero-plus" class="size-4" /> New invoice
+                            </.link>
+                          </li>
+
+                          <li class="menu-title px-3 pt-2 text-xs">Status</li>
+
+                          <li :for={status <- Clients.statuses()}>
+                            <button
+                              type="button"
+                              phx-click="set_status"
+                              phx-value-id={row.id}
+                              phx-value-status={status}
+                              disabled={row.status == status}
+                              class={row.status == status && "text-base-content/45"}
+                            >
+                              <.icon
+                                name={
+                                  if row.status == status,
+                                    do: "hero-check-circle",
+                                    else: "hero-arrow-right-circle"
+                                }
+                                class="size-4"
+                              /> {status}
+                            </button>
+                          </li>
+                        </ul>
                       </div>
 
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu z-20 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
+                      <button
+                        type="button"
+                        id={"client-delete-#{row.id}"}
+                        phx-click="delete"
+                        phx-value-id={row.id}
+                        data-confirm={"Move #{row.name} to the Bin? Its invoices are kept, and any recurring billing for it stops. It can be restored from the Bin."}
+                        class={row_delete_class()}
+                        aria-label={"Move #{row.name} to the Bin"}
+                        title="Move to Bin"
                       >
-                        <li>
-                          <.link navigate={~p"/clients/#{row.id}/edit"}>
-                            <.icon name="hero-pencil-square" class="size-4" /> Edit client
-                          </.link>
-                        </li>
-
-                        <li>
-                          <.link navigate={~p"/invoices?q=#{row.name}"}>
-                            <.icon name="hero-document-text" class="size-4" /> View invoices
-                          </.link>
-                        </li>
-
-                        <li>
-                          <.link navigate={~p"/invoices/new"}>
-                            <.icon name="hero-plus" class="size-4" /> New invoice
-                          </.link>
-                        </li>
-
-                        <li class="menu-title px-3 pt-2 text-xs">Status</li>
-
-                        <li :for={status <- Clients.statuses()}>
-                          <button
-                            type="button"
-                            phx-click="set_status"
-                            phx-value-id={row.id}
-                            phx-value-status={status}
-                            disabled={row.status == status}
-                            class={row.status == status && "text-base-content/45"}
-                          >
-                            <.icon
-                              name={
-                                if row.status == status,
-                                  do: "hero-check-circle",
-                                  else: "hero-arrow-right-circle"
-                              }
-                              class="size-4"
-                            /> {status}
-                          </button>
-                        </li>
-                      </ul>
+                        <.icon name="hero-trash" class="size-4" />
+                      </button>
                     </div>
-
-                    <button
-                      type="button"
-                      id={"client-delete-#{row.id}"}
-                      phx-click="delete"
-                      phx-value-id={row.id}
-                      data-confirm={"Move #{row.name} to the Bin? Its invoices are kept, and any recurring billing for it stops. It can be restored from the Bin."}
-                      class={row_delete_class()}
-                      aria-label={"Move #{row.name} to the Bin"}
-                      title="Move to Bin"
-                    >
-                      <.icon name="hero-trash" class="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <%!-- mt-auto pins the pager to the bottom of the card. --%>

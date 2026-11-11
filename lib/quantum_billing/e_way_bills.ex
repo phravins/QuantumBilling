@@ -39,12 +39,18 @@ defmodule QuantumBilling.EWayBills do
   @doc """
   Raises an e-way bill against an invoice.
 
-  Returns `{:ok, bill}` or `{:error, :already_issued | :cancelled | changeset | portal_reason}`.
+  Returns `{:ok, bill}` or `{:error, :gst_only | :already_issued | :cancelled | changeset | portal_reason}`;
+  `:gst_only` for a VAT business or invoice.
   """
   def generate_e_way_bill(%Invoice{} = invoice, params \\ %{}) do
-    with :ok <- ensure_issuable(invoice),
+    with :ok <- QuantumBilling.Tax.ensure_gst(invoice),
+         :ok <- ensure_issuable(invoice),
          {:ok, attrs} <- NICClient.generate_ewb(invoice, params) do
-      attrs = attrs |> Map.put(:invoice_id, invoice.id) |> Map.put(:status, "Active")
+      attrs =
+        attrs
+        |> Map.put(:invoice_id, invoice.id)
+        |> Map.put(:status, "Active")
+        |> put_custom_fields(params)
 
       %EWayBill{}
       |> EWayBill.changeset(attrs)
@@ -87,6 +93,14 @@ defmodule QuantumBilling.EWayBills do
         {:error, changeset} ->
           {:error, changeset}
       end
+    end
+  end
+
+  # The form's custom fields go to the bill's own changeset, which validates them.
+  defp put_custom_fields(attrs, params) do
+    case Map.get(params, "custom_fields", Map.get(params, :custom_fields)) do
+      values when is_map(values) -> Map.put(attrs, :custom_fields, values)
+      _none -> attrs
     end
   end
 
@@ -495,7 +509,8 @@ defmodule QuantumBilling.EWayBills do
       transporter_name: bill.transporter_name,
       mode_of_transport: bill.mode_of_transport,
       status: status(bill),
-      cancellable: cancellable?(bill)
+      cancellable: cancellable?(bill),
+      custom_fields: bill.custom_fields || %{}
     }
   end
 

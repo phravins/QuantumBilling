@@ -6,6 +6,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
   use QuantumBillingWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
+  import QuantumBilling.CustomFieldsFixtures, only: [field_fixture: 3, owner_scope: 0]
 
   alias QuantumBilling.Audit
   alias QuantumBilling.Clients
@@ -38,6 +39,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         :general
       )
 
+    seed_custom_fields()
+
     {:ok, client} =
       Clients.create_client(%{
         "client_type" => "Registered Business",
@@ -48,7 +51,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         "billing_line1" => "1 Main Street",
         "billing_city" => "Mumbai",
         "billing_state" => "Maharashtra (27)",
-        "billing_pin" => "400001"
+        "billing_pin" => "400001",
+        "custom_fields" => %{"segment" => "Retail", "sweep_note" => "Seeded"}
       })
 
     {:ok, invoice} = invoice_for(client, "Maharashtra (27)", "998313", "18")
@@ -57,7 +61,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     {:ok, _note} =
       CreditNotes.create_credit_note_for_invoice(invoice, %{
         "note_type" => "Credit",
-        "grand_total" => Decimal.new("1000")
+        "grand_total" => Decimal.new("1000"),
+        "custom_fields" => %{"sweep_note" => "Seeded"}
       })
 
     {:ok, bill} =
@@ -71,7 +76,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         "client_id" => client.id,
         "title" => "Monthly retainer",
         "frequency" => "Monthly",
-        "next_run_date" => Date.to_iso8601(Date.utc_today())
+        "next_run_date" => Date.to_iso8601(Date.utc_today()),
+        "custom_fields" => %{"sweep_note" => "Seeded"}
       })
 
     Audit.log_event(:create_invoice, "Invoice", invoice.id, details: %{by: "route sweep"})
@@ -86,6 +92,31 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     }
   end
 
+  # One field per object, shown everywhere a field can be, so every page renders one.
+  defp seed_custom_fields do
+    scope = owner_scope()
+    everywhere = %{"show_in_list" => true, "show_on_invoice" => true}
+
+    for object <- QuantumBilling.CustomFields.FieldDefinition.objects() do
+      field_fixture(
+        object,
+        Map.merge(everywhere, %{"label" => "Sweep note", "type" => "text"}),
+        scope
+      )
+    end
+
+    field_fixture(
+      "client",
+      Map.merge(everywhere, %{
+        "label" => "Segment",
+        "type" => "select",
+        "filterable" => true,
+        "choices" => [%{"label" => "Retail"}, %{"label" => "Wholesale"}]
+      }),
+      scope
+    )
+  end
+
   defp invoice_for(client, place_of_supply, hsn, rate) do
     Invoices.create_invoice(%{
       "client_id" => client.id,
@@ -97,8 +128,10 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       "client_state" => "Maharashtra (27)",
       "invoice_date" => Date.to_iso8601(Date.utc_today()),
       "place_of_supply" => place_of_supply,
+      "custom_fields" => %{"sweep_note" => "Seeded"},
       "items" => %{
         "0" => %{
+          "custom_fields" => %{"sweep_note" => "Seeded"},
           "description" => "Line one",
           "hsn_sac" => hsn,
           "quantity" => "2",
@@ -155,7 +188,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
       QuantumBilling.AccountsFixtures.enrol_two_factor(user)
       {:ok, _owner} = QuantumBilling.Accounts.set_role(default_business(), user, "owner")
 
-      for path <- ~w(/settings/team /settings/api-keys /settings/webhooks /settings/audit-logs) do
+      for path <-
+            ~w(/settings/team /settings/api-keys /settings/webhooks /settings/data-model /settings/audit-logs) do
         assert {:ok, _view, html} = live(conn, path), "#{path} did not mount for an owner"
         assert html =~ "<html"
       end
@@ -276,7 +310,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
-      assert %{"version" => "3.0", "invoices" => [_ | _]} = Jason.decode!(body)
+      assert %{"version" => "3.2", "invoices" => [_ | _]} = Jason.decode!(body)
     end
   end
 
@@ -303,7 +337,8 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "every owner-only page is refused", %{conn: conn} do
-      for path <- ~w(/settings/team /settings/api-keys /settings/webhooks /settings/audit-logs) do
+      for path <-
+            ~w(/settings/team /settings/api-keys /settings/webhooks /settings/data-model /settings/audit-logs) do
         assert {:error, {:redirect, %{to: "/dashboard", flash: flash}}} = live(conn, path),
                "#{path} was not refused to staff"
 

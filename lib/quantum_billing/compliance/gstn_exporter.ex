@@ -34,6 +34,13 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   def validate_period(_period), do: {:error, "A return period looks like MMYYYY."}
 
+  defp gst_business do
+    case QuantumBilling.Tax.ensure_gst() do
+      :ok -> :ok
+      {:error, :gst_only} -> {:error, QuantumBilling.Tax.gst_only_message(:gstr1)}
+    end
+  end
+
   @doc """
   The period a return would normally be filed for today: the month just gone.
   """
@@ -45,9 +52,11 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   @doc """
   Builds the GSTR-1 structure for `period` (`"MMYYYY"`): `{:ok, map}` or `{:error, message}`.
+  A VAT business files no GSTR-1, so it gets the reason instead.
   """
   def generate_gstr1_json(period) do
-    with {:ok, %{period: period, month: month, year: year}} <- validate_period(period) do
+    with :ok <- gst_business(),
+         {:ok, %{period: period, month: month, year: year}} <- validate_period(period) do
       from = Date.new!(year, month, 1)
       to = Date.end_of_month(from)
 

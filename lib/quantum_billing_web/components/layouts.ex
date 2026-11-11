@@ -4,6 +4,9 @@ defmodule QuantumBillingWeb.Layouts do
   """
   use QuantumBillingWeb, :html
 
+  alias QuantumBillingWeb.SettingsComponents
+  alias QuantumBillingWeb.SettingsLive
+
   embed_templates "layouts/*"
 
   @doc """
@@ -35,7 +38,7 @@ defmodule QuantumBillingWeb.Layouts do
   def app(assigns) do
     assigns =
       assigns
-      |> assign(:nav_items, nav_items())
+      |> assign(:nav_items, nav_items(assigns[:current_scope]))
       |> assign(:settings_sections, visible_settings_sections(assigns[:current_scope]))
 
     ~H"""
@@ -479,7 +482,10 @@ defmodule QuantumBillingWeb.Layouts do
 
   # Tolerates a nil scope. Hiding panels is cosmetic; the server enforces access.
   defp visible_settings_sections(scope) do
-    sections = QuantumBillingWeb.SettingsComponents.sections()
+    sections =
+      if QuantumBilling.Accounts.Scope.vat?(scope),
+        do: Enum.reject(SettingsComponents.sections(), &SettingsLive.gst_only?(&1.key)),
+        else: SettingsComponents.sections()
 
     if QuantumBilling.Accounts.Scope.owner?(scope) do
       sections ++
@@ -504,10 +510,17 @@ defmodule QuantumBillingWeb.Layouts do
             short_title: "Webhooks",
             subtitle: "Events sent to your systems",
             icon: "hero-signal"
+          },
+          %{
+            key: :"data-model",
+            title: "Data model",
+            short_title: "Data model",
+            subtitle: "Your own fields on records",
+            icon: "hero-table-cells"
           }
         ]
     else
-      Enum.reject(sections, &QuantumBillingWeb.SettingsLive.owner_only?(&1.key))
+      Enum.reject(sections, &SettingsLive.owner_only?(&1.key))
     end
   end
 
@@ -550,6 +563,15 @@ defmodule QuantumBillingWeb.Layouts do
     do: title
 
   defp user_designation(_scope), do: nil
+
+  # The India GST tools have no meaning for a VAT business.
+  @gst_only_nav [:e_way_bills, :hsn_finder]
+
+  defp nav_items(scope) do
+    if QuantumBilling.Accounts.Scope.vat?(scope),
+      do: Enum.reject(nav_items(), &(&1.key in @gst_only_nav)),
+      else: nav_items()
+  end
 
   # Literal class strings: Tailwind cannot see interpolated ones.
   defp nav_items do

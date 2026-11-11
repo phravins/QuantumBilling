@@ -5,17 +5,30 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   The summary uses `Invoice.recalculate/1`, the same arithmetic that is stored.
   Picking a client, or typing its exact name, copies its details, which stay
   editable. An empty PAN is filled from the GSTIN.
+
+  Under VAT each line picks one of the business's rates, place of supply is not
+  asked, and the summary shows a row per rate.
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CustomFieldComponents,
+    only: [custom_fields_section: 1, custom_inputs: 1]
+
+  import QuantumBillingWeb.SettingsComponents, only: [toggle: 1]
+
   alias QuantumBilling.Clients
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
+  alias QuantumBilling.Money
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax
+  alias QuantumBilling.TaxRates
+  alias QuantumBilling.TaxRates.TaxRate
   alias QuantumBilling.Templates
 
   # Serves both new and edit.
@@ -26,6 +39,8 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       socket
       |> assign(:active_nav, :invoices)
       |> assign(:organization, organization)
+      |> assign(:custom_definitions, CustomFields.active_definitions("invoice"))
+      |> assign(:item_definitions, CustomFields.active_definitions("invoice_item"))
       |> assign(:client_search, "")
       |> assign(:selected_client_id, nil)
       |> assign(:gstin_hint, nil)
@@ -56,13 +71,35 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
       "items" => %{"0" => blank_item(0)}
     }
 
+    vat? = Organization.vat?(organization)
+
     socket
-    |> assign(:page_title, "Create New GST Invoice")
+    |> assign(:page_title, if(vat?, do: "Create New Invoice", else: "Create New GST Invoice"))
     |> assign(:invoice, %Invoice{})
+    |> assign(:currency, Organization.currency_code(organization))
+    |> assign_tax(vat?)
     |> assign_form(
-      Invoices.change_invoice(%Invoice{}, params, Invoices.company_snapshot(organization))
+      Invoices.change_invoice(%Invoice{}, params, preview_trusted(organization, %Invoice{}))
     )
   end
+
+  # The rate picker offers active rates; an archived one stays listed for the lines using it.
+  defp assign_tax(socket, vat?) do
+    socket
+    |> assign(:vat?, vat?)
+    |> assign(:tax_rates, if(vat?, do: TaxRates.list_rates(archived: :include), else: []))
+  end
+
+  # The company goes in as trusted, so the live preview splits the tax correctly;
+  # the save takes its own snapshot. A new invoice also previews the business's
+  # tax settings, which an existing one keeps from when it was created.
+  defp preview_trusted(organization, %Invoice{id: nil}) do
+    organization
+    |> Invoices.company_snapshot()
+    |> Map.merge(Organization.invoice_tax_snapshot(organization))
+  end
+
+  defp preview_trusted(organization, _invoice), do: Invoices.company_snapshot(organization)
 
   defp mount_edit(id, _organization, socket) do
     case Invoices.get_invoice(id) do
@@ -79,14 +116,20 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
          socket
          |> assign(:page_title, "Edit #{invoice.invoice_number}")
          |> assign(:invoice, invoice)
+         |> assign(:currency, invoice.currency || QuantumBilling.Currency.default())
          |> assign(:selected_client_id, invoice.client_id)
          |> assign(:gstin_hint, gstin_hint(client))
+         |> assign_tax(Invoice.vat?(invoice))
          |> assign_client_options()
          |> assign_form(Invoices.change_invoice(invoice, missing_tax_ids(invoice, client)))}
     end
   end
 
   # Offers tax ids the client record can supply; saved only if the user saves.
+  defp missing_tax_ids(%Invoice{tax_regime: "vat"} = invoice, client) do
+    put_missing(%{}, "client_tax_number", invoice.client_tax_number, client && client.tax_number)
+  end
+
   defp missing_tax_ids(%Invoice{} = invoice, client) do
     gstin = present(invoice.client_gstin) || present(client && client.gstin)
 
@@ -120,11 +163,11 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
     params = params |> pan_from_gstin() |> apply_payment_term()
 
-    # The company goes in as trusted, so the live preview splits the tax
-    # correctly; the save takes its own snapshot.
+    %{invoice: invoice, organization: organization} = socket.assigns
+
     changeset =
-      socket.assigns.invoice
-      |> Invoices.change_invoice(params, Invoices.company_snapshot(socket.assigns.organization))
+      invoice
+      |> Invoices.change_invoice(params, preview_trusted(organization, invoice))
       |> Map.put(:action, :validate)
 
     {:noreply, assign_form(socket, changeset)}
@@ -342,6 +385,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               </div>
               <.field field={f[:invoice_date]} label="Invoice Date" type="date" required />
               <.field
+                :if={!@vat?}
                 field={f[:place_of_supply]}
                 label="Place of Supply"
                 type="select"
@@ -356,6 +400,23 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 options={Invoices.payment_terms()}
               /> <.field field={f[:due_date]} label="Due Date" type="date" />
             </div>
+
+            <div :if={@vat?} id="invoice-reverse-charge" class="mt-3">
+              <.toggle
+                field={f[:reverse_charge]}
+                label="Reverse charge"
+                hint="The customer accounts for the VAT, so none is charged on this invoice."
+              />
+            </div>
+
+            <.custom_fields_section
+              id="invoice-custom-fields"
+              form={f}
+              definitions={@custom_definitions}
+              object="invoice"
+              current_scope={@current_scope}
+              class="mt-4 border-t border-base-300 pt-4"
+            />
           </.card>
 
           <.card padding="p-4">
@@ -441,17 +502,35 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               </div>
 
               <.field
+                :if={!@vat?}
                 field={f[:client_state]}
                 label="State"
                 type="select"
                 prompt="Select state"
                 options={EWayBillForm.states()}
+              />
+              <.field
+                :if={@vat?}
+                field={f[:client_state]}
+                label="Region / Emirate"
+                maxlength="80"
               /> <.field field={f[:client_name]} label="Client Name" required />
               <.field
+                :if={!@vat?}
                 field={f[:client_gstin]}
                 label="GSTIN"
                 placeholder="27AABCA1234A1Z5"
                 hint={if(f[:client_gstin].value in [nil, ""], do: @gstin_hint)}
+              />
+              <.field
+                :if={@vat?}
+                field={f[:client_tax_number]}
+                label="VAT No. / TRN"
+                maxlength="30"
+                hint={
+                  if f[:reverse_charge].value in [true, "true"],
+                    do: "Needed on a reverse-charge invoice."
+                }
               />
               <.field
                 field={f[:client_billing_address]}
@@ -460,7 +539,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 rows="4"
               />
               <div class="space-y-3">
-                <.field field={f[:client_pan]} label="PAN" placeholder="AABCA1234A" />
+                <.field
+                  :if={!@vat?}
+                  field={f[:client_pan]}
+                  label="PAN"
+                  placeholder="AABCA1234A"
+                />
                 <.field field={f[:client_email]} label="Email" type="email" />
               </div>
             </div>
@@ -485,17 +569,21 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       Item / Description<span class="ml-0.5 text-error">*</span>
                     </th>
 
-                    <th class="w-28 pr-2 text-left">HSN / SAC</th>
+                    <th class="w-28 pr-2 text-left">
+                      {if @vat?, do: "Item Code", else: "HSN / SAC"}
+                    </th>
 
                     <th class="w-20 pr-2 text-left">Qty</th>
 
                     <th class="w-24 pr-2 text-left">Unit</th>
 
-                    <th class="w-28 pr-2 text-left">Rate (₹)</th>
+                    <th class="w-28 pr-2 text-left">Rate ({currency_symbol(@currency)})</th>
 
-                    <th class="w-24 pr-2 text-left">Tax (%)</th>
+                    <th class={["pr-2 text-left", if(@vat?, do: "w-36", else: "w-24")]}>
+                      {if @vat?, do: "VAT", else: "Tax (%)"}
+                    </th>
 
-                    <th class="w-32 pr-2">Amount (₹)</th>
+                    <th class="w-32 pr-2">Amount ({currency_symbol(@currency)})</th>
 
                     <th class="w-10 text-right">
                       <span class="sr-only">Remove</span>
@@ -506,7 +594,10 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 <%!-- inputs_for keeps stored row ids (no duplicate rows on edit); skip_hidden because an input is invalid directly in tbody. --%>
                 <tbody id="invoice-items">
                   <.inputs_for :let={item_f} field={f[:items]} skip_hidden>
-                    <tr id={"invoice-item-#{item_f.index}"} class={table_row_class()}>
+                    <tr
+                      id={"invoice-item-#{item_f.index}"}
+                      class={[table_row_class(), @item_definitions != [] && "border-b-0"]}
+                    >
                       <td class="py-2 pr-2 align-top text-sm text-base-content/45">
                         {item_f.index + 1}
                       </td>
@@ -541,7 +632,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                           id={item_f[:hsn_sac].id}
                           name={item_f[:hsn_sac].name}
                           value={item_f[:hsn_sac].value}
-                          placeholder="998313"
+                          placeholder={if !@vat?, do: "998313"}
                           class={form_input_class()}
                         />
                       </td>
@@ -586,7 +677,34 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                         />
                       </td>
 
-                      <td class="py-2 pr-2 align-top">
+                      <td :if={@vat?} class="py-2 pr-2 align-top">
+                        <select
+                          id={item_f[:tax_rate_id].id}
+                          name={item_f[:tax_rate_id].name}
+                          class={[
+                            form_select_class(),
+                            item_f[:tax_rate_id].errors != [] && form_error_class()
+                          ]}
+                        >
+                          <option :if={@tax_rates == []} value="">Add a rate in Settings</option>
+                          <option
+                            :for={rate <- @tax_rates}
+                            :if={is_nil(rate.archived_at) or selected_rate?(item_f, rate)}
+                            value={rate.id}
+                            selected={selected_rate?(item_f, rate)}
+                          >
+                            {TaxRate.label(rate)}{if rate.archived_at, do: " (archived)"}
+                          </option>
+                        </select>
+                        <p
+                          :for={{msg, _opts} <- item_f[:tax_rate_id].errors}
+                          class="mt-1 text-2xs text-error"
+                        >
+                          {msg}
+                        </p>
+                      </td>
+
+                      <td :if={!@vat?} class="py-2 pr-2 align-top">
                         <select
                           id={item_f[:tax_rate].id}
                           name={item_f[:tax_rate].name}
@@ -603,7 +721,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                       </td>
 
                       <td class="py-2 pr-2 align-middle">
-                        <.line_amount item={item_f.source} index={item_f.index} />
+                        <.line_amount
+                          item={item_f.source}
+                          invoice={@summary}
+                          index={item_f.index}
+                          currency={@currency}
+                        />
                       </td>
 
                       <td class="py-2 text-right align-middle">
@@ -619,6 +742,20 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                             class="hidden"
                           /> <.icon name="hero-trash" class="size-4" />
                         </label>
+                      </td>
+                    </tr>
+                    <tr
+                      :if={@item_definitions != []}
+                      id={"invoice-item-fields-#{item_f.index}"}
+                      class={table_row_class()}
+                    >
+                      <td></td>
+                      <td colspan="8" class="pb-3 pr-2">
+                        <.custom_inputs
+                          form={item_f}
+                          definitions={@item_definitions}
+                          class="grid grid-cols-2 gap-2 rounded-field bg-base-200/50 p-2.5 sm:grid-cols-4"
+                        />
                       </td>
                     </tr>
                   </.inputs_for>
@@ -686,38 +823,55 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <.summary_line label="Total Quantity" value={@summary.total_quantity} />
               <.summary_line
                 label="Total Taxable Value"
-                value={rupees(@summary.taxable_value, decimals: 2, space: true)}
+                value={money(@summary.taxable_value, @currency, decimals: 2, space: true)}
               />
             </div>
             <hr class="my-4 border-base-300" />
-            <div class="space-y-2.5">
+            <div :if={@vat?} id="invoice-summary-vat" class="space-y-2.5">
+              <.summary_line
+                :for={{row, index} <- Enum.with_index(@summary.tax_breakdown || [])}
+                id={"invoice-summary-vat-#{index}"}
+                label={Tax.breakdown_label(row)}
+                value={money(row["tax"], @currency, decimals: 2, space: true)}
+              />
+              <.summary_line
+                id="invoice-summary-vat-total"
+                label="Total VAT"
+                value={money(@summary.vat_amount, @currency, decimals: 2, space: true)}
+              />
+            </div>
+            <div :if={!@vat?} class="space-y-2.5">
               <.summary_line
                 label="CGST"
-                value={rupees(@summary.cgst_amount, decimals: 2, space: true)}
+                value={money(@summary.cgst_amount, @currency, decimals: 2, space: true)}
               />
               <.summary_line
                 label="SGST"
-                value={rupees(@summary.sgst_amount, decimals: 2, space: true)}
+                value={money(@summary.sgst_amount, @currency, decimals: 2, space: true)}
               />
               <.summary_line
                 label="IGST"
-                value={rupees(@summary.igst_amount, decimals: 2, space: true)}
+                value={money(@summary.igst_amount, @currency, decimals: 2, space: true)}
               />
               <.summary_line
                 label="CESS"
-                value={rupees(@summary.cess_amount, decimals: 2, space: true)}
+                value={money(@summary.cess_amount, @currency, decimals: 2, space: true)}
               />
             </div>
-            <hr class="my-4 border-base-300" />
+            <hr :if={!@vat? or @summary.round_to_whole_units} class="my-4 border-base-300" />
             <.summary_line
+              :if={!@vat? or @summary.round_to_whole_units}
               id="invoice-summary-round-off"
               label="Round Off"
-              value={rupees(@summary.round_off, decimals: 2, space: true)}
+              value={money(@summary.round_off, @currency, decimals: 2, space: true)}
             />
             <div class="mt-4 flex items-start justify-between gap-3 rounded-field bg-base-200 px-3 py-2.5">
               <span class="text-sm font-semibold">Grand Total</span>
-              <span id="invoice-summary-grand-total" class="text-sm font-semibold tracking-tight">
-                {rupees(@summary.grand_total, decimals: 2, space: true)}
+              <span
+                id="invoice-summary-grand-total"
+                class="text-sm font-semibold tracking-tight tabular-nums"
+              >
+                {money(@summary.grand_total, @currency, decimals: 2, space: true)}
               </span>
             </div>
 
@@ -725,14 +879,19 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               Amount in Words
             </p>
 
-            <p class="mt-1 text-xs text-base-content/60">
-              {QuantumBillingWeb.Format.rupees_in_words(@summary.grand_total)}
+            <%!-- Two lines reserved, so the card doesn't grow as the total does. --%>
+            <p class="mt-1 min-h-[2lh] text-xs text-base-content/60">
+              {amount_in_words(@summary.grand_total, @currency)}
             </p>
 
-            <p class="mt-3 text-2xs text-base-content/45">
+            <p :if={!@vat?} class="mt-3 text-2xs text-base-content/45">
               {if @intra_state?,
                 do: "Same state as your business — CGST and SGST apply.",
                 else: "Different state from your business — IGST applies."}
+            </p>
+
+            <p :if={@vat?} id="invoice-summary-vat-note" class="mt-3 text-2xs text-base-content/45">
+              {vat_note(@summary)}
             </p>
           </.card>
 
@@ -755,8 +914,12 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
                 {@organization.address}
               </p>
 
-              <p :if={@organization.gstin} class="text-base-content/60">
+              <p :if={!@vat? and @organization.gstin} class="text-base-content/60">
                 GSTIN: {@organization.gstin}
+              </p>
+
+              <p :if={@vat? and @organization.vat_number} class="text-base-content/60">
+                VAT No. / TRN: {@organization.vat_number}
               </p>
 
               <p :if={@organization.state} class="text-base-content/60">
@@ -783,39 +946,64 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
     ~H"""
     <div class="flex items-start justify-between gap-3">
       <span class="text-xs text-base-content/60">{@label}</span>
-      <span id={@id} class="text-right text-xs font-medium">{@value}</span>
+      <span id={@id} class="text-right text-xs font-medium tabular-nums">{@value}</span>
     </div>
     """
   end
 
   attr :item, Ecto.Changeset, required: true
+  attr :invoice, Invoice, required: true
   attr :index, :integer, required: true
+  attr :currency, :string, required: true
 
   defp line_amount(assigns) do
-    assigns = assign(assigns, :figures, line_figures(assigns.item))
+    assigns = assign(assigns, :figures, line_figures(assigns.item, assigns.invoice))
 
     ~H"""
     <p id={"invoice-item-amount-#{@index}"} class="text-sm font-medium tabular-nums">
-      {rupees(@figures.total, decimals: 2)}
+      {money(@figures.total, @currency, decimals: 2)}
     </p>
 
     <p
       id={"invoice-item-tax-#{@index}"}
       class="mt-0.5 whitespace-nowrap text-2xs tabular-nums text-base-content/50"
     >
-      incl. {rupees(@figures.tax, decimals: 2)} tax
+      incl. {money(@figures.tax, @currency, decimals: 2)} tax
     </p>
     """
   end
 
-  # Same functions as the invoice totals, so rows and summary agree.
-  defp line_figures(%Ecto.Changeset{} = changeset) do
+  # Same functions as the invoice totals. Under VAT the summary taxes each rate's
+  # total once, so a row can differ from it by a fraction of a unit.
+  defp line_figures(%Ecto.Changeset{} = changeset, %Invoice{} = invoice) do
     item = Ecto.Changeset.apply_changes(changeset)
     amount = InvoiceItem.amount(item)
-    tax = InvoiceItem.tax(item)
 
-    %{amount: amount, tax: tax, total: amount + tax}
+    cond do
+      not Invoice.vat?(invoice) ->
+        tax = InvoiceItem.tax(item)
+        %{tax: tax, total: amount + tax}
+
+      invoice.reverse_charge or not is_integer(item.tax_rate_bp) ->
+        %{tax: 0, total: amount}
+
+      invoice.prices_include_tax ->
+        %{tax: amount - Money.net_of_tax(amount, Tax.effective_bp(item)), total: amount}
+
+      true ->
+        tax = InvoiceItem.tax(item)
+        %{tax: tax, total: amount + tax}
+    end
   end
+
+  defp selected_rate?(item_f, rate),
+    do: to_string(item_f[:tax_rate_id].value) == to_string(rate.id)
+
+  defp vat_note(%Invoice{reverse_charge: true}),
+    do: "Reverse charge — the customer accounts for the VAT."
+
+  defp vat_note(%Invoice{prices_include_tax: true}), do: "Prices include VAT."
+  defp vat_note(_invoice), do: "VAT is added to the prices."
 
   # The cast_assoc error has no input of its own, so it shows under the table.
   defp item_errors(form) do

@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.HsnFinderLive do
   """
   use QuantumBillingWeb, :live_view
 
+  on_mount {QuantumBillingWeb.GSTOnly, :hsn_finder}
+
   alias QuantumBilling.HsnFinder
 
   @tabs [{:keyword, "Search by Keyword"}, {:code, "Search by HSN / SAC Code"}]

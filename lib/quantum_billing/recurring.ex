@@ -14,6 +14,7 @@ defmodule QuantumBilling.Recurring do
 
   alias Ecto.Multi
   alias QuantumBilling.Audit
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Paging
@@ -286,8 +287,21 @@ defmodule QuantumBilling.Recurring do
       invoice_date: today,
       due_date: Date.add(today, client.payment_terms_days || 30),
       remarks: "Generated automatically from recurring profile: #{profile.title}",
-      items: items(profile)
+      items: items(profile),
+      custom_fields: carried_fields(profile),
+      custom_fields_system: true
     }
+  end
+
+  # Profile values go to the invoice fields with the same key and type.
+  defp carried_fields(%RecurringProfile{custom_fields: values}) when values in [nil, %{}], do: %{}
+
+  defp carried_fields(%RecurringProfile{custom_fields: values}) do
+    CustomFields.carry_over(
+      values,
+      CustomFields.active_definitions("recurring_profile"),
+      CustomFields.active_definitions("invoice")
+    )
   end
 
   defp billing_address(client) do

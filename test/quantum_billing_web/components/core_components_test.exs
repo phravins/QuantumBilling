@@ -47,4 +47,31 @@ defmodule QuantumBillingWeb.CoreComponentsTest do
              )
     end
   end
+
+  describe "input debounce" do
+    # A form re-rendered on every keystroke made errors flicker and pages shake.
+    defp debounce(attrs) do
+      (&QuantumBillingWeb.CoreComponents.input/1)
+      |> render_component(Map.merge(%{name: "field", value: "", id: "field"}, attrs))
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#field")
+      |> LazyHTML.attribute("phx-debounce")
+    end
+
+    test "typed fields wait for a pause by default" do
+      for type <- ~w(text email tel url password search number textarea) do
+        assert debounce(%{type: type}) == ["300"], "#{type} is not debounced"
+      end
+    end
+
+    test "an explicit value wins, and nil turns it off" do
+      assert debounce(%{type: "text", "phx-debounce": "blur"}) == ["blur"]
+      assert debounce(%{type: "text", "phx-debounce": nil}) == []
+    end
+
+    test "choices still send at once" do
+      assert debounce(%{type: "select", options: ["a", "b"]}) == []
+      assert debounce(%{type: "date"}) == []
+    end
+  end
 end

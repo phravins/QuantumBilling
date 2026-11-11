@@ -10,6 +10,8 @@ defmodule QuantumBillingWeb.DashboardLive do
   alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices
   alias QuantumBilling.Reports
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
   alias QuantumBillingWeb.LiveRefresh
 
   def mount(_params, _session, socket) do
@@ -37,21 +39,25 @@ defmodule QuantumBillingWeb.DashboardLive do
     # This year, as the export links download it.
     year = Reports.default_filters()
     tax_rows = Reports.tax_rows(year)
+    currency = Organization.currency_code(Settings.get_organization())
 
     socket
+    |> assign(:currency, currency)
     |> assign(:page_title, "Dashboard")
     |> assign(:active_nav, :dashboard)
-    |> assign(:stats, stats(totals, month, obligations))
+    |> assign(:stats, stats(totals, month, obligations, currency))
     |> assign(:chart_months, chart_months)
     |> assign(:chart_series, chart_series(chart_months))
     |> assign(:chart_labels, Enum.map(chart_months, & &1.label))
     |> assign(:chart_max, chart_max(chart_months))
-    |> assign(:chart_axis, chart_axis(chart_max(chart_months)))
+    |> assign(:chart_axis, chart_axis(chart_max(chart_months), currency))
     |> assign(:donut_segments, donut_segments(status_counts))
     |> assign(:donut_total, totals.count)
     |> assign(:tax_rows, tax_rows)
     # Only the totals row means nothing was billed.
     |> assign(:has_tax_rows, Enum.any?(tax_rows, &(not &1.total?)))
+    |> assign(:gst_columns?, Enum.any?(tax_rows, &(not &1.total? and &1.vat == nil)))
+    |> assign(:vat_column?, Enum.any?(tax_rows, &(&1.vat != nil)))
     |> assign(:top_clients, Reports.top_client_totals(year))
     |> assign(:period_label, Reports.range_label(year.date_range, today))
     |> assign(:compliance_items, compliance_items(obligations, today))
@@ -139,7 +145,7 @@ defmodule QuantumBillingWeb.DashboardLive do
             labels={@chart_labels}
             max={@chart_max}
             axis_labels={@chart_axis}
-            format={&money_axis_label/1}
+            format={&money_axis_label(&1, @currency)}
             class="min-h-0 flex-1"
           />
           <.empty_state
@@ -182,11 +188,12 @@ defmodule QuantumBillingWeb.DashboardLive do
               <thead>
                 <tr class={table_head_class()}>
                   <th class="pr-4 text-left">Tax Type</th>
-                  <th class="pr-4">Taxable Value (₹)</th>
-                  <th class="pr-4">CGST (₹)</th>
-                  <th class="pr-4">SGST (₹)</th>
-                  <th class="pr-4">IGST (₹)</th>
-                  <th>Total Tax (₹)</th>
+                  <th class="pr-4">Taxable Value ({currency_symbol(@currency)})</th>
+                  <th :if={@gst_columns?} class="pr-4">CGST ({currency_symbol(@currency)})</th>
+                  <th :if={@gst_columns?} class="pr-4">SGST ({currency_symbol(@currency)})</th>
+                  <th :if={@gst_columns?} class="pr-4">IGST ({currency_symbol(@currency)})</th>
+                  <th :if={@vat_column?} class="pr-4">VAT ({currency_symbol(@currency)})</th>
+                  <th>Total Tax ({currency_symbol(@currency)})</th>
                 </tr>
               </thead>
 
@@ -196,11 +203,20 @@ defmodule QuantumBillingWeb.DashboardLive do
                   class={[table_row_class(), row.total? && "font-semibold [&>td]:underline"]}
                 >
                   <td class="py-2.5 pr-4">{row.label}</td>
-                  <td class="py-2.5 pr-4">{rupees(row.taxable_value, decimals: 2)}</td>
-                  <td class="py-2.5 pr-4"><.tax_cell amount={row.cgst} /></td>
-                  <td class="py-2.5 pr-4"><.tax_cell amount={row.sgst} /></td>
-                  <td class="py-2.5 pr-4"><.tax_cell amount={row.igst} /></td>
-                  <td class="py-2.5">{rupees(row.total_tax, decimals: 2)}</td>
+                  <td class="py-2.5 pr-4">{money(row.taxable_value, @currency, decimals: 2)}</td>
+                  <td :if={@gst_columns?} class="py-2.5 pr-4">
+                    <.tax_cell amount={row.cgst} currency={@currency} />
+                  </td>
+                  <td :if={@gst_columns?} class="py-2.5 pr-4">
+                    <.tax_cell amount={row.sgst} currency={@currency} />
+                  </td>
+                  <td :if={@gst_columns?} class="py-2.5 pr-4">
+                    <.tax_cell amount={row.igst} currency={@currency} />
+                  </td>
+                  <td :if={@vat_column?} class="py-2.5 pr-4">
+                    <.tax_cell amount={row.vat} currency={@currency} />
+                  </td>
+                  <td class="py-2.5">{money(row.total_tax, @currency, decimals: 2)}</td>
                 </tr>
               </tbody>
             </table>
@@ -226,7 +242,7 @@ defmodule QuantumBillingWeb.DashboardLive do
               :for={{client, index} <- Enum.with_index(@top_clients, 1)}
               rank={index}
               name={client.client}
-              value={rupees(client.value)}
+              value={money(client.value, @currency)}
             />
           </ul>
 
@@ -277,7 +293,7 @@ defmodule QuantumBillingWeb.DashboardLive do
     """
   end
 
-  defp stats(totals, month, obligations) do
+  defp stats(totals, month, obligations, currency) do
     pending_returns =
       Enum.count(obligations, &(&1.status in ["Pending", "Overdue"] and &1.category == :returns))
 
@@ -295,16 +311,16 @@ defmodule QuantumBillingWeb.DashboardLive do
       },
       %{
         label: "Current Month Tax Liability",
-        value: rupees(month.tax),
+        value: money(month.tax, currency),
         icon: "hero-currency-rupee",
         tone: :accent,
-        delta_text: "on #{rupees(month.taxable_value)} taxable",
+        delta_text: "on #{money(month.taxable_value, currency)} taxable",
         delta_class: "text-base-content/45",
         delta_icon: nil
       },
       %{
         label: "Outstanding Receivables",
-        value: rupees(totals.outstanding),
+        value: money(totals.outstanding, currency),
         icon: "hero-banknotes",
         tone: :warning,
         delta_text: "#{totals.paid_count} paid in full",
@@ -326,25 +342,39 @@ defmodule QuantumBillingWeb.DashboardLive do
 
   # All zeros is an empty state, not a chart.
   defp billed_months(months) do
-    if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0)), do: [], else: months
+    if Enum.all?(months, &(&1.cgst_sgst == 0 and &1.igst == 0 and &1.vat == 0)),
+      do: [],
+      else: months
   end
 
+  # GST series unless only VAT was billed; the VAT series only when some was.
   defp chart_series(months) do
-    [
-      %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
-      %{label: "IGST", tone: :violet, values: Enum.map(months, & &1.igst)}
-    ]
+    gst? = Enum.any?(months, &(&1.cgst_sgst != 0 or &1.igst != 0))
+    vat? = Enum.any?(months, &(&1.vat != 0))
+
+    gst =
+      if gst? or not vat?,
+        do: [
+          %{label: "CGST + SGST", tone: :blue, values: Enum.map(months, & &1.cgst_sgst)},
+          %{label: "IGST", tone: :violet, values: Enum.map(months, & &1.igst)}
+        ],
+        else: []
+
+    vat =
+      if vat?, do: [%{label: "VAT", tone: :emerald, values: Enum.map(months, & &1.vat)}], else: []
+
+    gst ++ vat
   end
 
-  defp chart_axis(max) do
-    Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i) end)
+  defp chart_axis(max, currency) do
+    Enum.map(4..0//-1, fn i -> money_axis_label(div(max, 4) * i, currency) end)
   end
 
   # Rounded up so gridlines land on round numbers.
   defp chart_max(months) do
     tallest =
       months
-      |> Enum.flat_map(&[&1.cgst_sgst, &1.igst])
+      |> Enum.flat_map(&[&1.cgst_sgst, &1.igst, &1.vat])
       |> Enum.max(fn -> 0 end)
 
     if tallest <= 0 do

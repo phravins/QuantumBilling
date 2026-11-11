@@ -72,23 +72,23 @@ Unless a table says otherwise:
 
 ### Money and quantities
 
-Money is stored as integer **paise**, using `bigint`, rather than floating-point rupees. For example, ₹1,250.50 is stored as `125050`; ₹11,800 is stored as `1180000`.
+Money is stored as integer **minor units** of the record's currency, using `bigint`, rather than floating-point amounts. For INR that is paise: ₹1,250.50 is stored as `125050` and ₹11,800 as `1180000`. AED is stored in fils and GBP in pence the same way. Every supported currency (INR, AED, SAR, QAR, GBP, EUR and USD) has two decimals, so 100 minor units always make one whole unit. Columns and code still say "paise"; read that as "minor units" for a non-INR invoice.
 
-| Money owner | Columns in paise |
+| Money owner | Columns in minor units |
 | --- | --- |
 | `clients` | `credit_limit`, `opening_balance`, `outstanding` |
 | `invoice_items` | `rate`, `amount` |
-| `invoices` | `taxable_value`, `cgst_amount`, `sgst_amount`, `igst_amount`, `cess_amount`, `round_off`, `grand_total` |
+| `invoices` | `taxable_value`, `cgst_amount`, `sgst_amount`, `igst_amount`, `cess_amount`, `vat_amount`, `round_off`, `grand_total` |
 | `credit_notes` | `subtotal`, `tax_total`, `grand_total` |
 | `organization_settings` | `ewb_threshold_value` |
 
-`QuantumBilling.Money.Paise` reads amounts entered in rupees and casts them to paise. Its database load/dump operations use integers directly. Calculated totals use ordinary integer Ecto fields so they are not multiplied by 100 again. Import code must distinguish rupee input from already stored paise.
+`QuantumBilling.Money.Paise` reads amounts typed in whole units and casts them to minor units. Its database load/dump operations use integers directly. Calculated totals use ordinary integer Ecto fields so they are not multiplied by 100 again. Import code must distinguish typed amounts from already stored minor units. A custom field of type `money` also stores minor units, inside the record's `custom_fields` JSON.
 
-`invoice_items.quantity` and `invoices.total_quantity` use `numeric(15,3)`, supporting three decimal places. `tax_rate` remains an integer percentage. `exchange_rate` is PostgreSQL `numeric` and is not a money-in-paise column.
+`invoice_items.quantity` and `invoices.total_quantity` use `numeric(15,3)`, supporting three decimal places. Under GST, `tax_rate` is an integer percentage slab. Under VAT, the line's rate is `tax_rate_bp` in **basis points** (750 is 7.5%) and `tax_rate` is 0. `exchange_rate` is PostgreSQL `numeric` and is not a money column.
 
-Line amounts and GST round half-up to a paisa. The invoice grand total then rounds half-up to the nearest whole rupee; `round_off` stores the signed difference. Intra-state tax splits into CGST and SGST without losing an odd paisa. Totals are stored on the invoice when saved, preserving the amounts billed at that time.
+Line amounts and tax round half-up to one minor unit. Intra-state GST splits into CGST and SGST without losing an odd paisa. VAT is worked out once per rate group, on that group's taxable total, and each group is stored as a row of `invoices.tax_breakdown`. The grand total rounds half-up to a whole unit only when the invoice's `round_to_whole_units` is true; `round_off` stores the signed difference and is 0 otherwise. Totals are stored on the invoice when saved, preserving the amounts billed at that time.
 
-Sources: [money rules](../lib/quantum_billing/money.ex), [Paise Ecto type](../lib/quantum_billing/money/paise.ex), [money migration](../priv/repo/migrations/20261015112509_convert_money_to_paise.exs), [invoice calculations](../lib/quantum_billing/invoices/invoice.ex).
+Sources: [money rules](../lib/quantum_billing/money.ex), [Paise Ecto type](../lib/quantum_billing/money/paise.ex), [currencies](../lib/quantum_billing/currency.ex), [tax engine](../lib/quantum_billing/tax.ex), [money migration](../priv/repo/migrations/20261015112509_convert_money_to_paise.exs), [invoice calculations](../lib/quantum_billing/invoices/invoice.ex).
 
 ## 3. Shared tables in `public`
 
@@ -223,6 +223,10 @@ Application-managed business configuration. A unique index on `singleton` is use
 | `ewb_auto_generate` | `boolean` | Required; `false` |
 | `default_gst_rate` | `integer` | Required; `18` |
 | `cess_enabled`, `composition_scheme`, `tds_enabled` | `boolean` | Required; `false` |
+| `tax_regime` | `varchar(255)` | Required; `gst`. `gst` or `vat` |
+| `vat_number`, `vat_country` | `varchar(255)` | Nullable; required by the changeset under VAT. `vat_country` is ISO-2 and the number is checked against that country's format |
+| `prices_include_tax` | `boolean` | Required; `false`. VAT only: typed rates include VAT |
+| `round_to_whole_units` | `boolean` | Nullable. `NULL` means the regime's default: rounded for GST, exact for VAT |
 | `notify_invoice_created`, `notify_ewb_generated`, `notify_filing_reminders` | `boolean` | Required; `true` |
 | `reminder_lead_days` | `integer` | Required; `7` |
 | `language` | `varchar(255)` | Required; `en` |
@@ -241,7 +245,9 @@ Application-managed business configuration. A unique index on `singleton` is use
 
 `organization_settings_numbering_valid` requires `invoice_next_number > 0` and padding between 0 and 11. `organization_settings_security_valid` requires `audit_retention_days` to be null or positive. The sign-in rules (`allowed_ips`, `session_timeout_minutes`, `enforce_2fa`) are not business columns: the schema-transfer migration copied business 1's values to `public.installation_settings`, and the tenant migration `20261015121215_drop_installation_rules_from_business_settings` removed them from every business schema. `Organization` keeps them as virtual fields; `Settings.with_installation_rules/1` fills them in for the Security form, and saving that section writes them to `InstallationSettings` in the same transaction as the business's audit retention. The browser security plug reads that shared table. Audit retention remains specific to each business.
 
-Database and Ecto defaults are not interchangeable: for example, the organization Ecto schema currently uses a human-readable currency label while the SQL default is `INR`. Normal writes pass through the application's settings changesets.
+Database and Ecto defaults are not interchangeable: for example, the organization Ecto schema stores a human-readable currency label such as `AED (د.إ) - UAE Dirham` while the SQL default is `INR`; `Currency.code_from_label/1` reads the code back. Normal writes pass through the application's settings changesets.
+
+The regime is a business setting, but every invoice and credit note keeps its own `tax_regime`, so switching between GST and VAT never changes an issued document. Under VAT the India GST features (IRP e-invoice, e-way bills, GSTR-1, the HSN finder and the GST filing calendar) are hidden and refused; their tables and columns stay as they are.
 
 Source: [organization schema and validation sections](../lib/quantum_billing/settings/organization.ex), [settings context](../lib/quantum_billing/settings.ex).
 
@@ -262,11 +268,14 @@ Business customers/parties with GST identity, contact details, billing/shipping 
 | `payment_terms_days` | `integer` | Required; `30` |
 | `notes` | `text` | Nullable |
 | `status` | `varchar(255)` | Required; `Active` |
+| `tax_number` | `varchar(255)` | Nullable; the client's VAT number or TRN under VAT |
+| `country` | `varchar(255)` | Required; `IN`; ISO-2 |
+| `custom_fields` | `jsonb` | Required; `{}`; see [`field_definitions`](#field_definitions) |
 | `deleted_at` | timestamp | Nullable; Bin marker |
 
-Application client types are Registered Business, Composition Scheme, SEZ Unit, Unregistered, Overseas, and Consumer; statuses are Active, Inactive, and Blocked. Changesets validate GSTIN/PAN/state consistency where applicable. These are application rules, not SQL enum/check constraints.
+Application client types are Registered Business, Composition Scheme, SEZ Unit, Unregistered, Overseas, and Consumer; statuses are Active, Inactive, and Blocked. Under GST, changesets validate GSTIN/PAN/state consistency where applicable. Under VAT they skip those checks and validate `tax_number` against the client's `country` instead (spaces and dashes removed, upper-cased). These are application rules, not SQL enum/check constraints.
 
-The partial unique `clients_gstin_unique` index covers non-null GSTINs only when `deleted_at IS NULL`. B-tree indexes cover `name`, `email`, and `status`; GIN trigram indexes cover substring searches on `name`, `gstin`, and `email`. A partial `deleted_at` index supports the Bin.
+The partial unique `clients_gstin_unique` index covers non-null GSTINs only when `deleted_at IS NULL`. B-tree indexes cover `name`, `email`, and `status`; GIN trigram indexes cover substring searches on `name`, `gstin`, and `email`. `clients_custom_fields_index` is a GIN `jsonb_path_ops` index on `custom_fields` for the list filters, which match with `@>`. A partial `deleted_at` index supports the Bin.
 
 **Balance source:** `clients.outstanding` is a historical storage column, not a maintained receivables ledger. The clients context computes displayed outstanding from kept invoices not Paid/Cancelled, minus non-cancelled credit notes and plus debit notes, floored at zero. It writes the computed value into the returned struct for display. Direct SQL reporting should reproduce that rule rather than summing the stored client column.
 
@@ -283,7 +292,7 @@ A saved invoice contains both relationships and snapshots. Editing a customer's 
 | `invoice_date` | `date` | Required |
 | `due_date` | `date` | Nullable |
 | `payment_terms` | `varchar(255)` | Nullable |
-| `place_of_supply` | `varchar(255)` | Required |
+| `place_of_supply` | `varchar(255)` | Nullable in SQL; the changeset requires it for GST invoices only |
 | `client_id` | `bigint` FK → same-schema `clients.id` | Nullable; delete sets `NULL` |
 | `client_name` | `varchar(255)` | Required; snapshotted |
 | `client_gstin`, `client_pan`, `client_email`, `client_state`, `client_city`, `client_pincode` | `varchar(255)` | Nullable; snapshotted |
@@ -293,7 +302,13 @@ A saved invoice contains both relationships and snapshots. Editing a customer's 
 | `remarks`, `terms` | `text` | Nullable |
 | `total_items` | `integer` | Required; `0` |
 | `total_quantity` | `numeric(15,3)` | Required; `0` |
-| `taxable_value`, `cgst_amount`, `sgst_amount`, `igst_amount`, `cess_amount`, `round_off`, `grand_total` | `bigint` paise | Required; `0` |
+| `taxable_value`, `cgst_amount`, `sgst_amount`, `igst_amount`, `cess_amount`, `vat_amount`, `round_off`, `grand_total` | `bigint` minor units | Required; `0` |
+| `tax_regime` | `varchar(255)` | Required; `gst`. Snapshot of the business regime when the invoice was raised |
+| `tax_breakdown` | `jsonb` | Required; `[]`. VAT only: one `{name, category, rate_bp, taxable, tax}` row per rate group, amounts in minor units |
+| `company_tax_number`, `client_tax_number` | `varchar(255)` | Nullable; VAT numbers, snapshotted |
+| `reverse_charge` | `boolean` | Required; `false`. VAT only: every line is charged at 0% and the customer accounts for the VAT |
+| `prices_include_tax`, `round_to_whole_units` | `boolean` | Required; `false` and `true`. Snapshots of the business settings |
+| `custom_fields` | `jsonb` | Required; `{}`; see [`field_definitions`](#field_definitions) |
 | `status` | `varchar(255)` | Required; `Draft` |
 | `template_id` | `bigint` FK → same-schema `invoice_templates.id` | Nullable; delete sets `NULL` |
 | `layout_xml` | `text` | Nullable; frozen layout structure at issue |
@@ -321,6 +336,7 @@ Indexes:
 - Unique B-tree indexes: `invoice_number`, `public_token`, and non-null `irn` (`invoices_irn_unique`).
 - B-tree lookups: `client_id`, `template_id`, `invoice_date`, `inserted_at`, `status`, `(status, invoice_date)`, `client_name`, `client_gstin`, `irn`, `razorpay_payment_link_id`, `razorpay_payment_id`.
 - GIN trigram search: `invoice_number`, `client_name`, `client_gstin`.
+- GIN `jsonb_path_ops`: `custom_fields` (`invoices_custom_fields_index`), for the list filters.
 - Partial list-sort indexes where `deleted_at IS NULL`: `(grand_total, id)`, `(due_date, id)`, `(status, id)`.
 - Partial Bin index: `deleted_at` where it is not null.
 
@@ -335,11 +351,14 @@ Source: [invoice schema](../lib/quantum_billing/invoices/invoice.ex), [numbering
 | `hsn_sac` | `varchar(255)` | Nullable |
 | `quantity` | `numeric(15,3)` | Required; `1` |
 | `unit` | `varchar(255)` | Required; `Nos` |
-| `rate`, `amount` | `bigint` paise | Required; `0` |
-| `tax_rate` | `integer` percentage | Required; `18` |
+| `rate`, `amount` | `bigint` minor units | Required; `0` |
+| `tax_rate` | `integer` percentage | Required; `18`. The GST slab; `0` on a VAT line |
+| `tax_rate_id` | `bigint` FK → same-schema `tax_rates.id` | Nullable; delete sets `NULL`. VAT only |
+| `tax_rate_bp`, `tax_category`, `tax_name` | `integer`, `varchar(255)`, `varchar(255)` | Nullable. VAT only: snapshots of the rate when the line was saved |
 | `position` | `integer` | Required; `0`; line ordering |
+| `custom_fields` | `jsonb` | Required; `{}`; line-level custom fields |
 
-`invoice_id` is indexed. Database checks require `quantity > 0`, `rate >= 0`, and `amount >= 0`. The application calculates `amount` from quantity × rate rather than trusting a submitted amount. Unit choices and GST slabs are validated in Elixir.
+`invoice_id` and `tax_rate_id` are indexed. Database checks require `quantity > 0`, `rate >= 0`, and `amount >= 0`. The application calculates `amount` from quantity × rate rather than trusting a submitted amount. Unit choices and GST slabs are validated in Elixir. On a VAT line, `tax_rate_id` must name an active rate; the snapshot columns are copied from it and are what the totals use, so editing or archiving a rate later never changes an issued invoice.
 
 Source: [invoice item schema](../lib/quantum_billing/invoices/invoice_item.ex).
 
@@ -352,8 +371,11 @@ Source: [invoice item schema](../lib/quantum_billing/invoices/invoice_item.ex).
 | `invoice_id` | `bigint` FK → same-schema `invoices.id` | Required; delete cascades |
 | `client_id` | `bigint` FK → same-schema `clients.id` | Required; delete restricts |
 | `reason` | `varchar(255)` | Nullable |
-| `subtotal`, `tax_total`, `grand_total` | `bigint` paise | Nullable in SQL; `0` |
+| `subtotal`, `tax_total`, `grand_total` | `bigint` minor units | Nullable in SQL; `0` |
 | `status` | `varchar(255)` | Nullable in SQL; `Issued` |
+| `tax_regime` | `varchar(255)` | Required; `gst`. Taken from the original invoice |
+| `tax_breakdown` | `jsonb` | Required; `[]`. VAT only, as on `invoices` |
+| `custom_fields` | `jsonb` | Required; `{}` |
 
 Indexes cover unique `note_number`, `invoice_id`, and `client_id`. Application types are Credit/Debit and statuses are Issued/Cancelled/Applied. The changeset requires a non-negative grand total; no corresponding money or status check exists in the baseline SQL. The context generates a `CN-` or `DN-` number tied to the invoice number plus a runtime unique suffix, rather than consuming the invoice sequence.
 
@@ -373,9 +395,10 @@ Source: [credit-note schema](../lib/quantum_billing/credit_notes/credit_note.ex)
 | `vehicle_number`, `transporter_id`, `transporter_name` | `varchar(255)` | Nullable |
 | `cancelled_at` | timestamp | Nullable |
 | `cancellation_reason` | `varchar(255)` | Nullable |
+| `custom_fields` | `jsonb` | Required; `{}` |
 | `deleted_at` | timestamp | Nullable; Bin marker |
 
-Application statuses stored in this table are Active and Cancelled. Expiry is calculated from validity; it is not an additional persisted status enum. `valid_until` is a naive datetime with no stored offset. The current expiry code compares it to `NaiveDateTime.utc_now()`, and sandbox validity is generated from that same clock; it is not an Ecto `:utc_datetime` column.
+Application statuses stored in this table are Active and Cancelled. E-way bills are an India GST feature: a VAT business cannot create one, and a VAT invoice never has one. Expiry is calculated from validity; it is not an additional persisted status enum. `valid_until` is a naive datetime with no stored offset. The current expiry code compares it to `NaiveDateTime.utc_now()`, and sandbox validity is generated from that same clock; it is not an Ecto `:utc_datetime` column.
 
 Indexes cover unique `ewb_number`, `invoice_id`, `status`, `(ewb_date, id)`, substring search on `ewb_number` using GIN trigrams, and binned `deleted_at` rows. `e_way_bills_one_live_bill_per_invoice_index` uniquely covers `invoice_id` where `status <> 'Cancelled' AND deleted_at IS NULL`. This retains old cancelled bills while allowing a replacement. Restoring a binned bill can fail if another live bill has taken its invoice's slot.
 
@@ -404,11 +427,68 @@ Sources: [e-way bill schema](../lib/quantum_billing/e_way_bills/e_way_bill.ex), 
 | `auto_send_email` | `boolean` | Required; `true` |
 | `client_id` | `bigint` FK → same-schema `clients.id` | Nullable in SQL; delete sets `NULL` |
 | `items_json` | `text` | Nullable; JSON encoded as text |
+| `custom_fields` | `jsonb` | Required; `{}` |
 | `deleted_at` | timestamp | Nullable; Bin marker |
 
-The changeset requires `client_id` even though the database permits null after a client is physically deleted. Frequencies are Monthly/Quarterly/Annually and statuses Active/Paused in the application. The recurring sweep reads active, kept profiles by next-run date. Indexes cover `client_id`, `next_run_date`, `status`, `(status, next_run_date)`, and binned `deleted_at` rows. There is no separate recurring-item table or persisted foreign key from a generated invoice back to a profile.
+The changeset requires `client_id` even though the database permits null after a client is physically deleted. Frequencies are Monthly/Quarterly/Annually and statuses Active/Paused in the application. The recurring sweep reads active, kept profiles by next-run date. Indexes cover `client_id`, `next_run_date`, `status`, `(status, next_run_date)`, and binned `deleted_at` rows. There is no separate recurring-item table or persisted foreign key from a generated invoice back to a profile. A generated invoice copies a profile's custom-field values into the active invoice fields with the same key and type.
 
-Source: [recurring-profile schema](../lib/quantum_billing/recurring/recurring_profile.ex).
+Source: [recurring-profile schema](../lib/quantum_billing/recurring/recurring_profile.ex), [recurring context](../lib/quantum_billing/recurring.ex).
+
+### `field_definitions`
+
+The custom fields an owner has added. A definition belongs to one object: `client`, `invoice`, `invoice_item`, `credit_note`, `e_way_bill` or `recurring_profile`. Its values live in that table's `custom_fields` column, keyed by `key`.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `object` | `varchar(255)` | Required |
+| `key` | `varchar(255)` | Required; made from the label on creation and never changed |
+| `label` | `varchar(255)` | Required; at most 60 characters in the changeset |
+| `type` | `varchar(255)` | Required |
+| `options` | `jsonb` | Required; `{}`. Holds `choices` (`[{id, label, color}]`, at most 100) and `default` |
+| `required` | `boolean` | Required; `false` |
+| `help_text` | `varchar(255)` | Nullable; at most 200 characters |
+| `position` | `integer` | Required; `0`; display order |
+| `show_in_list`, `filterable`, `show_on_invoice` | `boolean` | Required; `false` |
+| `include_in_api` | `boolean` | Required; `true` |
+| `archived_at` | timestamp | Nullable; hides the field and keeps its values |
+
+Unique `(object, key)` and an index on `(object, position)`. The application allows at most 50 active fields per object.
+
+| Type | Stored value in `custom_fields` |
+| --- | --- |
+| `text`, `long_text` | String; at most 500 and 5,000 characters |
+| `number` | Decimal string |
+| `money` | Integer minor units |
+| `date` | ISO 8601 date string |
+| `boolean` | `true` or `false` |
+| `select` | One choice `id` |
+| `multi_select` | List of choice ids |
+| `email`, `phone` | String |
+| `url` | `http` or `https` URL, at most 500 characters |
+
+Only `CustomFields.cast/4` writes `custom_fields`; no schema casts it directly. Unknown keys are dropped, and an archived field's value is kept as stored. A choice's `id` stays fixed when its label is renamed, so stored values remain valid. Only `client` and `invoice` fields, which have list pages, can be `show_in_list` or `filterable`, and only their `select`, `multi_select` and `boolean` fields can be `filterable`. Only `invoice` and `invoice_item` fields can be `show_on_invoice`; an issued invoice never prints the client's live values.
+
+The type can change freely while no record holds a value. After that the only changes allowed are `text` ↔ `long_text` and `select` → `multi_select`, which wraps every stored id in a list. A definition can be deleted only when no record holds a value for its key; otherwise it is archived. Every create, edit, reorder, archive, restore and delete is owner-only and written to `audit_logs`.
+
+Sources: [field definition schema](../lib/quantum_billing/custom_fields/field_definition.ex), [custom fields context](../lib/quantum_billing/custom_fields.ex).
+
+### `tax_rates`
+
+The VAT rates a VAT business charges. A GST business has no rows; its slabs are fixed in code.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `name` | `varchar(255)` | Required; e.g. `Standard 5%` |
+| `category` | `varchar(255)` | Required; `standard`. One of `standard`, `reduced`, `zero`, `exempt`, `reverse_charge`, `out_of_scope` |
+| `rate_bp` | `integer` | Required; `0`; basis points, so `750` is 7.5% |
+| `exemption_reason` | `varchar(255)` | Nullable; the owner's note for an untaxed rate, shown in Settings |
+| `is_default` | `boolean` | Required; `false`; the rate a new line starts with |
+| `position` | `integer` | Required; `0`; indexed |
+| `archived_at` | timestamp | Nullable |
+
+Zero-rated, exempt, reverse-charge and out-of-scope rates always charge 0%, whatever `rate_bp` says, but still appear in an invoice's breakdown. The first save of a VAT regime adds the chosen country's preset rates once; after that the owner edits them. Rates are archived in normal use, not deleted. Changes are owner-only and audited.
+
+Sources: [tax rate schema](../lib/quantum_billing/tax_rates/tax_rate.ex), [tax rates context](../lib/quantum_billing/tax_rates.ex), [presets](../lib/quantum_billing/tax.ex).
 
 ### `invoice_templates`
 
@@ -600,13 +680,14 @@ erDiagram
     CLIENTS o|--o{ RECURRING_PROFILES : schedules
     INVOICE_TEMPLATES o|--o{ INVOICES : designs
     INVOICES ||--o{ INVOICE_ITEMS : contains
+    TAX_RATES o|--o{ INVOICE_ITEMS : rates
     INVOICES ||--o{ CREDIT_NOTES : adjusts
     INVOICES ||--o{ E_WAY_BILLS : transports
     INVOICES o|--o{ EMAIL_DELIVERIES : refers_to
     E_WAY_BILLS ||--o{ E_WAY_BILL_PART_B_UPDATES : records
 ```
 
-Unprefixed operational entities in the diagram are in one selected `biz_N`. Edges represent foreign keys, not permission checks.
+Unprefixed operational entities in the diagram are in one selected `biz_N`. Edges represent foreign keys, not permission checks. `field_definitions` has no foreign keys: its rows are matched to `custom_fields` values by `object` and `key`.
 
 | Physical deletion | Database result |
 | --- | --- |
@@ -616,6 +697,8 @@ Unprefixed operational entities in the diagram are in one selected `biz_N`. Edge
 | Delete an invoice | Cascades line items, credit notes, and e-way bills; nulls email-delivery invoice references. |
 | Delete an e-way bill | Cascades its Part-B updates. |
 | Delete an invoice template | Nulls invoice template references. |
+| Delete a tax rate | Nulls `invoice_items.tax_rate_id`; the line keeps its snapshot of the rate. Rates are archived in normal use. |
+| Delete a field definition | Allowed by the application only when no record holds a value for it; nothing else changes. |
 
 Normal Bin operations do not execute these physical cascades. `clients`, `invoices`, `e_way_bills`, and `recurring_profiles` use `deleted_at`, with explicit `kept/1`/`binned/1` query helpers. Raw SQL must add the intended filter itself. Invoice and e-way bill numbers remain consumed when binned. A restore can encounter a uniqueness conflict where a later live record now occupies the client's GSTIN or invoice's live-bill slot.
 
@@ -720,9 +803,9 @@ Sources: [schema-transfer migration](../priv/repo/migrations/20261015115410_move
 
 ## 9. Backup boundaries
 
-The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.0` stores money in paise and can upgrade the supported older `2.0`/`2.1` files on restore.
+The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.2` stores money in minor units and can upgrade the supported older `2.0`, `2.1`, `3.0` and `3.1` files on restore. Files older than `3.2` were written before VAT, so restore treats every record in them as GST: `tax_regime` `gst`, `vat_amount` 0, an empty `tax_breakdown`, no reverse charge, rounding on, and client `country` `IN`. Files without custom fields restore with `custom_fields` `{}`.
 
-The export includes selected organization settings plus clients, templates, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, design-asset records, and audit logs. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo and design-image bytes are not embedded; a path reference alone is not an asset backup. Restore drops `design_assets` rows whose path or kind is malformed. A restored row makes that business the owner of the path, which is the same trust a restore already gives `doc_logo_path`; paths are unguessable content hashes, so only someone who already has the file name can claim it this way.
+The export includes selected organization settings (with the tax regime, VAT number and country, inclusive pricing and rounding) plus, in restore order, field definitions, tax rates, clients, templates, design-asset records, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, and audit logs. Every record type that has `custom_fields` exports it. Restore drops a field definition whose object, key or type is not valid. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo and design-image bytes are not embedded; a path reference alone is not an asset backup. Restore drops `design_assets` rows whose path or kind is malformed. A restored row makes that business the owner of the path, which is the same trust a restore already gives `doc_logo_path`; paths are unguessable content hashes, so only someone who already has the file name can claim it this way.
 
 Export streams explicit field maps inside one transaction. Restore replaces the listed business tables in one transaction, inserts parents before children in batches, and resynchronizes primary-key sequences. A failure rolls back the transaction. Omitted credentials must be configured separately; the file is not a copy of the application's encryption-key environment.
 
@@ -826,7 +909,9 @@ ORDER BY queue, state;
 
 - No product catalog, inventory/stock movements, purchase ledger, payroll, bank-reconciliation ledger, or double-entry general ledger is defined by these tables.
 - No separate payment/allocation table models partial payments; current invoice payment tracking uses status and Razorpay reference fields.
-- No foreign-currency accounting ledger or exchange-gain/loss model is defined merely by storing `currency` and `exchange_rate`.
+- No foreign-currency accounting ledger or exchange-gain/loss model is defined merely by storing `currency` and `exchange_rate`. An invoice in AED or GBP is billed and totalled in that currency; reports add amounts by number and do not convert between currencies.
+- No custom objects: custom fields extend the six existing record types only. There is no custom field that links to another record.
+- No VAT return filing. A VAT business gets its VAT totals and per-rate breakdown from reports, but no return file is generated for any country.
 - No per-user notification read receipts exist; read state is shared within the business.
 - No database-level automatic soft-delete scope exists. Ecto helpers and application queries implement Bin filtering.
 - No automatic encryption-key rotation, automatic schema deletion on business-row deletion, or coordinated tenant rollback is defined.

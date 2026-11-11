@@ -84,6 +84,38 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
                "Date,Invoice Number,Client,GSTIN,Status,Tax Type,Taxable Value,CGST,SGST,IGST,Cess,Total Tax,Grand Total"
     end
 
+    test "the sales register adds a column per active invoice field", %{conn: conn} do
+      owner = QuantumBilling.AccountsFixtures.owner_fixture()
+      business = QuantumBilling.Businesses.default!()
+
+      scope =
+        QuantumBilling.Accounts.Scope.put_membership(
+          QuantumBilling.Accounts.Scope.for_user(owner),
+          QuantumBilling.Businesses.get_membership(owner, business.id)
+        )
+
+      {:ok, _} =
+        QuantumBilling.CustomFields.create_definition(scope, "invoice", %{
+          "label" => "Deposit",
+          "type" => "money"
+        })
+
+      QuantumBilling.ApiFixtures.invoice_fixture(%{
+        invoice_date: Date.utc_today(),
+        status: "Sent",
+        custom_fields: %{"deposit" => 125_050}
+      })
+
+      body =
+        conn
+        |> get(~p"/reports/export?#{[report_type: "Sales Register", date_range: "This Year"]}")
+        |> response(200)
+
+      [header | rows] = String.split(body, "\r\n", trim: true)
+      assert String.ends_with?(header, "Grand Total,Deposit")
+      assert Enum.any?(rows, &String.ends_with?(&1, ",1250.50"))
+    end
+
     test "requires authentication" do
       conn = get(build_conn(), ~p"/reports/export")
 

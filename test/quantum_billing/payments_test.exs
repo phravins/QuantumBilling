@@ -156,4 +156,32 @@ defmodule QuantumBilling.PaymentsTest do
       assert Repo.get(Invoice, invoice.id).razorpay_payment_id == "pay_c9950"
     end
   end
+
+  describe "another currency" do
+    setup do
+      invoice =
+        Repo.insert!(%Invoice{
+          invoice_number: "INV-AED-1",
+          invoice_date: ~D[2026-03-01],
+          client_name: "Gulf Traders",
+          place_of_supply: "Maharashtra",
+          company_state: "Maharashtra",
+          currency: "AED",
+          grand_total: 105_000
+        })
+
+      %{invoice: invoice}
+    end
+
+    test "gets no Razorpay link", %{invoice: invoice} do
+      refute Payments.online_payable?(invoice)
+      assert {:error, :unsupported_currency} = Payments.generate_payment_link(invoice)
+      assert is_nil(Repo.get(Invoice, invoice.id).razorpay_payment_link_id)
+      assert Payments.unavailable_message(invoice) == "Online payment not available for AED"
+    end
+
+    test "gets no UPI QR", %{invoice: invoice} do
+      assert {:error, :unsupported_currency} = QuantumBilling.Payments.QRCode.upi_uri(invoice)
+    end
+  end
 end

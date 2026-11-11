@@ -6,6 +6,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   use QuantumBillingWeb, :controller
 
   alias QuantumBilling.{Audit, Clients, Invoices, Payments}
+  alias QuantumBilling.Settings.Organization
   alias QuantumBillingWeb.API.{ActionParams, Error, Idempotency, InvoiceParams, Pagination}
   alias QuantumBillingWeb.API.V1.InvoiceJSON
   alias QuantumBillingWeb.Plugs.RequireScope
@@ -47,7 +48,9 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   defp create_invoice(conn) do
     key = conn.assigns.api_key
 
-    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params),
+    regime = QuantumBilling.Settings.get_organization() |> Organization.tax_regime()
+
+    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params, regime),
          {:client, %Clients.Client{} = client} <- {:client, Clients.get_client(client_id)},
          {:ok, invoice} <-
            attrs |> Map.merge(Invoices.client_snapshot(client)) |> Invoices.create_invoice() do
@@ -153,7 +156,8 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   @doc """
   `POST /invoices/:id/e-invoice`: queues registration with the IRP. Answers
   202 while queued; the result arrives as `invoice.e_invoice_generated` or
-  `invoice.e_invoice_failed`, or by fetching the invoice.
+  `invoice.e_invoice_failed`, or by fetching the invoice. A VAT invoice or
+  business gets 409 `gst_only`.
   """
   def register_e_invoice(conn, %{"id" => id}) do
     Idempotency.run(conn, fn ->
@@ -170,6 +174,9 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
 
         {:conflict, code, message} ->
           conflict(code, message)
+
+        {:error, :gst_only} ->
+          conflict(:gst_only, QuantumBilling.Tax.gst_only_message(:e_invoice))
 
         {:error, fields} when is_map(fields) ->
           validation_failed(fields)

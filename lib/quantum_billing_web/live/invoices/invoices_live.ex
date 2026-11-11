@@ -5,6 +5,10 @@ defmodule QuantumBillingWeb.InvoicesLive do
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CustomFieldComponents,
+    only: [custom_cell: 1, custom_filters: 1, list_definitions: 1, put_filter: 4]
+
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices
   alias QuantumBillingWeb.LiveRefresh
 
@@ -22,8 +26,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Invoices.subscribe()
 
+    definitions = CustomFields.active_definitions("invoice")
+
     {:ok,
      socket
+     |> assign(:column_definitions, list_definitions(definitions))
+     |> assign(:filter_definitions, CustomFields.filter_definitions(definitions))
+     |> assign(:custom_filter, %{})
      |> assign(:page_title, "Invoices")
      |> assign(:active_nav, :invoices)
      |> assign(:search, "")
@@ -65,6 +74,18 @@ defmodule QuantumBillingWeb.InvoicesLive do
 
   def handle_event("filter_status", %{"status" => status}, socket) do
     {:noreply, socket |> assign(:status_filter, status) |> assign(:page, 1) |> load_page()}
+  end
+
+  def handle_event("filter_custom", %{"key" => key} = params, socket) do
+    filters =
+      put_filter(
+        socket.assigns.custom_filter,
+        socket.assigns.filter_definitions,
+        key,
+        params["value"]
+      )
+
+    {:noreply, socket |> assign(:custom_filter, filters) |> assign(:page, 1) |> load_page()}
   end
 
   def handle_event("sort", %{"field" => field_str}, socket) do
@@ -145,6 +166,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
       Invoices.page(
         search: socket.assigns.search,
         status: socket.assigns.status_filter,
+        custom: socket.assigns.custom_filter,
         sort_field: socket.assigns.sort_field,
         sort_dir: socket.assigns.sort_dir,
         page: socket.assigns.page,
@@ -202,7 +224,13 @@ defmodule QuantumBillingWeb.InvoicesLive do
           />
         </form>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <.custom_filters
+            id="invoice-custom-filters"
+            definitions={@filter_definitions}
+            filters={@custom_filter}
+          />
+
           <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class={filter_button_class()}>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
@@ -231,136 +259,155 @@ defmodule QuantumBillingWeb.InvoicesLive do
           class="flex-1 justify-center"
           icon="hero-document-text"
           title={
-            if @search == "" and @status_filter == "All Status",
+            if @search == "" and @status_filter == "All Status" and @custom_filter == %{},
               do: "No invoices yet",
               else: "No invoices match these filters"
           }
           description={
-            if @search == "" and @status_filter == "All Status",
+            if @search == "" and @status_filter == "All Status" and @custom_filter == %{},
               do: "GST invoices you create will appear here.",
               else: "Try a different search term or status."
           }
         />
         <div :if={not @empty?}>
-          <table class="table table-fixed">
-            <thead>
-              <tr class={table_head_class()}>
-                <th class="w-12">S.No</th>
+          <div class={@column_definitions != [] && "overflow-x-auto"}>
+            <table class={["table table-fixed", @column_definitions != [] && "min-w-[64rem]"]}>
+              <thead>
+                <tr class={table_head_class()}>
+                  <th class="w-12">S.No</th>
 
-                <th class="w-32">
-                  <.sortable_th
-                    label="Invoice"
-                    field={:seq}
-                  />
-                </th>
+                  <th class="w-32">
+                    <.sortable_th
+                      label="Invoice"
+                      field={:seq}
+                    />
+                  </th>
 
-                <th>Client</th>
+                  <th>Client</th>
 
-                <th class="w-32">
-                  <.sortable_th
-                    label="Invoice Date"
-                    field={:invoice_date}
-                  />
-                </th>
+                  <th class="w-32">
+                    <.sortable_th
+                      label="Invoice Date"
+                      field={:invoice_date}
+                    />
+                  </th>
 
-                <th class="w-32">
-                  <.sortable_th
-                    label="Due Date"
-                    field={:due_date}
-                  />
-                </th>
+                  <th class="w-32">
+                    <.sortable_th
+                      label="Due Date"
+                      field={:due_date}
+                    />
+                  </th>
 
-                <th class="w-36">Total Amount</th>
+                  <th class="w-36">Total Amount</th>
 
-                <th class="w-44">Status</th>
+                  <th
+                    :for={definition <- @column_definitions}
+                    id={"invoice-col-#{definition.key}"}
+                    class="w-36 truncate"
+                    title={definition.label}
+                  >
+                    {definition.label}
+                  </th>
 
-                <th class="w-32">Actions</th>
-              </tr>
-            </thead>
+                  <th class="w-44">Status</th>
 
-            <tbody>
-              <%!-- The serial continues across pages. --%>
-              <tr
-                :for={{row, index} <- Enum.with_index(@rows)}
-                id={"invoice-#{row.id}"}
-                class={table_row_class()}
-              >
-                <td class="whitespace-nowrap text-base-content/45 tabular-nums">
-                  {@row_offset + index + 1}
-                </td>
+                  <th class="w-32">Actions</th>
+                </tr>
+              </thead>
 
-                <td class="truncate whitespace-nowrap font-medium">{row.number}</td>
+              <tbody>
+                <%!-- The serial continues across pages. --%>
+                <tr
+                  :for={{row, index} <- Enum.with_index(@rows)}
+                  id={"invoice-#{row.id}"}
+                  class={table_row_class()}
+                >
+                  <td class="whitespace-nowrap text-base-content/45 tabular-nums">
+                    {@row_offset + index + 1}
+                  </td>
 
-                <td class="truncate whitespace-nowrap" title={row.client}>{row.client}</td>
+                  <td class="truncate whitespace-nowrap font-medium">{row.number}</td>
 
-                <td class="whitespace-nowrap text-base-content/60">
-                  {format_date(row.invoice_date)}
-                </td>
+                  <td class="truncate whitespace-nowrap" title={row.client}>{row.client}</td>
 
-                <td class="whitespace-nowrap text-base-content/60">{format_date(row.due_date)}</td>
+                  <td class="whitespace-nowrap text-base-content/60">
+                    {format_date(row.invoice_date)}
+                  </td>
 
-                <td class="whitespace-nowrap font-medium tabular-nums">
-                  {rupees(row.amount)}
-                </td>
+                  <td class="whitespace-nowrap text-base-content/60">{format_date(row.due_date)}</td>
 
-                <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
+                  <td class="whitespace-nowrap font-medium tabular-nums">
+                    {money(row.amount, row.currency)}
+                  </td>
 
-                <td>
-                  <div class="flex gap-1">
-                    <.link
-                      navigate={~p"/invoices/#{row.id}"}
-                      class={row_action_class()}
-                      aria-label="View invoice"
-                    >
-                      <.icon name="hero-eye" class="size-4" />
-                    </.link>
+                  <td :for={definition <- @column_definitions} class="min-w-0">
+                    <.custom_cell
+                      definition={definition}
+                      values={row.custom_fields}
+                      currency={row.currency}
+                    />
+                  </td>
 
-                    <div class="dropdown dropdown-end">
-                      <div
-                        tabindex="0"
-                        role="button"
+                  <td class="whitespace-nowrap"><.status_badge status={row.status} /></td>
+
+                  <td>
+                    <div class="flex gap-1">
+                      <.link
+                        navigate={~p"/invoices/#{row.id}"}
                         class={row_action_class()}
-                        aria-label="More actions"
+                        aria-label="View invoice"
                       >
-                        <.icon name="hero-ellipsis-vertical" class="size-4" />
+                        <.icon name="hero-eye" class="size-4" />
+                      </.link>
+
+                      <div class="dropdown dropdown-end">
+                        <div
+                          tabindex="0"
+                          role="button"
+                          class={row_action_class()}
+                          aria-label="More actions"
+                        >
+                          <.icon name="hero-ellipsis-vertical" class="size-4" />
+                        </div>
+
+                        <ul
+                          tabindex="0"
+                          class="dropdown-content menu z-10 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
+                        >
+                          <li>
+                            <.link navigate={~p"/invoices/#{row.id}/edit"}>
+                              <.icon name="hero-pencil-square" class="size-4" /> Edit
+                            </.link>
+                          </li>
+
+                          <li>
+                            <%!-- Real navigation: the print view is a plain page. --%>
+                            <.link href={~p"/invoices/#{row.id}/pdf/download"}>
+                              <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
+                            </.link>
+                          </li>
+                        </ul>
                       </div>
 
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu z-10 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
+                      <button
+                        type="button"
+                        id={"invoice-delete-#{row.id}"}
+                        phx-click="delete"
+                        phx-value-id={row.id}
+                        data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
+                        class={row_delete_class()}
+                        aria-label="Move invoice to the Bin"
+                        title="Move to Bin"
                       >
-                        <li>
-                          <.link navigate={~p"/invoices/#{row.id}/edit"}>
-                            <.icon name="hero-pencil-square" class="size-4" /> Edit
-                          </.link>
-                        </li>
-
-                        <li>
-                          <%!-- Real navigation: the print view is a plain page. --%>
-                          <.link href={~p"/invoices/#{row.id}/pdf/download"}>
-                            <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
-                          </.link>
-                        </li>
-                      </ul>
+                        <.icon name="hero-trash" class="size-4" />
+                      </button>
                     </div>
-
-                    <button
-                      type="button"
-                      id={"invoice-delete-#{row.id}"}
-                      phx-click="delete"
-                      phx-value-id={row.id}
-                      data-confirm={"Move #{row.number} to the Bin? It can be restored from there."}
-                      class={row_delete_class()}
-                      aria-label="Move invoice to the Bin"
-                      title="Move to Bin"
-                    >
-                      <.icon name="hero-trash" class="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div :if={not @empty?} class="mt-auto flex items-center justify-end pt-4">

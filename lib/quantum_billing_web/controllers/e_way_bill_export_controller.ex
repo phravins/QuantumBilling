@@ -5,10 +5,13 @@ defmodule QuantumBillingWeb.EWayBillExportController do
   """
   use QuantumBillingWeb, :controller
 
+  plug QuantumBillingWeb.GSTOnly, :e_way_bills
   plug QuantumBillingWeb.Plugs.RecordExport, "e-way bill export" when action in [:export]
 
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills
   alias QuantumBilling.Money
+  alias QuantumBillingWeb.CustomFieldComponents
 
   @headers [
     "EWB Number",
@@ -36,9 +39,16 @@ defmodule QuantumBillingWeb.EWayBillExportController do
         sort_dir: :desc
       )
 
-    send_download(conn, {:binary, to_csv(@headers, Enum.map(rows, &csv_row/1))},
-      filename: "e-way-bills.csv"
-    )
+    definitions = CustomFields.active_definitions("e_way_bill")
+    headers = @headers ++ CustomFieldComponents.export_headers(definitions)
+
+    rows =
+      Enum.map(
+        rows,
+        &(csv_row(&1) ++ CustomFieldComponents.export_cells(definitions, &1.custom_fields))
+      )
+
+    send_download(conn, {:binary, to_csv(headers, rows)}, filename: "e-way-bills.csv")
   end
 
   defp param(params, key, default) do

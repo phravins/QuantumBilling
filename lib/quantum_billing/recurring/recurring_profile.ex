@@ -10,6 +10,8 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
   import Ecto.Changeset
   import Ecto.Query, only: [from: 2]
 
+  alias QuantumBilling.CustomFields
+
   @frequencies ["Monthly", "Quarterly", "Annually"]
   @statuses ["Active", "Paused"]
 
@@ -26,6 +28,9 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
 
     belongs_to :client, QuantumBilling.Clients.Client
 
+    # Values for the business's own fields. Written only by CustomFields.cast/4.
+    field :custom_fields, :map, default: %{}
+
     timestamps(type: :utc_datetime)
   end
 
@@ -37,6 +42,7 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
     |> validate_required([:title, :frequency, :next_run_date, :client_id])
     |> validate_inclusion(:frequency, @frequencies)
     |> validate_inclusion(:status, @statuses)
+    |> CustomFields.cast("recurring_profile", attrs)
   end
 
   @doc "Narrows `query` to profiles that are not in the Bin."

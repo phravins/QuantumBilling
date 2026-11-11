@@ -14,7 +14,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
 
   # Everything else (divider, custom text, spacer, image) may repeat.
   @singleton ~w(logo heading company client invoice_meta items totals
-                amount_in_words remarks terms signature footer payment)a
+                amount_in_words remarks terms signature footer payment custom_fields)a
 
   # Set by the server after an upload, never from the pad's params.
   @server_only ~w(path)
@@ -42,7 +42,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
     {"custom-text", :custom_text},
     {"spacer", :spacer},
     {"payment", :payment},
-    {"image", :image}
+    {"image", :image},
+    {"custom-fields", :custom_fields}
   ]
 
   @width {:enum, ~w(full half)}
@@ -138,6 +139,11 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
       {"show-qr", :show_qr, :boolean, true},
       {"show-bank", :show_bank, :boolean, true},
       {"qr-size", :qr_size, :integer, 96}
+    ],
+    custom_fields: [
+      {"width", :width, @width, "half"},
+      {"align", :align, @align, "left"},
+      {"label", :label, :string, "Details"}
     ],
     image: [
       {"width", :width, @width, "full"},

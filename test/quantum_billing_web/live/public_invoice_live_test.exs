@@ -74,4 +74,25 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
   test "redirects on invalid public token", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/pay/tok_invalid_does_not_exist")
   end
+
+  test "an invoice in another currency shows its amount and no online payment", %{conn: conn} do
+    invoice =
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-AED-7",
+        invoice_date: ~D[2026-03-01],
+        client_name: "Gulf Traders",
+        place_of_supply: "Maharashtra",
+        company_state: "Maharashtra",
+        public_token: "tok_public_aed_7",
+        currency: "AED",
+        grand_total: 105_000,
+        status: "Draft"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pay/#{invoice.public_token}")
+
+    assert has_element?(view, "#payment-unavailable", "Online payment not available for AED")
+    refute has_element?(view, ~s(button[phx-click="pay_now"]))
+    assert render(view) =~ "AED 1,050"
+  end
 end

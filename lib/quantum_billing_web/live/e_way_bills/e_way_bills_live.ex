@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   """
   use QuantumBillingWeb, :live_view
 
+  on_mount {QuantumBillingWeb.GSTOnly, :e_way_bills}
+
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.EWayBills.NICClient

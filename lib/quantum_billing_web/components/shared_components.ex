@@ -278,7 +278,8 @@ defmodule QuantumBillingWeb.SharedComponents do
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
   # Lets password managers fill auth forms.
-  attr :rest, :global, include: ~w(options prompt placeholder readonly disabled min max step rows
+  attr :rest, :global,
+    include: ~w(options prompt placeholder readonly disabled min max step rows maxlength
                 autocomplete spellcheck)
 
   def field(%{type: "money"} = assigns) do
@@ -393,6 +394,7 @@ defmodule QuantumBillingWeb.SharedComponents do
         )
       )
       |> assign(:configured?, QuantumBilling.Payments.QRCode.upi_configured?(organization))
+      |> assign(:payable?, QuantumBilling.Payments.online_payable?(assigns.invoice))
 
     ~H"""
     <div class="flex flex-col items-center">
@@ -410,10 +412,13 @@ defmodule QuantumBillingWeb.SharedComponents do
       >
         <.icon name="hero-qr-code" class="size-6 text-base-content/30" />
         <p class="text-2xs leading-snug text-base-content/50">
-          <%= if @configured? do %>
-            This invoice has no amount to collect yet.
-          <% else %>
-            Add your UPI ID in Settings › Integrations to show a payment QR here.
+          <%= cond do %>
+            <% not @payable? -> %>
+              UPI collects rupees only, so there is no QR for a {@invoice.currency} invoice.
+            <% @configured? -> %>
+              This invoice has no amount to collect yet.
+            <% true -> %>
+              Add your UPI ID in Settings › Integrations to show a payment QR here.
           <% end %>
         </p>
       </div>

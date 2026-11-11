@@ -13,6 +13,7 @@ defmodule QuantumBilling.Invoices do
   alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
   alias QuantumBilling.CreditNotes.CreditNote
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Events
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Notifications
@@ -51,7 +52,8 @@ defmodule QuantumBilling.Invoices do
   One page of invoices, filtered and sorted in the database.
 
   Options: `:search`, `:status`, `:client`, `:sort_field`, `:sort_dir`,
-  `:page`, `:per_page`, `:count`, and `:keyset`/`:before_id` for keyset paging.
+  `:page`, `:per_page`, `:count`, `:custom` (custom-field filters, see
+  `CustomFields.filter_where/3`), and `:keyset`/`:before_id` for keyset paging.
   """
   def page(opts \\ []) do
     per_page = opts |> Keyword.get(:per_page, @default_per_page) |> clamp(1, @max_per_page)
@@ -63,6 +65,7 @@ defmodule QuantumBilling.Invoices do
       |> search_where(Keyword.get(opts, :search))
       |> status_where(Keyword.get(opts, :status))
       |> client_where(Keyword.get(opts, :client))
+      |> custom_where(Keyword.get(opts, :custom))
 
     result =
       if Keyword.get(opts, :keyset, false) do
@@ -160,7 +163,8 @@ defmodule QuantumBilling.Invoices do
           coalesce(
             sum(
               coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0) +
+                coalesce(i.vat_amount, 0)
             ),
             0
           ),
@@ -273,6 +277,7 @@ defmodule QuantumBilling.Invoices do
       sgst: type(coalesce(sum(i.sgst_amount), 0), :integer),
       igst: type(coalesce(sum(i.igst_amount), 0), :integer),
       cess: type(coalesce(sum(i.cess_amount), 0), :integer),
+      vat: type(coalesce(sum(i.vat_amount), 0), :integer),
       invoice_value: type(coalesce(sum(i.grand_total), 0), :integer)
     })
     |> Repo.one()
@@ -285,17 +290,19 @@ defmodule QuantumBilling.Invoices do
           sgst: 0,
           igst: 0,
           cess: 0,
+          vat: 0,
           invoice_value: 0,
           tax: 0
         }
 
       totals ->
-        Map.put(totals, :tax, totals.cgst + totals.sgst + totals.igst + totals.cess)
+        Map.put(totals, :tax, totals.cgst + totals.sgst + totals.igst + totals.cess + totals.vat)
     end
   end
 
   @doc """
-  Tax charged per month for the last `count` months, oldest first.
+  Tax charged per month for the last `count` months, oldest first, split
+  into CGST + SGST, IGST and VAT.
 
   Months without invoices are included as zeros.
   """
@@ -315,7 +322,8 @@ defmodule QuantumBilling.Invoices do
             coalesce(sum(coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0)), 0),
             :integer
           ),
-        igst: type(coalesce(sum(i.igst_amount), 0), :integer)
+        igst: type(coalesce(sum(i.igst_amount), 0), :integer),
+        vat: type(coalesce(sum(i.vat_amount), 0), :integer)
       })
       |> Repo.all()
       |> Map.new(fn row -> {month_key(row.month), row} end)
@@ -327,7 +335,8 @@ defmodule QuantumBilling.Invoices do
       %{
         label: Calendar.strftime(month, "%b"),
         cgst_sgst: (row && row.cgst_sgst) || 0,
-        igst: (row && row.igst) || 0
+        igst: (row && row.igst) || 0,
+        vat: (row && row.vat) || 0
       }
     end
   end
@@ -367,6 +376,11 @@ defmodule QuantumBilling.Invoices do
   defp status_where(query, status) when status in [nil, "", "All Status"], do: query
   defp status_where(query, status), do: where(query, [i], i.status == ^status)
 
+  defp custom_where(query, filters) when filters in [nil, %{}], do: query
+
+  defp custom_where(query, filters),
+    do: CustomFields.filter_where(query, CustomFields.active_definitions("invoice"), filters)
+
   defp client_where(query, nil), do: query
 
   # Matched on client_id, or by name for invoices without one.
@@ -400,10 +414,16 @@ defmodule QuantumBilling.Invoices do
       invoice_date: invoice.invoice_date,
       due_date: invoice.due_date || invoice.invoice_date,
       amount: invoice.grand_total,
-      tax_type: if(Invoice.intra_state?(invoice), do: "CGST + SGST", else: "IGST"),
-      status: invoice.status
+      currency: invoice.currency,
+      tax_type: tax_type(invoice),
+      status: invoice.status,
+      custom_fields: invoice.custom_fields || %{}
     }
   end
+
+  defp tax_type(%Invoice{tax_regime: "vat", reverse_charge: true}), do: "VAT · Reverse charge"
+  defp tax_type(%Invoice{tax_regime: "vat"}), do: "VAT"
+  defp tax_type(invoice), do: if(Invoice.intra_state?(invoice), do: "CGST + SGST", else: "IGST")
 
   @doc "Fetches a non-binned invoice with its items. Raises if missing."
   def get_invoice!(id) do
@@ -481,6 +501,7 @@ defmodule QuantumBilling.Invoices do
       "client_id" => client.id,
       "client_name" => client.name,
       "client_gstin" => client.gstin,
+      "client_tax_number" => present(client.tax_number),
       # Every GSTIN contains the PAN.
       "client_pan" => present(client.pan) || QuantumBilling.GST.pan_from_gstin(client.gstin),
       "client_email" => client.email,
@@ -535,6 +556,8 @@ defmodule QuantumBilling.Invoices do
         |> with_number(locked)
         |> with_company_snapshot(locked)
         |> with_layout_snapshot(template, organization)
+        |> Map.put(:default_currency, Organization.currency_code(locked))
+        |> Map.merge(Organization.invoice_tax_snapshot(locked))
 
       Invoice.changeset(%Invoice{}, attrs, trusted)
     end)
@@ -565,7 +588,8 @@ defmodule QuantumBilling.Invoices do
           Notifications.notify(%{
             kind: "invoice",
             title: "Invoice #{invoice.invoice_number} created",
-            body: "#{invoice.client_name} · #{Format.rupees(invoice.grand_total)}",
+            body:
+              "#{invoice.client_name} · #{Format.money(invoice.grand_total, invoice.currency)}",
             path: "/invoices/#{invoice.id}",
             dedupe_key: "invoice_created:#{invoice.id}"
           })
@@ -606,14 +630,21 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Queues IRP registration for an invoice.
 
-  Returns `{:ok, :queued}`, `{:ok, :already_registered}` or `{:error, reason}`.
-  The status becomes "Pending E-Invoice" until the job finishes.
+  Returns `{:ok, :queued}`, `{:ok, :already_registered}` or `{:error, reason}`,
+  `:gst_only` for a VAT business or invoice. The status becomes
+  "Pending E-Invoice" until the job finishes.
   """
   def queue_einvoice(%Invoice{irn: irn}) when is_binary(irn) and irn != "" do
     {:ok, :already_registered}
   end
 
   def queue_einvoice(%Invoice{} = invoice) do
+    with :ok <- QuantumBilling.Tax.ensure_gst(invoice) do
+      enqueue_einvoice(invoice)
+    end
+  end
+
+  defp enqueue_einvoice(invoice) do
     case %{"invoice_id" => invoice.id} |> EInvoiceWorker.new() |> Oban.insert() do
       {:ok, _job} ->
         # Not via update_invoice/2: a status stamp must not re-take the layout snapshot.

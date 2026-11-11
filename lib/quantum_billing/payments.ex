@@ -29,10 +29,23 @@ defmodule QuantumBilling.Payments do
 
   def safe_payment_url(_url), do: nil
 
+  @doc "Whether Razorpay and UPI can collect this invoice: they take INR only."
+  def online_payable?(%Invoice{currency: currency}), do: currency in [nil, "INR"]
+
+  @doc "What to show instead of a payment option for another currency."
+  def unavailable_message(%Invoice{currency: currency}),
+    do: "Online payment not available for #{currency}"
+
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
   """
   def generate_payment_link(%Invoice{} = invoice) do
+    if online_payable?(invoice),
+      do: create_payment_link(invoice),
+      else: {:error, :unsupported_currency}
+  end
+
+  defp create_payment_link(invoice) do
     case RazorpayClient.create_payment_link(invoice) do
       {:ok, %{link_id: link_id, short_url: url}} ->
         changeset =
@@ -270,7 +283,7 @@ defmodule QuantumBilling.Payments do
           kind: "payment",
           severity: "success",
           title: "Payment received for #{updated.invoice_number}",
-          body: "#{updated.client_name} · #{Format.rupees(updated.grand_total)}",
+          body: "#{updated.client_name} · #{Format.money(updated.grand_total, updated.currency)}",
           path: "/invoices/#{updated.id}",
           dedupe_key: "payment:#{payment_id || "invoice-#{updated.id}"}"
         })

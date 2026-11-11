@@ -4,12 +4,23 @@ defmodule QuantumBillingWeb.InvoiceDocument do
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax
 
   @doc """
   A sample invoice, never saved. With an organisation, the seller details
   are filled from it; the buyer stays fictional.
   """
   def sample(organization \\ nil)
+
+  def sample(%Organization{tax_regime: "vat"} = organization) do
+    seller = organization |> seller_fields() |> Keyword.drop([:company_gstin, :company_state])
+    tax_number = presence(organization.vat_number)
+
+    organization
+    |> vat_sample()
+    |> struct(seller)
+    |> struct(if tax_number, do: [company_tax_number: tax_number], else: [])
+  end
 
   def sample(%Organization{} = organization) do
     seller = seller_fields(organization)
@@ -75,6 +86,87 @@ defmodule QuantumBillingWeb.InvoiceDocument do
       ]
     }
   end
+
+  @doc """
+  The design pad's sample: fictional throughout, under the business's regime
+  and currency, so a VAT business designs against VAT lines.
+  """
+  def pad_sample(%Organization{tax_regime: "vat"} = organization), do: vat_sample(organization)
+  def pad_sample(_organization), do: sample(nil)
+
+  # Two lines, one at the country's standard rate and one zero-rated, totalled
+  # by the real VAT engine.
+  defp vat_sample(%Organization{} = organization) do
+    country = organization.vat_country
+    {name, category, rate_bp} = standard_preset(country)
+
+    items = [
+      %InvoiceItem{
+        description: "Design retainer",
+        quantity: Decimal.new(1),
+        unit: "Nos",
+        rate: 1_800_000,
+        tax_rate: 0,
+        tax_rate_bp: rate_bp,
+        tax_category: category,
+        tax_name: name,
+        amount: 1_800_000,
+        position: 0
+      },
+      %InvoiceItem{
+        description: "Export freight",
+        quantity: Decimal.new(2),
+        unit: "Hrs",
+        rate: 300_000,
+        tax_rate: 0,
+        tax_rate_bp: 0,
+        tax_category: "zero",
+        tax_name: "Zero-rated",
+        amount: 600_000,
+        position: 1
+      }
+    ]
+
+    round? = Organization.round_to_whole_units?(organization)
+
+    totals =
+      Tax.totals(items, %{regime: "vat", reverse_charge: false, round_to_whole_units: round?})
+
+    %Invoice{
+      sample(nil)
+      | tax_regime: "vat",
+        currency: Organization.currency_code(organization),
+        round_to_whole_units: round?,
+        place_of_supply: nil,
+        company_address: "Office 1204, Example Tower",
+        company_gstin: nil,
+        company_state: nil,
+        company_tax_number: sample_tax_number(country, "1001234567"),
+        client_gstin: nil,
+        client_state: nil,
+        client_billing_address: "14 Harbour Road",
+        client_tax_number: sample_tax_number(country, "1009876543"),
+        items: items
+    }
+    |> struct(totals)
+  end
+
+  defp standard_preset(country) do
+    country
+    |> Tax.presets()
+    |> Enum.find({"Standard", "standard", 500}, fn {_name, category, bp} ->
+      category == "standard" and bp > 0
+    end)
+  end
+
+  # A number in the country's shape, for show only.
+  defp sample_tax_number(country, digits) when country in ["AE", "SA", "BH"],
+    do: digits <> "00003"
+
+  defp sample_tax_number("GB", digits), do: "GB" <> String.slice(digits, 0, 9)
+  defp sample_tax_number("OM", digits), do: "OM" <> digits
+  defp sample_tax_number(country, digits) when is_binary(country), do: country <> digits
+  defp sample_tax_number(_country, digits), do: digits
 
   # Only filled fields, so blanks keep the placeholder.
   defp seller_fields(%Organization{} = organization) do

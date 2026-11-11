@@ -113,7 +113,7 @@ defmodule QuantumBilling.Reports do
       },
       trend: Enum.map(months, &%{label: &1.label, value: &1.taxable_value + &1.tax_amount}),
       breakdown: breakdown_rows(status_counts(filters)),
-      tax_rows: tax_rows_from(tax_type_totals(filters)),
+      tax_rows: tax_rows(filters),
       top_clients: top_client_rows(filters),
       total_count: totals.count
     }
@@ -131,7 +131,8 @@ defmodule QuantumBilling.Reports do
           coalesce(
             sum(
               coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0) +
+                coalesce(i.vat_amount, 0)
             ),
             0
           ),
@@ -161,7 +162,8 @@ defmodule QuantumBilling.Reports do
             coalesce(
               sum(
                 coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
+                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0) +
+                  coalesce(i.vat_amount, 0)
               ),
               0
             ),
@@ -276,6 +278,7 @@ defmodule QuantumBilling.Reports do
   # Same rule as to_row/1, in SQL.
   @tax_type_sql """
   CASE
+    WHEN tax_regime = 'vat' THEN 'VAT'
     WHEN COALESCE(cgst_amount, 0) > 0 OR COALESCE(sgst_amount, 0) > 0 THEN 'CGST + SGST'
     WHEN COALESCE(igst_amount, 0) > 0 THEN 'IGST'
     WHEN COALESCE(cess_amount, 0) > 0 THEN 'CESS'
@@ -301,7 +304,26 @@ defmodule QuantumBilling.Reports do
     |> Map.new(&{&1.tax_type, &1})
   end
 
-  defp tax_rows_from(totals_by_type) do
+  # VAT invoices, totalled per rate from each invoice's snapshotted breakdown.
+  defp vat_rate_totals(filters) do
+    filters
+    |> query()
+    |> where([i], i.tax_regime == "vat")
+    |> join(:inner, [i], b in fragment("jsonb_array_elements(?)", i.tax_breakdown), on: true)
+    |> group_by([_i, b], [
+      fragment("?->>'name'", b.value),
+      fragment("COALESCE((?->>'rate_bp')::int, 0)", b.value)
+    ])
+    |> select([_i, b], %{
+      name: fragment("?->>'name'", b.value),
+      rate_bp: fragment("COALESCE((?->>'rate_bp')::int, 0)", b.value),
+      taxable: type(fragment("COALESCE(SUM((?->>'taxable')::bigint), 0)", b.value), :integer),
+      tax: type(fragment("COALESCE(SUM((?->>'tax')::bigint), 0)", b.value), :integer)
+    })
+    |> Repo.all()
+  end
+
+  defp tax_rows_from(totals_by_type, vat_rates) do
     rows =
       [
         aggregated_tax_row(totals_by_type["CGST + SGST"], "CGST + SGST", :intra),
@@ -310,7 +332,27 @@ defmodule QuantumBilling.Reports do
       ]
       |> Enum.reject(&is_nil/1)
 
+    rows = rows ++ vat_rows(vat_rates)
+
     rows ++ [totals_row(rows)]
+  end
+
+  # One row per VAT rate, highest rate first.
+  defp vat_rows(rates) do
+    rates
+    |> Enum.sort_by(&{-&1.rate_bp, &1.name || ""})
+    |> Enum.map(fn rate ->
+      %{
+        label: "VAT · " <> (rate.name || "No VAT"),
+        taxable_value: rate.taxable,
+        cgst: nil,
+        sgst: nil,
+        igst: nil,
+        vat: rate.tax,
+        total_tax: rate.tax,
+        total?: false
+      }
+    end)
   end
 
   defp aggregated_tax_row(nil, _label, _kind), do: nil
@@ -322,13 +364,19 @@ defmodule QuantumBilling.Reports do
       cgst: if(kind == :intra, do: totals.cgst),
       sgst: if(kind == :intra, do: totals.sgst),
       igst: if(kind == :inter, do: totals.igst),
+      vat: nil,
       total_tax: totals.cgst + totals.sgst + totals.igst + totals.cess,
       total?: false
     }
   end
 
+  @doc "Whether any invoice matching `filters` was raised under VAT."
+  def any_vat?(filters) when is_map(filters),
+    do: filters |> query() |> where([i], i.tax_regime == "vat") |> Repo.exists?()
+
   @doc "Tax rows by type plus a totals row (`aggregate/1`'s `:tax_rows`)."
-  def tax_rows(filters) when is_map(filters), do: tax_rows_from(tax_type_totals(filters))
+  def tax_rows(filters) when is_map(filters),
+    do: tax_rows_from(tax_type_totals(filters), vat_rate_totals(filters))
 
   @doc "The `limit` clients with the highest invoice value (`aggregate/1`'s `:top_clients`)."
   def top_client_totals(filters, limit \\ 5) when is_map(filters),
@@ -347,7 +395,7 @@ defmodule QuantumBilling.Reports do
               sum(
                 coalesce(i.taxable_value, 0) + coalesce(i.cgst_amount, 0) +
                   coalesce(i.sgst_amount, 0) + coalesce(i.igst_amount, 0) +
-                  coalesce(i.cess_amount, 0)
+                  coalesce(i.cess_amount, 0) + coalesce(i.vat_amount, 0)
               ),
               0
             ),
@@ -368,6 +416,9 @@ defmodule QuantumBilling.Reports do
   def to_row(%Invoice{} = invoice) do
     tax_type =
       cond do
+        Invoice.vat?(invoice) ->
+          "VAT"
+
         (invoice.cgst_amount || 0) > 0 or (invoice.sgst_amount || 0) > 0 ->
           "CGST + SGST"
 
@@ -397,7 +448,11 @@ defmodule QuantumBilling.Reports do
       sgst: invoice.sgst_amount || 0,
       igst: invoice.igst_amount || 0,
       cess: invoice.cess_amount || 0,
-      round_off: invoice.round_off || 0
+      vat: invoice.vat_amount || 0,
+      tax_breakdown: invoice.tax_breakdown || [],
+      tax_number: invoice.client_tax_number,
+      round_off: invoice.round_off || 0,
+      custom_fields: invoice.custom_fields || %{}
     }
   end
 
@@ -457,7 +512,7 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  defp row_tax(row), do: row.cgst + row.sgst + row.igst + row.cess
+  defp row_tax(row), do: row.cgst + row.sgst + row.igst + row.cess + Map.get(row, :vat, 0)
 
   defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
 
@@ -519,7 +574,24 @@ defmodule QuantumBilling.Reports do
       ]
       |> Enum.reject(&is_nil/1)
 
+    rows = rows ++ vat_rows(breakdown_totals(groups["VAT"] || []))
+
     rows ++ [totals_row(rows)]
+  end
+
+  # The same per-rate totals as vat_rate_totals/1, from report rows.
+  defp breakdown_totals(rows) do
+    rows
+    |> Enum.flat_map(&Map.get(&1, :tax_breakdown, []))
+    |> Enum.group_by(&{&1["name"], &1["rate_bp"] || 0})
+    |> Enum.map(fn {{name, rate_bp}, lines} ->
+      %{
+        name: name,
+        rate_bp: rate_bp,
+        taxable: sum_by(lines, &(&1["taxable"] || 0)),
+        tax: sum_by(lines, &(&1["tax"] || 0))
+      }
+    end)
   end
 
   defp tax_row(nil, _label, _kind), do: nil
@@ -537,6 +609,7 @@ defmodule QuantumBilling.Reports do
       cgst: if(kind == :intra, do: cgst),
       sgst: if(kind == :intra, do: sgst),
       igst: if(kind == :inter, do: igst),
+      vat: nil,
       total_tax: cgst + sgst + igst + cess,
       total?: false
     }
@@ -549,6 +622,7 @@ defmodule QuantumBilling.Reports do
       cgst: sum_present(rows, & &1.cgst),
       sgst: sum_present(rows, & &1.sgst),
       igst: sum_present(rows, & &1.igst),
+      vat: sum_present(rows, & &1.vat),
       total_tax: sum_by(rows, & &1.total_tax),
       total?: true
     }

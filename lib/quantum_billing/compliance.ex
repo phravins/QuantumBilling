@@ -144,8 +144,8 @@ defmodule QuantumBilling.Compliance do
   @doc """
   The obligations this business tracks, based on its registration.
 
-  No GSTIN: none. Composition: CMP-08 and annual returns. Regular: GSTR-1,
-  GSTR-3B and annual returns.
+  No GSTIN, or a VAT business: none. Composition: CMP-08 and annual returns.
+  Regular: GSTR-1, GSTR-3B and annual returns.
   """
   def tracked_obligations(today \\ Date.utc_today(), registration \\ nil) do
     if registered?(registration) do
@@ -167,7 +167,8 @@ defmodule QuantumBilling.Compliance do
   defp applies?(_annual_return, _composition?), do: true
 
   defp registered?(registration) do
-    registration |> registration_field(:gstin) |> to_string() |> String.trim() != ""
+    registration_field(registration, :tax_regime) != "vat" and
+      registration |> registration_field(:gstin) |> to_string() |> String.trim() != ""
   end
 
   defp composition_scheme?(registration),

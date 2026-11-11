@@ -2,9 +2,10 @@ defmodule QuantumBilling.Clients.Client do
   @moduledoc """
   A customer the business invoices.
 
-  GST rules: a GSTIN is required only for registration types that have one,
+  Under GST a GSTIN is required only for registration types that have one,
   its embedded PAN must match the PAN, and its state code must match the
-  state. Amounts are paise. Deleting sets `deleted_at` (the Bin); every read
+  state. Under VAT those checks give way to a `tax_number` checked against
+  the client's `country`, and a free-form address. Amounts are paise. Deleting sets `deleted_at` (the Bin); every read
   goes through `kept/1`.
   """
   use Ecto.Schema
@@ -12,9 +13,12 @@ defmodule QuantumBilling.Clients.Client do
   import Ecto.Changeset
   import Ecto.Query, only: [from: 2]
 
+  alias QuantumBilling.CustomFields
+
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
   alias QuantumBilling.Money.Paise
+  alias QuantumBilling.Tax
 
   @gstin_types ["Registered Business", "Composition Scheme", "SEZ Unit"]
 
@@ -33,7 +37,26 @@ defmodule QuantumBilling.Clients.Client do
 
   @categories ["Customer", "Supplier", "Both"]
 
-  @country_codes ["+91", "+1", "+44", "+61", "+65", "+971"]
+  @country_codes [
+    "+91",
+    "+1",
+    "+44",
+    "+61",
+    "+65",
+    "+971",
+    "+966",
+    "+973",
+    "+968",
+    "+974",
+    "+965",
+    "+353",
+    "+49",
+    "+33",
+    "+34",
+    "+39",
+    "+31",
+    "+32"
+  ]
 
   @statuses ["Active", "Inactive", "Blocked"]
 
@@ -43,6 +66,9 @@ defmodule QuantumBilling.Clients.Client do
     field :display_name, :string
     field :gstin, :string
     field :pan, :string
+    # VAT number or TRN, read against `country` (ISO-2).
+    field :tax_number, :string
+    field :country, :string, default: "IN"
     field :legal_name, :string
     field :business_type, :string
     field :category, :string
@@ -74,6 +100,9 @@ defmodule QuantumBilling.Clients.Client do
 
     field :deleted_at, :utc_datetime
 
+    # Values for the business's own fields. Written only by CustomFields.cast/4.
+    field :custom_fields, :map, default: %{}
+
     timestamps(type: :utc_datetime)
   end
 
@@ -82,12 +111,13 @@ defmodule QuantumBilling.Clients.Client do
                billing_line1 billing_line2 billing_city billing_state billing_pin
                shipping_same_as_billing shipping_line1 shipping_line2 shipping_city
                shipping_state shipping_pin
-               credit_limit payment_terms_days opening_balance notes status)a
+               credit_limit payment_terms_days opening_balance notes status
+               tax_number country)a
 
   @doc """
-  Builds a client changeset.
+  Builds a client changeset. `regime` is the business's: `"gst"` or `"vat"`.
   """
-  def changeset(client, attrs) do
+  def changeset(client, attrs, regime \\ "gst") do
     client
     |> cast(attrs, @castable)
     |> validate_required([:client_type, :name, :phone])
@@ -97,14 +127,11 @@ defmodule QuantumBilling.Clients.Client do
     |> validate_optional_inclusion(:business_type, @business_types)
     |> validate_optional_inclusion(:category, @categories)
     |> validate_inclusion(:phone_country_code, @country_codes)
-    |> validate_gstin()
-    |> validate_pan_field()
-    |> GST.validate_gstin_matches_pan(:gstin, :pan)
-    |> validate_gstin_state()
+    |> validate_tax_identity(regime)
     |> validate_email()
     |> validate_phone()
-    |> validate_billing_address()
-    |> validate_shipping_address()
+    |> validate_billing_address(regime)
+    |> validate_shipping_address(regime)
     |> copy_billing_to_shipping()
     |> validate_number(:credit_limit, greater_than_or_equal_to: 0)
     |> validate_number(:opening_balance, greater_than_or_equal_to: 0)
@@ -113,6 +140,7 @@ defmodule QuantumBilling.Clients.Client do
       less_than_or_equal_to: 365
     )
     |> validate_length(:notes, max: 2000)
+    |> CustomFields.cast("client", attrs)
     |> unique_constraint(:gstin,
       name: :clients_gstin_unique,
       message: "is already registered to another client"
@@ -148,6 +176,27 @@ defmodule QuantumBilling.Clients.Client do
   Whether a client of this type must supply a GSTIN.
   """
   def gstin_required?(client_type), do: client_type in @gstin_types
+
+  defp validate_tax_identity(changeset, "vat") do
+    changeset = update_change(changeset, :country, &upcase/1)
+
+    changeset
+    |> validate_required([:country])
+    |> validate_format(:country, ~r/^[A-Z]{2}$/, message: "must be a two-letter country code")
+    |> Tax.validate_tax_number(:tax_number, get_field(changeset, :country))
+  end
+
+  defp validate_tax_identity(changeset, _gst) do
+    changeset
+    |> validate_gstin()
+    |> validate_pan_field()
+    |> GST.validate_gstin_matches_pan(:gstin, :pan)
+    |> validate_gstin_state()
+    |> validate_length(:tax_number, max: 30)
+  end
+
+  defp upcase(value) when is_binary(value), do: value |> String.trim() |> String.upcase()
+  defp upcase(value), do: value
 
   defp validate_gstin(changeset) do
     changeset = GST.validate_gstin(changeset, :gstin)
@@ -212,7 +261,15 @@ defmodule QuantumBilling.Clients.Client do
     end
   end
 
-  defp validate_billing_address(changeset) do
+  # Outside India the state and postal code are free-form.
+  defp validate_billing_address(changeset, "vat") do
+    changeset
+    |> validate_required([:billing_line1, :billing_city], message: "can't be blank")
+    |> validate_length(:billing_state, max: 80)
+    |> validate_postal_code(:billing_pin)
+  end
+
+  defp validate_billing_address(changeset, _gst) do
     changeset
     |> validate_required([:billing_line1, :billing_city, :billing_state, :billing_pin],
       message: "can't be blank"
@@ -222,14 +279,27 @@ defmodule QuantumBilling.Clients.Client do
   end
 
   # Skipped while "same as billing" is on: the shipping fields are hidden.
-  defp validate_shipping_address(changeset) do
-    if get_field(changeset, :shipping_same_as_billing) do
-      changeset
-    else
-      changeset
-      |> validate_pin(:shipping_pin)
-      |> validate_optional_inclusion(:shipping_state, EWayBillForm.states())
+  defp validate_shipping_address(changeset, regime) do
+    cond do
+      get_field(changeset, :shipping_same_as_billing) ->
+        changeset
+
+      regime == "vat" ->
+        changeset
+        |> validate_length(:shipping_state, max: 80)
+        |> validate_postal_code(:shipping_pin)
+
+      true ->
+        changeset
+        |> validate_pin(:shipping_pin)
+        |> validate_optional_inclusion(:shipping_state, EWayBillForm.states())
     end
+  end
+
+  defp validate_postal_code(changeset, field) do
+    validate_format(changeset, field, ~r/^[A-Za-z0-9][A-Za-z0-9 -]{1,11}$/,
+      message: "must be 2 to 12 letters or digits"
+    )
   end
 
   defp validate_pin(changeset, field) do

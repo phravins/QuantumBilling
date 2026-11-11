@@ -77,8 +77,8 @@ Settings are divided into independently saved sections. A change in one section 
 | Company profile | Read-only summary of the business: logo, names, GSTIN/PAN/state, address and contacts, financial year, currency and team size, with links to the sections that edit them. `/settings` opens here. |
 | General | Company/trade name, address, city, PIN, phone, contact email, GSTIN, PAN, state, currency, financial year, time zone, and date format. |
 | Invoice | Number prefix, next number, number padding, default due days, default terms, and the bank details (account name, bank, account number, IFSC, branch) printed by a design's Payment details block. |
-| E-Way Bill | Default transport mode, transporter identifier, value threshold, and an auto-generate preference. |
-| Tax | Default line GST rate and flags for cess, composition scheme, and TDS. |
+| E-Way Bill | Default transport mode, transporter identifier, value threshold, and an auto-generate preference. Hidden for a VAT business. |
+| Tax | The tax regime (India GST or VAT). Under GST: the default line GST rate and flags for cess, composition scheme, and TDS. Under VAT: VAT number and country, whether prices include VAT, whole-unit rounding, and the VAT rates table. Staff can read this section; only owners change the regime and rates. |
 | Customization | Company logo and invoice design templates. |
 | Notifications | Invoice-created, e-way-bill-generated, and filing-reminder preferences, plus the reminder lead window. |
 | SMTP | Mail host, port, credentials, SSL setting, sender address/name, test delivery, and recent delivery results. |
@@ -86,12 +86,47 @@ Settings are divided into independently saved sections. A change in one section 
 | Security | Allowed IP addresses/CIDRs, idle session timeout, mandatory two-factor preference, and audit retention. |
 | Preferences | Language and list page-size preferences. These settings should not be read as a promise that every screen is translated or consumes every preference. |
 | Backup & Restore | JSON business data export and restore. |
+| Data model | Owners only, at `/settings/data-model`: the business's own fields on clients, invoices, invoice lines, credit notes, e-way bills, and recurring profiles. See [Custom fields](#custom-fields). |
 
 Some preferences are stored ahead of complete operational support. In particular, invoice totals currently keep cess at zero; saving cess/TDS flags does not introduce cess/TDS line calculations. The e-way-bill auto-generate preference does not replace the explicit generation workflow described below.
 
 SMTP passwords, Razorpay secrets, IRP passwords, and webhook secrets saved through Settings use encrypted database fields. Secret inputs are write-only: saved values are not sent back to the browser, and submitting a blank secret preserves the stored value. Environment-supplied credentials and deployment encryption keys are described in [Configuration](configuration.md).
 
 IP allowlists, idle timeout, and mandatory two-factor enforcement read installation-level security settings because they must apply before choosing a business. They protect the shared sign-in, rather than changing independently as a person switches firms. The Security form loads these shared rules and saves them transactionally with the business's security settings. An owner changing these rules affects everyone on the installation. Audit retention remains a business setting.
+
+### Tax regime: India GST or VAT
+
+Each business charges either **India GST** (the default, and the behaviour described throughout this guide) or **VAT**, for businesses in the UAE and other Gulf states, the UK, and the EU. An owner picks the regime in Settings → Tax.
+
+Choosing VAT asks for the business's VAT country and VAT number (a UAE TRN is 15 digits, a UK number is `GB` and 9 or 12 digits, an EU number starts with its country code). The first save adds that country's usual rates, for example Standard 5%, Zero-rated, Exempt, and Reverse charge for the UAE, or 20%, 5%, zero-rated and exempt for the UK. After that the owner adds, edits, archives, restores, and picks the default rate in the rates table. A rate has a name, a category (standard, reduced, zero-rated, exempt, reverse charge, or out of scope), a percentage with up to two decimals, and an optional note. Zero-rated, exempt, reverse-charge and out-of-scope rates always charge 0%. Every change to a rate, including the presets added on the first save, is written to the audit trail.
+
+Two VAT settings change the arithmetic:
+
+- **Prices include VAT.** Typed rates are taken as VAT-inclusive, and the VAT is backed out of them.
+- **Round to whole units.** The grand total rounds to a whole dirham or pound, with the difference in round-off. It is off by default under VAT and on by default under GST.
+
+Every invoice keeps the regime, rounding, and inclusive-pricing settings it was raised under. Switching regime later does not change or recalculate any existing invoice, and credit notes follow the regime of their invoice.
+
+Under VAT, the India GST features are hidden from the menus and refused if reached directly: IRP e-invoice registration and the e-invoice XML, e-way bills and their settings, the GSTR-1 export, the HSN finder, and the GST filing calendar. The compliance page stays, with the business's own tasks. A GST business sees no change.
+
+The business currency (Settings → General) can be INR, AED, SAR, QAR, GBP, EUR, or USD. New invoices take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
+
+### Custom fields
+
+An owner can add the business's own fields, such as a PO number, a project, or a delivery slot, at Settings → Data model. Each tab is one record type: Clients, Invoices, Invoice lines, Credit notes, E-way bills, and Recurring profiles.
+
+A field has a label, a type, optional help text, and a "required" switch. The types are text, long text, number, money, date, yes/no, single choice, multiple choice, email, phone, and web address. Choice fields keep a list of up to 100 options, each with a colour. Every type except multiple choice can have a default, which new records start with. Up to 50 active fields are allowed per record type. Switches on each field decide where it appears:
+
+| Switch | Effect |
+| --- | --- |
+| Column in the list | A column on the Clients or Invoices list. Client and invoice fields only. |
+| Filter | A filter on the Clients or Invoices list. Single choice, multiple choice and yes/no fields only. |
+| Printable on invoices | An invoice field becomes available to the invoice designer's Custom fields block; an invoice-line field prints as an extra item-table column whenever a line has a value. Invoice and invoice-line fields only. |
+| Included in the API | Read and written through the API on clients and invoices. On by default. |
+
+Staff fill the fields in on the client, invoice, credit note, e-way bill and recurring-profile forms; line fields appear on each invoice line. Client and invoice pages show the values in a Details card, and the sales register CSV and e-way bill CSV add one column per field. A recurring profile's values carry over to each generated invoice when the invoice has a field with the same key and type.
+
+Fields can be reordered at any time. A field's type can be changed freely until some record holds a value; after that only text ↔ long text and single → multiple choice are allowed. Renaming a choice keeps the values that use it. Archiving a field hides it everywhere but keeps its values, so issued invoices still show them, and it can be restored. A field can be deleted only when no record holds a value for it. Every change to a field is written to the audit trail.
 
 ## 5. Client directory
 
@@ -107,6 +142,8 @@ A client stores:
 
 Registered, composition, and SEZ client types require a GSTIN. The application checks GSTIN/PAN formats, agreement between a PAN and the PAN embedded in a GSTIN, and the GSTIN state prefix against the chosen billing state. It does not contact a government service to verify registration status or calculate a GSTIN checksum.
 
+For a VAT business the client form asks for the client's country and VAT number instead, and checks the number's format for that country; the GSTIN, PAN and state checks are skipped. The form also shows any custom fields defined for clients.
+
 The directory's outstanding figures derive from invoices still owed, adjusted by non-cancelled credit and debit notes, and floored at zero. Credit limits, opening balances, and client status are stored client attributes; they are not a full credit-control or account-ledger engine. A saved credit limit does not establish an enforced approval workflow for new invoices.
 
 Changing a client later does not automatically rewrite the customer details copied onto an existing invoice.
@@ -121,6 +158,8 @@ Each item contains a description, optional HSN/SAC code, quantity, unit, rate, G
 
 At least one item, the invoice date, the place of supply, and the client name are required. A due date cannot precede the invoice date. Payment term presets include Due on Receipt and Net 7/15/30/45/60 Days, with a Custom option.
 
+On a VAT invoice each line picks one of the business's active VAT rates instead of a GST percentage, and a new line starts on the default rate. There is no place of supply, and a Reverse charge switch marks the whole invoice as reverse-charged. HSN/SAC stays optional. The line keeps a copy of its rate's name, category and percentage, so editing or archiving the rate later does not change the invoice.
+
 ### Numbering and snapshots
 
 Saving an invoice consumes the next configured number and advances the counter in the same database transaction. The settings row is locked during allocation, and an invoice-number unique constraint provides a second check. A Draft consumes a number too. Moving a document to the Bin or deleting it permanently does not give the number back.
@@ -131,7 +170,7 @@ The selected design's layout XML is also copied to the invoice. A Draft can refr
 
 ### Calculation rules
 
-Money is held as integer paise, while the forms accept rupees. The calculation follows these steps:
+Money is held as integer minor units of the invoice currency (paise for INR, fils for AED, pence for GBP), while the forms accept whole units with up to two decimals. A GST invoice is calculated in these steps:
 
 1. Calculate each line as quantity × rate and round half-up to the nearest paisa.
 2. Calculate each line's GST at its own percentage, again rounding half-up to a paisa.
@@ -142,9 +181,19 @@ Money is held as integer paise, while the forms accept rupees. The calculation f
 
 For example, 2.5 units at ₹99.99 produce ₹249.98 before tax. At 18%, GST is ₹45.00. For a matching company state and place of supply, this becomes ₹22.50 CGST and ₹22.50 SGST. The pre-rounding amount is ₹294.98; `round_off` is ₹0.02 and the payable grand total is ₹295.00.
 
+A VAT invoice is calculated differently:
+
+1. Calculate each line as quantity × rate and round half-up to the smallest unit, as under GST.
+2. Group the lines by VAT rate. Work out each group's VAT once, on the group's total, rounding half-up. Zero-rated, exempt, reverse-charge and out-of-scope groups carry no VAT but still get a row.
+3. With "prices include VAT", a group's net is its total × 100 ÷ (100 + rate), and the VAT is the rest.
+4. On a reverse-charge invoice every line is charged at 0%, and the document prints "Reverse charge: the customer is to account for the VAT."
+5. Round the grand total to a whole unit only if the invoice's rounding setting is on.
+
+For example, 2.5 units at AED 99.99 produce AED 249.98. At 5%, VAT is AED 12.50 and the total is AED 262.48, with no rounding by default. With VAT-inclusive pricing, a line of AED 105.00 at 5% is AED 100.00 net plus AED 5.00 VAT. The per-rate rows are saved with the invoice, and a document that mixes rates prints them as a VAT summary.
+
 Totals are saved with the invoice rather than reconstructed whenever it is viewed. Changing calculation code later therefore does not silently recalculate every old document.
 
-Currency, exchange rate, export type, and LUT fields exist in the model. The core arithmetic remains the same paise-based calculation and the document formatting is rupee-oriented. These fields do not establish a complete foreign-exchange ledger or all export tax treatments.
+Exchange rate, export type, and LUT fields exist in the model too. Each invoice is billed and totalled in its own currency; nothing converts between currencies, and reports add amounts as stored. These fields do not establish a complete foreign-exchange ledger or all export tax treatments.
 
 ### Status and document actions
 
@@ -178,6 +227,8 @@ A public token gives access to the invoice page at `/p/:slug/:token` and its PDF
 
 ### Razorpay and direct UPI
 
+Online payment is offered for INR invoices only. An invoice in another currency shows "Online payment not available for AED" (or its currency) instead of a Razorpay link or UPI QR code.
+
 Razorpay payment links request the full invoice amount with partial payments disabled. Credentials are read from the organization's saved settings first, then the environment. Development/test can allow simulated payment links; a simulated URL does not prove a payment can be collected. Production missing-key and request failures return an error instead of inventing a successful live link.
 
 Direct UPI QR codes use the configured business UPI VPA, payee name, invoice reference, and amount. Without a configured VPA, a payment QR is not drawn. A scanned QR by itself does not mark the invoice paid; the application needs a verified provider webhook or an explicit reconciliation operation.
@@ -188,6 +239,8 @@ Successful reconciliation saves the payment reference, updates open screens, rec
 
 ## 8. E-invoice registration and exports
 
+E-invoice registration is part of India GST. A VAT business has no e-invoice actions, and an invoice raised under VAT is refused even if the business later switches back to GST. The API answers `409 gst_only`.
+
 Requesting an e-invoice queues an Oban job and immediately shows Pending E-Invoice. The worker is designed to validate the invoice and then request an IRN. Success stores the IRN, acknowledgement number/date, signed QR payload, and signed invoice data; failure records E-Invoice Failed and is eligible for worker retry. The job carries the invoice's business, so it reads that business's IRP credentials and updates the invoice in its own books.
 
 The IRP client defaults to sandbox mode (`IRP_SANDBOX=true`) and also simulates a response when required environment credentials are absent. Simulated IRNs and signed payload strings are local test artifacts. Each invoice records which mode produced its IRN (`irn_mode`): a demo IRN is shown in an amber "Demo IRN – not registered with the IRP" panel instead of the verified one, its QR is captioned as not verifiable, and the GSTR-1 export leaves it out. The live client uses environment credentials; saving IRP-related settings alone does not fully configure that live path.
@@ -195,6 +248,8 @@ The IRP client defaults to sandbox mode (`IRP_SANDBOX=true`) and also simulates 
 The XML download is a separate operation. It exports invoice data using e-invoice vocabulary after validation; it does not issue an IRN, sign a QR code, or change the invoice status. Its validation can reject an invoice accepted by the ordinary editor, including unsupported document types or missing required seller, buyer, or item details.
 
 ## 9. Goods movement and e-way bills
+
+E-way bills are part of India GST. Under VAT the E-Way Bills page, its settings, its export, and the invoice's "Generate e-way bill" action are hidden and refused. Bills issued before a switch to VAT can still be printed.
 
 An e-way bill belongs to an invoice. A bill records its number, issue date, validity end, status, distance, transport mode, vehicle, transporter details, cancellation information, and Part-B vehicle history.
 
@@ -222,13 +277,15 @@ The scheduled sweep is designed to find active due profiles and queue one job pe
 
 Paused/binned profiles and profiles whose clients are binned are skipped. Binning a profile retains its schedule; restoring it can make it immediately due. Manual running and scheduled jobs share the same profile-processing function. Job uniqueness reduces repeated queue insertion, but overlapping manual processing is not a substitute for an accounting review of generated invoices.
 
-Item data is stored as JSON text. If it is missing, empty, or invalid, the current implementation substitutes a default title-based service line with a ₹10,000 rate, HSN/SAC `998314`, quantity 1, and 18% tax. Review the item data before enabling a real profile; the profile changeset does not validate that JSON as invoice lines when the profile is saved.
+Item data is stored as JSON text. If it is missing, empty, or invalid, the current implementation substitutes a default title-based service line with a rate of 10,000 in the business currency, HSN/SAC `998314`, quantity 1, and 18% GST (or the default VAT rate under VAT). Review the item data before enabling a real profile; the profile changeset does not validate that JSON as invoice lines when the profile is saved.
 
 Dates advance by calendar months, clamping to the last valid day of the target month. A run after several missed cycles advances the saved schedule one interval at a time; there is no separate configurable catch-up or proration policy.
 
 ## 11. Credit and debit adjustments
 
 An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, client, source invoice, and Issued/Cancelled/Applied status. Default amounts are copied from the invoice; the user can enter an adjustment amount.
+
+A note on a VAT invoice keeps that invoice's regime, and its VAT is split across the invoice's rates in the same proportions.
 
 A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Paid or cancelled invoices are excluded from the open-receivable adjustment calculation. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
 
@@ -246,15 +303,17 @@ Report types accepted by the export (`report_type`) need to be read with their c
 | Tax Liability | Further restricts to E-Invoice Generated invoices. |
 | ITC Summary | Further restricts invoice rows to those with zero cess. There is no purchase/input-credit ledger behind this view. |
 
+When any invoice in the period charged VAT, the dashboard adds VAT to its tax trend and its tax summary shows VAT by rate, and the sales register CSV adds a VAT column, with the tax-number column headed "GSTIN / VAT No.". The sales register also adds one column per custom invoice field.
+
 General report sums combine taxable value and tax, rather than necessarily matching rounded grand totals. Client filtering uses the stored client name; separate clients with the same name can be combined in that view. Choose a status explicitly when the business question needs to exclude Drafts or Cancelled documents.
 
-GSTR-1 export generates a JSON file for a selected `MMYYYY` period, grouping B2B, B2CL, B2CS, registered-counterparty notes, and HSN data. It excludes Cancelled and binned invoices, but includes Draft invoices because they already hold a number. It uses compiled classification thresholds and includes an HSN fallback for missing codes. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
+GSTR-1 export is not available to a VAT business, and there is no VAT return export. It generates a JSON file for a selected `MMYYYY` period, grouping B2B, B2CL, B2CS, registered-counterparty notes, and HSN data. It excludes Cancelled and binned invoices, but includes Draft invoices because they already hold a number. It uses compiled classification thresholds and includes an HSN fallback for missing codes. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
 
 ## 13. Compliance calendar and HSN/SAC reference
 
 The compliance page generates a calendar from code-defined rules for GSTR-1, GSTR-3B, CMP-08, GSTR-9, and GSTR-9C. Financial years run April through March in this implementation.
 
-The tracked set depends on organization registration settings: no GSTIN yields an empty tracked set; composition settings select the quarterly composition row instead of monthly regular returns; annual rows are also generated. The dashboard currently uses the broader calendar function, so it can display obligations different from the registration-filtered page/reminder set.
+The tracked set depends on organization registration settings: a VAT business tracks no GST returns, even with a GSTIN left in its settings; no GSTIN yields an empty tracked set; composition settings select the quarterly composition row instead of monthly regular returns; annual rows are also generated. The dashboard currently uses the broader calendar function, so it can display obligations different from the registration-filtered page/reminder set.
 
 There is no persisted filing table or filing-status integration. `Compliance.filings/0` returns an empty list, so obligations become Pending or Overdue from dates alone and never Filed. A return already filed externally can still appear overdue here. Reminders are calendar prompts, not proof that a return is unfiled.
 
@@ -262,13 +321,13 @@ Owners and staff can add their own tasks and reminders to the page. These are st
 
 Owners can send tasks and deadlines to Google Calendar or a CalDAV server, or publish a private feed URL that any calendar app can subscribe to. This is one way: changes made in the calendar do not come back, and disconnecting leaves events already sent in place. The feed URL works without signing in, so treat it like a password and regenerate it if it leaks.
 
-The HSN finder searches a compiled, curated set of goods/service codes by keyword or code prefix and displays its stored rates, category, effective date, and source label. It is not a live government master lookup, and a missing result does not establish that a code does not exist. Application format validation and reference data should be reviewed against the requirements applicable to the actual transaction.
+The HSN finder is for India GST rates and is hidden for a VAT business. It searches a compiled, curated set of goods/service codes by keyword or code prefix and displays its stored rates, category, effective date, and source label. It is not a live government master lookup, and a missing result does not establish that a code does not exist. Application format validation and reference data should be reviewed against the requirements applicable to the actual transaction.
 
 ## 14. Invoice designs and branding
 
 Settings → Customization lists invoice designs and supports creating/duplicating, choosing a default, editing, archiving, and restoring templates. The design editor stores layout XML, including document blocks and page/text choices. Company-logo upload is handled separately from template layout storage.
 
-**New design** opens a gallery of starting points: Blank, Classic, Modern, Minimal, Compact and Letterhead. Besides the standard blocks, a design can hold repeatable custom-text and spacer blocks, a Payment details block (UPI ID, an optional UPI QR code carrying the amount and invoice number, and the bank details from Settings → Invoice), and an image block for a stamp or seal. The Page panel adds a border (hairline or accent band), a watermark (the invoice status or custom text) and a letterhead background image with its fit, opacity, and top/bottom space so the printed text clears the letterhead's header and footer.
+**New design** opens a gallery of starting points: Blank, Classic, Modern, Minimal, Compact and Letterhead. Besides the standard blocks, a design can hold repeatable custom-text and spacer blocks, a Payment details block (UPI ID, an optional UPI QR code carrying the amount and invoice number, and the bank details from Settings → Invoice), an image block for a stamp or seal, and a Custom fields block that prints the invoice fields marked "Printable on invoices". Printable invoice-line fields appear as extra item-table columns when a line holds a value. On a VAT invoice the document prints "VAT No. / TRN" in place of GSTIN, the VAT rate on each line, and VAT in place of the CGST/SGST/IGST lines, with a VAT summary by rate when the invoice mixes rates. The Page panel adds a border (hairline or accent band), a watermark (the invoice status or custom text) and a letterhead background image with its fit, opacity, and top/bottom space so the printed text clears the letterhead's header and footer.
 
 **Import** accepts either a design file (`.xml`, up to 256 KB, as produced by each design's **Export** link) or an image of the business's own invoice or letterhead (PNG/JPEG). A design file is checked against the same block and option list as the editor; a file that is not a QuantumBilling design is refused. An image creates a new Letterhead design with that image as the background and opens it in the editor for adjustment. Images uploaded for designs belong to the business that uploaded them and are not served to, or importable by, other businesses.
 
@@ -284,7 +343,7 @@ Read state is shared by the business rather than per user: marking a notice read
 
 Audit entries record selected business/security actions with resource identifiers, details, and optional actor/IP information. This is an operational activity trail, not a complete immutable financial event ledger. A maintenance job defines pruning of audit records according to the configured retention; email and webhook ledgers use 90 days. Read notifications can be pruned after 90 days; unread ones are retained. The pruning and compliance-reminder jobs run daily for each active business, using that business's own retention and reminder settings.
 
-Outbound `invoice.created` and `invoice.paid` events are queued for delivery to a configured webhook endpoint. The webhook URL is checked against internal/private destinations, and a signing secret can authenticate deliveries. These payloads are integration summaries; some amount fields retain whole-rupee compatibility rather than exposing every stored paisa. Each delivery uses the webhook URL, signing secret and ledger of the business that produced the event. See [Configuration](configuration.md) and [Technical architecture](technical-architecture.md) before building a consumer.
+Outbound `invoice.created` and `invoice.paid` events are queued for delivery to a configured webhook endpoint. The webhook URL is checked against internal/private destinations, and a signing secret can authenticate deliveries. These payloads are integration summaries; some amount fields retain whole-rupee compatibility rather than exposing every stored paisa. They do not carry custom fields: a consumer reads those from the API using the record named in the event. Each delivery uses the webhook URL, signing secret and ledger of the business that produced the event. See [Configuration](configuration.md) and [Technical architecture](technical-architecture.md) before building a consumer.
 
 ## 16. Bin, restoration, and backup
 
@@ -292,7 +351,7 @@ The Bin at `/bin` brings together deleted invoices, clients, e-way bills, recurr
 
 Restoration can fail when a business identity was reused: another client may now hold the same GSTIN, or an invoice may have acquired another live e-way bill. Permanent deletion is only offered for records already in the Bin. Purging an invoice cascades its related invoice items, notes, and e-way bills; referenced templates and clients linked to credit notes have additional restrictions.
 
-Backup export writes versioned JSON containing organization data, clients, templates, invoices/items, e-way bills/Part-B history, recurring profiles, notes, and audit entries. It retains Bin state and stored document values. Restore replaces those business records in a transaction and resynchronizes identifiers; it is a replacement operation, not a merge or import of a few customers.
+Backup export writes versioned JSON (version 3.2) containing organization data with the tax regime, custom field definitions, VAT rates, clients, templates, invoices/items, e-way bills/Part-B history, recurring profiles, notes, and audit entries, with each record's custom field values. It retains Bin state and stored document values. Older backup files still restore; their records come back as GST with no custom field values. Restore replaces those business records in a transaction and resynchronizes identifiers; it is a replacement operation, not a merge or import of a few customers.
 
 Credential values are omitted from the backup file. Accounts, authentication sessions, and two-factor enrollment are not exported/restored. Notifications, mail/webhook ledgers, Oban jobs, and logo file bytes are also outside the business JSON. Preserve the deployment database and upload storage separately when a complete installation recovery is required. Reconfigure credentials and verify logo availability after moving data to a new environment.
 
@@ -301,7 +360,7 @@ The backup download route requires an owner. The current restore handler is on t
 ## 17. Suggested operating sequence
 
 1. Complete installation and environment configuration, provision an owner, and verify sign-in and email behavior.
-2. Choose the correct business from the business menu, then configure its legal/business identity, state, GST details, invoice numbering, terms, and branding.
+2. Choose the correct business from the business menu, then configure its legal/business identity, currency, tax regime (GST details, or VAT number and rates), invoice numbering, terms, and branding. Add any custom fields before staff start entering records.
 3. Add and verify clients, particularly registration type, place/state, addresses, and contact email.
 4. Create an invoice, review each item and tax percentage, then verify totals, numbering, and PDF.
 5. Share or email the customer document. Use live integrations only after confirming the environment is not producing sandbox artifacts.
@@ -319,6 +378,8 @@ The main boundaries to account for during acceptance testing are:
 - Demo IRNs and e-way bills are generated locally and are not filed. They are labelled as demo wherever they appear; Settings → Integrations shows the current mode of each portal.
 - Compliance dates and HSN rates are static application rules, filing records are absent, and exports are files rather than submission workflows.
 - Cess/TDS, complete multi-currency/export accounting, purchase ITC, bank reconciliation, inventory, and a general ledger are not implemented as complete business systems.
+- VAT covers invoicing, rates, credit notes and reports. There is no VAT return filing or e-invoicing for any VAT country, no currency conversion, and no three-decimal currencies (KWD, BHD, OMR).
+- Custom fields extend the six existing record types. There are no custom record types, no field that links to another record, and no custom fields in webhook payloads or on credit notes and e-way bills in the API.
 - Recurring profiles substitute a fixed default line for absent/invalid items; profiles need explicit review before use with real customers.
 - Receivables track whole invoice Paid/unpaid state plus notes, rather than partial payments, refunds, settlement fees, or allocation of overpayments.
 - Role restrictions are not field-level permissions; backup restoration requires the access check called out above.
@@ -334,7 +395,9 @@ These limits come from the current source, including places where module comment
 | Pages and access scopes | [router.ex](../lib/quantum_billing_web/router.ex), [user_auth.ex](../lib/quantum_billing_web/user_auth.ex) |
 | Organization settings | [settings.ex](../lib/quantum_billing/settings.ex), [organization.ex](../lib/quantum_billing/settings/organization.ex), [installation_settings.ex](../lib/quantum_billing/installation_settings.ex) |
 | Clients | [clients.ex](../lib/quantum_billing/clients.ex), [client.ex](../lib/quantum_billing/clients/client.ex) |
-| Invoice creation and money | [invoices.ex](../lib/quantum_billing/invoices.ex), [invoice.ex](../lib/quantum_billing/invoices/invoice.ex), [invoice_item.ex](../lib/quantum_billing/invoices/invoice_item.ex), [money.ex](../lib/quantum_billing/money.ex) |
+| Invoice creation and money | [invoices.ex](../lib/quantum_billing/invoices.ex), [invoice.ex](../lib/quantum_billing/invoices/invoice.ex), [invoice_item.ex](../lib/quantum_billing/invoices/invoice_item.ex), [money.ex](../lib/quantum_billing/money.ex), [currency.ex](../lib/quantum_billing/currency.ex) |
+| Tax regimes and VAT | [tax.ex](../lib/quantum_billing/tax.ex), [gst.ex](../lib/quantum_billing/tax/gst.ex), [vat.ex](../lib/quantum_billing/tax/vat.ex), [tax_rates.ex](../lib/quantum_billing/tax_rates.ex), [gst_only.ex](../lib/quantum_billing_web/gst_only.ex) |
+| Custom fields | [custom_fields.ex](../lib/quantum_billing/custom_fields.ex), [field_definition.ex](../lib/quantum_billing/custom_fields/field_definition.ex), [custom_field_components.ex](../lib/quantum_billing_web/components/custom_field_components.ex), [data_model_live.ex](../lib/quantum_billing_web/live/settings/data_model_live.ex) |
 | Registration and e-way bills | [e_invoice.ex](../lib/quantum_billing/e_invoice.ex), [irp_client.ex](../lib/quantum_billing/e_invoice/irp_client.ex), [e_way_bills.ex](../lib/quantum_billing/e_way_bills.ex), [nic_client.ex](../lib/quantum_billing/e_way_bills/nic_client.ex) |
 | Payment and delivery | [payments.ex](../lib/quantum_billing/payments.ex), [razorpay_client.ex](../lib/quantum_billing/payments/razorpay_client.ex), [mail.ex](../lib/quantum_billing/mail.ex), [payment_webhook_controller.ex](../lib/quantum_billing_web/controllers/payment_webhook_controller.ex) |
 | Recurring and adjustments | [recurring.ex](../lib/quantum_billing/recurring.ex), [credit_notes.ex](../lib/quantum_billing/credit_notes.ex) |

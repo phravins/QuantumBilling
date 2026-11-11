@@ -2,7 +2,10 @@ defmodule QuantumBillingWeb.RecurringLive do
   @moduledoc "Recurring invoice profiles: a database-paged list and a bounded client search."
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CustomFieldComponents, only: [custom_fields_section: 1]
+
   alias QuantumBilling.Clients
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Recurring
 
   @per_page 10
@@ -17,6 +20,7 @@ defmodule QuantumBillingWeb.RecurringLive do
      |> assign(:per_page, @per_page)
      |> assign_clients()
      |> assign(:form, to_form(Recurring.change_profile()))
+     |> assign(:custom_definitions, CustomFields.active_definitions("recurring_profile"))
      |> assign(:show_modal, false)
      |> load_profiles()}
   end
@@ -319,6 +323,16 @@ defmodule QuantumBillingWeb.RecurringLive do
                 Automatically send PDF invoice to client's email address on generation
               </label>
             </div>
+
+            <.custom_fields_section
+              id="recurring-custom-fields"
+              form={@form}
+              definitions={@custom_definitions}
+              object="recurring_profile"
+              current_scope={@current_scope}
+              class="border-t border-base-200 pt-3"
+              grid_class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            />
 
             <div class="flex justify-end gap-2 pt-4 border-t border-base-200">
               <button type="button" phx-click="toggle_modal" class="btn btn-sm btn-ghost">Cancel</button>

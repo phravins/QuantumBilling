@@ -21,6 +21,9 @@ defmodule QuantumBilling.Settings do
     Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1) || %Organization{}
   end
 
+  @doc "The ISO code of the currency the business bills in."
+  def currency_code, do: Organization.currency_code(get_organization())
+
   @doc """
   Makes sure the settings row exists, and returns it.
 

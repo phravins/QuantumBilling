@@ -12,10 +12,11 @@ defmodule QuantumBillingWeb.API.LeakTest do
   alias QuantumBilling.Settings
 
   @invoice_keys ~w(id number type status invoice_date due_date payment_terms place_of_supply
-                   currency client amounts e_invoice remarks terms created_at updated_at)
-  @client_keys ~w(id type name display_name legal_name gstin pan business_type category email
-                  phone billing_address shipping_address payment_terms_days status created_at
-                  updated_at)
+                   currency tax_regime reverse_charge tax_breakdown client amounts e_invoice
+                   remarks terms custom_fields created_at updated_at)
+  @client_keys ~w(id type name display_name legal_name gstin pan tax_number country business_type
+                  category email phone billing_address shipping_address payment_terms_days status
+                  custom_fields created_at updated_at)
   @bill_keys ~w(id number date valid_until status distance_km mode_of_transport vehicle_number
                 transporter_id transporter_name cancelled_at cancellation_reason invoice
                 created_at updated_at)
@@ -75,7 +76,9 @@ defmodule QuantumBillingWeb.API.LeakTest do
 
       assert listed["data"] |> hd() |> Map.keys() |> Enum.sort() == Enum.sort(@invoice_keys)
       assert shown["data"] |> Map.keys() |> Enum.sort() == Enum.sort(["items" | @invoice_keys])
-      assert shown["data"]["client"] |> Map.keys() |> Enum.sort() == ~w(gstin id name state)
+
+      assert shown["data"]["client"] |> Map.keys() |> Enum.sort() ==
+               ~w(gstin id name state tax_number)
     end
 
     test "a client has exactly its documented fields", %{client: client} do

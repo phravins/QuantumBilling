@@ -288,6 +288,22 @@ a.btn:focus-visible {
   }
 }
 
+/* The document is the scroller on every page. Reserving the scrollbar's width
+   stops a page jumping sideways when typing makes it grow past the fold. */
+html {
+  scrollbar-gutter: stable;
+}
+
+/* A field's error fades in instead of snapping into place. */
+@keyframes qb-error-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.qb-field-error {
+  animation: qb-error-in 0.15s ease-out both;
+}
+
 /* Focus-screen illustrations: a self-drawing check and confetti. Skipped with reduced motion. */
 @keyframes qb-draw {
   from { stroke-dashoffset: 1; }
@@ -346,7 +362,8 @@ a.btn:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .qb-pop-in,
   .qb-confetti,
-  .qb-rise {
+  .qb-rise,
+  .qb-field-error {
     animation: none;
   }
 

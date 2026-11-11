@@ -295,6 +295,8 @@ defmodule QuantumBillingWeb.CoreComponents do
   end
 
   def input(%{type: "textarea"} = assigns) do
+    assigns = put_debounce(assigns)
+
     ~H"""
     <div class="fieldset mb-2">
       <label for={@id}>
@@ -315,6 +317,8 @@ defmodule QuantumBillingWeb.CoreComponents do
   end
 
   def input(assigns) do
+    assigns = put_debounce(assigns)
+
     ~H"""
     <div class="fieldset mb-2">
       <label for={@id}>
@@ -337,9 +341,19 @@ defmodule QuantumBillingWeb.CoreComponents do
     """
   end
 
+  # Typed fields wait for a pause before sending phx-change, so a form isn't
+  # re-rendered on every keystroke. An explicit phx-debounce wins; nil turns it off.
+  @debounced_types ~w(text email tel url password search number textarea)
+
+  defp put_debounce(%{type: type} = assigns) when type in @debounced_types do
+    update(assigns, :rest, &Map.put_new(&1, :"phx-debounce", "300"))
+  end
+
+  defp put_debounce(assigns), do: assigns
+
   defp error(assigns) do
     ~H"""
-    <p class="mt-1 flex items-center gap-1 text-2xs text-error">
+    <p class="qb-field-error mt-1 flex items-center gap-1 text-2xs text-error">
       <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" /> {render_slot(@inner_block)}
     </p>
     """

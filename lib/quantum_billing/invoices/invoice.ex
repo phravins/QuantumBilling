@@ -1,9 +1,10 @@
 defmodule QuantumBilling.Invoices.Invoice do
   @moduledoc """
-  A GST invoice.
+  An invoice, under India GST or VAT (`tax_regime`, snapshotted at creation).
 
-  Same state as the issuing company splits tax into CGST and SGST; otherwise
-  it is IGST. Totals are computed by `recalculate/1` at save time and stored,
+  Under GST, the same state as the issuing company splits tax into CGST and
+  SGST; otherwise it is IGST. Under VAT, tax is worked out per rate (see
+  `QuantumBilling.Tax.VAT`). Totals are computed by `recalculate/1` at save time and stored,
   so an invoice keeps what was billed. Deleting sets `deleted_at` (the Bin);
   `kept/1` filters binned invoices out of every read.
   """
@@ -12,9 +13,11 @@ defmodule QuantumBilling.Invoices.Invoice do
   import Ecto.Changeset
   import Ecto.Query, only: [from: 2]
 
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.Invoices.InvoiceItem
-  alias QuantumBilling.Money
+  alias QuantumBilling.Tax
+  alias QuantumBilling.TaxRates
 
   @invoice_types [
     "Tax Invoice",
@@ -80,6 +83,17 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :round_off, :integer, default: 0
     field :grand_total, :integer, default: 0
 
+    # The regime the invoice was raised under, snapshotted from the business.
+    field :tax_regime, :string, default: "gst"
+    field :vat_amount, :integer, default: 0
+    # VAT only: one entry per rate, %{"name", "category", "rate_bp", "taxable", "tax"}.
+    field :tax_breakdown, {:array, :map}, default: []
+    field :company_tax_number, :string
+    field :client_tax_number, :string
+    field :reverse_charge, :boolean, default: false
+    field :prices_include_tax, :boolean, default: false
+    field :round_to_whole_units, :boolean, default: true
+
     field :status, :string, default: "Draft"
 
     # Government e-invoice (IRP)
@@ -113,6 +127,9 @@ defmodule QuantumBilling.Invoices.Invoice do
     # Set only by bin_changeset/1 and restore_changeset/1.
     field :deleted_at, :utc_datetime
 
+    # Values for the business's own fields. Written only by CustomFields.cast/4.
+    field :custom_fields, :map, default: %{}
+
     belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
     belongs_to :client, QuantumBilling.Clients.Client
     has_many :items, InvoiceItem, on_replace: :delete, preload_order: [asc: :position]
@@ -127,12 +144,14 @@ defmodule QuantumBilling.Invoices.Invoice do
                client_billing_address client_email client_state
                client_city client_pincode
                remarks terms template_id
-               currency exchange_rate export_type lut_number)a
+               currency exchange_rate export_type lut_number
+               client_tax_number reverse_charge)a
 
   # Set only by the application (number, company snapshot, layout, status) and
   # passed as `trusted`, never read from params.
   @trusted ~w(invoice_number company_name company_address company_gstin company_state
-              status template_id layout_xml)a
+              status template_id layout_xml tax_regime prices_include_tax
+              round_to_whole_units company_tax_number)a
 
   @doc """
   Builds an invoice changeset, including its line items.
@@ -143,18 +162,20 @@ defmodule QuantumBilling.Invoices.Invoice do
     invoice
     |> cast(attrs, @castable)
     |> change(Map.take(trusted, @trusted))
+    |> default_currency(attrs, trusted)
     |> ensure_public_token()
-    |> cast_assoc(:items,
-      with: &InvoiceItem.changeset/2,
-      sort_param: :items_sort,
-      drop_param: :items_drop
-    )
-    |> validate_required([:invoice_date, :place_of_supply, :client_name])
+    |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> cast_items(attrs)
+    |> validate_required([:invoice_date, :client_name])
     |> validate_inclusion(:invoice_type, @invoice_types)
     |> validate_inclusion(:status, @statuses)
-    |> validate_inclusion(:place_of_supply, EWayBillForm.states())
-    |> validate_optional_inclusion(:client_state, EWayBillForm.states())
+    |> validate_place_of_supply()
+    |> validate_client_tax_number()
+    |> validate_inclusion(:currency, QuantumBilling.Currency.codes(),
+      message: "is not a supported currency"
+    )
     |> validate_due_date()
+    |> CustomFields.cast("invoice", attrs)
     |> validate_has_items()
     |> recalculate()
     # Backstop for the numbering transaction: a clash becomes a changeset error.
@@ -162,6 +183,78 @@ defmodule QuantumBilling.Invoices.Invoice do
       message: "has already been used — check the numbering series in Settings"
     )
   end
+
+  # A new invoice bills in the business currency unless one was given.
+  defp default_currency(changeset, attrs, %{default_currency: code}) when is_binary(code) do
+    given? = Enum.any?(["currency", :currency], &(Map.get(attrs, &1) not in [nil, ""]))
+
+    if is_nil(changeset.data.id) and not given?,
+      do: put_change(changeset, :currency, code),
+      else: changeset
+  end
+
+  defp default_currency(changeset, _attrs, _trusted), do: changeset
+
+  defp cast_items(changeset, attrs) do
+    cast_assoc(changeset, :items,
+      with: item_changeset(attrs, changeset),
+      sort_param: :items_sort,
+      drop_param: :items_drop
+    )
+  end
+
+  # Item definitions are loaded once for the whole invoice, and only when an item sends values.
+  # Under VAT the rates are loaded once too, for the lines to snapshot.
+  defp item_changeset(attrs, changeset) do
+    definitions =
+      if attrs |> item_attrs() |> Enum.any?(&custom_fields_sent?/1),
+        do: CustomFields.active_definitions("invoice_item")
+
+    tax =
+      if get_field(changeset, :tax_regime) == "vat",
+        do: {:vat, TaxRates.rates_by_id()},
+        else: :gst
+
+    &InvoiceItem.changeset(&1, &2, definitions, tax)
+  end
+
+  # India GST needs a state for the place of supply; VAT does not use one.
+  defp validate_place_of_supply(changeset) do
+    if vat?(changeset) do
+      changeset
+    else
+      changeset
+      |> validate_required([:place_of_supply])
+      |> validate_inclusion(:place_of_supply, EWayBillForm.states())
+      |> validate_optional_inclusion(:client_state, EWayBillForm.states())
+    end
+  end
+
+  defp validate_client_tax_number(changeset) do
+    changeset
+    |> update_change(:client_tax_number, &Tax.normalize_tax_number/1)
+    |> validate_length(:client_tax_number, max: 30)
+  end
+
+  @doc "Whether the invoice (or its changeset) is under VAT."
+  def vat?(%Ecto.Changeset{} = changeset), do: get_field(changeset, :tax_regime) == "vat"
+  def vat?(%__MODULE__{tax_regime: regime}), do: regime == "vat"
+  def vat?(_invoice), do: false
+
+  defp item_attrs(attrs) when is_map(attrs) do
+    case Map.get(attrs, "items", Map.get(attrs, :items)) do
+      items when is_map(items) -> Map.values(items)
+      items when is_list(items) -> items
+      _none -> []
+    end
+  end
+
+  defp item_attrs(_attrs), do: []
+
+  defp custom_fields_sent?(item) when is_map(item),
+    do: Map.has_key?(item, "custom_fields") or Map.has_key?(item, :custom_fields)
+
+  defp custom_fields_sent?(_item), do: false
 
   @doc "Narrows `query` to invoices not in the Bin. Every invoice read starts here."
   def kept(query \\ __MODULE__) do
@@ -219,7 +312,7 @@ defmodule QuantumBilling.Invoices.Invoice do
   @doc "Writes the computed totals onto the changeset. The form calls it for the live summary."
   def recalculate(changeset) do
     items = get_field(changeset, :items) || []
-    totals = totals(items, intra_state?(changeset))
+    totals = Tax.totals(items, tax_context(changeset))
 
     changeset
     |> put_change(:total_items, totals.total_items)
@@ -229,48 +322,25 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> put_change(:sgst_amount, totals.sgst_amount)
     |> put_change(:igst_amount, totals.igst_amount)
     |> put_change(:cess_amount, totals.cess_amount)
+    |> put_change(:vat_amount, totals.vat_amount)
+    |> put_change(:tax_breakdown, totals.tax_breakdown)
     |> put_change(:round_off, totals.round_off)
     |> put_change(:grand_total, totals.grand_total)
   end
 
-  @doc "The totals for `items`; `intra_state?` picks CGST/SGST or IGST."
-  def totals(items, intra_state?) do
-    items = Enum.reject(items, &is_nil/1)
-
-    taxable_value = Enum.reduce(items, 0, &(InvoiceItem.amount(&1) + &2))
-
-    total_quantity =
-      Enum.reduce(items, Decimal.new(0), &Decimal.add(Money.quantity(&1.quantity) || 0, &2))
-
-    tax = Enum.reduce(items, 0, &(InvoiceItem.tax(&1) + &2))
-
-    {cgst, sgst, igst} =
-      if intra_state? do
-        cgst = div(tax, 2)
-        # Not div(tax, 2) twice: an odd amount would lose a paisa.
-        {cgst, tax - cgst, 0}
-      else
-        {0, 0, tax}
-      end
-
-    # No cess rate is entered yet, so this is always zero.
-    cess = 0
-
-    # The total is billed in whole rupees; the difference is printed, not lost.
-    {grand_total, round_off} = Money.round_to_rupee(taxable_value + cgst + sgst + igst + cess)
-
+  @doc "What `QuantumBilling.Tax.totals/2` needs to know about the invoice."
+  def tax_context(%Ecto.Changeset{} = changeset) do
     %{
-      total_items: length(items),
-      total_quantity: total_quantity,
-      taxable_value: taxable_value,
-      cgst_amount: cgst,
-      sgst_amount: sgst,
-      igst_amount: igst,
-      cess_amount: cess,
-      round_off: round_off,
-      grand_total: grand_total
+      regime: get_field(changeset, :tax_regime) || "gst",
+      intra_state?: intra_state?(changeset),
+      reverse_charge: get_field(changeset, :reverse_charge) == true,
+      prices_include_tax: get_field(changeset, :prices_include_tax) == true,
+      round_to_whole_units: get_field(changeset, :round_to_whole_units) != false
     }
   end
+
+  @doc "GST totals for `items`; `intra_state?` picks CGST/SGST or IGST. See `QuantumBilling.Tax.GST`."
+  defdelegate totals(items, intra_state?), to: QuantumBilling.Tax.GST
 
   @doc "Whether the supply is within the company's own state. Intra-state if the state is unset."
   def intra_state?(%Ecto.Changeset{} = changeset) do

@@ -580,4 +580,29 @@ defmodule QuantumBilling.InvoicesTest do
       assert invoice.sgst_amount == 450_000
     end
   end
+
+  describe "currency" do
+    setup :setup_company
+
+    test "a new invoice bills in the business currency", %{organization: organization} do
+      {:ok, _} =
+        Settings.update_section(
+          organization,
+          %{"currency" => QuantumBilling.Currency.label("AED")},
+          :general
+        )
+
+      assert {:ok, %{currency: "AED"}} = Invoices.create_invoice(attrs())
+      assert {:ok, %{currency: "INR"}} = Invoices.create_invoice(attrs(%{"currency" => "INR"}))
+    end
+
+    test "the default stays INR" do
+      assert {:ok, %{currency: "INR"}} = Invoices.create_invoice(attrs())
+    end
+
+    test "an unsupported currency is refused" do
+      assert {:error, changeset} = Invoices.create_invoice(attrs(%{"currency" => "XYZ"}))
+      assert %{currency: ["is not a supported currency"]} = errors_on(changeset)
+    end
+  end
 end

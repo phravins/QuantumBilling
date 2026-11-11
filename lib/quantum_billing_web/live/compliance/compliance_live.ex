@@ -12,6 +12,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
   import QuantumBillingWeb.ComplianceComponents
   import QuantumBillingWeb.DashboardComponents, only: [stat_card: 1]
 
+  alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.Compliance
   alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Settings
@@ -259,7 +260,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
     >
       <.header>
         Compliance
-        <:subtitle>Track your GST compliance and filing status</:subtitle>
+        <:subtitle>
+          {if Scope.vat?(@current_scope),
+            do: "Your compliance tasks and reminders",
+            else: "Track your GST compliance and filing status"}
+        </:subtitle>
 
         <:actions>
           <div class="flex flex-wrap items-center gap-2">
@@ -377,8 +382,15 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </div>
 
           <%!-- Separate empty states: no data at all vs. a filter that excluded everything. --%>
+          <div :if={@obligations == [] and Scope.vat?(@current_scope)} id="vat-compliance-empty">
+            <.empty_state
+              icon="hero-shield-check"
+              title="No tasks yet"
+              description="VAT returns are not tracked automatically. Add your own tasks and reminders for your filing dates."
+            />
+          </div>
           <.empty_state
-            :if={@obligations == []}
+            :if={@obligations == [] and not Scope.vat?(@current_scope)}
             icon="hero-shield-check"
             title="No GST registration on file"
             description="Add your GSTIN under Settings › Organization and the filing calendar for your registration will be tracked here. You can add your own tasks and reminders at any time."
@@ -603,9 +615,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
               icon="hero-check-circle"
               title="Nothing due"
               description={
-                if @obligations == [],
-                  do: "Filing deadlines appear here once a GSTIN is saved in Settings.",
-                  else: "Every obligation for this year is filed."
+                cond do
+                  @obligations != [] -> "Every obligation for this year is filed."
+                  Scope.vat?(@current_scope) -> "Your tasks and reminders appear here."
+                  true -> "Filing deadlines appear here once a GSTIN is saved in Settings."
+                end
               }
             />
           </.card>

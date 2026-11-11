@@ -3,15 +3,32 @@ defmodule QuantumBillingWeb.ClientNewLive do
   The client form, for both new and edit.
 
   The GSTIN required marker follows the client type through
-  `Clients.gstin_required?/1`, the same rule the changeset uses.
+  `Clients.gstin_required?/1`, the same rule the changeset uses. A VAT
+  business sees a country, a VAT number and a free-form address instead.
   """
   use QuantumBillingWeb, :live_view
 
+  import QuantumBillingWeb.CustomFieldComponents, only: [custom_fields_section: 1]
+
   alias QuantumBilling.Clients
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills.EWayBillForm
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax
 
   def mount(params, _session, socket) do
+    regime = Organization.tax_regime(Settings.get_organization())
+
+    socket =
+      socket
+      |> assign(:regime, regime)
+      |> assign(:vat?, Tax.vat?(regime))
+      |> assign(:country_options, country_options())
+      |> assign(:custom_definitions, CustomFields.active_definitions("client"))
+      |> assign(:currency_symbol, currency_symbol(QuantumBilling.Settings.currency_code()))
+
     {:ok, apply_action(socket, socket.assigns.live_action, params)}
   end
 
@@ -20,7 +37,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
     |> assign(:page_title, "Add New Client")
     |> assign(:active_nav, :clients)
     |> assign(:client, %Client{})
-    |> assign_form(Clients.change_client(%Client{}))
+    |> assign_form(Clients.change_client(%Client{}, %{}, socket.assigns.regime))
   end
 
   # Redirect on a missing id: the link may be stale.
@@ -36,14 +53,14 @@ defmodule QuantumBillingWeb.ClientNewLive do
         |> assign(:page_title, "Edit #{client.name}")
         |> assign(:active_nav, :clients)
         |> assign(:client, client)
-        |> assign_form(Clients.change_client(client))
+        |> assign_form(Clients.change_client(client, %{}, socket.assigns.regime))
     end
   end
 
   def handle_event("validate", %{"client" => params}, socket) do
     changeset =
       socket.assigns.client
-      |> Clients.change_client(params)
+      |> Clients.change_client(params, socket.assigns.regime)
       |> Map.put(:action, :validate)
 
     {:noreply, assign_form(socket, changeset)}
@@ -67,6 +84,12 @@ defmodule QuantumBillingWeb.ClientNewLive do
 
   defp save_client(:new, _client, params), do: Clients.create_client(params)
   defp save_client(:edit, client, params), do: Clients.update_client(client, params)
+
+  # The VAT countries first, then the other common ones.
+  defp country_options do
+    vat = Enum.map(Tax.countries(), fn {code, name} -> {name, code} end)
+    vat ++ [{"India", "IN"}, {"United States", "US"}, {"Other", "ZZ"}]
+  end
 
   defp saved_message(:new, client), do: "#{client.name} added."
   defp saved_message(:edit, client), do: "#{client.name} updated."
@@ -153,18 +176,34 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 label="Display Name"
                 placeholder="Enter display name (optional)"
               />
-              <.field
-                field={f[:gstin]}
-                label="GSTIN"
-                required={@gstin_required?}
-                placeholder="Enter GSTIN"
-                hint={
-                  if @gstin_required?,
-                    do: "15 characters. The PAN is embedded in it.",
-                    else: "Not applicable to this client type."
-                }
-                disabled={not @gstin_required?}
-              /> <.field field={f[:pan]} label="PAN" placeholder="Enter PAN" />
+              <%= if @vat? do %>
+                <.field
+                  field={f[:country]}
+                  label="Country"
+                  type="select"
+                  required
+                  options={@country_options}
+                />
+                <.field
+                  field={f[:tax_number]}
+                  label="VAT No. / TRN"
+                  placeholder="Enter VAT number"
+                  hint="Optional. Checked against the country's format."
+                />
+              <% else %>
+                <.field
+                  field={f[:gstin]}
+                  label="GSTIN"
+                  required={@gstin_required?}
+                  placeholder="Enter GSTIN"
+                  hint={
+                    if @gstin_required?,
+                      do: "15 characters. The PAN is embedded in it.",
+                      else: "Not applicable to this client type."
+                  }
+                  disabled={not @gstin_required?}
+                /> <.field field={f[:pan]} label="PAN" placeholder="Enter PAN" />
+              <% end %>
               <.field
                 field={f[:legal_name]}
                 label="Legal Name"
@@ -235,20 +274,33 @@ defmodule QuantumBillingWeb.ClientNewLive do
 
             <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <.field field={f[:billing_city]} label="City" required placeholder="Enter city" />
-              <.field
-                field={f[:billing_state]}
-                label="State"
-                type="select"
-                required
-                prompt="Select state"
-                options={EWayBillForm.states()}
-              />
-              <.field
-                field={f[:billing_pin]}
-                label="PIN Code"
-                required
-                placeholder="Enter PIN code"
-              />
+              <%= if @vat? do %>
+                <.field
+                  field={f[:billing_state]}
+                  label="State / Region"
+                  placeholder="Enter region (optional)"
+                />
+                <.field
+                  field={f[:billing_pin]}
+                  label="Postal Code"
+                  placeholder="Enter postal code (optional)"
+                />
+              <% else %>
+                <.field
+                  field={f[:billing_state]}
+                  label="State"
+                  type="select"
+                  required
+                  prompt="Select state"
+                  options={EWayBillForm.states()}
+                />
+                <.field
+                  field={f[:billing_pin]}
+                  label="PIN Code"
+                  required
+                  placeholder="Enter PIN code"
+                />
+              <% end %>
             </div>
 
             <label class="mt-4 flex w-fit cursor-pointer items-center gap-2 text-sm">
@@ -281,6 +333,13 @@ defmodule QuantumBillingWeb.ClientNewLive do
               <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <.field field={f[:shipping_city]} label="City" placeholder="Enter city" />
                 <.field
+                  :if={@vat?}
+                  field={f[:shipping_state]}
+                  label="State / Region"
+                  placeholder="Enter region"
+                />
+                <.field
+                  :if={not @vat?}
                   field={f[:shipping_state]}
                   label="State"
                   type="select"
@@ -289,11 +348,20 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 />
                 <.field
                   field={f[:shipping_pin]}
-                  label="PIN Code"
-                  placeholder="Enter PIN code"
+                  label={if @vat?, do: "Postal Code", else: "PIN Code"}
+                  placeholder={if @vat?, do: "Enter postal code", else: "Enter PIN code"}
                 />
               </div>
             </div>
+
+            <.custom_fields_section
+              id="client-custom-fields"
+              form={f}
+              definitions={@custom_definitions}
+              object="client"
+              current_scope={@current_scope}
+              class="mt-4 border-t border-base-300 pt-4"
+            />
 
             <details class="group mt-4 border-t border-base-300 pt-4">
               <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold tracking-tight">
@@ -308,7 +376,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
               <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <.field
                   field={f[:credit_limit]}
-                  label="Credit Limit (₹)"
+                  label={"Credit Limit (#{@currency_symbol})"}
                   type="money"
                 />
                 <.field
@@ -319,7 +387,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 />
                 <.field
                   field={f[:opening_balance]}
-                  label="Opening Balance (₹)"
+                  label={"Opening Balance (#{@currency_symbol})"}
                   type="money"
                 />
               </div>

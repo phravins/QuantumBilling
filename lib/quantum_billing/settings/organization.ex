@@ -11,10 +11,11 @@ defmodule QuantumBilling.Settings.Organization do
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
   alias QuantumBilling.Money.Paise
+  alias QuantumBilling.Tax
 
   @gst_rates [0, 5, 12, 18, 28]
 
-  @currencies ["INR (₹) - Indian Rupee"]
+  @currencies QuantumBilling.Currency.labels()
 
   @date_formats [
     "DD MMM YYYY",
@@ -63,6 +64,14 @@ defmodule QuantumBilling.Settings.Organization do
     field :cess_enabled, :boolean, default: false
     field :composition_scheme, :boolean, default: false
     field :tds_enabled, :boolean, default: false
+
+    # "gst" or "vat" (see QuantumBilling.Tax). VAT businesses keep their rates in tax_rates.
+    field :tax_regime, :string, default: "gst"
+    field :vat_number, :string
+    field :vat_country, :string
+    field :prices_include_tax, :boolean, default: false
+    # nil is the regime's default: whole units for GST, exact for VAT.
+    field :round_to_whole_units, :boolean
 
     field :notify_invoice_created, :boolean, default: true
     field :notify_ewb_generated, :boolean, default: true
@@ -126,7 +135,8 @@ defmodule QuantumBilling.Settings.Organization do
   @e_way_bill ~w(ewb_transport_mode ewb_transporter_id ewb_threshold_value
                  ewb_auto_generate)a
 
-  @tax ~w(default_gst_rate cess_enabled composition_scheme tds_enabled)a
+  @tax ~w(default_gst_rate cess_enabled composition_scheme tds_enabled tax_regime vat_number
+          vat_country prices_include_tax round_to_whole_units)a
 
   @notifications ~w(notify_invoice_created notify_ewb_generated
                     notify_filing_reminders reminder_lead_days)a
@@ -202,6 +212,9 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_inclusion(:default_gst_rate, @gst_rates,
       message: "must be one of the GST slabs: #{Enum.join(@gst_rates, ", ")}"
     )
+    |> validate_required([:tax_regime])
+    |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> validate_vat()
   end
 
   def changeset(organization, attrs, :notifications) do
@@ -369,6 +382,20 @@ defmodule QuantumBilling.Settings.Organization do
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
+  # A VAT business needs its country; its VAT number is optional but must fit it.
+  defp validate_vat(changeset) do
+    if get_field(changeset, :tax_regime) == "vat" do
+      country = get_field(changeset, :vat_country)
+
+      changeset
+      |> validate_required([:vat_country], message: "choose the country you charge VAT in")
+      |> validate_inclusion(:vat_country, Tax.country_codes())
+      |> Tax.validate_tax_number(:vat_number, country)
+    else
+      changeset
+    end
+  end
+
   defp maybe_validate_transporter_id(changeset) do
     case get_field(changeset, :ewb_transporter_id) do
       blank when blank in [nil, ""] -> changeset
@@ -390,6 +417,37 @@ defmodule QuantumBilling.Settings.Organization do
 
   def gst_rates, do: @gst_rates
   def currencies, do: @currencies
+
+  @doc "The ISO code of the business currency, e.g. `\"INR\"`."
+  def currency_code(%__MODULE__{currency: label}),
+    do: QuantumBilling.Currency.code_from_label(label)
+
+  def currency_code(_organization), do: QuantumBilling.Currency.default()
+
+  @doc "The business's tax regime, `\"gst\"` or `\"vat\"`."
+  def tax_regime(%__MODULE__{tax_regime: "vat"}), do: "vat"
+  def tax_regime(_organization), do: "gst"
+
+  def vat?(organization), do: tax_regime(organization) == "vat"
+
+  @doc "Whether invoice totals round to whole units: the setting, else yes for GST and no for VAT."
+  def round_to_whole_units?(%__MODULE__{round_to_whole_units: round?}) when is_boolean(round?),
+    do: round?
+
+  def round_to_whole_units?(organization), do: not vat?(organization)
+
+  @doc "The tax fields a new invoice snapshots from the business."
+  def invoice_tax_snapshot(organization) do
+    vat? = vat?(organization)
+
+    %{
+      tax_regime: tax_regime(organization),
+      prices_include_tax: vat? and organization.prices_include_tax == true,
+      round_to_whole_units: round_to_whole_units?(organization),
+      company_tax_number: if(vat?, do: organization.vat_number)
+    }
+  end
+
   def date_formats, do: @date_formats
   def timezones, do: @timezones
   def languages, do: @languages
