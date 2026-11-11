@@ -1,6 +1,6 @@
 # Development guide
 
-Start with [getting started](getting-started.md), then read the [architecture](technical-architecture.md) and [database](database.md) guides before changing business-scoped behavior. Project conventions are in [`AGENTS.md`](../AGENTS.md).
+Start with [getting started](getting-started.md), then read the [architecture](technical-architecture.md) and [database](database.md) guides before changing business-scoped behavior. Project conventions are in [`AGENTS.md`](../AGENTS.md). [`CONTRIBUTING.md`](../CONTRIBUTING.md) covers proposing a change, the checks to run before a pull request, and how to report a vulnerability.
 
 ## Repository map
 
