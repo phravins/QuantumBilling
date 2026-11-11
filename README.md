@@ -152,6 +152,8 @@ Detailed guides live in [`docs/`](docs/README.md).
 | [API](docs/api.md) | Keys, scopes, endpoints, errors, idempotency ([OpenAPI](docs/openapi.json)) |
 | [Webhooks](docs/webhooks.md) | Event catalogue, signatures, retries, secret rotation |
 
+To propose a change or report a vulnerability, read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
 ## Versions
 
 | What | Current | Where it is set |
