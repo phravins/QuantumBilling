@@ -9,8 +9,8 @@
       suffix=" · GST Billing & Compliance"
       phx-no-format
     >{assigns[:page_title]}</.live_title>
-    <link rel="icon" type="image/svg+xml" href={~p"/favicon.svg"} />
-    <link rel="shortcut icon" type="image/svg+xml" href={~p"/images/logo.svg"} />
+    <%!-- Under images/: production serves digested names (logo-<hash>.svg), which Plug.Static's `only:` matches by directory, not by exact file name. --%>
+    <link rel="icon" type="image/svg+xml" href={~p"/images/logo.svg"} />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>

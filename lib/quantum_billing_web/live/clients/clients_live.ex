@@ -256,7 +256,11 @@ defmodule QuantumBillingWeb.ClientsLive do
             </ul>
           </div>
 
-          <.link href={~p"/reports/export?report_type=Clients"} class={filter_button_class()}>
+          <.link
+            id="clients-export"
+            href={~p"/clients/export?#{[q: @search, status: @status_filter, custom: @custom_filter]}"}
+            class={filter_button_class()}
+          >
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
           </.link>
         </div>

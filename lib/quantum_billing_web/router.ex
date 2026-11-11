@@ -104,6 +104,7 @@ defmodule QuantumBillingWeb.Router do
     pipe_through [:browser, :require_user_or_forbid, :require_business]
 
     get "/reports/export", ReportsController, :export
+    get "/clients/export", ClientExportController, :export
     get "/clients/import/template.csv", ClientImportTemplateController, :show
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show

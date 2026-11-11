@@ -51,6 +51,17 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
     assert html =~ ~s(href="/clients/new")
   end
 
+  test "Export downloads the clients as filtered on screen", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/clients")
+
+    assert has_element?(view, "#clients-export[href^='/clients/export?']")
+
+    view |> form("#clients-search", %{"q" => "Acme"}) |> render_change()
+    view |> element("a[phx-click=filter_status][phx-value-status=Inactive]") |> render_click()
+
+    assert has_element?(view, "#clients-export[href*='q=Acme'][href*='status=Inactive']")
+  end
+
   describe "with clients in the database" do
     setup do
       {:ok, registered} =

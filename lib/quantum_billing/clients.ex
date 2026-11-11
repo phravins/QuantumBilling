@@ -64,7 +64,21 @@ defmodule QuantumBilling.Clients do
     %{result | rows: put_outstanding(result.rows)}
   end
 
-  @doc "What `client` still owes in whole rupees, computed from its invoices and notes."
+  @doc """
+  Every client matching the list filters, alphabetically, with what each owes,
+  for CSV export. Takes `page/1`'s `:search`, `:status` and `:custom`.
+  """
+  def export_rows(opts \\ []) do
+    Client.kept()
+    |> search_where(Keyword.get(opts, :search))
+    |> status_where(Keyword.get(opts, :status))
+    |> custom_where(Keyword.get(opts, :custom))
+    |> order(nil, :asc)
+    |> Repo.all()
+    |> put_outstanding()
+  end
+
+  @doc "What `client` still owes in paise, computed from its invoices and notes."
   def outstanding(%Client{id: id}) do
     case Repo.one(Invoices.outstanding_by_client([id])) do
       %{outstanding: owed} -> owed

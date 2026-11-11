@@ -275,11 +275,31 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
     end
 
     test "the application's own assets are not hobbled by that", %{conn: conn} do
-      conn = get(conn, "/favicon.svg")
+      conn = get(conn, "/images/logo.svg")
 
       # Only the user-supplied prefix is hardened; the bundle and the icons
       # have to keep working normally.
+      assert response(conn, 200)
       assert get_resp_header(conn, "content-disposition") == []
+    end
+  end
+
+  describe "the page icon" do
+    # A path missing from `static_paths` falls through to the router's
+    # catch-all, which answers 404 without failing any route check.
+    test "is served from where every page links it", %{conn: conn} do
+      [href] =
+        conn
+        |> get(~p"/dashboard")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("link[rel~=icon]")
+        |> LazyHTML.attribute("href")
+
+      conn = get(build_conn(), href)
+
+      assert response(conn, 200)
+      assert response_content_type(conn, :svg)
     end
   end
 end
