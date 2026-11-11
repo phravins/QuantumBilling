@@ -21,23 +21,33 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
   `:auto_print` (default `false`) opens the print dialog on load.
   """
   def html(%EWayBill{} = bill, organization, opts \\ []) do
+    {:safe, iodata} =
+      bill |> page_assigns(organization, opts) |> page() |> Phoenix.HTML.html_escape()
+
+    IO.iodata_to_binary(iodata)
+  end
+
+  @doc """
+  The assigns `page/1` renders, with the same options as `html/3` plus `:nonce`,
+  the response's CSP nonce for the page's scripts.
+  """
+  def page_assigns(%EWayBill{} = bill, organization, opts \\ []) do
     invoice = bill.invoice
 
-    assigns = %{
+    %{
       bill: bill,
       invoice: invoice,
       org: organization,
       items: items(invoice),
       part_b: part_b_entries(bill),
       toolbar: Keyword.get(opts, :toolbar, true),
-      auto_print: Keyword.get(opts, :auto_print, false)
+      auto_print: Keyword.get(opts, :auto_print, false),
+      nonce: Keyword.get(opts, :nonce)
     }
-
-    {:safe, iodata} = Phoenix.HTML.html_escape(page(assigns))
-    IO.iodata_to_binary(iodata)
   end
 
-  defp page(assigns) do
+  @doc "The whole page, for `EWayBillPdfHTML` and `html/3`."
+  def page(assigns) do
     ~H"""
     <!DOCTYPE html>
     <html lang="en">
@@ -321,8 +331,8 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
           <div class="ewb-actions">
             <a class="ewb-btn" href={~p"/e-way-bills"}>Back to e-way bills</a>
             <a class="ewb-btn" href={~p"/e-way-bills/#{@bill.id}/print/download"}>Download PDF</a>
-            <%!-- Raw handler: controller-rendered, outside the LiveSocket. --%>
-            <button type="button" class="ewb-btn ewb-btn--primary" onclick="window.print()">
+            <%!-- Wired by the nonced script below: the CSP blocks inline onclick. --%>
+            <button id="ewb-print" type="button" class="ewb-btn ewb-btn--primary">
               Print
             </button>
           </div>
@@ -587,7 +597,11 @@ defmodule QuantumBillingWeb.EWayBillDoc.Document do
             </div>
           </footer>
         </main>
-        <script :if={@auto_print}>
+        <%!-- Controller-rendered, outside the LiveSocket: raw scripts, nonced or the CSP blocks them. --%>
+        <script :if={@toolbar} nonce={@nonce}>
+          document.getElementById("ewb-print").addEventListener("click", () => window.print())
+        </script>
+        <script :if={@auto_print} nonce={@nonce}>
           // Straight into the print dialog, where "Save as PDF" writes the file.
           window.addEventListener("load", () => window.print())
         </script>

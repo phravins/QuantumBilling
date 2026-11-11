@@ -13,6 +13,9 @@ defmodule QuantumBillingWeb.UploadController do
   alias QuantumBilling.Uploads
   alias QuantumBillingWeb.UserAuth
 
+  # Sobelow false positives: the name must match a recorded upload exactly, and
+  # Uploads.locate/1 refuses any path and maps it to one of four image types.
+  # sobelow_skip ["XSS.ContentType", "Traversal.SendFile"]
   def show(conn, %{"file" => name}) do
     with %{business: %{}} <- conn.assigns.current_scope,
          true <- DesignAssets.owned?("/uploads/" <> name),

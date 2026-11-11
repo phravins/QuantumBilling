@@ -255,7 +255,9 @@ Configuration variables and their precedence are described separately in [config
 
 ## Security and operational controls
 
-The implementation contains CSRF protection, encrypted/signed sessions, response CSP, password hashing, TOTP/recovery codes, account token revocation, IP policy checks, owner checks, attempt limiting, secure upload headers and input/file validation. CSP allows scripts from the application and a response nonce; it permits inline styles for document rendering. See the actual plugs and layouts before changing asset handling.
+The implementation contains CSRF protection, encrypted/signed sessions, response CSP, password hashing, TOTP/recovery codes, account token revocation, IP policy checks, owner checks, attempt limiting, secure upload headers and input/file validation. CSP allows scripts from the application and a response nonce; it permits inline styles for document rendering. Pages rendered outside the layout (the invoice and e-way bill print pages) put that nonce on their own scripts, and inline `on…=` handlers are blocked. See the actual plugs and layouts before changing asset handling.
+
+Sobelow reads `.sobelow-conf`, which turns on `--skip`. The only skip is on `UploadController.show/2`, with its reason beside it. The browser pipeline's static CSP is a floor that `Plugs.ContentSecurityPolicy` replaces on every response.
 
 `Encrypted.Cipher` provides AES-256-GCM envelopes with a random IV, authentication tag and type-specific additional authenticated data. `Encrypted.Binary` covers TOTP secrets; `Encrypted.Secret` and `Encrypted.Map` cover integration secrets and receipt payloads. Keys are derived from required runtime configuration and must remain stable to decrypt stored values. A database backup without the corresponding key material cannot recover those encrypted fields.
 

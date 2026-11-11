@@ -138,6 +138,15 @@ defmodule QuantumBillingWeb.SecurityHeadersTest do
                "connect-src 'self' wss://billing.example.com"
     end
 
+    # The pipeline sets a static floor policy (for Sobelow, and in case the
+    # nonce plug ever goes); the nonce plug must replace it, not add a second.
+    test "send one policy, the nonced one, not the pipeline's floor", %{conn: conn} do
+      conn = get(conn, ~p"/dashboard")
+
+      assert [policy] = get_resp_header(conn, "content-security-policy")
+      assert policy =~ "'nonce-"
+    end
+
     test "give a different nonce to every response", %{conn: conn} do
       a = conn |> get(~p"/dashboard") |> csp()
       b = conn |> recycle() |> get(~p"/dashboard") |> csp()

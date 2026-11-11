@@ -10,8 +10,11 @@ defmodule QuantumBillingWeb.Router do
     plug :put_root_layout, html: {QuantumBillingWeb.Layouts, :root}
     plug :protect_from_forgery
     # Extra headers: no framing (older browsers), no device or payment APIs,
-    # and an isolated window.
+    # and an isolated window. The CSP here is only a floor: the next plug
+    # replaces it with the nonced policy.
     plug :put_secure_browser_headers, %{
+      "content-security-policy" =>
+        "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
       "x-frame-options" => "DENY",
       "permissions-policy" =>
         "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",

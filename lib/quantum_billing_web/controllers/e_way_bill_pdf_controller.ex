@@ -15,14 +15,17 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
 
   def show(conn, %{"id" => id} = params) do
     with_e_way_bill(conn, id, fn bill ->
-      html =
-        Document.html(bill, Settings.get_organization(),
-          auto_print: params["print"] in ["1", "true"]
+      # Rendered, not sent as a string, and its scripts carry this response's nonce.
+      assigns =
+        Document.page_assigns(bill, Settings.get_organization(),
+          auto_print: params["print"] in ["1", "true"],
+          nonce: conn.assigns[:csp_nonce]
         )
 
       conn
-      |> put_resp_content_type("text/html")
-      |> send_resp(200, html)
+      |> put_root_layout(false)
+      |> put_layout(false)
+      |> render(:show, assigns)
     end)
   end
 

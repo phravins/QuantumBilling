@@ -150,8 +150,35 @@ defmodule QuantumBillingWeb.EWayBillDocumentTest do
       refute body =~ ~s(id="ewb-demo-banner")
     end
 
-    # The toolbar's Print button always calls window.print(); only `?print=1`
-    # should fire it without being asked.
+    # The page is outside the layout, so its scripts need this response's nonce
+    # and the Print button cannot use an inline onclick: the CSP blocks both.
+    test "its scripts carry the response's CSP nonce", %{conn: conn} do
+      bill = invoice_with_bill()
+
+      for path <- [~p"/e-way-bills/#{bill.id}/print", ~p"/e-way-bills/#{bill.id}/print?print=1"] do
+        conn = get(conn, path)
+        html = response(conn, 200)
+
+        [policy] = get_resp_header(conn, "content-security-policy")
+        [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, policy)
+
+        scripts = Regex.scan(~r/<script[^>]*>/, html)
+        assert scripts != []
+        assert Enum.all?(scripts, fn [tag] -> tag =~ ~s(nonce="#{nonce}") end)
+        refute html =~ "onclick="
+        assert html =~ ~s(id="ewb-print")
+      end
+    end
+
+    test "the PDF source has no scripts", %{organization: organization} do
+      bill = invoice_with_bill()
+      bill = EWayBills.get_e_way_bill(bill.id)
+
+      refute Document.html(bill, organization, toolbar: false) =~ "<script"
+    end
+
+    # The toolbar's Print button prints on click; only `?print=1` should
+    # print without being asked.
     test "prints on load only when asked", %{conn: conn} do
       bill = invoice_with_bill()
 
