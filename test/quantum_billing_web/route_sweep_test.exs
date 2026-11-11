@@ -156,6 +156,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
         ~p"/invoices/#{invoice.id}/edit",
         ~p"/clients",
         ~p"/clients/new",
+        ~p"/clients/import",
         ~p"/clients/#{client.id}",
         ~p"/clients/#{client.id}/edit",
         ~p"/e-way-bills",

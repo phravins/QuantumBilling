@@ -7,6 +7,7 @@ defmodule QuantumBilling.Clients do
 
   alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Clients.Import
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Events
@@ -229,6 +230,53 @@ defmodule QuantumBilling.Clients do
     |> Client.changeset(attrs, tax_regime())
     |> Repo.update()
     |> announce(:client_updated)
+  end
+
+  @doc """
+  Creates many clients from import rows (attrs from `Clients.Import`), all or
+  none, in one transaction.
+
+  One `{:clients_imported, count}` goes to subscribers instead of a message
+  per client; webhooks still get `client.created` for each. `opts` may carry
+  `:user_id` and `:file` for the audit entry.
+
+  Returns `{:ok, clients}` or `{:error, changeset}` for the first row that
+  failed (for instance, a GSTIN another person saved meanwhile).
+  """
+  def import_clients(attrs_list, opts \\ []) when is_list(attrs_list) do
+    regime = tax_regime()
+    definitions = CustomFields.active_definitions("client")
+
+    attrs_list
+    |> insert_all_or_none(regime, definitions)
+    |> case do
+      {:ok, clients} ->
+        Events.broadcast(Events.clients_topic(), {:clients_imported, length(clients)})
+        Enum.each(clients, &Webhooks.publish("client.created", &1.id))
+
+        Audit.log_event(:import_clients, "Client", nil,
+          user_id: Keyword.get(opts, :user_id),
+          details: %{count: length(clients), file: Keyword.get(opts, :file)}
+        )
+
+        {:ok, clients}
+
+      {:error, %Ecto.Changeset{}} = error ->
+        error
+    end
+  end
+
+  defp insert_all_or_none([], _regime, _definitions), do: {:ok, []}
+
+  defp insert_all_or_none(attrs_list, regime, definitions) do
+    Repo.transaction(fn ->
+      Enum.map(attrs_list, fn attrs ->
+        case attrs |> Import.changeset(regime, definitions) |> Repo.insert() do
+          {:ok, client} -> client
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+    end)
   end
 
   # The business's regime decides which tax identity a client needs.

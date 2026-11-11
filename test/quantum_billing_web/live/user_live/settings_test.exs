@@ -15,7 +15,33 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
 
       assert html =~ "Account Settings"
       assert html =~ "Profile Information"
-      assert html =~ "Email Address"
+      refute html =~ "Send confirmation link"
+    end
+
+    test "the email tab has the email form", %{conn: conn} do
+      {:ok, lv, _html} =
+        conn
+        |> log_in_user(user_fixture())
+        |> live(~p"/users/settings?tab=email")
+
+      assert has_element?(lv, "#email_form")
+      assert has_element?(lv, ~s|#account-tab-email[aria-current="page"]|)
+      refute has_element?(lv, "#profile_form")
+    end
+
+    test "the nav switches tabs by patch", %{conn: conn} do
+      {:ok, lv, _html} =
+        conn
+        |> log_in_user(user_fixture())
+        |> live(~p"/users/settings")
+
+      assert has_element?(lv, "#account-identity #view-profile")
+      assert has_element?(lv, "#account-2fa-badge", "Two-factor off")
+
+      lv |> element("#account-tab-password") |> render_click()
+
+      assert_patch(lv, ~p"/users/settings?tab=password")
+      assert has_element?(lv, "#password_form")
     end
 
     test "redirects if user is not logged in", %{conn: conn} do
@@ -62,7 +88,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
           token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=email")
 
       result =
         lv
@@ -277,7 +303,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
     test "updates the user email", %{conn: conn, user: user} do
       new_email = unique_user_email()
 
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=email")
 
       result =
         lv
@@ -291,7 +317,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=email")
 
       result =
         lv
@@ -306,7 +332,7 @@ defmodule QuantumBillingWeb.UserLive.SettingsTest do
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn, user: user} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings?tab=email")
 
       result =
         lv

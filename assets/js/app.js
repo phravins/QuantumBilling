@@ -1,4 +1,6 @@
 import "phoenix_html"
+// After phoenix_html: replaces its window.confirm for data-confirm with an in-app dialog.
+import "./confirm_dialog"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/quantum_billing"

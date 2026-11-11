@@ -104,6 +104,7 @@ defmodule QuantumBillingWeb.Router do
     pipe_through [:browser, :require_user_or_forbid, :require_business]
 
     get "/reports/export", ReportsController, :export
+    get "/clients/import/template.csv", ClientImportTemplateController, :show
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/pdf/download", InvoicePdfController, :download
@@ -144,7 +145,8 @@ defmodule QuantumBillingWeb.Router do
       live "/invoices/:id", InvoiceShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
-      # Before "/clients/:id", or "new" and "<id>/edit" would both match it.
+      live "/clients/import", ClientImportLive, :new
+      # Before "/clients/:id", or "new", "import" and "<id>/edit" would all match it.
       live "/clients/:id/edit", ClientNewLive, :edit
       live "/clients/:id", ClientShowLive, :show
       live "/e-way-bills", EWayBillsLive, :index

@@ -77,5 +77,7 @@
   <body class="antialiased">
     <%!-- Account links live in the app shell topbar (Layouts.app) and the
     auth layout's top-right slot, so the root layout stays chrome-free. --%> {@inner_content}
+    <%!-- Outside the LiveView container, so it survives live navigation. --%>
+    <.confirm_dialog />
   </body>
 </html>

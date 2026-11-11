@@ -197,7 +197,7 @@ defmodule QuantumBillingWeb.BinLiveTest do
 
       assert has_element?(view, "#bin-empty", "The Bin is empty")
       assert has_element?(view, "#bin-count-all", "0")
-      refute has_element?(view, "#bin-entries tr")
+      refute has_element?(view, "#bin-entries > [id^=bin-]")
     end
 
     test "does not list what has not been deleted", %{conn: conn} do
@@ -713,6 +713,24 @@ defmodule QuantumBillingWeb.BinLiveTest do
       assert has_element?(view, "#bin-invoice-#{invoice.id}")
       assert has_element?(view, "#bin-count-all", "1")
       refute has_element?(view, "#bin-empty")
+    end
+  end
+
+  describe "relative_deleted/2" do
+    test "reads as days, then as a date" do
+      today = ~D[2026-11-11]
+      at = fn date -> DateTime.new!(date, ~T[10:00:00]) end
+
+      assert QuantumBillingWeb.BinLive.relative_deleted(at.(today), today) == "Deleted today"
+
+      assert QuantumBillingWeb.BinLive.relative_deleted(at.(~D[2026-11-10]), today) ==
+               "Deleted yesterday"
+
+      assert QuantumBillingWeb.BinLive.relative_deleted(at.(~D[2026-11-01]), today) ==
+               "Deleted 10 days ago"
+
+      assert QuantumBillingWeb.BinLive.relative_deleted(at.(~D[2026-09-01]), today) ==
+               "Deleted on 01 Sep 2026"
     end
   end
 end

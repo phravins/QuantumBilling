@@ -22,7 +22,7 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
     {:ok, _view, html} = live(conn, ~p"/clients")
 
     assert html =~ "No clients yet"
-    assert html =~ "Customers you invoice will appear here."
+    assert html =~ "bring them all in from another app"
     refute html =~ "entries"
   end
 

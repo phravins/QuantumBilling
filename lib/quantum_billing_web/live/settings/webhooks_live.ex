@@ -376,6 +376,7 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
                   phx-click="rotate"
                   phx-value-id={endpoint.id}
                   data-confirm="Issue a new signing secret? The current one keeps working for 24 hours."
+                  data-confirm-tone="neutral"
                   class="btn btn-xs btn-ghost"
                 >
                   Rotate secret

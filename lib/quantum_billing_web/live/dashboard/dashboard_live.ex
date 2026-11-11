@@ -92,7 +92,7 @@ defmodule QuantumBillingWeb.DashboardLive do
                   id="export-tax-summary"
                   href={~p"/reports/export?#{[date_range: "This Year"]}"}
                 >
-                  GST tax summary – this year (CSV)
+                  GST tax summary, this year (CSV)
                 </.link>
               </li>
               <li>
@@ -102,7 +102,7 @@ defmodule QuantumBillingWeb.DashboardLive do
                     ~p"/reports/export?#{[date_range: "This Year", report_type: "Sales Register"]}"
                   }
                 >
-                  Sales register – this year (CSV)
+                  Sales register, this year (CSV)
                 </.link>
               </li>
             </ul>

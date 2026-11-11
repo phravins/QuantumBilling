@@ -22,13 +22,22 @@ defmodule QuantumBillingWeb.BinLive do
   alias QuantumBilling.Templates.InvoiceTemplate
 
   @filters [
-    {"all", "All"},
-    {"invoice", "Invoices"},
-    {"client", "Clients"},
-    {"e_way_bill", "E-Way Bills"},
-    {"recurring", "Recurring"},
-    {"template", "Designs"}
+    {"all", "All", "hero-squares-2x2"},
+    {"invoice", "Invoices", "hero-document-text"},
+    {"client", "Clients", "hero-user-group"},
+    {"e_way_bill", "E-Way Bills", "hero-truck"},
+    {"recurring", "Recurring", "hero-arrow-path"},
+    {"template", "Designs", "hero-paint-brush"}
   ]
+
+  # The tile colour behind each kind's icon.
+  @tones %{
+    "invoice" => "bg-info/12 text-info",
+    "client" => "bg-success/12 text-success",
+    "e_way_bill" => "bg-warning/15 text-warning",
+    "recurring" => "bg-violet-500/12 text-violet-600 dark:text-violet-300",
+    "template" => "bg-base-200 text-base-content/70"
+  }
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -49,7 +58,7 @@ defmodule QuantumBillingWeb.BinLive do
   end
 
   def handle_event("filter", %{"type" => type}, socket) do
-    if Enum.any?(@filters, fn {key, _label} -> key == type end) do
+    if Enum.any?(@filters, fn {key, _label, _icon} -> key == type end) do
       {:noreply, socket |> assign(:filter, type) |> load_entries()}
     else
       {:noreply, socket}
@@ -93,6 +102,7 @@ defmodule QuantumBillingWeb.BinLive do
   end
 
   def handle_info({:client_created, %Client{}}, socket), do: {:noreply, socket}
+  def handle_info({:clients_imported, _count}, socket), do: {:noreply, socket}
 
   # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -350,8 +360,24 @@ defmodule QuantumBillingWeb.BinLive do
 
   # ── View ──────────────────────────────────────────────────────────────────
 
+  defp tone(type), do: Map.get(@tones, type, "bg-base-200 text-base-content/70")
+
+  @doc false
+  # "Deleted today", "Deleted yesterday", "Deleted 3 days ago"; a date past a month.
+  def relative_deleted(%DateTime{} = deleted_at, today \\ Date.utc_today()) do
+    case Date.diff(today, DateTime.to_date(deleted_at)) do
+      days when days <= 0 -> "Deleted today"
+      1 -> "Deleted yesterday"
+      days when days <= 30 -> "Deleted #{days} days ago"
+      _older -> "Deleted on #{format_date(DateTime.to_date(deleted_at))}"
+    end
+  end
+
   def render(assigns) do
-    assigns = assign(assigns, :filters, @filters)
+    assigns =
+      assigns
+      |> assign(:filters, @filters)
+      |> assign(:owner?, QuantumBilling.Accounts.Scope.owner?(assigns.current_scope))
 
     ~H"""
     <Layouts.app
@@ -368,142 +394,176 @@ defmodule QuantumBillingWeb.BinLive do
         </:subtitle>
       </.header>
 
-      <div id="bin-filters" class="mb-3 flex flex-wrap items-center gap-2">
-        <button
-          :for={{key, label} <- @filters}
-          type="button"
-          id={"bin-filter-#{key}"}
-          phx-click="filter"
-          phx-value-type={key}
-          aria-pressed={to_string(@filter == key)}
-          class={[
-            "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs",
-            "transition-colors duration-150",
-            if(@filter == key,
-              do: "border-base-content bg-base-content font-medium text-base-100",
-              else:
-                "border-base-300 bg-base-100 text-base-content/60 hover:bg-base-200 hover:text-base-content"
-            )
-          ]}
-        >
-          {label}
-          <span
-            id={"bin-count-#{key}"}
+      <%!-- Tabs scroll sideways on a phone rather than wrapping. --%>
+      <div class="-mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div id="bin-filters" class="flex min-w-max items-center gap-1 border-b border-base-300">
+          <button
+            :for={{key, label, icon} <- @filters}
+            type="button"
+            id={"bin-filter-#{key}"}
+            phx-click="filter"
+            phx-value-type={key}
+            aria-pressed={to_string(@filter == key)}
             class={[
-              "rounded-full px-1.5 py-px text-2xs tabular-nums",
-              if(@filter == key, do: "bg-base-100/20", else: "bg-base-200")
+              "relative -mb-px inline-flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-sm",
+              "transition-colors duration-150",
+              if(@filter == key,
+                do: "border-base-content font-medium text-base-content",
+                else:
+                  "border-transparent text-base-content/55 hover:border-base-300 hover:text-base-content"
+              )
             ]}
           >
-            {Map.get(@counts, key, 0)}
-          </span>
-        </button>
+            <.icon name={icon} class="size-4" />
+            {label}
+            <span
+              id={"bin-count-#{key}"}
+              class={[
+                "min-w-5 rounded-full px-1.5 py-px text-center text-2xs tabular-nums transition-colors",
+                if(@filter == key,
+                  do: "bg-base-content text-base-100",
+                  else: "bg-base-200 text-base-content/60"
+                )
+              ]}
+            >
+              {Map.get(@counts, key, 0)}
+            </span>
+          </button>
+        </div>
       </div>
 
-      <.card padding="px-3 pt-1 pb-2" class="flex flex-1 flex-col">
-        <div :if={@shown == 0} id="bin-empty" class="flex flex-1 flex-col justify-center">
-          <.empty_state
-            icon="hero-trash"
-            title={
-              if(@filter == "all", do: "The Bin is empty", else: "Nothing of this kind in the Bin")
-            }
-            description={
-              if(@filter == "all",
-                do:
-                  "Invoices, clients, e-way bills, recurring profiles and designs you delete are kept here until you delete them permanently.",
-                else: "Choose All to see everything that has been deleted."
-              )
-            }
-          />
+      <div
+        id="bin-info"
+        class="mb-4 flex items-start gap-2.5 rounded-box border border-base-300 bg-base-200/50 px-3.5 py-2.5 text-xs text-base-content/65"
+      >
+        <.icon name="hero-information-circle" class="mt-px size-4 shrink-0 text-base-content/45" />
+        <p>
+          Restored items go back exactly where they were.
+          <%= if @owner? do %>
+            Delete forever removes an item for good, and cannot be undone.
+          <% else %>
+            Only an owner can delete items for good.
+          <% end %>
+        </p>
+      </div>
+
+      <div
+        :if={@shown == 0}
+        id="bin-empty"
+        class="flex flex-1 flex-col justify-center rounded-box border border-dashed border-base-300 bg-base-100 py-6"
+      >
+        <.empty_state
+          icon="hero-trash"
+          title={
+            if(@filter == "all", do: "The Bin is empty", else: "Nothing of this kind in the Bin")
+          }
+          description={
+            if(@filter == "all",
+              do:
+                "Invoices, clients, e-way bills, recurring profiles and designs you delete are kept here until you delete them permanently.",
+              else: "Choose All to see everything that has been deleted."
+            )
+          }
+        />
+      </div>
+
+      <%!-- Hidden rather than removed: the stream container must stay in the DOM. --%>
+      <div
+        id="bin-entries"
+        phx-update="stream"
+        class={["flex flex-col gap-2", @shown == 0 && "hidden"]}
+      >
+        <div
+          :for={{dom_id, entry} <- @streams.entries}
+          id={dom_id}
+          class={[
+            "group flex flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-3",
+            "transition duration-150 hover:-translate-y-px hover:border-base-content/20 hover:shadow-sm",
+            "sm:flex-row sm:items-center sm:gap-4 sm:px-4"
+          ]}
+        >
+          <div class="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+            <span class={[
+              "flex size-10 shrink-0 items-center justify-center rounded-field",
+              tone(entry.type)
+            ]}>
+              <.icon name={entry.icon} class="size-5" />
+            </span>
+
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <p class="truncate font-medium">{entry.title}</p>
+                <span class="shrink-0 rounded-full border border-base-300 px-1.5 py-px text-2xs font-medium uppercase tracking-wide text-base-content/55">
+                  {entry.kind}
+                </span>
+              </div>
+
+              <p :if={entry.subtitle} class="truncate text-xs text-base-content/70">
+                {entry.subtitle}
+              </p>
+
+              <p :if={entry.details not in [nil, ""]} class="truncate text-xs text-base-content/50">
+                {entry.details}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 border-t border-base-200 pt-3 sm:shrink-0 sm:justify-end sm:border-0 sm:pt-0">
+            <span
+              class="inline-flex items-center gap-1 whitespace-nowrap text-xs text-base-content/50"
+              title={Calendar.strftime(entry.deleted_at, "%d %b %Y, %H:%M UTC")}
+            >
+              <.icon name="hero-clock" class="size-3.5" />
+              {relative_deleted(entry.deleted_at)}
+            </span>
+
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                id={"bin-restore-#{entry.id}"}
+                phx-click="restore"
+                phx-value-type={entry.type}
+                phx-value-id={entry.record_id}
+                aria-label={"Restore #{entry.title}"}
+                class={[
+                  "inline-flex h-8 items-center gap-1.5 rounded-field border border-base-300 bg-base-100 px-3",
+                  "text-xs font-medium text-base-content/80 transition",
+                  "hover:border-base-content/25 hover:bg-base-200 hover:text-base-content active:scale-[.98]"
+                ]}
+              >
+                <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Restore
+              </button>
+
+              <button
+                :if={!entry.locked and @owner?}
+                type="button"
+                id={"bin-purge-#{entry.id}"}
+                phx-click="purge"
+                phx-value-type={entry.type}
+                phx-value-id={entry.record_id}
+                data-confirm={entry.purge_confirm}
+                aria-label={"Delete forever: #{entry.title}"}
+                class={[
+                  "inline-flex h-8 items-center gap-1.5 rounded-field px-3 text-xs font-medium text-error/85",
+                  "transition hover:bg-error/10 hover:text-error active:scale-[.98]"
+                ]}
+              >
+                <.icon name="hero-trash" class="size-3.5" /> Delete forever
+              </button>
+
+              <span
+                :if={entry.locked}
+                id={"bin-locked-#{entry.id}"}
+                title={entry.locked}
+                aria-label={"In use: #{entry.locked}"}
+                class="inline-flex h-8 cursor-help items-center gap-1 rounded-full bg-base-200 px-2.5 text-xs text-base-content/60"
+              >
+                <.icon name="hero-lock-closed" class="size-3.5" /> In use
+              </span>
+            </div>
+          </div>
         </div>
-
-        <%!-- Hidden rather than removed: the stream container must stay in the DOM. --%>
-        <div class={[@shown == 0 && "hidden"]}>
-          <table class="table table-fixed">
-            <thead>
-              <tr class={table_head_class()}>
-                <th class="w-32">Type</th>
-
-                <th>Item</th>
-
-                <th>Details</th>
-
-                <th class="w-36">Deleted on</th>
-
-                <th class="w-24">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody id="bin-entries" phx-update="stream">
-              <tr :for={{dom_id, entry} <- @streams.entries} id={dom_id} class={table_row_class()}>
-                <td>
-                  <span class="inline-flex items-center gap-1.5 rounded-full bg-base-200 px-2 py-0.5 text-xs text-base-content/70">
-                    <.icon name={entry.icon} class="size-3.5" /> {entry.kind}
-                  </span>
-                </td>
-
-                <td>
-                  <p class="truncate font-medium">{entry.title}</p>
-
-                  <p :if={entry.subtitle} class="truncate text-xs text-base-content/60">
-                    {entry.subtitle}
-                  </p>
-                </td>
-
-                <td class="truncate text-base-content/60">{entry.details}</td>
-
-                <td
-                  class="whitespace-nowrap text-base-content/60"
-                  title={Calendar.strftime(entry.deleted_at, "%d %b %Y, %H:%M UTC")}
-                >
-                  {format_date(DateTime.to_date(entry.deleted_at))}
-                </td>
-
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button
-                      type="button"
-                      id={"bin-restore-#{entry.id}"}
-                      phx-click="restore"
-                      phx-value-type={entry.type}
-                      phx-value-id={entry.record_id}
-                      title="Restore"
-                      aria-label={"Restore #{entry.title}"}
-                      class={row_action_class()}
-                    >
-                      <.icon name="hero-arrow-uturn-left" class="size-4" />
-                    </button>
-
-                    <button
-                      :if={!entry.locked and QuantumBilling.Accounts.Scope.owner?(@current_scope)}
-                      type="button"
-                      id={"bin-purge-#{entry.id}"}
-                      phx-click="purge"
-                      phx-value-type={entry.type}
-                      phx-value-id={entry.record_id}
-                      data-confirm={entry.purge_confirm}
-                      title="Delete permanently"
-                      aria-label={"Delete #{entry.title} permanently"}
-                      class={row_delete_class()}
-                    >
-                      <.icon name="hero-trash" class="size-4" />
-                    </button>
-
-                    <span
-                      :if={entry.locked}
-                      id={"bin-locked-#{entry.id}"}
-                      title={entry.locked}
-                      aria-label={"In use: #{entry.locked}"}
-                      class="flex size-7 cursor-help items-center justify-center text-base-content/30"
-                    >
-                      <.icon name="hero-lock-closed" class="size-4" />
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </.card>
+      </div>
     </Layouts.app>
     """
   end

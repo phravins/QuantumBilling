@@ -135,6 +135,7 @@ defmodule QuantumBillingWeb.CalendarComponents do
                 id="feed-regenerate"
                 phx-click="regenerate_feed"
                 data-confirm="Create a new link? The current one stops working straight away."
+                data-confirm-tone="neutral"
                 class={secondary_button()}
               >
                 New link

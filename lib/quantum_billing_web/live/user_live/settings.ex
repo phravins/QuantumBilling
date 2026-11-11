@@ -11,9 +11,10 @@ defmodule QuantumBillingWeb.UserLive.Settings do
   alias QuantumBilling.Accounts.TwoFactor
 
   @tabs [
-    {:profile, "Profile", "hero-user"},
-    {:password, "Change Password", "hero-lock-closed"},
-    {:two_factor, "Two Factor Authentication", "hero-shield-check"}
+    {:profile, "Profile", "hero-user", "Name, role and contact"},
+    {:email, "Email", "hero-envelope", "Your sign-in address"},
+    {:password, "Password", "hero-lock-closed", "Change how you sign in"},
+    {:two_factor, "Two-factor", "hero-shield-check", "Codes from your phone"}
   ]
 
   @impl true
@@ -50,7 +51,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
   end
 
   defp tab_from(value) do
-    Enum.find_value(@tabs, :profile, fn {key, _label, _icon} ->
+    Enum.find_value(@tabs, :profile, fn {key, _label, _icon, _hint} ->
       if to_string(key) == value, do: key
     end)
   end
@@ -255,7 +256,10 @@ defmodule QuantumBillingWeb.UserLive.Settings do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :tabs, @tabs)
+    assigns =
+      assigns
+      |> assign(:tabs, @tabs)
+      |> assign(:two_factor_on?, TwoFactor.enabled?(assigns.user))
 
     ~H"""
     <Layouts.app
@@ -274,140 +278,244 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       <.header>
         Account Settings
         <:subtitle>Manage your personal information and sign-in security</:subtitle>
-        <:actions>
-          <.link id="view-profile" navigate={~p"/users/profile"} class={secondary_button_class()}>
-            <.icon name="hero-user-circle" class="size-4" /> View profile
-          </.link>
-        </:actions>
       </.header>
 
-      <.card padding="p-0" class="flex flex-1 flex-col">
-        <div class="flex items-center gap-1 overflow-x-auto border-b border-base-300 px-2">
-          <.link
-            :for={{key, label, icon} <- @tabs}
-            patch={~p"/users/settings?#{[tab: key]}"}
-            class={[
-              "flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-sm transition-colors",
-              if(@tab == key,
-                do: "border-base-content font-medium text-base-content",
-                else: "border-transparent text-base-content/60 hover:text-base-content"
-              )
-            ]}
-          >
-            <.icon name={icon} class="size-4" />{label}
-          </.link>
-        </div>
+      <section
+        id="account-identity"
+        class="mb-6 overflow-hidden rounded-box border border-base-300 bg-base-100"
+      >
+        <div class="h-14 bg-linear-to-r from-primary/15 via-primary/5 to-transparent" />
+        <div class="-mt-7 flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:px-6">
+          <%!-- current_scope, kept in step by the on_mount hook. --%>
+          <span class={[
+            avatar_class(),
+            "size-16 shrink-0 bg-base-content text-lg font-semibold text-base-100 ring-4 ring-base-100"
+          ]}>
+            {initials(@current_scope.user)}
+          </span>
 
-        <div class="flex-1 p-6">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-base font-semibold tracking-tight">
+              {@user.full_name || @current_email}
+            </p>
+            <p class="truncate text-sm text-base-content/60">
+              {@current_email}
+              <span :if={@user.designation not in [nil, ""]}>· {@user.designation}</span>
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <span
+              id="account-2fa-badge"
+              class={[
+                "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium",
+                if(@two_factor_on?,
+                  do: "bg-success/12 text-success",
+                  else: "bg-warning/15 text-warning"
+                )
+              ]}
+            >
+              <.icon
+                name={if(@two_factor_on?, do: "hero-shield-check", else: "hero-shield-exclamation")}
+                class="size-3.5"
+              />
+              {if(@two_factor_on?, do: "Two-factor on", else: "Two-factor off")}
+            </span>
+
+            <.link id="view-profile" navigate={~p"/users/profile"} class={secondary_button_class()}>
+              <.icon name="hero-user-circle" class="size-4" /> View profile
+            </.link>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid flex-1 grid-cols-1 items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <%!-- Scrolling tabs on a phone, a sticky column on a wide screen. --%>
+        <nav
+          id="account-nav"
+          aria-label="Account sections"
+          class="-mx-4 overflow-x-auto px-4 lg:sticky lg:top-4 lg:mx-0 lg:overflow-visible lg:px-0"
+        >
+          <div class="flex min-w-max gap-1 border-b border-base-300 lg:min-w-0 lg:flex-col lg:border-0">
+            <.link
+              :for={{key, label, icon, hint} <- @tabs}
+              id={"account-tab-#{key}"}
+              patch={~p"/users/settings?#{[tab: key]}"}
+              aria-current={@tab == key && "page"}
+              class={[
+                "group relative flex items-center gap-3 whitespace-nowrap px-3 text-sm transition-colors duration-150",
+                "-mb-px border-b-2 py-2.5 lg:mb-0 lg:rounded-field lg:border-b-0 lg:py-2",
+                if(@tab == key,
+                  do: "border-base-content font-medium text-base-content lg:bg-base-200",
+                  else:
+                    "border-transparent text-base-content/60 hover:text-base-content lg:hover:bg-base-200/60"
+                )
+              ]}
+            >
+              <span
+                :if={@tab == key}
+                class="absolute inset-y-2 left-0 hidden w-0.5 rounded-full bg-primary lg:block"
+              />
+              <.icon
+                name={icon}
+                class={[
+                  "size-4 shrink-0 transition-colors",
+                  if(@tab == key, do: "text-primary", else: "text-base-content/45")
+                ]}
+              />
+              <span class="min-w-0">
+                <span class="block">{label}</span>
+                <span class="hidden truncate text-xs font-normal text-base-content/50 lg:block">
+                  {hint}
+                </span>
+              </span>
+            </.link>
+          </div>
+        </nav>
+
+        <div id={"account-panel-#{@tab}"} class="flex min-w-0 flex-col gap-6">
           {render_tab(assigns)}
         </div>
-      </.card>
+      </div>
     </Layouts.app>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :description, :string, default: nil
+  slot :inner_block, required: true
+  slot :footer
+
+  defp section_card(assigns) do
+    ~H"""
+    <section id={@id} class="overflow-hidden rounded-box border border-base-300 bg-base-100">
+      <header class="border-b border-base-300 px-5 py-4 sm:px-6">
+        <h2 class="text-sm font-semibold tracking-tight">{@title}</h2>
+        <p :if={@description} class="mt-1 text-sm text-base-content/60">{@description}</p>
+      </header>
+
+      <div class="px-5 py-5 sm:px-6">
+        {render_slot(@inner_block)}
+      </div>
+
+      <footer
+        :if={@footer != []}
+        class="flex flex-wrap items-center justify-end gap-2 border-t border-base-300 bg-base-200/40 px-5 py-3 sm:px-6"
+      >
+        {render_slot(@footer)}
+      </footer>
+    </section>
     """
   end
 
   defp render_tab(%{tab: :profile} = assigns) do
     ~H"""
-    <h2 class="text-sm font-semibold tracking-tight">Profile Information</h2>
-
-    <p class="mt-1 text-sm text-base-content/60">
-      Update your personal information and contact details.
-    </p>
-
     <.form
       for={@profile_form}
       id="profile_form"
       phx-change="validate_profile"
       phx-submit="save_profile"
-      class="mt-4"
     >
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <.field field={@profile_form[:full_name]} label="Full Name" placeholder="Your name" />
-        <.field
-          field={@profile_form[:designation]}
-          label="Designation"
-          placeholder="e.g. GST Officer"
-        /> <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
-        <div class="sm:col-span-2">
+      <.section_card
+        id="account-profile"
+        title="Profile Information"
+        description="Update your personal information and contact details."
+      >
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field field={@profile_form[:full_name]} label="Full Name" placeholder="Your name" />
           <.field
-            field={@profile_form[:bio]}
-            label="Bio"
-            type="textarea"
-            rows="3"
-            placeholder="A line or two about what you do"
-            hint="Up to 500 characters. Shown on your profile."
+            field={@profile_form[:designation]}
+            label="Designation"
+            placeholder="e.g. GST Officer"
           />
+          <.field field={@profile_form[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
+          <div class="sm:col-span-2">
+            <.field
+              field={@profile_form[:bio]}
+              label="Bio"
+              type="textarea"
+              rows="3"
+              placeholder="A line or two about what you do"
+              hint="Up to 500 characters. Shown on your profile."
+            />
+          </div>
         </div>
-      </div>
 
-      <button type="submit" class={[action_button_class(), "mt-4"]}>
-        <.icon name="hero-check" class="size-4" /> Save Changes
-      </button>
+        <:footer>
+          <button
+            type="submit"
+            id="save-profile"
+            phx-disable-with="Saving..."
+            class={action_button_class()}
+          >
+            <.icon name="hero-check" class="size-4" /> Save Changes
+          </button>
+        </:footer>
+      </.section_card>
     </.form>
 
-    <div class="mt-4 border-t border-base-300 pt-6">
-      <h2 class="text-sm font-semibold tracking-tight">Profile Picture</h2>
-
-      <div class="mt-3 flex flex-wrap items-center gap-3">
-        <%!-- current_scope, kept in step by the on_mount hook. --%>
+    <.section_card
+      id="account-picture"
+      title="Profile Picture"
+      description="Shown beside your name across the app."
+    >
+      <div class="flex flex-wrap items-center gap-4">
         <span class={[avatar_class(), "size-14 bg-base-300 text-base text-base-content"]}>
           {initials(@current_scope.user)}
         </span>
 
-        <div>
-          <p class="text-sm text-base-content/60">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm text-base-content/70">
             Your initials are used until an image can be uploaded.
           </p>
-
-          <span class="mt-2 inline-flex h-9 items-center gap-2 rounded-field border border-base-300 px-3 text-sm text-base-content/45">
-            <.icon name="hero-photo" class="size-4" /> Uploading needs file storage
-          </span>
+          <p class="mt-1 inline-flex items-center gap-1.5 text-xs text-base-content/45">
+            <.icon name="hero-photo" class="size-3.5" /> Uploading needs file storage
+          </p>
         </div>
       </div>
-    </div>
+    </.section_card>
+    """
+  end
 
-    <div class="mt-4 border-t border-base-300 pt-6">
-      <h2 class="text-sm font-semibold tracking-tight">Email Address</h2>
-
-      <p class="mt-1 text-sm text-base-content/60">
-        Changing this sends a confirmation link to the new address, so it saves on its own
-        rather than with the rest of your profile.
-      </p>
-
-      <.form
-        for={@email_form}
-        id="email_form"
-        phx-change="validate_email"
-        phx-submit="update_email"
-        class="mt-4"
+  defp render_tab(%{tab: :email} = assigns) do
+    ~H"""
+    <.form for={@email_form} id="email_form" phx-change="validate_email" phx-submit="update_email">
+      <.section_card
+        id="account-email"
+        title="Email Address"
+        description="You sign in with this address. A change only takes effect once the new address confirms a link."
       >
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class="mb-4 flex items-center gap-3 rounded-field border border-base-300 bg-base-200/50 px-3.5 py-2.5">
+          <.icon name="hero-envelope" class="size-4 shrink-0 text-base-content/45" />
+          <div class="min-w-0">
+            <p class="text-2xs uppercase tracking-wide text-base-content/50">Current address</p>
+            <p class="truncate text-sm font-medium">{@current_email}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <.field
             field={@email_form[:email]}
-            label="Email Address"
+            label="New email address"
             type="email"
             autocomplete="username"
             required
           />
         </div>
 
-        <button type="submit" class={[secondary_button_class(), "mt-4"]}>
-          <.icon name="hero-envelope" class="size-4" /> Send confirmation link
-        </button>
-      </.form>
-    </div>
+        <:footer>
+          <button type="submit" id="send-email-link" class={action_button_class()}>
+            <.icon name="hero-paper-airplane" class="size-4" /> Send confirmation link
+          </button>
+        </:footer>
+      </.section_card>
+    </.form>
     """
   end
 
   defp render_tab(%{tab: :password} = assigns) do
     ~H"""
-    <h2 class="text-sm font-semibold tracking-tight">Change Password</h2>
-
-    <p class="mt-1 text-sm text-base-content/60">
-      Choose a strong password to keep your account secure. You may be asked to sign in
-      again first.
-    </p>
-
     <.form
       for={@password_form}
       id="password_form"
@@ -416,59 +524,85 @@ defmodule QuantumBillingWeb.UserLive.Settings do
       phx-change="validate_password"
       phx-submit="update_password"
       phx-trigger-action={@trigger_submit}
-      class="mt-4"
     >
-      <input
-        name={@password_form[:email].name}
-        type="hidden"
-        id="hidden_user_email"
-        spellcheck="false"
-        value={@current_email}
-      />
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <.field
-          field={@password_form[:password]}
-          label="New password"
-          type="password"
-          autocomplete="new-password"
-          required
-          hint="At least 8 characters."
+      <.section_card
+        id="account-password"
+        title="Change Password"
+        description="Choose a strong password to keep your account secure. You may be asked to sign in again first."
+      >
+        <input
+          name={@password_form[:email].name}
+          type="hidden"
+          id="hidden_user_email"
+          spellcheck="false"
+          value={@current_email}
         />
-        <.field
-          field={@password_form[:password_confirmation]}
-          label="Confirm new password"
-          type="password"
-          autocomplete="new-password"
-        />
-      </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.field
+            field={@password_form[:password]}
+            label="New password"
+            type="password"
+            autocomplete="new-password"
+            required
+            hint="At least 8 characters."
+          />
+          <.field
+            field={@password_form[:password_confirmation]}
+            label="Confirm new password"
+            type="password"
+            autocomplete="new-password"
+          />
+        </div>
 
-      <button type="submit" phx-disable-with="Saving..." class={[action_button_class(), "mt-4"]}>
-        <.icon name="hero-lock-closed" class="size-4" /> Update Password
-      </button>
+        <ul class="mt-4 grid gap-1.5 text-xs text-base-content/55 sm:grid-cols-2">
+          <li class="flex items-center gap-1.5">
+            <.icon name="hero-check-circle" class="size-3.5 text-base-content/35" />
+            A passphrase of a few words is easy to remember
+          </li>
+          <li class="flex items-center gap-1.5">
+            <.icon name="hero-check-circle" class="size-3.5 text-base-content/35" />
+            Don't reuse a password from another site
+          </li>
+        </ul>
+
+        <:footer>
+          <button
+            type="submit"
+            id="update-password"
+            phx-disable-with="Saving..."
+            class={action_button_class()}
+          >
+            <.icon name="hero-lock-closed" class="size-4" /> Update Password
+          </button>
+        </:footer>
+      </.section_card>
     </.form>
     """
   end
 
   defp render_tab(%{tab: :two_factor} = assigns) do
+    assigns = assign(assigns, :pending?, TwoFactor.pending?(assigns.user))
+
     ~H"""
-    <h2 class="text-sm font-semibold tracking-tight">Two Factor Authentication</h2>
-
-    <p class="mt-1 text-sm text-base-content/60">
-      Add an extra layer of security to your account.
-    </p>
-
     <%!-- Shown once: they are stored hashed. --%>
-    <div :if={@new_recovery_codes} class="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
+    <div
+      :if={@new_recovery_codes}
+      id="recovery-codes"
+      class="rounded-box border border-warning/40 bg-warning/8 p-5"
+    >
       <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-sm font-semibold tracking-tight">Save your recovery codes</p>
+        <div class="flex items-start gap-3">
+          <.icon name="hero-key" class="mt-0.5 size-5 shrink-0 text-warning" />
+          <div>
+            <p class="text-sm font-semibold tracking-tight">Save your recovery codes</p>
 
-          <p class="mt-1 text-sm text-base-content/60">
-            Each one works once, and they are the only way in if you lose your device.
-            <strong class="font-medium text-base-content">
-              They will not be shown again.
-            </strong>
-          </p>
+            <p class="mt-1 text-sm text-base-content/60">
+              Each one works once, and they are the only way in if you lose your device.
+              <strong class="font-medium text-base-content">
+                They will not be shown again.
+              </strong>
+            </p>
+          </div>
         </div>
 
         <button
@@ -481,100 +615,173 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         </button>
       </div>
 
-      <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm sm:grid-cols-3">
-        <li :for={code <- @new_recovery_codes}>{code}</li>
+      <ul class="mt-4 grid grid-cols-2 gap-2 font-mono text-sm sm:grid-cols-3">
+        <li
+          :for={code <- @new_recovery_codes}
+          class="rounded-field border border-base-300 bg-base-100 px-3 py-1.5 text-center"
+        >
+          {code}
+        </li>
       </ul>
     </div>
 
-    <div :if={TwoFactor.enabled?(@user)} class="mt-4">
-      <div class="flex flex-wrap items-center gap-3 rounded-field border border-base-300 px-4 py-3">
-        <.status_badge status="Active" />
-        <p class="text-sm text-base-content/60">
-          Codes are required whenever you sign in. {TwoFactor.recovery_codes_remaining(@user)} recovery codes remain.
-        </p>
+    <.section_card
+      id="account-two-factor"
+      title="Two Factor Authentication"
+      description="Add an extra layer of security to your account."
+    >
+      <div
+        id="two-factor-status"
+        class={[
+          "flex items-start gap-3 rounded-field border px-4 py-3",
+          cond do
+            @two_factor_on? -> "border-success/30 bg-success/8"
+            @pending? -> "border-info/30 bg-info/8"
+            true -> "border-warning/35 bg-warning/8"
+          end
+        ]}
+      >
+        <span class={[
+          "flex size-9 shrink-0 items-center justify-center rounded-full",
+          cond do
+            @two_factor_on? -> "bg-success/15 text-success"
+            @pending? -> "bg-info/15 text-info"
+            true -> "bg-warning/15 text-warning"
+          end
+        ]}>
+          <.icon
+            name={
+              cond do
+                @two_factor_on? -> "hero-shield-check"
+                @pending? -> "hero-device-phone-mobile"
+                true -> "hero-shield-exclamation"
+              end
+            }
+            class="size-5"
+          />
+        </span>
+
+        <div class="min-w-0">
+          <%= cond do %>
+            <% @two_factor_on? -> %>
+              <p class="text-sm font-semibold">Protected</p>
+              <p class="text-sm text-base-content/60">
+                Codes are required whenever you sign in. {TwoFactor.recovery_codes_remaining(@user)} recovery codes remain.
+              </p>
+            <% @pending? -> %>
+              <p class="text-sm font-semibold">Almost there</p>
+              <p class="text-sm text-base-content/60">
+                Link your authenticator app below to finish.
+              </p>
+            <% true -> %>
+              <p class="text-sm font-semibold">Not protected</p>
+              <p class="text-sm text-base-content/60">
+                With this on, signing in asks for a code from your phone as well as your password.
+              </p>
+          <% end %>
+        </div>
       </div>
 
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button type="button" phx-click="regenerate_recovery_codes" class={secondary_button_class()}>
-          <.icon name="hero-arrow-path" class="size-4" /> Issue new recovery codes
-        </button>
-
-        <button
-          type="button"
-          phx-click="disable_totp"
-          data-confirm="Turn off two-factor authentication? Your recovery codes will stop working."
-          class={secondary_button_class()}
-        >
-          <.icon name="hero-shield-exclamation" class="size-4" /> Turn off
-        </button>
-      </div>
-    </div>
-
-    <div :if={TwoFactor.pending?(@user)} class="mt-4">
-      <ol class="space-y-4">
-        <li>
-          <p class="text-sm font-medium">1. Scan this with your authenticator app</p>
-
-          <p class="mt-1 text-sm text-base-content/60">
-            Google Authenticator, Microsoft Authenticator, 1Password and others all work.
-          </p>
-
-          <%!-- Literally white so the QR stays readable on a dark theme. --%>
-          <div class="mt-3 w-fit rounded-box border border-base-300 bg-white p-3">
-            {Phoenix.HTML.raw(TwoFactor.qr_svg(@user))}
+      <ol :if={@pending?} class="mt-5 space-y-5">
+        <li class="flex gap-3">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold">
+            1
+          </span>
+          <div>
+            <p class="text-sm font-medium">Scan this with your authenticator app</p>
+            <p class="mt-1 text-sm text-base-content/60">
+              Google Authenticator, Microsoft Authenticator, 1Password and others all work.
+            </p>
+            <%!-- Literally white so the QR stays readable on a dark theme. --%>
+            <div class="mt-3 w-fit rounded-box border border-base-300 bg-white p-3">
+              {Phoenix.HTML.raw(TwoFactor.qr_svg(@user))}
+            </div>
           </div>
         </li>
 
-        <li>
-          <p class="text-sm font-medium">2. Or enter this key by hand</p>
-
-          <p class="mt-2 w-fit rounded-field border border-base-300 bg-base-200 px-3 py-2 font-mono text-sm">
-            {TwoFactor.manual_entry_key(@user)}
-          </p>
+        <li class="flex gap-3">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold">
+            2
+          </span>
+          <div class="min-w-0">
+            <p class="text-sm font-medium">Or enter this key by hand</p>
+            <p class="mt-2 w-fit max-w-full break-all rounded-field border border-base-300 bg-base-200 px-3 py-2 font-mono text-sm">
+              {TwoFactor.manual_entry_key(@user)}
+            </p>
+          </div>
         </li>
 
-        <li>
-          <p class="text-sm font-medium">3. Enter the 6-digit code it shows</p>
+        <li class="flex gap-3">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold">
+            3
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">Enter the 6-digit code it shows</p>
 
-          <.form for={%{}} as={:totp} phx-submit="confirm_totp" class="mt-3">
-            <div class="flex flex-wrap items-start gap-2">
-              <input
-                type="text"
-                name="totp[code]"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="6"
-                autocomplete="one-time-code"
-                placeholder="000000"
-                required
-                class={[form_input_class(), "w-36 text-center tracking-[0.3em]"]}
-              />
-              <button type="submit" class={action_button_class()}>
-                <.icon name="hero-check" class="size-4" /> Verify and turn on
-              </button>
+            <.form for={%{}} as={:totp} id="totp_form" phx-submit="confirm_totp" class="mt-3">
+              <div class="flex flex-wrap items-start gap-2">
+                <input
+                  type="text"
+                  id="totp_code"
+                  name="totp[code]"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                  placeholder="000000"
+                  aria-label="6-digit code"
+                  required
+                  class={[form_input_class(), "w-36 text-center tracking-[0.3em]"]}
+                />
+                <button type="submit" class={action_button_class()}>
+                  <.icon name="hero-check" class="size-4" /> Verify and turn on
+                </button>
 
-              <button type="button" phx-click="cancel_totp_enrolment" class={secondary_button_class()}>
-                Cancel
-              </button>
-            </div>
+                <button
+                  type="button"
+                  phx-click="cancel_totp_enrolment"
+                  class={secondary_button_class()}
+                >
+                  Cancel
+                </button>
+              </div>
 
-            <p :if={@totp_error} class="mt-2 flex items-center gap-1 text-2xs text-error">
-              <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@totp_error}
-            </p>
-          </.form>
+              <p :if={@totp_error} class="mt-2 flex items-center gap-1 text-2xs text-error">
+                <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{@totp_error}
+              </p>
+            </.form>
+          </div>
         </li>
       </ol>
-    </div>
 
-    <div :if={not TwoFactor.enabled?(@user) and not TwoFactor.pending?(@user)} class="mt-4">
-      <p class="text-sm text-base-content/60">
-        With this on, signing in asks for a code from your phone as well as your password.
-      </p>
+      <:footer :if={not @pending?}>
+        <%= if @two_factor_on? do %>
+          <button
+            type="button"
+            phx-click="regenerate_recovery_codes"
+            class={secondary_button_class()}
+          >
+            <.icon name="hero-arrow-path" class="size-4" /> Issue new recovery codes
+          </button>
 
-      <button type="button" phx-click="start_totp_enrolment" class={[action_button_class(), "mt-4"]}>
-        <.icon name="hero-shield-check" class="size-4" /> Set up two-factor authentication
-      </button>
-    </div>
+          <button
+            type="button"
+            phx-click="disable_totp"
+            data-confirm="Turn off two-factor authentication? Your recovery codes will stop working."
+            class={[
+              "inline-flex h-9 items-center gap-2 rounded-field px-3 text-sm text-error/85",
+              "transition-colors hover:bg-error/10 hover:text-error"
+            ]}
+          >
+            <.icon name="hero-shield-exclamation" class="size-4" /> Turn off
+          </button>
+        <% else %>
+          <button type="button" phx-click="start_totp_enrolment" class={action_button_class()}>
+            <.icon name="hero-shield-check" class="size-4" /> Set up two-factor authentication
+          </button>
+        <% end %>
+      </:footer>
+    </.section_card>
     """
   end
 

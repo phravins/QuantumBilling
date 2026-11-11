@@ -929,4 +929,80 @@ defmodule QuantumBillingWeb.Layouts do
     </div>
     """
   end
+
+  @doc """
+  The in-app confirmation for `data-confirm`, filled and opened by
+  `assets/js/confirm_dialog.js`. Rendered once by the root layout, outside the
+  LiveView container, so live navigation never replaces it. `data-tone` on the
+  dialog switches between the danger and neutral styles.
+  """
+  def confirm_dialog(assigns) do
+    ~H"""
+    <dialog
+      id="confirm-dialog"
+      data-tone="danger"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-body"
+      class="qb-confirm group m-auto w-[calc(100%-2rem)] max-w-md rounded-box border border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-base-content/35 backdrop:backdrop-blur-[2px]"
+    >
+      <div class="flex items-start gap-3.5 p-5">
+        <span class={[
+          "flex size-10 shrink-0 items-center justify-center rounded-full ring-4",
+          "bg-error/10 text-error ring-error/5",
+          "group-data-[tone=neutral]:bg-primary/10 group-data-[tone=neutral]:text-primary",
+          "group-data-[tone=neutral]:ring-primary/5"
+        ]}>
+          <.icon
+            name="hero-exclamation-triangle"
+            class="size-5 group-data-[tone=neutral]:hidden"
+          />
+          <.icon
+            name="hero-question-mark-circle"
+            class="hidden size-5 group-data-[tone=neutral]:block"
+          />
+        </span>
+
+        <div class="min-w-0 flex-1 pt-0.5">
+          <h2
+            id="confirm-dialog-title"
+            class="text-sm font-semibold tracking-tight break-words"
+          >
+            Are you sure?
+          </h2>
+
+          <p
+            id="confirm-dialog-body"
+            class="mt-1.5 text-sm leading-relaxed text-base-content/60 break-words"
+          >
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-col-reverse gap-2 rounded-b-box border-t border-base-300 bg-base-200/50 px-5 py-3 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          id="confirm-dialog-cancel"
+          class="inline-flex h-9 items-center justify-center rounded-field border border-base-300 bg-base-100 px-3.5 text-sm font-medium text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-base-content/20"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          id="confirm-dialog-ok"
+          class={[
+            "inline-flex h-9 items-center justify-center rounded-field px-3.5 text-sm font-medium",
+            "transition-[background-color,transform] active:scale-[0.98]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-base-100",
+            "bg-error text-error-content hover:bg-error/90 focus-visible:ring-error/40",
+            "group-data-[tone=neutral]:bg-primary group-data-[tone=neutral]:text-primary-content",
+            "group-data-[tone=neutral]:hover:bg-primary/90 group-data-[tone=neutral]:focus-visible:ring-primary/40"
+          ]}
+        >
+          Confirm
+        </button>
+      </div>
+    </dialog>
+    """
+  end
 end

@@ -258,6 +258,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   phx-value-id={user.id}
                   phx-value-role="owner"
                   data-confirm={"Make #{user.email} an owner? Owners can administer accounts, credentials and the full data export."}
+                  data-confirm-tone="neutral"
                   class="btn btn-xs btn-ghost"
                 >
                   Make owner
@@ -270,6 +271,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   phx-value-id={user.id}
                   phx-value-role="staff"
                   data-confirm={"Make #{user.email} staff? They will lose access to accounts, credentials and the data export."}
+                  data-confirm-tone="neutral"
                   class="btn btn-xs btn-ghost"
                 >
                   Make staff

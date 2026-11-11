@@ -160,6 +160,8 @@ defmodule QuantumBillingWeb.ClientsLive do
     {:noreply, load_page(socket)}
   end
 
+  def handle_info({:clients_imported, _count}, socket), do: {:noreply, load_page(socket)}
+
   defp load_page(socket) do
     result =
       Clients.page(
@@ -196,6 +198,14 @@ defmodule QuantumBillingWeb.ClientsLive do
         <:subtitle>Manage your clients and their details</:subtitle>
 
         <:actions>
+          <.link
+            id="clients-import"
+            navigate={~p"/clients/import"}
+            class={secondary_button_class()}
+            title="Add many clients from a CSV or Excel file"
+          >
+            <.icon name="hero-arrow-up-tray" class="size-4" /> Import
+          </.link>
           <.link navigate={~p"/clients/new"} class={action_button_class()}>
             <.icon name="hero-plus" class="size-4" /> Add New Client
           </.link>
@@ -264,10 +274,25 @@ defmodule QuantumBillingWeb.ClientsLive do
           }
           description={
             if @search == "" and @status_filter == "All Status" and @custom_filter == %{},
-              do: "Customers you invoice will appear here.",
+              do: "Add them one by one, or bring them all in from another app's CSV or Excel export.",
               else: "Try a different search term or status."
           }
-        />
+        >
+          <:action :if={@search == "" and @status_filter == "All Status" and @custom_filter == %{}}>
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <.link navigate={~p"/clients/new"} class={action_button_class()}>
+                <.icon name="hero-plus" class="size-4" /> Add client
+              </.link>
+              <.link
+                id="clients-empty-import"
+                navigate={~p"/clients/import"}
+                class={secondary_button_class()}
+              >
+                <.icon name="hero-arrow-up-tray" class="size-4" /> Import from CSV or Excel
+              </.link>
+            </div>
+          </:action>
+        </.empty_state>
         <div :if={not @empty?}>
           <div class={@column_definitions != [] && "overflow-x-auto"}>
             <table class={["table table-fixed", @column_definitions != [] && "min-w-[64rem]"]}>

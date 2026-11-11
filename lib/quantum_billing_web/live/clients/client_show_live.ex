@@ -117,6 +117,9 @@ defmodule QuantumBillingWeb.ClientShowLive do
     end
   end
 
+  # Imports only add other clients.
+  def handle_info({:clients_imported, _count}, socket), do: {:noreply, socket}
+
   # Throttled: a burst of writes, like the nightly recurring sweep, reloads once per window.
   def handle_info({:invoice_changed, _invoice}, socket) do
     {:noreply, LiveRefresh.changed(socket, &load_invoices/1)}
