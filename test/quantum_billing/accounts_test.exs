@@ -172,7 +172,6 @@ defmodule QuantumBilling.AccountsTest do
       assert role(first) == "owner"
 
       refute Accounts.bootstrap?()
-      refute Accounts.registration_open?()
 
       # Accounts share all the books, so a second one is invited, never claimed.
       assert {:error, changeset} =
@@ -186,7 +185,6 @@ defmodule QuantumBilling.AccountsTest do
       _first = registered_user_fixture()
       token = invitation_token_fixture("invited@example.com")
 
-      assert Accounts.registration_open?(token)
       assert Accounts.invited_email(token) == "invited@example.com"
 
       assert {:ok, user} =
@@ -198,7 +196,7 @@ defmodule QuantumBilling.AccountsTest do
       assert role(user) == "staff"
 
       # Spent, not reusable.
-      refute Accounts.registration_open?(token)
+      refute Accounts.invited_email(token)
 
       assert {:error, _changeset} =
                Accounts.register_user_with_password(
@@ -251,7 +249,7 @@ defmodule QuantumBilling.AccountsTest do
         ]
       )
 
-      refute Accounts.registration_open?(token)
+      refute Accounts.invited_email(token)
 
       assert {:error, changeset} =
                Accounts.register_user_with_password(
@@ -317,7 +315,6 @@ defmodule QuantumBilling.AccountsTest do
       _first = registered_user_fixture()
 
       for bogus <- ["", "not-base64!!", "YWJj", nil] do
-        refute Accounts.registration_open?(bogus)
         assert Accounts.invited_email(bogus) == nil
       end
     end

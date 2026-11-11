@@ -14,9 +14,6 @@ defmodule QuantumBilling.GST do
   # State code, PAN, entity number, literal Z, checksum.
   @gstin_format ~r/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/
 
-  @doc "The PAN format."
-  def pan_format, do: @pan_format
-
   @doc """
   The PAN inside a GSTIN (`"27AABCA1234A1Z5"` gives `"AABCA1234A"`), or `nil` if malformed.
   """

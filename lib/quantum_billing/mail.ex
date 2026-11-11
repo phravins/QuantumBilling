@@ -226,12 +226,6 @@ defmodule QuantumBilling.Mail do
     Repo.all(from d in Delivery, order_by: [desc: d.inserted_at, desc: d.id], limit: ^limit)
   end
 
-  @doc "How many deliveries are in each state, for a status line."
-  def delivery_counts do
-    Repo.all(from d in Delivery, group_by: d.status, select: {d.status, count(d.id)})
-    |> Map.new()
-  end
-
   @doc "Subscribes the caller to delivery updates."
   def subscribe, do: Events.subscribe(Events.mail_topic())
 

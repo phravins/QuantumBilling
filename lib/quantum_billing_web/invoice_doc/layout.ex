@@ -55,9 +55,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Layout do
   # Set by the server after an upload, never from params: a typed path could name another business's file.
   @server_only_page ~w(background)
 
-  @doc "The layout schema version this module writes."
-  def version, do: @version
-
   @doc "The page attribute spec, in emit order. Shared with the design pad's page controls."
   def page_attrs, do: @page_attrs
 

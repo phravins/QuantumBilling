@@ -27,9 +27,6 @@ defmodule QuantumBilling.EWayBills.PartBUpdate do
     timestamps(type: :utc_datetime)
   end
 
-  @doc "The modes of transport a Part-B entry accepts."
-  def transport_modes, do: @transport_modes
-
   def changeset(part_b_update, attrs) do
     part_b_update
     |> cast(attrs, @castable)

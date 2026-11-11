@@ -206,14 +206,6 @@ defmodule QuantumBilling.MailTest do
       assert %{to_email: [_ | _]} = errors_on(changeset)
     end
 
-    test "counts deliveries by status" do
-      {:ok, sent} = Mail.record_queued(%{to_email: "a@example.com"})
-      {:ok, _queued} = Mail.record_queued(%{to_email: "b@example.com"})
-      {:ok, _} = Mail.mark_sent(sent)
-
-      assert %{"sent" => 1, "queued" => 1} = Mail.delivery_counts()
-    end
-
     test "a delivery can be removed from the log" do
       {:ok, delivery} = Mail.record_queued(%{to_email: "gone@example.com"})
       Mail.subscribe()

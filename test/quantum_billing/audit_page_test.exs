@@ -36,10 +36,6 @@ defmodule QuantumBilling.AuditPageTest do
     assert Audit.page(action: nil).total == 30
   end
 
-  test "lists the actions actually present, for the filter control" do
-    assert Audit.actions() == ["generate_irn", "payment_received"]
-  end
-
   test "clamps the page past the end" do
     assert Audit.page(page: 99, per_page: 10).page == 3
   end

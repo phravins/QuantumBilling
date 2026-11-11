@@ -1,10 +1,6 @@
 defmodule QuantumBillingWeb.PageController do
   use QuantumBillingWeb, :controller
 
-  def home(conn, _params) do
-    render(conn, :home)
-  end
-
   @doc """
   The branded 404 for the catch-all route, so unknown paths never raise
   `NoRouteError`. The template is a full document, so layouts are off.

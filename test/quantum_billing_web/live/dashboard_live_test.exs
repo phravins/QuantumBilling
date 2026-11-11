@@ -68,6 +68,37 @@ defmodule QuantumBillingWeb.DashboardLiveTest do
     assert :binary.match(clients, "Beta Ltd") < :binary.match(clients, "Acme Corp")
   end
 
+  test "is the home page", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    assert html =~ "Overview of your GST invoicing and compliance"
+  end
+
+  test "shows empty states instead of invented figures", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/dashboard")
+
+    # Nothing has been billed, so the chart and the invoice list say so rather
+    # than drawing six months of zeros.
+    assert html =~ "No invoice data yet"
+    assert html =~ "No invoices yet"
+
+    refute html =~ "V2V Technologies"
+    refute html =~ "INV-2024-"
+    refute html =~ "15,489"
+  end
+
+  test "headlines the figures and the statutory deadlines", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/dashboard")
+
+    assert html =~ "Current Month Tax Liability"
+    assert html =~ "Outstanding Receivables"
+    assert html =~ "Pending GST Returns"
+
+    # GST return dates are statutory, so they exist on day one.
+    assert html =~ "GSTR-3B" or html =~ "GSTR-1" or html =~ "GSTR-9"
+    assert html =~ "Due in" or html =~ "Due today" or html =~ "Overdue by"
+  end
+
   test "the Reports page is gone from the sidebar and the router", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/dashboard")
 

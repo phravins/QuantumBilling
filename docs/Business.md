@@ -315,7 +315,7 @@ The compliance page generates a calendar from code-defined rules for GSTR-1, GST
 
 The tracked set depends on organization registration settings: a VAT business tracks no GST returns, even with a GSTIN left in its settings; no GSTIN yields an empty tracked set; composition settings select the quarterly composition row instead of monthly regular returns; annual rows are also generated. The dashboard currently uses the broader calendar function, so it can display obligations different from the registration-filtered page/reminder set.
 
-There is no persisted filing table or filing-status integration. `Compliance.filings/0` returns an empty list, so obligations become Pending or Overdue from dates alone and never Filed. A return already filed externally can still appear overdue here. Reminders are calendar prompts, not proof that a return is unfiled.
+There is no persisted filing table or filing-status integration, so obligations become Pending or Overdue from dates alone and never Filed. A return already filed externally can still appear overdue here. Reminders are calendar prompts, not proof that a return is unfiled.
 
 Owners and staff can add their own tasks and reminders to the page. These are stored, can be edited, completed and deleted, and post one notification when their reminder falls due, whatever the filing-reminder setting says. Calculated GST obligations stay read-only.
 

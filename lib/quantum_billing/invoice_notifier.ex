@@ -3,8 +3,7 @@ defmodule QuantumBilling.InvoiceNotifier do
   Composes the email that carries an invoice to its customer; `QuantumBilling.Mail` sends it.
 
   `deliver_invoice_pdf_async/3` queues the work on `EmailWorker`, which retries
-  and records each attempt. `deliver_invoice_pdf/2` sends inline, for the
-  Settings test button.
+  and records each attempt.
   """
 
   import Swoosh.Email
@@ -38,16 +37,6 @@ defmodule QuantumBilling.InvoiceNotifier do
     else
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  @doc """
-  Builds and sends the invoice email now: `{:ok, metadata}` or `{:error, message}` (readable).
-  """
-  def deliver_invoice_pdf(recipient_email, %Invoice{} = invoice) do
-    with {:ok, recipient} <- validate_recipient(recipient_email),
-         {:ok, email} <- build_email(recipient, invoice) do
-      Mail.deliver(email, Settings.get_organization())
     end
   end
 
@@ -197,7 +186,4 @@ defmodule QuantumBilling.InvoiceNotifier do
     |> Phoenix.HTML.html_escape()
     |> Phoenix.HTML.safe_to_string()
   end
-
-  @doc "Delegates to `QuantumBilling.Mail.error_message/1`. Kept for older callers."
-  defdelegate format_smtp_error(reason), to: Mail, as: :error_message
 end

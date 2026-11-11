@@ -52,15 +52,6 @@ defmodule QuantumBilling.EventsTest do
 
       refute_receive {:not_for_me, 1}, 50
     end
-
-    test "unsubscribe/1 stops delivery" do
-      Events.subscribe("test:leaving")
-      Events.unsubscribe("test:leaving")
-
-      Events.broadcast("test:leaving", {:too_late, 1})
-
-      refute_receive {:too_late, 1}, 50
-    end
   end
 
   describe "broadcast_from/2" do

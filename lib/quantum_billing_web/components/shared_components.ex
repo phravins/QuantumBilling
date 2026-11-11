@@ -334,23 +334,6 @@ defmodule QuantumBillingWeb.SharedComponents do
     end)
   end
 
-  @doc """
-  The "coming soon" card for placeholder pages.
-  """
-  attr :title, :string, default: "This section is under construction."
-
-  def coming_soon(assigns) do
-    ~H"""
-    <.card padding="p-12" class="text-center">
-      <span class="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/45">
-        <.icon name="hero-wrench-screwdriver" class="size-4.5" />
-      </span>
-
-      <p class="text-sm text-base-content/60">{@title}</p>
-    </.card>
-    """
-  end
-
   @doc "The empty state for a list or panel with no records."
   attr :icon, :string, default: "hero-inbox"
   attr :title, :string, required: true

@@ -7,8 +7,9 @@ defmodule QuantumBilling.Events do
   building one with no business raises. Profile topics are per user.
 
   Messages: `{:client_created | :client_updated | :client_binned |
-  :client_restored | :client_purged, client}`, `{:invoice_changed, invoice}`,
-  `{:e_way_bill_changed, bill}`, `{:settings_updated, org}`,
+  :client_restored | :client_purged, client}`, `{:clients_imported, count}`,
+  `{:invoice_changed, invoice}`, `{:e_way_bill_changed, bill}`,
+  `{:settings_updated, org}`,
   `{:invoice_template_changed, template}`, `{:profile_updated, user}`,
   `{:audit_log_created, log}`, `{:email_delivery_changed, delivery}`,
   `{:notification_created, notification}`, `{:notifications_read, :all | id}`.
@@ -18,9 +19,6 @@ defmodule QuantumBilling.Events do
 
   @doc "Subscribes the calling process to `topic`."
   def subscribe(topic), do: Phoenix.PubSub.subscribe(@pubsub, topic)
-
-  @doc "Unsubscribes the calling process from `topic`."
-  def unsubscribe(topic), do: Phoenix.PubSub.unsubscribe(@pubsub, topic)
 
   @doc """
   Publishes `message` to `topic`. Always `:ok`: a write never fails because of its notification.

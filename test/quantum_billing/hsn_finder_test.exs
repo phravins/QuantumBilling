@@ -105,13 +105,4 @@ defmodule QuantumBilling.HsnFinderTest do
       assert HsnFinder.get_by_code("00000") == nil
     end
   end
-
-  describe "categories/0" do
-    test "is non-empty and sorted" do
-      categories = HsnFinder.categories()
-
-      assert categories != []
-      assert categories == Enum.sort(categories)
-    end
-  end
 end

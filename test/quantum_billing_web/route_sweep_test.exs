@@ -287,7 +287,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
     end
 
     test "the report export answers for every report type", %{conn: conn} do
-      for type <- QuantumBilling.Reports.report_types() do
+      for type <- ["All Reports", "Sales Register", "Tax Liability", "ITC Summary"] do
         conn = get(conn, ~p"/reports/export?#{[report_type: type]}")
 
         assert response(conn, 200)

@@ -49,12 +49,6 @@ defmodule QuantumBilling.EWayBills.EWayBill do
     timestamps(type: :utc_datetime)
   end
 
-  @doc "The statuses a bill may be stored with. `\"Expired\"` is derived, not stored."
-  def statuses, do: @statuses
-
-  @doc "The modes of transport Part-A and Part-B accept."
-  def transport_modes, do: @transport_modes
-
   @doc "True when the bill was generated locally and never filed with the portal."
   def demo?(%__MODULE__{portal_mode: "live"}), do: false
   def demo?(%__MODULE__{}), do: true

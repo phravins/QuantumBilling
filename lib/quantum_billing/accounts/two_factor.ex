@@ -144,9 +144,6 @@ defmodule QuantumBilling.Accounts.TwoFactor do
 
   def manual_entry_key(_user), do: nil
 
-  @doc "The issuer name shown in the authenticator app."
-  def issuer, do: @issuer
-
   defp valid_totp?(secret, code, last_used_at) when is_binary(secret) and is_binary(code) do
     if Regex.match?(~r/^\d{6}$/, code) do
       NimbleTOTP.valid?(secret, code, since: last_used_at)

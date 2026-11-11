@@ -85,15 +85,6 @@ defmodule QuantumBilling.Invoices do
   defp shape(result, true), do: result
   defp shape(result, _rows), do: %{result | rows: Enum.map(result.rows, &to_row/1)}
 
-  @doc "The most recently issued invoices, as list rows."
-  def recent_invoices(limit \\ 5) do
-    Invoice.kept()
-    |> order_by([i], desc: i.invoice_date, desc: i.id)
-    |> limit(^limit)
-    |> Repo.all()
-    |> Enum.map(&to_row/1)
-  end
-
   @doc """
   Invoices that can still get an e-way bill, newest first.
 
@@ -117,26 +108,6 @@ defmodule QuantumBilling.Invoices do
     |> order_by([i], desc: i.invoice_date, desc: i.id)
     |> limit(^limit)
     |> Repo.all()
-  end
-
-  @doc "Invoices over the e-way bill threshold that have no live bill."
-  def count_requiring_e_way_bill do
-    threshold = Settings.get_organization().ewb_threshold_value || 5_000_000
-
-    Invoice.kept()
-    |> from(as: :invoice)
-    |> where([i], i.status != "Cancelled" and i.grand_total > ^threshold)
-    |> where(
-      [i],
-      not exists(
-        from b in QuantumBilling.EWayBills.EWayBill,
-          where:
-            b.invoice_id == parent_as(:invoice).id and b.status != "Cancelled" and
-              is_nil(b.deleted_at),
-          select: 1
-      )
-    )
-    |> Repo.aggregate(:count, :id)
   end
 
   @doc """
@@ -464,9 +435,6 @@ defmodule QuantumBilling.Invoices do
   def list_deleted_invoices do
     Repo.all(from i in Invoice.binned(), order_by: [desc: i.deleted_at, desc: i.id])
   end
-
-  @doc "How many invoices are in the Bin."
-  def count_deleted_invoices, do: Repo.aggregate(Invoice.binned(), :count, :id)
 
   defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do
@@ -909,5 +877,4 @@ defmodule QuantumBilling.Invoices do
 
   defdelegate invoice_types(), to: Invoice
   defdelegate payment_terms(), to: Invoice
-  defdelegate statuses(), to: Invoice
 end

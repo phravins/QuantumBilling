@@ -131,17 +131,16 @@ defmodule QuantumBilling.BusinessesTest do
       end)
     end
 
-    test "raw SQL reports read the current business only", %{other: other} do
+    test "reports read the current business only", %{other: other} do
       invoice_fixture(%{client_name: "Only In One"})
       Repo.with_business(other, fn -> invoice_fixture(%{client_name: "Only In Two"}) end)
 
-      names = inspect(Reports.client_names())
-      assert names =~ "Only In One"
-      refute names =~ "Only In Two"
+      clients = fn ->
+        Enum.map(Reports.top_client_totals(%{date_range: "All Time"}), & &1.client)
+      end
 
-      other_names = Repo.with_business(other, fn -> inspect(Reports.client_names()) end)
-      assert other_names =~ "Only In Two"
-      refute other_names =~ "Only In One"
+      assert clients.() == ["Only In One"]
+      assert Repo.with_business(other, clients) == ["Only In Two"]
     end
 
     test "notifications stay in their business", %{other: other} do

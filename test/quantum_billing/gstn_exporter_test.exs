@@ -204,23 +204,4 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert json["hsn"]["data"] == []
     end
   end
-
-  describe "period_summary/1" do
-    test "counts what the period would file, before the file is opened" do
-      invoice(%{invoice_date: ~D[2026-03-02]})
-      invoice(%{invoice_date: ~D[2026-03-20], status: "Cancelled"})
-      invoice(%{invoice_date: ~D[2026-04-02]})
-
-      assert {:ok, summary} = GSTNExporter.period_summary("032026")
-
-      # The cancelled one is not a supply, and April is not this period.
-      assert summary.count == 1
-      assert summary.value == 5_900_000
-      assert summary.tax == 900_000
-    end
-
-    test "refuses a period it cannot parse" do
-      assert {:error, _} = GSTNExporter.period_summary("whenever")
-    end
-  end
 end

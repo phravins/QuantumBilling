@@ -100,7 +100,6 @@ defmodule QuantumBilling.ComplianceTest do
     end
 
     test "is never Filed while there are no filing records" do
-      assert Compliance.filings() == []
       refute Enum.any?(obligations(), &(&1.status == "Filed"))
       assert Enum.all?(obligations(), &(&1.filed_on == nil))
     end
@@ -308,10 +307,10 @@ defmodule QuantumBilling.ComplianceTest do
 
   describe "categories and statuses" do
     test "expose the tabs and the filter options" do
-      assert {:all, "All"} in Compliance.categories()
-      assert {:returns, "Returns"} in Compliance.categories()
-      assert {:payments, "Payments"} in Compliance.categories()
-      assert {:other, "Other Compliances"} in Compliance.categories()
+      assert {:all, "All"} in Compliance.category_tabs([])
+      assert {:returns, "Returns"} in Compliance.category_tabs([])
+      assert {:payments, "Payments"} in Compliance.category_tabs([])
+      assert {:other, "Other Compliances"} in Compliance.category_tabs([])
 
       assert Compliance.statuses() == ["All Status", "Filed", "Done", "Pending", "Overdue"]
     end

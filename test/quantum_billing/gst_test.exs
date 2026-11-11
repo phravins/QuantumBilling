@@ -46,7 +46,7 @@ defmodule QuantumBilling.GSTTest do
     test "what it extracts is itself a valid PAN" do
       pan = GST.pan_from_gstin("27AABCA1234A1Z5")
 
-      assert Regex.match?(GST.pan_format(), pan)
+      assert pan =~ ~r/^[A-Z]{5}\d{4}[A-Z]$/
     end
   end
 

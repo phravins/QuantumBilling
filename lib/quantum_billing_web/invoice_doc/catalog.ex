@@ -206,7 +206,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   def item_fields, do: @item_fields
   def required_item_fields, do: @required_item_fields
   def required_item_field?(field), do: field in @required_item_fields
-  def total_fields, do: @total_fields
   def types, do: Enum.map(@elements, fn {_name, type} -> type end)
   def attrs(type), do: Map.get(@attrs, type, [])
 

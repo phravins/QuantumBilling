@@ -129,9 +129,8 @@ defmodule QuantumBillingWeb.ComplianceTasksLiveTest do
 
       view |> element("#task-complete-#{task.id}") |> render_click()
 
-      actions = Audit.actions()
-      assert "create_compliance_task" in actions
-      assert "complete_compliance_task" in actions
+      assert Audit.page(action: "create_compliance_task").total == 1
+      assert Audit.page(action: "complete_compliance_task").total == 1
     end
 
     test "forged ids find nothing and leave the page up", %{conn: conn} do

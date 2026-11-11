@@ -1,44 +1,15 @@
 defmodule QuantumBilling.Reports do
   @moduledoc """
-  Report figures and the CSV export.
+  Report figures for the Dashboard and the CSV export.
 
-  Everything derives from row-level invoices, so filters move every panel
-  together. A row is `%{date, client, gstin, status, tax_type, taxable_value,
-  cgst, sgst, igst, cess}`, with money in whole rupees.
+  Every figure is computed by the database from one filtered invoice query, so
+  the filters move every panel together. Money is integer paise.
   """
-
-  @report_types [
-    "All Reports",
-    "Sales Register",
-    "Tax Liability",
-    "ITC Summary"
-  ]
-
-  @statuses ["E-Invoice Generated", "Pending E-Invoice", "E-Invoice Failed", "Cancelled"]
-
-  @trend_months 24
-
-  @client_name_limit 500
 
   import Ecto.Query, warn: false
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
-
-  @doc "Every invoice as report rows, newest first. Unbounded; for tests and consoles."
-  def invoices do
-    Repo.all(from i in Invoice.kept(), order_by: [desc: i.invoice_date, desc: i.id])
-    |> Enum.map(&to_row/1)
-  end
-
-  @doc "The invoices matching `filters` as report rows, newest first."
-  def invoices(filters) when is_map(filters) do
-    filters
-    |> query()
-    |> order_by([i], desc: i.invoice_date, desc: i.id)
-    |> Repo.all()
-    |> Enum.map(&to_row/1)
-  end
 
   @doc "Runs `fun` over the filtered rows as a stream, inside a transaction."
   def stream_rows(filters, fun) when is_map(filters) and is_function(fun, 1) do
@@ -55,8 +26,8 @@ defmodule QuantumBilling.Reports do
     )
   end
 
-  @doc "The query behind every report, with `filters` applied."
-  def query(filters) when is_map(filters) do
+  # The query behind every report, with `filters` applied.
+  defp query(filters) when is_map(filters) do
     # Binned invoices are excluded from every report.
     Invoice.kept()
     |> filter_dates(range_bounds(filters[:date_range]))
@@ -94,186 +65,6 @@ defmodule QuantumBilling.Reports do
     do: where(query, [i], coalesce(i.cess_amount, 0) == 0)
 
   defp filter_report_type(query, _all_or_sales_register), do: query
-
-  @doc "Every report figure for `filters`, computed by the database."
-  def aggregate(filters) when is_map(filters) do
-    months = monthly_breakdown(filters)
-    totals = totals(filters)
-
-    %{
-      summary: %{
-        count: totals.count,
-        taxable_value: totals.taxable_value,
-        tax_amount: totals.tax_amount,
-        invoice_value: totals.taxable_value + totals.tax_amount,
-        count_delta: month_delta(months, & &1.count),
-        taxable_delta: month_delta(months, & &1.taxable_value),
-        tax_delta: month_delta(months, & &1.tax_amount),
-        invoice_delta: month_delta(months, &(&1.taxable_value + &1.tax_amount))
-      },
-      trend: Enum.map(months, &%{label: &1.label, value: &1.taxable_value + &1.tax_amount}),
-      breakdown: breakdown_rows(status_counts(filters)),
-      tax_rows: tax_rows(filters),
-      top_clients: top_client_rows(filters),
-      total_count: totals.count
-    }
-  end
-
-  @doc "Row count and money totals for the filtered set."
-  def totals(filters) when is_map(filters) do
-    filters
-    |> query()
-    |> select([i], %{
-      count: count(i.id),
-      taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
-      tax_amount:
-        type(
-          coalesce(
-            sum(
-              coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0) +
-                coalesce(i.vat_amount, 0)
-            ),
-            0
-          ),
-          :integer
-        )
-    })
-    |> Repo.one()
-    |> case do
-      nil -> %{count: 0, taxable_value: 0, tax_amount: 0}
-      totals -> totals
-    end
-  end
-
-  @doc "Per-month totals for the filtered set, oldest first, with empty months as zeros."
-  def monthly_breakdown(filters, today \\ nil) when is_map(filters) do
-    rows =
-      filters
-      |> query()
-      |> group_by([i], fragment("date_trunc('month', ?)", i.invoice_date))
-      |> order_by([i], asc: fragment("date_trunc('month', ?)", i.invoice_date))
-      |> select([i], %{
-        month: fragment("date_trunc('month', ?)", i.invoice_date),
-        count: count(i.id),
-        taxable_value: type(coalesce(sum(i.taxable_value), 0), :integer),
-        tax_amount:
-          type(
-            coalesce(
-              sum(
-                coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                  coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0) +
-                  coalesce(i.vat_amount, 0)
-              ),
-              0
-            ),
-            :integer
-          )
-      })
-      |> Repo.all()
-
-    fill_months(rows, range_bounds(filters[:date_range], today), today)
-  end
-
-  # Fills empty months so the chart axis is continuous; [] when there are no rows.
-  defp fill_months([], _bounds, _today), do: []
-
-  defp fill_months(rows, bounds, today) do
-    billed = Map.new(rows, &{year_month(to_date(&1.month)), &1})
-
-    rows
-    |> chart_months(bounds, today)
-    |> Enum.map(fn month ->
-      row = Map.get(billed, year_month(month))
-
-      %{
-        month: month,
-        label: Calendar.strftime(month, "%b"),
-        count: (row && row.count) || 0,
-        taxable_value: (row && row.taxable_value) || 0,
-        tax_amount: (row && row.tax_amount) || 0
-      }
-    end)
-  end
-
-  # The selected range, capped at the current month and at @trend_months.
-  defp chart_months(rows, bounds, today) do
-    today = today || Date.utc_today()
-
-    first =
-      case bounds do
-        {%Date{} = from, _to} -> Date.beginning_of_month(from)
-        {nil, _to} -> rows |> List.first() |> billed_month()
-      end
-
-    last =
-      case bounds do
-        {_from, %Date{} = to} -> Enum.min([Date.beginning_of_month(to), month_start(today)], Date)
-        {_from, nil} -> rows |> List.last() |> billed_month() |> min_month(month_start(today))
-      end
-
-    case {first, last} do
-      {nil, _} -> []
-      {_, nil} -> []
-      {first, last} -> first |> month_starts(last) |> Enum.take(-@trend_months)
-    end
-  end
-
-  defp billed_month(nil), do: nil
-  defp billed_month(row), do: row.month |> to_date() |> month_start()
-
-  defp min_month(nil, _ceiling), do: nil
-  defp min_month(month, ceiling), do: Enum.min([month, ceiling], Date)
-
-  defp month_start(date), do: Date.beginning_of_month(date)
-  defp year_month(date), do: {date.year, date.month}
-
-  defp month_starts(first, last) do
-    Stream.iterate(first, &next_month/1)
-    |> Enum.take_while(&(Date.compare(&1, last) != :gt))
-  end
-
-  defp next_month(%Date{year: year, month: 12}), do: Date.new!(year + 1, 1, 1)
-  defp next_month(%Date{year: year, month: month}), do: Date.new!(year, month + 1, 1)
-
-  defp to_date(%Date{} = date), do: date
-  defp to_date(%NaiveDateTime{} = naive), do: NaiveDateTime.to_date(naive)
-  defp to_date(%DateTime{} = datetime), do: DateTime.to_date(datetime)
-
-  defp month_delta(months, measure) do
-    case Enum.take(months, -2) do
-      [previous, current] ->
-        previous_value = measure.(previous)
-
-        if previous_value == 0 do
-          nil
-        else
-          (measure.(current) - previous_value) / previous_value * 100
-        end
-
-      _fewer_than_two_months ->
-        nil
-    end
-  end
-
-  defp status_counts(filters) do
-    filters
-    |> query()
-    |> group_by([i], i.status)
-    |> select([i], {i.status, count(i.id)})
-    |> Repo.all()
-    |> Map.new()
-  end
-
-  defp breakdown_rows(counts) do
-    [
-      %{label: "E-Invoice Generated", value: counts["E-Invoice Generated"] || 0, tone: :strong},
-      %{label: "Pending", value: counts["Pending E-Invoice"] || 0, tone: :medium},
-      %{label: "Failed", value: counts["E-Invoice Failed"] || 0, tone: :soft},
-      %{label: "Cancelled", value: counts["Cancelled"] || 0, tone: :faint}
-    ]
-    |> Enum.reject(&(&1.value == 0))
-  end
 
   # Same rule as to_row/1, in SQL.
   @tax_type_sql """
@@ -374,15 +165,12 @@ defmodule QuantumBilling.Reports do
   def any_vat?(filters) when is_map(filters),
     do: filters |> query() |> where([i], i.tax_regime == "vat") |> Repo.exists?()
 
-  @doc "Tax rows by type plus a totals row (`aggregate/1`'s `:tax_rows`)."
+  @doc "One row per tax type (and VAT rate), then a totals row. `nil` means not applicable."
   def tax_rows(filters) when is_map(filters),
     do: tax_rows_from(tax_type_totals(filters), vat_rate_totals(filters))
 
-  @doc "The `limit` clients with the highest invoice value (`aggregate/1`'s `:top_clients`)."
-  def top_client_totals(filters, limit \\ 5) when is_map(filters),
-    do: top_client_rows(filters, limit)
-
-  defp top_client_rows(filters, limit \\ 5) do
+  @doc "The `limit` clients with the highest invoice value, highest first."
+  def top_client_totals(filters, limit \\ 5) when is_map(filters) do
     filters
     |> query()
     |> group_by([i], i.client_name)
@@ -410,10 +198,8 @@ defmodule QuantumBilling.Reports do
     |> Enum.map(fn row -> %{client: row.client || "Unknown Client", value: row.value} end)
   end
 
-  @doc """
-  Converts an `Invoice` struct or map into a report row.
-  """
-  def to_row(%Invoice{} = invoice) do
+  # An invoice as an export row. Its tax type follows the same rule as @tax_type_sql.
+  defp to_row(%Invoice{} = invoice) do
     tax_type =
       cond do
         Invoice.vat?(invoice) ->
@@ -456,165 +242,6 @@ defmodule QuantumBilling.Reports do
     }
   end
 
-  def to_row(row) when is_map(row), do: row
-
-  @doc """
-  Narrows `invoices` by the active filters. "All …" options match everything.
-  """
-  def filter(invoices, filters) do
-    {from, to} = range_bounds(filters[:date_range])
-
-    invoices
-    |> Enum.filter(&within?(&1.date, from, to))
-    |> Enum.filter(&matches?(&1.status, filters[:status], "All Status"))
-    |> Enum.filter(&matches?(&1.client, filters[:client], "All Clients"))
-    |> Enum.filter(&matches_report_type?(&1, filters[:report_type]))
-    |> Enum.filter(&matches_gstin?(&1, filters[:gstin]))
-  end
-
-  defp within?(_date, nil, nil), do: true
-
-  defp within?(date, from, to),
-    do: Date.compare(date, from) != :lt and Date.compare(date, to) != :gt
-
-  defp matches?(_value, nil, _all), do: true
-  defp matches?(_value, all, all), do: true
-  defp matches?(value, filter, _all), do: value == filter
-
-  defp matches_report_type?(_row, nil), do: true
-  defp matches_report_type?(_row, "All Reports"), do: true
-  defp matches_report_type?(_row, "Sales Register"), do: true
-  defp matches_report_type?(row, "Tax Liability"), do: row.status == "E-Invoice Generated"
-  defp matches_report_type?(row, "ITC Summary"), do: row.cess == 0
-  defp matches_report_type?(_row, _other), do: true
-
-  defp matches_gstin?(_row, nil), do: true
-  defp matches_gstin?(_row, ""), do: true
-
-  defp matches_gstin?(row, gstin) do
-    String.contains?(String.upcase(row.gstin), String.upcase(String.trim(gstin)))
-  end
-
-  @doc "Totals for the metric cards, each with a month-over-month delta."
-  def summary(invoices) when is_list(invoices) do
-    taxable = sum_by(invoices, & &1.taxable_value)
-    tax = sum_by(invoices, &row_tax/1)
-
-    %{
-      count: length(invoices),
-      taxable_value: taxable,
-      tax_amount: tax,
-      invoice_value: taxable + tax,
-      count_delta: delta(invoices, fn rows -> length(rows) end),
-      taxable_delta: delta(invoices, &sum_by(&1, fn r -> r.taxable_value end)),
-      tax_delta: delta(invoices, &sum_by(&1, fn r -> row_tax(r) end)),
-      invoice_delta: delta(invoices, &sum_by(&1, fn r -> r.taxable_value + row_tax(r) end))
-    }
-  end
-
-  defp row_tax(row), do: row.cgst + row.sgst + row.igst + row.cess + Map.get(row, :vat, 0)
-
-  defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
-
-  # nil when there is nothing to compare.
-  defp delta([], _measure), do: nil
-
-  defp delta(invoices, measure) do
-    months = invoices |> Enum.map(&month_key/1) |> Enum.uniq() |> Enum.sort()
-
-    case Enum.take(months, -2) do
-      [previous, current] ->
-        prev_value = invoices |> Enum.filter(&(month_key(&1) == previous)) |> measure.()
-        curr_value = invoices |> Enum.filter(&(month_key(&1) == current)) |> measure.()
-
-        if prev_value == 0, do: nil, else: (curr_value - prev_value) / prev_value * 100
-
-      _fewer_than_two_months ->
-        nil
-    end
-  end
-
-  defp month_key(row), do: {row.date.year, row.date.month}
-
-  @doc "Monthly invoice value for the trend chart, oldest first."
-  def monthly_trend(invoices) when is_list(invoices) do
-    invoices
-    |> Enum.group_by(&month_key/1)
-    |> Enum.sort_by(fn {key, _rows} -> key end)
-    |> Enum.map(fn {{year, month}, rows} ->
-      %{
-        label: Calendar.strftime(Date.new!(year, month, 1), "%b"),
-        value: sum_by(rows, &(&1.taxable_value + row_tax(&1)))
-      }
-    end)
-  end
-
-  @doc "Invoice counts per status, in a fixed order. Empty statuses are dropped."
-  def status_breakdown(invoices) when is_list(invoices) do
-    counts = Enum.frequencies_by(invoices, & &1.status)
-
-    [
-      %{label: "E-Invoice Generated", value: counts["E-Invoice Generated"] || 0, tone: :strong},
-      %{label: "Pending", value: counts["Pending E-Invoice"] || 0, tone: :medium},
-      %{label: "Failed", value: counts["E-Invoice Failed"] || 0, tone: :soft},
-      %{label: "Cancelled", value: counts["Cancelled"] || 0, tone: :faint}
-    ]
-    |> Enum.reject(&(&1.value == 0))
-  end
-
-  @doc "One row per tax type plus a totals row. `nil` means not applicable."
-  def tax_summary(invoices) when is_list(invoices) do
-    groups = Enum.group_by(invoices, & &1.tax_type)
-
-    rows =
-      [
-        tax_row(groups["CGST + SGST"], "CGST + SGST", :intra),
-        tax_row(groups["IGST"], "IGST", :inter),
-        tax_row(groups["CESS"], "CESS", :cess)
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    rows = rows ++ vat_rows(breakdown_totals(groups["VAT"] || []))
-
-    rows ++ [totals_row(rows)]
-  end
-
-  # The same per-rate totals as vat_rate_totals/1, from report rows.
-  defp breakdown_totals(rows) do
-    rows
-    |> Enum.flat_map(&Map.get(&1, :tax_breakdown, []))
-    |> Enum.group_by(&{&1["name"], &1["rate_bp"] || 0})
-    |> Enum.map(fn {{name, rate_bp}, lines} ->
-      %{
-        name: name,
-        rate_bp: rate_bp,
-        taxable: sum_by(lines, &(&1["taxable"] || 0)),
-        tax: sum_by(lines, &(&1["tax"] || 0))
-      }
-    end)
-  end
-
-  defp tax_row(nil, _label, _kind), do: nil
-  defp tax_row([], _label, _kind), do: nil
-
-  defp tax_row(rows, label, kind) do
-    cgst = sum_by(rows, & &1.cgst)
-    sgst = sum_by(rows, & &1.sgst)
-    igst = sum_by(rows, & &1.igst)
-    cess = sum_by(rows, & &1.cess)
-
-    %{
-      label: label,
-      taxable_value: sum_by(rows, & &1.taxable_value),
-      cgst: if(kind == :intra, do: cgst),
-      sgst: if(kind == :intra, do: sgst),
-      igst: if(kind == :inter, do: igst),
-      vat: nil,
-      total_tax: cgst + sgst + igst + cess,
-      total?: false
-    }
-  end
-
   defp totals_row(rows) do
     %{
       label: "Total",
@@ -636,18 +263,7 @@ defmodule QuantumBilling.Reports do
     end
   end
 
-  @doc """
-  The five clients with the highest total invoice value, descending.
-  """
-  def top_clients(invoices, limit \\ 5) when is_list(invoices) do
-    invoices
-    |> Enum.group_by(& &1.client)
-    |> Enum.map(fn {client, rows} ->
-      %{client: client, value: sum_by(rows, &(&1.taxable_value + row_tax(&1)))}
-    end)
-    |> Enum.sort_by(& &1.value, :desc)
-    |> Enum.take(limit)
-  end
+  defp sum_by(rows, fun), do: Enum.reduce(rows, 0, fn row, acc -> acc + fun.(row) end)
 
   @doc """
   Resolves a named range to `{from, to}`, or `{nil, nil}` for "All Time".
@@ -704,51 +320,4 @@ defmodule QuantumBilling.Reports do
       gstin: ""
     }
   end
-
-  def report_types, do: @report_types
-  def statuses, do: ["All Status" | @statuses]
-
-  @doc """
-  Names for the client filter: "All Clients", then distinct names from
-  clients and invoices, sorted and limited to `client_name_limit/0`.
-
-  The invoice side is a skip scan over `invoices_client_name_index`, one probe
-  per distinct name.
-  """
-  def client_names do
-    # Raw SQL skips Ecto's prefix, so the schema is named here.
-    schema = Repo.business_schema!()
-
-    %{rows: rows} =
-      Repo.query!(
-        """
-        WITH RECURSIVE invoice_names(name, n) AS (
-          (SELECT client_name, 1 FROM "#{schema}".invoices
-           WHERE deleted_at IS NULL AND client_name > ''
-           ORDER BY client_name LIMIT 1)
-          UNION ALL
-          SELECT (SELECT i.client_name FROM "#{schema}".invoices i
-                  WHERE i.deleted_at IS NULL AND i.client_name > p.name
-                  ORDER BY i.client_name LIMIT 1),
-                 p.n + 1
-          FROM invoice_names p
-          WHERE p.name IS NOT NULL AND p.n < $1
-        )
-        SELECT name FROM (
-          SELECT name FROM invoice_names WHERE name IS NOT NULL
-          UNION
-          (SELECT name FROM "#{schema}".clients WHERE deleted_at IS NULL AND name > ''
-           ORDER BY name LIMIT $1)
-        ) names
-        ORDER BY name
-        LIMIT $1
-        """,
-        [@client_name_limit]
-      )
-
-    ["All Clients" | List.flatten(rows)]
-  end
-
-  @doc "How many names the client filter offers before it stops listing them."
-  def client_name_limit, do: @client_name_limit
 end

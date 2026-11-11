@@ -41,7 +41,4 @@ defmodule QuantumBilling.Businesses.Business do
 
     if slug == "", do: "business", else: slug
   end
-
-  @doc "Whether the business has been archived."
-  def archived?(%__MODULE__{archived_at: archived_at}), do: archived_at != nil
 end

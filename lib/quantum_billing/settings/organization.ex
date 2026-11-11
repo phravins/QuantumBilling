@@ -278,14 +278,6 @@ defmodule QuantumBilling.Settings.Organization do
     Enum.reduce(@write_only, organization, &Map.put(&2, &1, nil))
   end
 
-  @doc "Whether `field` currently holds a stored credential."
-  def secret_present?(%__MODULE__{} = organization, field) when field in @write_only do
-    case Map.get(organization, field) do
-      value when is_binary(value) -> String.trim(value) != ""
-      _absent -> false
-    end
-  end
-
   # A blank secret field means "unchanged"; the form never shows the stored value.
   defp keep_stored_secrets(changeset) do
     Enum.reduce(@write_only, changeset, fn field, acc ->
@@ -402,18 +394,6 @@ defmodule QuantumBilling.Settings.Organization do
       _present -> GST.validate_gstin(changeset, :ewb_transporter_id)
     end
   end
-
-  @doc "Fields belonging to `section`, for building the form."
-  def fields(:general), do: @general
-  def fields(:invoice), do: @invoice
-  def fields(:e_way_bill), do: @e_way_bill
-  def fields(:tax), do: @tax
-  def fields(:notifications), do: @notifications
-  def fields(:preferences), do: @preferences
-  def fields(:customization), do: @customization
-  def fields(:smtp), do: @smtp
-  def fields(:integrations), do: @integrations
-  def fields(:security), do: @security
 
   def gst_rates, do: @gst_rates
   def currencies, do: @currencies

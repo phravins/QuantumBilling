@@ -15,8 +15,6 @@ defmodule QuantumBilling.Calendars.Connection do
   alias QuantumBilling.Encrypted
   alias QuantumBilling.Webhooks.UrlGuard
 
-  @providers ~w(google caldav feed)
-
   schema "calendar_connections" do
     field :provider, :string
     field :secret, Encrypted.Secret, redact: true
@@ -34,8 +32,6 @@ defmodule QuantumBilling.Calendars.Connection do
 
     timestamps(type: :utc_datetime)
   end
-
-  def providers, do: @providers
 
   def caldav_changeset(%__MODULE__{} = connection, attrs) do
     connection

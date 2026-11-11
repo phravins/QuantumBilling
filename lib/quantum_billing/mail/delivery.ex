@@ -46,7 +46,4 @@ defmodule QuantumBilling.Mail.Delivery do
     |> validate_inclusion(:status, @statuses)
     |> check_constraint(:status, name: :email_deliveries_status_known)
   end
-
-  def statuses, do: @statuses
-  def kinds, do: @kinds
 end

@@ -96,11 +96,6 @@ defmodule QuantumBilling.Audit do
     %{rows: rows, total: total, page: page, per_page: per_page, total_pages: total_pages}
   end
 
-  @doc "The distinct actions in the trail, for the filter control."
-  def actions do
-    Repo.all(from l in AuditLog, distinct: true, select: l.action, order_by: l.action)
-  end
-
   defp filter_equal(query, _field, blank) when blank in [nil, ""], do: query
 
   defp filter_equal(query, field, value),

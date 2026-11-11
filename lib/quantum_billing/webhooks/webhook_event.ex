@@ -28,6 +28,4 @@ defmodule QuantumBilling.Webhooks.WebhookEvent do
     |> validate_inclusion(:status, @statuses)
     |> unique_constraint([:provider, :event_id])
   end
-
-  def statuses, do: @statuses
 end

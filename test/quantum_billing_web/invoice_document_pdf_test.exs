@@ -127,7 +127,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentPdfTest do
           else: Application.delete_env(:quantum_billing, :pdf_chrome_path)
       end)
 
-      refute PDF.available?()
+      assert PDF.executable() == nil
       assert {:error, :no_renderer} = InvoicePdfGenerator.generate_pdf(invoice())
     end
   end

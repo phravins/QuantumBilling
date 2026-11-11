@@ -185,10 +185,4 @@ defmodule QuantumBilling.EWayBills.EWayBillFormTest do
       assert EWayBillForm.total_invoice_value(form) == 118
     end
   end
-
-  describe "generate_number/0" do
-    test "mints a 12-digit e-way bill number" do
-      assert EWayBillForm.generate_number() =~ ~r/^\d{12}$/
-    end
-  end
 end

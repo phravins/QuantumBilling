@@ -14,8 +14,6 @@ defmodule QuantumBilling.Webhooks.Endpoint do
   alias QuantumBilling.Encrypted
   alias QuantumBilling.Webhooks.UrlGuard
 
-  @formats ~w(thin legacy)
-
   schema "webhook_endpoints" do
     field :url, :string
     field :description, :string
@@ -35,8 +33,6 @@ defmodule QuantumBilling.Webhooks.Endpoint do
 
     timestamps(type: :utc_datetime)
   end
-
-  def formats, do: @formats
 
   @doc "What an owner may set: where, which events, and a note."
   def changeset(%__MODULE__{} = endpoint, attrs, event_types) do

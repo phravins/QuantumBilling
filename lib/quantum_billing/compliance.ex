@@ -138,9 +138,6 @@ defmodule QuantumBilling.Compliance do
 
   defp filed_on(_obligation), do: nil
 
-  @doc "Filing records. Always `[]` until a filings table exists."
-  def filings, do: []
-
   @doc """
   The obligations this business tracks, based on its registration.
 
@@ -267,7 +264,6 @@ defmodule QuantumBilling.Compliance do
 
   defp due_on(%Date{} = month, day), do: Date.new!(month.year, month.month, day)
 
-  def categories, do: @categories
   def statuses, do: @statuses
 
   @doc "The category a client names, or `:all`. A closed list, so no atoms are created."

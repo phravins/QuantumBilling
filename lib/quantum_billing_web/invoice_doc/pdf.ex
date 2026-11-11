@@ -46,9 +46,6 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
     end
   end
 
-  @doc "Whether a PDF can be produced at all."
-  def available?, do: executable() != nil
-
   @doc """
   The browser to use, or `nil`. Looked up per call, since releases run elsewhere than they build.
   """

@@ -109,11 +109,6 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
     |> PDF.render(opts)
   end
 
-  @doc """
-  Whether `generate_pdf/2` can produce anything on this machine.
-  """
-  def pdf_available?, do: PDF.available?()
-
   def render("document.html", assigns) do
     ~H"""
     <!DOCTYPE html>

@@ -2,7 +2,7 @@ defmodule QuantumBillingWeb.LiveRefresh do
   @moduledoc """
   Throttles page reloads triggered by change broadcasts.
 
-  The first change reloads at once and opens a `window_ms/0` window; later
+  The first change reloads at once and opens a two-second window; later
   changes in it only mark the page stale, and it reloads once when the window
   closes. A burst costs one reload per window, and the last always follows the
   last change.
@@ -17,9 +17,6 @@ defmodule QuantumBillingWeb.LiveRefresh do
   import Phoenix.Component, only: [assign: 3]
 
   @window_ms 2_000
-
-  @doc "How long a burst of changes is gathered before the next reload."
-  def window_ms, do: @window_ms
 
   @doc "A change arrived: reload now, or mark the page stale until the window closes."
   def changed(socket, reload) when is_function(reload, 1) do

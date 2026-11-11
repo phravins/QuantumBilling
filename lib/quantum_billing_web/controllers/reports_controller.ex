@@ -35,7 +35,7 @@ defmodule QuantumBillingWeb.ReportsController do
     if filters.report_type == "Sales Register" do
       stream_sales_register(conn, filters)
     else
-      tax_rows = filters |> Reports.aggregate() |> Map.fetch!(:tax_rows)
+      tax_rows = Reports.tax_rows(filters)
       vat? = Enum.any?(tax_rows, &(&1.vat != nil))
 
       send_download(conn, {:binary, to_csv(headers(vat?), tax_summary_rows(tax_rows, vat?))},

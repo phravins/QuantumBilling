@@ -12,7 +12,6 @@ defmodule QuantumBilling.ClientBinTest do
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Recurring
   alias QuantumBilling.Recurring.RecurringProfile
-  alias QuantumBilling.Reports
 
   @gstin "27AABCA1234A1Z5"
 
@@ -120,16 +119,6 @@ defmodule QuantumBilling.ClientBinTest do
       # An invoice that was raised for it and is being edited goes on showing
       # its own client, as it does for one the search does not match.
       assert gone.id in Enum.map(Clients.picker_options(nil, gone.id), & &1.id)
-    end
-
-    test "takes the client's name out of the report filter" do
-      unregistered_fixture("Kept Traders")
-      binned(client_fixture())
-
-      names = Reports.client_names()
-
-      assert "Kept Traders" in names
-      refute "Acme Traders" in names
     end
 
     test "gives its GSTIN up, so the customer can be added again" do

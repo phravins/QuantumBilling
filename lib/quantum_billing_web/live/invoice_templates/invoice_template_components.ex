@@ -36,9 +36,6 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
     {:spacer, "Spacer", "hero-arrows-up-down"}
   ]
 
-  @doc "Every block a user can add, with the label and icon the palette shows."
-  def palette, do: @palette
-
   @doc "The user-facing name of a block type."
   def label_for(type) do
     Enum.find_value(@palette, to_string(type), fn {t, label, _icon} ->

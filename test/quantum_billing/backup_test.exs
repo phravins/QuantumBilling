@@ -101,17 +101,6 @@ defmodule QuantumBilling.BackupTest do
       # Configuration that is not a credential still travels.
       assert json =~ "rzp_live_travels"
     end
-
-    test "counts what is in a backup" do
-      client = client_fixture()
-      invoice_fixture(client)
-
-      counts = Backup.summarize(Jason.decode!(Backup.export_json()))
-
-      assert counts["clients"] == 1
-      assert counts["invoices"] == 1
-      assert counts["invoice_items"] == 1
-    end
   end
 
   describe "design assets" do
@@ -139,7 +128,7 @@ defmodule QuantumBilling.BackupTest do
         ])
 
       assert {:ok, %{design_assets: 1}} = Backup.restore_json(Jason.encode!(data))
-      assert QuantumBilling.DesignAssets.list_paths() == [@asset]
+      assert QuantumBilling.DesignAssets.recorded?(@asset)
     end
   end
 

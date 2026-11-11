@@ -99,12 +99,12 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
       # One live token per mailbox: two would mean two accounts from one
       # decision.
       assert length(Accounts.list_invitations(Businesses.default!())) == 1
-      assert Accounts.registration_open?(second)
+      assert Accounts.invited_email(second) == "new@example.com"
     end
 
     test "withdrawing an invitation kills the link", %{conn: conn, user: owner} do
       token = invitation_token_fixture("new@example.com", invited_by: owner)
-      assert Accounts.registration_open?(token)
+      assert Accounts.invited_email(token) == "new@example.com"
 
       {:ok, view, _html} = live(conn, ~p"/settings/team")
       [invitation] = Accounts.list_invitations(Businesses.default!())
@@ -112,7 +112,7 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
       html = render_click(view, "revoke", %{"id" => to_string(invitation.id)})
 
       assert html =~ "withdrawn"
-      refute Accounts.registration_open?(token)
+      refute Accounts.invited_email(token)
     end
   end
 

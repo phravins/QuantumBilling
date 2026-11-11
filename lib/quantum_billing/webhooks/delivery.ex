@@ -8,8 +8,6 @@ defmodule QuantumBilling.Webhooks.Delivery do
   """
   use Ecto.Schema
 
-  @statuses ~w(pending succeeded failed cancelled)
-
   schema "webhook_deliveries" do
     field :event_id, :string
     field :event_type, :string
@@ -25,6 +23,4 @@ defmodule QuantumBilling.Webhooks.Delivery do
 
     timestamps(type: :utc_datetime)
   end
-
-  def statuses, do: @statuses
 end

@@ -33,11 +33,6 @@ defmodule QuantumBilling.CustomFields do
   @doc "The objects that take custom fields, as `{object, label}`."
   def objects, do: Enum.map(@objects, fn {object, label, _table} -> {object, label} end)
 
-  @doc "The display name of `object`."
-  def object_label(object) do
-    Enum.find_value(@objects, object, fn {key, label, _table} -> if key == object, do: label end)
-  end
-
   def max_active, do: @max_active
 
   @doc """
@@ -463,22 +458,5 @@ defmodule QuantumBilling.CustomFields do
 
   defp contains(query, %{key: key}, value) do
     where(query, [r], fragment("? @> ?", r.custom_fields, type(^%{key => value}, :map)))
-  end
-
-  @doc "The error for the field `key` on a changeset, if any."
-  def error_for(%Ecto.Changeset{errors: errors}, key) do
-    Enum.find_value(errors, fn
-      {:custom_fields, {message, opts}} -> if opts[:key] == key, do: message
-      _other -> nil
-    end)
-  end
-
-  @doc "The starting values for a new record's form: each field's default."
-  def defaults(definitions) do
-    for definition <- definitions,
-        default = FieldDefinition.default(definition),
-        not is_nil(default),
-        into: %{},
-        do: {definition.key, default}
   end
 end

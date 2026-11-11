@@ -90,13 +90,11 @@ defmodule QuantumBilling.EWayBillBinTest do
       bill = bill_fixture(invoice)
 
       assert Invoices.awaiting_e_way_bill() == []
-      assert Invoices.count_requiring_e_way_bill() == 0
       assert {:error, :already_issued} = EWayBills.generate_e_way_bill(invoice, %{})
 
       binned(bill)
 
       assert Enum.map(Invoices.awaiting_e_way_bill(), & &1.id) == [invoice.id]
-      assert Invoices.count_requiring_e_way_bill() == 1
 
       assert {:ok, %EWayBill{} = second} =
                EWayBills.generate_e_way_bill(invoice, %{

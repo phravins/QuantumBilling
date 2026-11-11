@@ -1,11 +1,10 @@
 defmodule QuantumBilling.InvoiceNotifierTest do
   use QuantumBilling.DataCase, async: true
-  import Swoosh.TestAssertions
 
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices.Invoice
 
-  test "deliver_invoice_pdf/2 sends email with PDF attachment" do
+  test "build_email/2 addresses the invoice email and attaches the document" do
     invoice = %Invoice{
       id: 1,
       invoice_number: "INV-8801",
@@ -15,11 +14,10 @@ defmodule QuantumBilling.InvoiceNotifierTest do
       due_date: ~D[2026-03-31]
     }
 
-    assert {:ok, _result} = InvoiceNotifier.deliver_invoice_pdf("client@example.com", invoice)
+    assert {:ok, email} = InvoiceNotifier.build_email("client@example.com", invoice)
 
-    assert_email_sent(
-      to: [{"", "client@example.com"}],
-      subject: "Tax Invoice INV-8801 from Quantum Billing Tech Solutions"
-    )
+    assert email.to == [{"", "client@example.com"}]
+    assert email.subject == "Tax Invoice INV-8801 from Quantum Billing Tech Solutions"
+    assert [%Swoosh.Attachment{filename: "INV-8801." <> _}] = email.attachments
   end
 end

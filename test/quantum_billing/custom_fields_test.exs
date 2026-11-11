@@ -272,7 +272,7 @@ defmodule QuantumBilling.CustomFieldsTest do
                  "custom_fields" => %{"limit" => "lots"}
                })
 
-      assert CustomFields.error_for(changeset, "limit") =~ "must be an amount"
+      assert error_for(changeset, "limit") =~ "must be an amount"
     end
 
     test "a blank value removes the key; attrs without custom_fields leave them alone" do
@@ -310,7 +310,7 @@ defmodule QuantumBilling.CustomFieldsTest do
                  "custom_fields" => %{"region_code" => " "}
                })
 
-      assert CustomFields.error_for(changeset, "region_code") =~ "can't be blank"
+      assert error_for(changeset, "region_code") =~ "can't be blank"
     end
 
     test "invoice items carry their own fields", %{owner: owner} do
@@ -468,5 +468,12 @@ defmodule QuantumBilling.CustomFieldsTest do
       assert names(%{"note" => "x"}) == all
       assert names(%{"region" => "not-a-choice"}) == all
     end
+  end
+
+  defp error_for(%Ecto.Changeset{errors: errors}, key) do
+    Enum.find_value(errors, fn
+      {:custom_fields, {message, opts}} -> if opts[:key] == key, do: message
+      _other -> nil
+    end)
   end
 end

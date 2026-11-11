@@ -26,9 +26,9 @@ defmodule QuantumBillingWeb.ReportsControllerTest do
       body = conn |> get(~p"/reports/export?#{[date_range: "This Year"]}") |> response(200)
 
       expected =
-        Reports.invoices()
-        |> Reports.filter(%{date_range: "This Year"})
-        |> Reports.tax_summary()
+        Reports.default_filters()
+        |> Map.put(:date_range, "This Year")
+        |> Reports.tax_rows()
         |> Enum.find(& &1.total?)
 
       total_line = body |> String.split("\r\n") |> Enum.find(&String.starts_with?(&1, "Total,"))

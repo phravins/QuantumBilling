@@ -354,11 +354,6 @@ defmodule QuantumBilling.HsnFinder do
     Enum.find(entries(), &(&1.code == code))
   end
 
-  @doc "Every category represented in the curated set, for display grouping."
-  def categories do
-    @entries |> Enum.map(& &1.category) |> Enum.uniq() |> Enum.sort()
-  end
-
   @doc "The date the current rate structure took effect."
   def gst_2_0_date, do: @gst_2_0_date
 end

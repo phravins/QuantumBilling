@@ -266,9 +266,6 @@ defmodule QuantumBilling.Invoices.Invoice do
     from i in query, where: not is_nil(i.deleted_at)
   end
 
-  @doc "Whether this invoice is in the Bin."
-  def binned?(%__MODULE__{deleted_at: deleted_at}), do: not is_nil(deleted_at)
-
   @doc "Moves an invoice to the Bin."
   def bin_changeset(invoice), do: change(invoice, deleted_at: DateTime.utc_now(:second))
 
@@ -339,9 +336,6 @@ defmodule QuantumBilling.Invoices.Invoice do
     }
   end
 
-  @doc "GST totals for `items`; `intra_state?` picks CGST/SGST or IGST. See `QuantumBilling.Tax.GST`."
-  defdelegate totals(items, intra_state?), to: QuantumBilling.Tax.GST
-
   @doc "Whether the supply is within the company's own state. Intra-state if the state is unset."
   def intra_state?(%Ecto.Changeset{} = changeset) do
     intra_state?(get_field(changeset, :place_of_supply), get_field(changeset, :company_state))
@@ -392,5 +386,4 @@ defmodule QuantumBilling.Invoices.Invoice do
 
   def invoice_types, do: @invoice_types
   def payment_terms, do: Enum.map(@payment_terms, fn {label, _days} -> label end)
-  def statuses, do: @statuses
 end

@@ -75,9 +75,6 @@ defmodule QuantumBilling.Compliance.Task do
     end
   end
 
-  @doc "How often a task can repeat."
-  def repeats, do: @repeats
-
   defp trim(value) when is_binary(value), do: String.trim(value)
   defp trim(value), do: value
 

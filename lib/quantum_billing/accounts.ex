@@ -163,11 +163,6 @@ defmodule QuantumBilling.Accounts do
   @doc "Whether the install has no users yet. Checked, never cached."
   def bootstrap?, do: not Repo.exists?(User)
 
-  @doc "Whether a stranger can register right now."
-  def registration_open?(invitation_token \\ nil) do
-    bootstrap?() or match?({:ok, _}, fetch_pending_invitation(invitation_token))
-  end
-
   @doc "The address an invitation was issued to, or `nil`."
   def invited_email(invitation_token) do
     case fetch_pending_invitation(invitation_token) do

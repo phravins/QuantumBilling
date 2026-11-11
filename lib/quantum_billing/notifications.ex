@@ -143,9 +143,6 @@ defmodule QuantumBilling.Notifications do
   @doc "How many notifications the bell holds."
   def feed_limit, do: @feed_limit
 
-  defdelegate kinds(), to: Notification
-  defdelegate severities(), to: Notification
-
   # Producers pass atom or string keys.
   defp normalize(attrs) when is_map(attrs) do
     Map.new(attrs, fn {key, value} -> {to_string(key), value} end)

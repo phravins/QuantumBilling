@@ -54,10 +54,4 @@ defmodule QuantumBilling.Notifications.Notification do
   end
 
   defp truncate(value, _limit), do: value
-
-  @doc "The kinds a notification may carry."
-  def kinds, do: @kinds
-
-  @doc "The severities a notification may carry."
-  def severities, do: @severities
 end

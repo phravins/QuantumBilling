@@ -34,11 +34,6 @@ defmodule QuantumBilling.DesignAssets do
     end
   end
 
-  @doc "Every recorded path, oldest first."
-  def list_paths do
-    Repo.all(from a in DesignAsset, order_by: [asc: a.id], select: a.path)
-  end
-
   @doc """
   Whether `path` is one of this business's design images. Files are shared by hash, so check before deleting.
   """

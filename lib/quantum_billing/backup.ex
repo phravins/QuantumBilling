@@ -215,19 +215,6 @@ defmodule QuantumBilling.Backup do
   end
 
   @doc """
-  Counts of what a backup contains, for the confirmation shown before a restore.
-  """
-  def summarize(%{} = data) do
-    data = upgrade(data)
-
-    Map.new(@sections, fn {key, _schema, _fields} ->
-      name = Atom.to_string(key)
-
-      {name, data |> Map.get(name, []) |> length()}
-    end)
-  end
-
-  @doc """
   Replaces the business data with `json_string` in one transaction: `{:ok, counts}` or `{:error, message}`.
   """
   def restore_json(json_string) when is_binary(json_string) do

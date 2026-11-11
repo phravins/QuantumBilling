@@ -259,14 +259,4 @@ defmodule QuantumBilling.InvoicesPageTest do
       assert Invoices.totals().outstanding == 1_000_000
     end
   end
-
-  describe "recent_invoices/1" do
-    test "returns the newest few, not the first few of everything" do
-      insert_invoice(%{invoice_number: "INV-OLD", invoice_date: ~D[2025-01-01]})
-      insert_invoice(%{invoice_number: "INV-NEW", invoice_date: ~D[2026-12-31]})
-
-      assert [%{number: "INV-NEW"} | _] = Invoices.recent_invoices(2)
-      assert length(Invoices.recent_invoices(1)) == 1
-    end
-  end
 end

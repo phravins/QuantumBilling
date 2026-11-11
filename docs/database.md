@@ -104,7 +104,7 @@ A sign-in identity, separate from any business role.
 | `confirmed_at` | timestamp | Nullable | Email confirmation time. |
 | `full_name`, `phone`, `designation` | `varchar(255)` | Nullable | Account display information. |
 | `bio` | `text` | Nullable | Short About text from onboarding and the profile; at most 500 characters in the changeset. |
-| `onboarded_at` | timestamp | Nullable | Set by `Accounts.complete_onboarding/2` when the first-sign-in screens are finished or skipped. While `NULL`, sign-in and workspace pages send the user to `/onboarding`. Never cast from a form. |
+| `onboarded_at` | timestamp | Nullable | Set by `Accounts.complete_onboarding/1` when the first-sign-in screens are finished or skipped. While `NULL`, sign-in and workspace pages send the user to `/onboarding`. Never cast from a form. |
 | `banner_seed` | `bigint` | Nullable | Seed for the generated profile landscape; `NULL` uses the user ID. |
 | `totp_secret` | `bytea` | Nullable | Encrypted TOTP enrolment secret. |
 | `totp_confirmed_at` | timestamp | Nullable | A completed enrolment enables two-factor authentication. |

@@ -81,39 +81,6 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     end
   end
 
-  @doc """
-  A short summary of what a period contains, for the page offering the
-  download — so an empty month is visible before the file is opened.
-  """
-  def period_summary(period) do
-    with {:ok, %{month: month, year: year}} <- validate_period(period) do
-      from = Date.new!(year, month, 1)
-      to = Date.end_of_month(from)
-
-      summary =
-        Invoice.kept()
-        |> in_period(from, to)
-        |> select([i], %{
-          count: count(i.id),
-          value: type(coalesce(sum(i.grand_total), 0), :integer),
-          tax:
-            type(
-              coalesce(
-                sum(
-                  coalesce(i.cgst_amount, 0) + coalesce(i.sgst_amount, 0) +
-                    coalesce(i.igst_amount, 0) + coalesce(i.cess_amount, 0)
-                ),
-                0
-              ),
-              :integer
-            )
-        })
-        |> Repo.one()
-
-      {:ok, summary || %{count: 0, value: 0, tax: 0}}
-    end
-  end
-
   # Cancelled invoices are excluded; drafts are included because they hold a number in the series.
   defp in_period(query, from, to) do
     query

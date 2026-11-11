@@ -95,7 +95,6 @@ defmodule QuantumBilling.BinTest do
       assert Enum.map(Invoices.list_invoices(), & &1.id) == [kept.id]
       assert %{rows: [%{id: id}]} = Invoices.page()
       assert id == kept.id
-      assert Enum.map(Invoices.recent_invoices(), & &1.id) == [kept.id]
 
       assert Invoices.get_invoice(gone.id) == nil
       assert Invoices.get_invoice_by_number(gone.invoice_number) == nil
@@ -127,7 +126,6 @@ defmodule QuantumBilling.BinTest do
       binned(invoice_fixture())
 
       assert Enum.map(Invoices.awaiting_e_way_bill(), & &1.id) == [kept.id]
-      assert Invoices.count_requiring_e_way_bill() == 1
     end
 
     test "a note against a binned invoice no longer adjusts what is owed" do
@@ -176,14 +174,12 @@ defmodule QuantumBilling.BinTest do
 
       filters = Map.put(Reports.default_filters(), :date_range, "All Time")
 
-      assert Enum.map(Reports.invoices(), & &1.id) == [kept.id]
-      assert Enum.map(Reports.invoices(filters), & &1.id) == [kept.id]
-      assert %{count: 1, taxable_value: 10_000_000} = Reports.totals(filters)
-      assert Reports.aggregate(filters).total_count == 1
-      refute "Withdrawn Traders" in Reports.client_names()
+      assert {:ok, [kept.id]} == Reports.stream_rows(filters, &Enum.map(&1, fn row -> row.id end))
+      assert %{taxable_value: 10_000_000} = filters |> Reports.tax_rows() |> List.last()
+      refute "Withdrawn Traders" in Enum.map(Reports.top_client_totals(filters), & &1.client)
     end
 
-    test "a binned invoice is out of the GSTR-1 export and its summary" do
+    test "a binned invoice is out of the GSTR-1 export" do
       invoice_fixture(%{invoice_number: "KEPT-1"})
       binned(invoice_fixture(%{invoice_number: "BINNED-1"}))
 
@@ -191,8 +187,6 @@ defmodule QuantumBilling.BinTest do
 
       assert {:ok, json} = GSTNExporter.generate_gstr1_json(period)
       assert for(party <- json["b2b"], inv <- party["inv"], do: inv["inum"]) == ["KEPT-1"]
-
-      assert {:ok, %{count: 1, value: 11_800_000}} = GSTNExporter.period_summary(period)
     end
 
     test "a note against a binned invoice is out of the GSTR-1 export" do
@@ -263,7 +257,6 @@ defmodule QuantumBilling.BinTest do
 
       assert [%Invoice{id: id}] = Invoices.list_deleted_invoices()
       assert id == invoice.id
-      assert Invoices.count_deleted_invoices() == 1
 
       assert {:ok, %Invoice{deleted_at: nil}} = Invoices.restore_invoice(gone)
 

@@ -200,13 +200,6 @@ defmodule QuantumBilling.EWayBills.EWayBillForm do
     end)
   end
 
-  @doc """
-  Generates a 12-digit e-way bill number, the format the GST portal issues.
-  """
-  def generate_number do
-    Enum.map_join(1..12, fn _ -> Integer.to_string(:rand.uniform(10) - 1) end)
-  end
-
   @doc "Every castable field, in schema order."
   def all_fields, do: __MODULE__.__schema__(:fields) -- [:custom_fields]
 
