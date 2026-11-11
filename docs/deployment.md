@@ -1,6 +1,6 @@
 # Deployment and operations
 
-This guide covers the repository's OTP release workflow and operational data. Read [configuration](configuration.md), [database](database.md), and the [multi-business model](technical-architecture.md#multi-business-model) before upgrading an installation that holds existing data. Back up the database before the first migration that moves existing tables into `biz_1`.
+This guide covers release **v0.1.0**: the OTP release workflow, running it as a service behind a reverse proxy, versions and upgrades, and operational data. Read [configuration](configuration.md), [database](database.md), and the [multi-business model](technical-architecture.md#multi-business-model) before upgrading an installation that holds existing data. Back up the database before the first migration that moves existing tables into `biz_1`.
 
 ## Deployment shape
 
@@ -23,7 +23,9 @@ No Redis, proxy, object store, or separate worker service is needed. Each runnin
 
 ## OTP release
 
-The production host needs PostgreSQL 16 reachable over the network, system TLS trust, Chromium (or `PDF_CHROME_PATH`) and fonts for PDF rendering, and a persistent directory for `priv/static/uploads`. Build with Elixir 1.18.3 / OTP 27 on the same OS family as the target, from a configured build environment:
+The production host needs PostgreSQL 16 reachable over the network, system TLS trust, Chromium (or `PDF_CHROME_PATH`) and fonts for PDF rendering, and a persistent directory for `priv/static/uploads`. Build with Elixir 1.18.3 / OTP 27 on the same OS family as the target, from a configured build environment.
+
+Build from a clean checkout (a CI job or a fresh clone), not a working copy. The release copies `priv` whole, so a development `priv/static/uploads` would ship inside it.
 
 ```bash
 mix deps.get --only prod
@@ -49,6 +51,138 @@ _build/prod/rel/quantum_billing/bin/quantum_billing eval 'Application.ensure_all
 ```
 
 The release has no Mix executable, and production has no `/dev/mailbox` or `/dev/dashboard`; configure SMTP for registration and reset mail.
+
+## Run as a service
+
+These are starting points for one Linux host with systemd and nginx, and PostgreSQL on a private network. Replace `billing.example.com`, the paths and the certificate locations with your own.
+
+### Install and environment
+
+Copy `_build/prod/rel/quantum_billing` to `/opt/quantum_billing`, owned by an unprivileged `quantum_billing` user. Put the environment in a root-owned file with mode `0600`. systemd reads it before dropping privileges.
+
+```dotenv
+# /etc/quantum_billing/env: one VAR=value per line; no quotes are needed
+DATABASE_URL=ecto://quantum_billing:…@db.internal/quantum_billing
+DATABASE_SSL=true
+PHX_HOST=billing.example.com
+TRUSTED_PROXIES=127.0.0.1
+SECRET_KEY_BASE=…
+TOTP_ENCRYPTION_KEY=…
+SECRETS_ENCRYPTION_KEY=…
+SMTP_HOST=…
+```
+
+`PHX_HOST` must be the host name browsers use. LiveView refuses a websocket from any other origin, which leaves pages loading but not interactive. `TRUSTED_PROXIES` names the proxy so that client addresses reach the IP allowlist, rate limits and audit log. [Configuration](configuration.md) lists every variable.
+
+### systemd
+
+```ini
+# /etc/systemd/system/quantum_billing.service
+[Unit]
+Description=QuantumBilling
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=quantum_billing
+Group=quantum_billing
+WorkingDirectory=/opt/quantum_billing
+EnvironmentFile=/etc/quantum_billing/env
+ExecStart=/opt/quantum_billing/bin/server
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The unit does not migrate on start: a restart must never apply a migration nobody backed up for. Run migrations as their own step, with the same user and environment:
+
+```bash
+sudo systemd-run --pipe --wait --uid=quantum_billing \
+  -p EnvironmentFile=/etc/quantum_billing/env /opt/quantum_billing/bin/migrate
+sudo systemctl enable --now quantum_billing
+journalctl -u quantum_billing -f
+```
+
+systemd stops the release with SIGTERM, which shuts the VM down cleanly, so no `ExecStop` is needed.
+
+### Reverse proxy (nginx)
+
+```nginx
+# /etc/nginx/conf.d/quantum_billing.conf
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 80;
+  server_name billing.example.com;
+  return 301 https://billing.example.com$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name billing.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/billing.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/billing.example.com/privkey.pem;
+
+  location / {
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    # Set, never pass through: the app trusts these for HTTPS and the client IP.
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    # The LiveView websocket.
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 120s;
+  }
+}
+```
+
+The release listens on all interfaces, so the firewall must keep `PORT` closed to everything except the proxy (see [Host and network](#host-and-network)). Any proxy works if it does the same four things:
+
+- terminate TLS;
+- set `X-Forwarded-Proto`;
+- replace `X-Forwarded-For` with the peer address;
+- pass the websocket upgrade.
+
+## Versions and upgrades
+
+| What | Current | Where it is set |
+| --- | --- | --- |
+| Application release | **v0.1.0** | `version` in [`mix.exs`](../mix.exs) |
+| REST API | `/api/v1` paths, OpenAPI document 1.2.0 | [`openapi.json`](openapi.json), versioned on its own |
+| Business JSON backup | Format 3.0 (restores 2.0 and 2.1) | [Application JSON export](#application-json-export) |
+
+The release version names the release's application directory, `lib/quantum_billing-0.1.0`. It is also stated in the [README](../README.md) and the [docs index](README.md). `DocsVersionTest` fails until both, and the paths in this guide, match `mix.exs`.
+
+To make a release:
+
+1. Raise `version` in `mix.exs` and the version in the README, docs index and this guide. If the screens changed, retake the screenshots in [`assets/screenshots`](assets/screenshots).
+2. Run `mix precommit`.
+3. Commit, tag the commit (for example `git tag -a v0.2.0 -m "QuantumBilling 0.2.0"`), and build the release from that tag.
+
+While the major version is 0, any release may carry migrations that reshape or move data. Before upgrading, read the migrations of every version between the running one and the target. An older release may not understand the newer schema, so going back means restoring the backup, not starting the old build.
+
+Uploaded logos and design assets are stored in `priv/static/uploads` inside the versioned directory, so each new version starts without them. Keep them in a persistent directory and link it into every build you install:
+
+```bash
+# Once: move the current uploads out of the release.
+sudo install -d -o quantum_billing -g quantum_billing /var/lib/quantum_billing
+sudo mv /opt/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads /var/lib/quantum_billing/uploads
+
+# After installing each build (use that build's version in the path).
+sudo ln -sfn /var/lib/quantum_billing/uploads /opt/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads
+```
+
+A clean build has no `priv/static/uploads`, so the link takes its place. With the link in place, back up `/var/lib/quantum_billing/uploads` rather than the path given under [Full installation backup](#full-installation-backup).
 
 ## Migration and upgrade process
 
@@ -148,7 +282,7 @@ curl --fail http://localhost:4000/health
 
 The release logs to standard output; read them through the service manager that runs it (for example `journalctl -u quantum_billing`).
 
-`GET /health` uses the API pipeline, runs `SELECT 1` with a two-second timeout, and returns status/database/version JSON. It answers 503 with `"database": "unavailable"` when the database is unavailable; the underlying error is written to the server log only, because the endpoint is public. It verifies connectivity, not completed business workflows, external providers, queue drainage, or every schema's migration state.
+`GET /health` uses the API pipeline, runs `SELECT 1` with a two-second timeout, and returns `{"status":"ok","database":"ok"}`. It does not report the version. It answers 503 with `{"status":"error","database":"unavailable"}` when the database is unavailable; the underlying error is written to the server log only, because the endpoint is public. It verifies connectivity, not completed business workflows, external providers, queue drainage, or every schema's migration state.
 
 Development offers `/dev/dashboard` and `/dev/mailbox`; production disables these routes. Request logs include request IDs. `SlowQueryLogger` logs queries exceeding `SLOW_QUERY_MS` with query-source/timing information. Review provider errors and job states when asynchronous actions do not finish.
 
