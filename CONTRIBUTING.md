@@ -12,6 +12,76 @@ project's [MIT licence](LICENSE).
 **Found a security problem?** Don't open a public issue. See
 [Reporting a vulnerability](#reporting-a-vulnerability).
 
+## Winter of Code Social 2026
+
+QuantumBilling is a project in [Winter of Code Social](https://woc.codesocial.tech)
+2026. If you're contributing through the program, these steps apply on top of
+the rest of this guide.
+
+### Register
+
+Register at [woc.codesocial.tech](https://woc.codesocial.tech) before your
+first pull request. Merged pull requests from contributors who haven't
+registered don't earn points.
+
+### Claim an issue
+
+1. Find an issue labelled `level 1`, `level 2` or `level 3`. For your first
+   contribution, start with a
+   [`level 1` issue](https://github.com/phravins/QuantumBilling/issues?q=is%3Aissue+is%3Aopen+label%3A%22level+1%22).
+2. Comment on the issue to ask for it, and say briefly how you plan to solve it.
+3. Wait until a maintainer or mentor assigns it to you before you start.
+4. If there's no update from you for about a week, the issue may be reassigned
+   so someone else can pick it up.
+
+### Open your pull request
+
+1. Fork the repository, clone your fork, and create a branch from `main`.
+2. Make the change as described in [Making a change](#making-a-change), and run
+   `mix precommit`.
+3. Open a pull request against `main`. Link the issue with `Closes #123` (use
+   your issue's number) and fill in the description as described in
+   [Pull requests](#pull-requests).
+
+### Labels and points
+
+Maintainers and mentors add the labels; you don't need to. Each merged pull
+request gets the `wocs` label and one difficulty level:
+
+| Label | Points |
+| --- | --- |
+| `level 1` | 2 |
+| `level 2` | 5 |
+| `level 3` | 11 |
+
+The maintainer or mentors decide the level, and it's final once the pull
+request is merged.
+
+### Getting help
+
+Ask on the issue itself, or in the QuantumBilling post in **#find-a-project**
+on the [Code Social Discord](https://discord.gg/MSTNyRSPYW). Please keep
+questions there rather than in private messages, so others can learn from the
+answers.
+
+## AI policy
+
+AI tools are allowed, with these limits:
+
+- **Understand every line you submit.** Be ready to explain any part of your
+  change in review. If you can't, the pull request won't be merged.
+- **Say how you used AI** in the pull request description, for example "used
+  an assistant to draft the tests". "None" is fine too.
+- **You're responsible for correctness.** Test the change yourself, run
+  `mix precommit`, and follow the rules in this guide and in
+  [`AGENTS.md`](AGENTS.md). Generated code that breaks a data rule is treated
+  like any other code that breaks it.
+- **No bulk generated changes:** large rewrites, mass reformatting, or pull
+  requests that don't solve a real issue.
+
+Pull requests that break this policy will be closed, and repeated cases may be
+reported to Team Code Social.
+
 ## Before you start
 
 - **For anything beyond a small fix, open an issue first.** Describe the

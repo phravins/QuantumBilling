@@ -8,6 +8,8 @@ QuantumBilling is a billing application for businesses, built with Phoenix LiveV
 
 One installation serves many businesses. Each business keeps its books in its own PostgreSQL schema (`biz_1`, `biz_2`, …), while accounts, memberships and background jobs are shared in `public`.
 
+**Why it matters.** Small and medium businesses in India have to issue GST-correct invoices, register e-invoices and raise e-way bills. QuantumBilling gives them a free, open-source way to do that on a server they control, with their records kept in their own database.
+
 ## At a glance
 
 | | |
@@ -93,6 +95,19 @@ SEED_ADMIN_PASSWORD=
 Choose your own password (8–72 characters). Sign in with the **email and password**; the username is not used to sign in.
 
 Seeding confirms a newly created account directly. It does not reset the password of an account that already exists. The [setup guide](docs/getting-started.md#seed-account-and-login) gives the seed commands and what happens when you rerun them.
+
+## Contributing
+
+QuantumBilling is part of **Winter of Code Social 2026**, and first-time contributors are welcome.
+
+1. **Get the app running** with [Run locally](#run-locally) above.
+2. **Read [CONTRIBUTING.md](CONTRIBUTING.md)**, especially the [Winter of Code Social section](CONTRIBUTING.md#winter-of-code-social-2026) and the [AI policy](CONTRIBUTING.md#ai-policy).
+3. **Pick an issue:**
+   - [Beginner issues (`level 1`)](https://github.com/phravins/QuantumBilling/issues?q=is%3Aissue+is%3Aopen+label%3A%22level+1%22)
+   - [All open issues](https://github.com/phravins/QuantumBilling/issues)
+4. **Comment on the issue to ask for it**, and start once it's assigned to you.
+
+Questions go in the QuantumBilling post in **#find-a-project** on the [Code Social Discord](https://discord.gg/MSTNyRSPYW). To report a security problem, follow [Reporting a vulnerability](CONTRIBUTING.md#reporting-a-vulnerability) instead of opening an issue.
 
 ## Deploy
 
