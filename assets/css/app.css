@@ -155,7 +155,7 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* Button press effects. Labels wrapping checkboxes are excluded via `:has()`. */
+/* Buttons: colour transitions only, no press. Labels wrapping checkboxes are excluded via `:has()`. */
 button,
 [role="button"],
 .btn,
@@ -163,34 +163,19 @@ input[type="submit"],
 input[type="button"],
 a.btn,
 [phx-click]:not(:has(input[type="checkbox"])):not(:has(input[type="radio"])) {
-  transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+  transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
               background-color 0.15s ease,
+              color 0.15s ease,
               border-color 0.15s ease,
               opacity 0.15s ease;
   user-select: none;
 }
 
-/* Tactile Active Press Animation on Click */
-button:active:not(:disabled),
-[role="button"]:active:not(:disabled),
-.btn:active:not(:disabled),
-input[type="submit"]:active:not(:disabled),
-input[type="button"]:active:not(:disabled),
-a.btn:active:not(:disabled),
-[phx-click]:active:not(:disabled):not(:has(input[type="checkbox"])):not(:has(input[type="radio"])) {
-  /* A small press: enough to feel, not enough to shift the layout. */
-  transform: scale(0.99) !important;
-  filter: brightness(0.97);
-}
-
-/* Checkboxes, radios and their labels keep only the colour transition; text stays selectable. */
+/* Checkboxes, radios and their labels: text stays selectable. */
 input[type="checkbox"],
 input[type="radio"],
 label:has(input[type="checkbox"]),
 label:has(input[type="radio"]) {
-  transform: none !important;
-  filter: none !important;
   user-select: auto;
 }
 
@@ -212,7 +197,6 @@ a.btn:focus-visible {
 .phx-click-loading,
 .phx-submit-loading {
   opacity: 0.75;
-  transform: scale(0.995);
   pointer-events: none;
   cursor: wait;
 }

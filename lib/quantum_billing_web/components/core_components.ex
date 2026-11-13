@@ -294,6 +294,50 @@ defmodule QuantumBillingWeb.CoreComponents do
     """
   end
 
+  # A password field with an eye button that shows and hides what was typed,
+  # entirely in the browser: the value never makes a round trip to be revealed.
+  def input(%{type: "password"} = assigns) do
+    assigns = put_debounce(assigns)
+
+    ~H"""
+    <div class="fieldset mb-2">
+      <label for={@id}>
+        <span :if={@label} class="label mb-1">{@label}</span>
+      </label>
+
+      <div class="relative">
+        <input
+          type="password"
+          name={@name}
+          id={@id}
+          value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+          class={[
+            @class || "w-full input",
+            "pr-10",
+            @errors != [] && (@error_class || "input-error")
+          ]}
+          {@rest}
+        />
+        <button
+          type="button"
+          id={"#{@id}-reveal"}
+          phx-click={toggle_password(@id)}
+          aria-label="Show password"
+          aria-controls={@id}
+          aria-pressed="false"
+          title="Show or hide"
+          class="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-field text-base-content/45 transition-colors hover:text-base-content focus-visible:text-base-content"
+        >
+          <.icon name="hero-eye" class="size-4" />
+          <.icon name="hero-eye-slash" class="hidden size-4" />
+        </button>
+      </div>
+
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
   def input(assigns) do
     assigns = put_debounce(assigns)
 
@@ -328,6 +372,15 @@ defmodule QuantumBillingWeb.CoreComponents do
   end
 
   defp put_debounce(assigns), do: assigns
+
+  # Client-side only, and sticky across LiveView patches, so typing elsewhere
+  # in the form does not hide the value again.
+  defp toggle_password(id) do
+    JS.toggle_attribute({"type", "password", "text"}, to: "##{id}")
+    |> JS.toggle_attribute({"aria-pressed", "false", "true"})
+    |> JS.toggle_attribute({"aria-label", "Show password", "Hide password"})
+    |> JS.toggle_class("hidden", to: {:inner, "span"})
+  end
 
   defp error(assigns) do
     ~H"""

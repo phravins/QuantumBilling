@@ -179,7 +179,7 @@ defmodule QuantumBillingWeb.SettingsLive do
   defp assign_deliveries(socket, _section), do: socket
 
   defp assign_deliveries(socket) do
-    assign(socket, :deliveries, Mail.list_recent_deliveries(8))
+    assign(socket, :deliveries, Mail.list_recent_deliveries(25))
   end
 
   defp assign_calendars(socket, :integrations) do
@@ -255,6 +255,14 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp assign_form(socket, _section), do: assign(socket, :form, nil)
+
+  # A changeset built on the stored organisation, drawn without its secrets:
+  # an untouched password field would otherwise carry the saved one.
+  defp settings_form(changeset) do
+    changeset
+    |> Map.update!(:data, &Organization.scrub_secrets/1)
+    |> to_form(as: "organization")
+  end
 
   defp editing?(%Phoenix.HTML.Form{source: %Ecto.Changeset{changes: changes}}), do: changes != %{}
   defp editing?(_form), do: false
@@ -337,13 +345,13 @@ defmodule QuantumBillingWeb.SettingsLive do
   def handle_event("validate", %{"organization" => params}, socket) do
     params = restrict_params(params, socket)
 
+    # Against the stored secrets, so a saved password counts as present.
     changeset =
       socket.assigns.organization
-      |> Organization.scrub_secrets()
       |> Settings.change_organization(params, socket.assigns.section)
       |> Map.put(:action, :validate)
 
-    {:noreply, assign(socket, :form, to_form(changeset, as: "organization"))}
+    {:noreply, assign(socket, :form, settings_form(changeset))}
   end
 
   def handle_event("save", %{"organization" => params}, socket) do
@@ -362,7 +370,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       {:error, changeset} ->
         {:noreply,
          socket
-         |> assign(:form, to_form(changeset, as: "organization"))
+         |> assign(:form, settings_form(changeset))
          |> put_flash(:error, "Please fix the highlighted fields.")}
     end
   end
@@ -835,54 +843,67 @@ defmodule QuantumBillingWeb.SettingsLive do
       notifications={@notifications}
       unread_count={@unread_count}
     >
-      <.header>
-        {section(@section).title}
-        <:actions :if={@form}>
-          <button type="submit" form="settings-form" class={action_button_class()}>
-            <.icon name="hero-check" class="size-4" /> Save Changes
-          </button>
-        </:actions>
-      </.header>
+      <%!-- The profile is a sheet centred on the page; the rest use the full width. --%>
+      <div
+        id="settings-page"
+        class={["flex flex-1 flex-col", @section == :company && "mx-auto w-full max-w-5xl"]}
+      >
+        <.header>
+          {section(@section).title}
+          <:actions :if={@form}>
+            <button type="submit" form="settings-form" class={action_button_class()}>
+              <.icon name="hero-check" class="size-4" /> Save Changes
+            </button>
+          </:actions>
+        </.header>
 
-      <div class="flex flex-1 flex-col gap-3">
-        <.card padding="p-4" class="flex flex-1 flex-col">
-          {render_panel(assigns)}
-        </.card>
+        <div class="flex flex-1 flex-col gap-3">
+          <.card padding="p-4" class={["flex flex-col", panel_height_class(@section)]}>
+            {render_panel(assigns)}
+          </.card>
 
-        <.card
-          :if={@section == :tax and Organization.vat?(@organization)}
-          padding="p-0"
-          id="tax-rates-card"
-        >
-          <.tax_rates
-            streams={@streams}
-            rate_count={@rate_count}
-            archived_rate_count={@archived_rate_count}
-            owner?={Scope.owner?(@current_scope)}
-          />
-        </.card>
+          <.card
+            :if={@section == :tax and Organization.vat?(@organization)}
+            padding="p-0"
+            id="tax-rates-card"
+          >
+            <.tax_rates
+              streams={@streams}
+              rate_count={@rate_count}
+              archived_rate_count={@archived_rate_count}
+              owner?={Scope.owner?(@current_scope)}
+            />
+          </.card>
 
-        <.card :if={@section == :general} padding="p-4">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
+          <.card :if={@section == :general} padding="p-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="text-sm font-semibold tracking-tight">Logo &amp; Signature</h2>
 
-              <p class="mt-1 text-sm text-base-content/60">
-                Your logo, colours and the fields your invoices show live in Customization.
-              </p>
+                <p class="mt-1 text-sm text-base-content/60">
+                  Your logo, colours and the fields your invoices show live in Customization.
+                </p>
+              </div>
+
+              <.link navigate={~p"/settings/customization"} class={secondary_button_class()}>
+                <.icon name="hero-paint-brush" class="size-4" /> Customization
+              </.link>
             </div>
-
-            <.link navigate={~p"/settings/customization"} class={secondary_button_class()}>
-              <.icon name="hero-paint-brush" class="size-4" /> Customization
-            </.link>
-          </div>
-        </.card>
+          </.card>
+        </div>
       </div>
 
       <.rate_dialog :if={@section == :tax && @rate_dialog} dialog={@rate_dialog} />
     </Layouts.app>
     """
   end
+
+  # The SMTP panel fits one desktop screen, so only its delivery log scrolls:
+  # 7rem is the top bar, the main padding and the page header. The profile sheet
+  # takes its own height; every other panel fills the page.
+  defp panel_height_class(:smtp), do: "lg:h-[calc(100dvh-7rem)] lg:min-h-[34rem]"
+  defp panel_height_class(:company), do: nil
+  defp panel_height_class(_section), do: "flex-1"
 
   # Tax's lists are `{code, label}`; a select wants `{label, value}`.
   defp select_options(pairs), do: Enum.map(pairs, fn {code, label} -> {label, code} end)
@@ -1802,7 +1823,11 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
     </div>
 
-    <div class="mt-4 border-t border-base-300 pt-5">
+    <%!-- Takes what height is left; the log scrolls inside it, not the page. --%>
+    <div
+      id="recent-deliveries"
+      class="mt-4 flex min-h-0 flex-1 flex-col border-t border-base-300 pt-5"
+    >
       <h3 class="text-sm font-semibold tracking-tight">Recent Deliveries</h3>
       <p class="mt-1 text-xs text-base-content/60">
         Every message the application has tried to send, whether it arrived, and what went wrong
@@ -1814,9 +1839,13 @@ defmodule QuantumBillingWeb.SettingsLive do
         Nothing has been sent yet.
       </p>
 
-      <div :if={@deliveries != []} class="mt-3 overflow-x-auto">
+      <div
+        :if={@deliveries != []}
+        id="deliveries-scroll"
+        class="mt-3 max-h-80 min-h-0 flex-1 overflow-auto rounded-field border border-base-300 lg:max-h-none"
+      >
         <table id="deliveries" class="table table-sm table-fixed">
-          <thead>
+          <thead class="sticky top-0 z-10 bg-base-100">
             <tr class={table_head_class()}>
               <th class="w-28">When</th>
               <th class="w-56">To</th>

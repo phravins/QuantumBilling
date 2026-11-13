@@ -80,7 +80,7 @@ defmodule QuantumBillingWeb.UserLive.Profile do
             id="banner-shuffle"
             type="button"
             phx-click="shuffle_banner"
-            class="absolute bottom-3 right-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 text-xs font-medium text-white backdrop-blur-md transition-all hover:bg-black/45 active:scale-95 phx-click-loading:opacity-60"
+            class="absolute bottom-3 right-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-3 text-xs font-medium text-white backdrop-blur-md transition-all hover:bg-black/45 phx-click-loading:opacity-60"
           >
             <.icon name="hero-sparkles" class="size-3.5" /> New scene
           </button>

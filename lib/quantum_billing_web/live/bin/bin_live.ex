@@ -565,7 +565,7 @@ defmodule QuantumBillingWeb.BinLive do
                 class={[
                   "inline-flex h-8 items-center gap-1.5 rounded-field border border-base-300 bg-base-100 px-3",
                   "text-xs font-medium text-base-content/80 transition",
-                  "hover:border-base-content/25 hover:bg-base-200 hover:text-base-content active:scale-[.98]"
+                  "hover:border-base-content/25 hover:bg-base-200 hover:text-base-content"
                 ]}
               >
                 <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Restore
@@ -582,7 +582,7 @@ defmodule QuantumBillingWeb.BinLive do
                 aria-label={"Delete forever: #{entry.title}"}
                 class={[
                   "inline-flex h-8 items-center gap-1.5 rounded-field px-3 text-xs font-medium text-error/85",
-                  "transition hover:bg-error/10 hover:text-error active:scale-[.98]"
+                  "transition hover:bg-error/10 hover:text-error"
                 ]}
               >
                 <.icon name="hero-trash" class="size-3.5" /> Delete forever

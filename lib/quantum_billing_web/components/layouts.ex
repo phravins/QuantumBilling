@@ -998,7 +998,7 @@ defmodule QuantumBillingWeb.Layouts do
           id="confirm-dialog-ok"
           class={[
             "inline-flex h-9 items-center justify-center rounded-field px-3.5 text-sm font-medium",
-            "transition-[background-color,transform] active:scale-[0.98]",
+            "transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-base-100",
             "bg-error text-error-content hover:bg-error/90 focus-visible:ring-error/40",
             "group-data-[tone=neutral]:bg-primary group-data-[tone=neutral]:text-primary-content",

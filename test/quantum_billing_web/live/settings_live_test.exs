@@ -408,6 +408,64 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
       assert Settings.get_organization().smtp_password == "keep-me"
     end
+
+    test "a stored password satisfies the username rule while editing", %{conn: conn} do
+      {:ok, _organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{
+            "smtp_host" => "smtp.example.com",
+            "smtp_username" => "apikey",
+            "smtp_password" => "stored-secret"
+          },
+          :smtp
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "smtp_host" => "smtp.example.org",
+          "smtp_username" => "apikey",
+          "smtp_password" => ""
+        }
+      })
+      |> render_change()
+
+      refute has_element?(view, "#settings-form", "is required when a username is set")
+    end
+
+    test "a failed save does not write the stored password into the page", %{conn: conn} do
+      {:ok, _organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"smtp_host" => "smtp.example.com", "smtp_password" => "hunter2-after-error"},
+          :smtp
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      html =
+        view
+        |> form("#settings-form", %{
+          "organization" => %{"smtp_port" => "0", "smtp_password" => ""}
+        })
+        |> render_submit()
+
+      assert has_element?(view, "#settings-form", "must be greater than 0")
+      # A leak check: the secret must appear nowhere in the markup.
+      refute html =~ "hunter2-after-error"
+    end
+
+    test "the password field has a show/hide button", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      assert has_element?(
+               view,
+               ~s(#settings-form_smtp_password-reveal[aria-controls="settings-form_smtp_password"])
+             )
+    end
   end
 
   describe "backup" do
@@ -442,6 +500,13 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
       org = Settings.get_organization()
       assert org.razorpay_key_id == "rzp_test_999"
+    end
+
+    test "secret keys have a show/hide button", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      assert has_element?(view, "#settings-form_razorpay_key_secret-reveal")
+      assert has_element?(view, "#settings-form_irp_password-reveal")
     end
 
     test "points to the webhooks page instead of a single URL field", %{conn: conn} do
