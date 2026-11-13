@@ -65,6 +65,24 @@ defmodule QuantumBillingWeb.NotificationsBellTest do
       assert has_element?(view, "#notifications-mark-all")
     end
 
+    # Created between the bell's subscribe and its feed read: it arrives in the
+    # feed and again as a broadcast.
+    test "a broadcast of a row the feed already shows is not added twice", %{conn: conn} do
+      notification = notify()
+      {:ok, view, _html} = live(conn, ~p"/clients")
+
+      send(view.pid, {:notification_created, notification})
+
+      ids =
+        render(view)
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#notifications-panel li")
+        |> LazyHTML.attribute("id")
+
+      assert ids == ["notification-#{notification.id}"]
+      assert has_element?(view, ~s(#notifications-bell[aria-label="Notifications, 1 unread"]))
+    end
+
     test "newest first", %{conn: conn} do
       older = notify(%{title: "The older one"})
       newer = notify(%{title: "The newer one"})

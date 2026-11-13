@@ -167,6 +167,21 @@ defmodule QuantumBilling.MailTest do
       assert {:ok, _metadata} = Mail.deliver(email, %Organization{})
       assert_email_sent(subject: "Hello")
     end
+
+    # Prod without SMTP_HOST uses this adapter (config/runtime.exs).
+    test "a server with no relay fails the send with a message, not a crash" do
+      email =
+        Swoosh.Email.new()
+        |> Swoosh.Email.to("someone@example.com")
+        |> Swoosh.Email.from({"QuantumBilling", "billing@example.com"})
+        |> Swoosh.Email.subject("Hello")
+
+      assert {:error, :no_relay} =
+               QuantumBilling.Mailer.deliver(email, adapter: QuantumBilling.Mailer.NoRelay)
+
+      assert Mail.error_message(:no_relay) =~ "No mail relay is configured"
+      assert Mail.error_message(:no_relay) =~ "Settings > SMTP"
+    end
   end
 
   describe "send_test/1" do

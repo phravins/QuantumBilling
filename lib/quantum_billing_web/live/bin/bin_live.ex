@@ -7,6 +7,9 @@ defmodule QuantumBillingWeb.BinLive do
   reset on every change so the filter counts stay right. Designs used by
   invoices and clients with credit notes can't be purged. A restore is refused
   when its GSTIN or invoice slot has been taken.
+
+  At most `limit` entries are read: the newest `limit` of each kind, merged.
+  The tab counts come from count queries, and "Show more" raises the limit.
   """
   use QuantumBillingWeb, :live_view
 
@@ -39,6 +42,9 @@ defmodule QuantumBillingWeb.BinLive do
     "template" => "bg-base-200 text-base-content/70"
   }
 
+  # Entries read per screenful; "Show more" adds another.
+  @page_size 100
+
   def mount(_params, _session, socket) do
     if connected?(socket) do
       # Recurring profiles have no topic; they are re-read after each action.
@@ -53,16 +59,21 @@ defmodule QuantumBillingWeb.BinLive do
      |> assign(:page_title, "Bin")
      |> assign(:active_nav, :bin)
      |> assign(:filter, "all")
+     |> assign(:limit, @page_size)
      |> stream_configure(:entries, dom_id: &"bin-#{&1.id}")
      |> load_entries()}
   end
 
   def handle_event("filter", %{"type" => type}, socket) do
     if Enum.any?(@filters, fn {key, _label, _icon} -> key == type end) do
-      {:noreply, socket |> assign(:filter, type) |> load_entries()}
+      {:noreply, socket |> assign(:filter, type) |> assign(:limit, @page_size) |> load_entries()}
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_event("more", _params, socket) do
+    {:noreply, socket |> update(:limit, &(&1 + @page_size)) |> load_entries()}
   end
 
   def handle_event("restore", %{"type" => type, "id" => id}, socket) do
@@ -236,28 +247,58 @@ defmodule QuantumBillingWeb.BinLive do
   # ── Loading ───────────────────────────────────────────────────────────────
 
   defp load_entries(socket) do
-    entries =
-      Enum.map(Invoices.list_deleted_invoices(), &entry/1) ++
-        Enum.map(Clients.list_deleted_clients(), &entry/1) ++
-        Enum.map(EWayBills.list_deleted_e_way_bills(), &entry/1) ++
-        Enum.map(Recurring.list_deleted_profiles(), &entry/1) ++
-        Enum.map(Templates.list_archived_templates(), &entry/1)
+    %{filter: filter, limit: limit} = socket.assigns
+    counts = counts()
 
-    counts =
-      entries
-      |> Enum.frequencies_by(& &1.type)
-      |> Map.put("all", length(entries))
-
+    # The newest `limit` of each kind hold the newest `limit` overall.
     shown =
-      entries
-      |> Enum.filter(&(socket.assigns.filter in ["all", &1.type]))
+      @filters
+      |> Enum.map(fn {key, _label, _icon} -> key end)
+      |> Enum.filter(&(filter in ["all", &1] and &1 != "all" and counts[&1] > 0))
+      |> Enum.flat_map(&entries(&1, limit))
       |> Enum.sort_by(& &1.deleted_at, {:desc, DateTime})
+      |> Enum.take(limit)
 
     socket
     # Streams cannot be counted, so counts are kept beside them.
     |> assign(:counts, counts)
     |> assign(:shown, length(shown))
+    |> assign(:hidden, max(Map.get(counts, filter, 0) - length(shown), 0))
     |> stream(:entries, shown, reset: true)
+  end
+
+  defp counts do
+    counts = %{
+      "invoice" => Invoices.count_deleted_invoices(),
+      "client" => Clients.count_deleted_clients(),
+      "e_way_bill" => EWayBills.count_deleted_e_way_bills(),
+      "recurring" => Recurring.count_deleted_profiles(),
+      "template" => Templates.count_archived_templates()
+    }
+
+    Map.put(counts, "all", counts |> Map.values() |> Enum.sum())
+  end
+
+  defp entries("invoice", limit),
+    do: Enum.map(Invoices.list_deleted_invoices(limit: limit), &entry/1)
+
+  defp entries("e_way_bill", limit),
+    do: Enum.map(EWayBills.list_deleted_e_way_bills(limit: limit), &entry/1)
+
+  defp entries("recurring", limit),
+    do: Enum.map(Recurring.list_deleted_profiles(limit: limit), &entry/1)
+
+  # One in-use query for the screenful, not one per row.
+  defp entries("client", limit) do
+    clients = Clients.list_deleted_clients(limit: limit)
+    in_use = clients |> Enum.map(& &1.id) |> Clients.ids_in_use()
+    Enum.map(clients, &entry(&1, MapSet.member?(in_use, &1.id)))
+  end
+
+  defp entries("template", limit) do
+    templates = Templates.list_archived_templates(limit: limit)
+    in_use = templates |> Enum.map(& &1.id) |> Templates.ids_in_use()
+    Enum.map(templates, &entry(&1, MapSet.member?(in_use, &1.id)))
   end
 
   defp entry(%Invoice{} = invoice) do
@@ -276,29 +317,6 @@ defmodule QuantumBillingWeb.BinLive do
       purge_confirm:
         "Permanently delete #{invoice.invoice_number}? Its line items, e-way bills and " <>
           "credit notes go with it. This cannot be undone, and the number is not reused."
-    }
-  end
-
-  defp entry(%Client{} = client) do
-    in_use? = Clients.in_use?(client)
-
-    %{
-      id: "client-#{client.id}",
-      type: "client",
-      record_id: client.id,
-      kind: "Client",
-      icon: "hero-user-group",
-      title: client.name,
-      subtitle: client.gstin || client.client_type,
-      details:
-        [client.email, client.phone]
-        |> Enum.reject(&(&1 in [nil, ""]))
-        |> Enum.join(" · "),
-      deleted_at: client.deleted_at,
-      locked: if(in_use?, do: "Credit notes were raised against this client, so it is kept."),
-      purge_confirm:
-        "Permanently delete #{client.name}? This cannot be undone. Its invoices are kept, " <>
-          "but are no longer linked to a client record."
     }
   end
 
@@ -340,9 +358,28 @@ defmodule QuantumBillingWeb.BinLive do
     }
   end
 
-  defp entry(%InvoiceTemplate{} = template) do
-    in_use? = Templates.in_use?(template)
+  defp entry(%Client{} = client, in_use?) do
+    %{
+      id: "client-#{client.id}",
+      type: "client",
+      record_id: client.id,
+      kind: "Client",
+      icon: "hero-user-group",
+      title: client.name,
+      subtitle: client.gstin || client.client_type,
+      details:
+        [client.email, client.phone]
+        |> Enum.reject(&(&1 in [nil, ""]))
+        |> Enum.join(" · "),
+      deleted_at: client.deleted_at,
+      locked: if(in_use?, do: "Credit notes were raised against this client, so it is kept."),
+      purge_confirm:
+        "Permanently delete #{client.name}? This cannot be undone. Its invoices are kept, " <>
+          "but are no longer linked to a client record."
+    }
+  end
 
+  defp entry(%InvoiceTemplate{} = template, in_use?) do
     %{
       id: "template-#{template.id}",
       type: "template",
@@ -563,6 +600,24 @@ defmodule QuantumBillingWeb.BinLive do
             </div>
           </div>
         </div>
+      </div>
+
+      <div :if={@hidden > 0} id="bin-more" class="mt-4 flex flex-col items-center gap-2">
+        <p class="text-xs text-base-content/60">
+          Showing the {@shown} most recently deleted. {@hidden} more {if(@hidden == 1,
+            do: "item is",
+            else: "items are"
+          )} older.
+        </p>
+        <button
+          type="button"
+          id="bin-show-more"
+          phx-click="more"
+          phx-disable-with="Loading…"
+          class="btn btn-sm btn-ghost border border-base-300 transition hover:-translate-y-px hover:shadow-sm"
+        >
+          <.icon name="hero-chevron-double-down" class="size-4" /> Show more
+        </button>
       </div>
     </Layouts.app>
     """

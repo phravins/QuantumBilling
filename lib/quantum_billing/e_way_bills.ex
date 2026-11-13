@@ -208,14 +208,15 @@ defmodule QuantumBilling.EWayBills do
     end
   end
 
-  @doc "Every binned bill, most recently deleted first."
-  def list_deleted_e_way_bills do
-    Repo.all(
-      from b in EWayBill.binned(),
-        order_by: [desc: b.deleted_at, desc: b.id],
-        preload: [:invoice]
-    )
+  @doc "Binned bills, most recently deleted first; `limit:` bounds the rows."
+  def list_deleted_e_way_bills(opts \\ []) do
+    from(b in EWayBill.binned(), order_by: [desc: b.deleted_at, desc: b.id], preload: [:invoice])
+    |> Paging.bounded(opts)
+    |> Repo.all()
   end
+
+  @doc "How many bills are in the Bin."
+  def count_deleted_e_way_bills, do: Repo.aggregate(EWayBill.binned(), :count)
 
   @doc """
   Moves a bill to the Bin. An Active bill stays active on the portal.

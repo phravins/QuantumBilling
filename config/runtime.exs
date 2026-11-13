@@ -108,13 +108,36 @@ config :quantum_billing,
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
 
+# Uploaded logos and images. Set it in production so they survive a release
+# upgrade; unset, they go to the release's own priv/static/uploads.
+uploads_dir = String.trim(System.get_env("UPLOADS_DIR") || "")
+
+if uploads_dir != "" and config_env() != :test do
+  config :quantum_billing, uploads_dir: Path.expand(uploads_dir)
+end
+
 # Google Calendar. Without both, Settings > Integrations says it is not configured.
 config :quantum_billing, :google_calendar,
   client_id: System.get_env("GOOGLE_CALENDAR_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CALENDAR_CLIENT_SECRET")
 
+smtp_host = String.trim(System.get_env("SMTP_HOST") || "")
+
+# No app relay in prod: fail each send with a clear message rather than crash
+# on the Local adapter, which does not run there. A business's own relay
+# (Settings > SMTP) still works.
+if smtp_host == "" and config_env() == :prod do
+  IO.puts(
+    :stderr,
+    "warning: SMTP_HOST is not set. Sign-in links and other app email will not be " <>
+      "sent unless a business configures its own relay under Settings > SMTP."
+  )
+
+  config :quantum_billing, QuantumBilling.Mailer, adapter: QuantumBilling.Mailer.NoRelay
+end
+
 # Never in tests: it would replace the test adapter and send real mail.
-if (smtp_host = System.get_env("SMTP_HOST")) && config_env() != :test do
+if smtp_host != "" and config_env() != :test do
   smtp_port = String.to_integer(System.get_env("SMTP_PORT", "587"))
   implicit_tls? = System.get_env("SMTP_SSL") in ["true", "1"] or smtp_port == 465
 

@@ -1,12 +1,14 @@
 defmodule QuantumBilling.RuntimeConfigTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureIO
+
   @moduletag :tmp_dir
   @required ~w(SECRET_KEY_BASE TOTP_ENCRYPTION_KEY SECRETS_ENCRYPTION_KEY DB_USERNAME DB_PASSWORD)
   @seed_vars ~w(SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_ADMIN_USERNAME)
 
   setup %{tmp_dir: tmp_dir} do
-    vars = @required ++ @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER)
+    vars = @required ++ @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER UPLOADS_DIR)
     original = Map.new(vars, &{&1, System.get_env(&1)})
 
     on_exit(fn ->
@@ -66,13 +68,45 @@ defmodule QuantumBilling.RuntimeConfigTest do
       for missing <- [nil, "", "   "] do
         if is_nil(missing), do: System.delete_env(name), else: System.put_env(name, missing)
 
-        assert_raise RuntimeError, ~r/environment variable #{name} is (missing|empty)/, fn ->
-          Config.Reader.read!(context.runtime, env: :prod)
-        end
+        # The SMTP_HOST warning comes before the DATABASE_URL check.
+        capture_io(:stderr, fn ->
+          assert_raise RuntimeError, ~r/environment variable #{name} is (missing|empty)/, fn ->
+            Config.Reader.read!(context.runtime, env: :prod)
+          end
+        end)
       end
 
       System.put_env(name, value)
     end
+  end
+
+  test "production without SMTP_HOST warns and fails sends instead of crashing", context do
+    System.put_env("DATABASE_URL", "ecto://test-user:test-password@localhost/test-db")
+
+    {config, warning} =
+      with_io(:stderr, fn -> Config.Reader.read!(context.runtime, env: :prod) end)
+
+    assert warning =~ "SMTP_HOST is not set"
+
+    assert config[:quantum_billing][QuantumBilling.Mailer][:adapter] ==
+             QuantumBilling.Mailer.NoRelay
+
+    System.put_env("SMTP_HOST", "smtp.example.com")
+
+    {config, warning} =
+      with_io(:stderr, fn -> Config.Reader.read!(context.runtime, env: :prod) end)
+
+    refute warning =~ "SMTP_HOST"
+    assert config[:quantum_billing][QuantumBilling.Mailer][:adapter] == Swoosh.Adapters.SMTP
+  end
+
+  test "UPLOADS_DIR moves uploads outside the release, but never in tests", context do
+    System.put_env("UPLOADS_DIR", "/var/lib/quantum_billing/uploads")
+
+    assert Config.Reader.read!(context.runtime, env: :dev)[:quantum_billing][:uploads_dir] ==
+             "/var/lib/quantum_billing/uploads"
+
+    refute Config.Reader.read!(context.runtime, env: :test)[:quantum_billing][:uploads_dir]
   end
 
   test "local .env supplies credentials while real environment variables win", context do

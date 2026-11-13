@@ -430,11 +430,16 @@ defmodule QuantumBilling.Invoices do
   def get_deleted_invoice(id), do: fetch_by_id(Invoice.binned(), id)
 
   @doc """
-  Every invoice in the Bin, most recently binned first.
+  Invoices in the Bin, most recently binned first; `limit:` bounds the rows.
   """
-  def list_deleted_invoices do
-    Repo.all(from i in Invoice.binned(), order_by: [desc: i.deleted_at, desc: i.id])
+  def list_deleted_invoices(opts \\ []) do
+    from(i in Invoice.binned(), order_by: [desc: i.deleted_at, desc: i.id])
+    |> QuantumBilling.Paging.bounded(opts)
+    |> Repo.all()
   end
+
+  @doc "How many invoices are in the Bin."
+  def count_deleted_invoices, do: Repo.aggregate(Invoice.binned(), :count)
 
   defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do

@@ -2,8 +2,10 @@ defmodule QuantumBilling.Uploads do
   @moduledoc """
   Stores uploaded files on local disk and returns the path they are served from.
 
-  Files go to `priv/static/uploads`, which is not a static path:
-  `UploadController` serves them after checking access. Names are content
+  Files go to `UPLOADS_DIR` when it is set, otherwise `priv/static/uploads`,
+  which is not a static path: `UploadController` serves them after checking
+  access. Set `UPLOADS_DIR` in production so uploads live outside the
+  versioned release directory and survive upgrades. Names are content
   hashes, never the uploaded filename. `store/2` and `delete/1` are the seam
   for moving to object storage.
   """
@@ -90,9 +92,10 @@ defmodule QuantumBilling.Uploads do
     end
   end
 
-  @doc "Where uploads are written. Public so tests can clean up after themselves."
+  @doc "Where uploads are written: `UPLOADS_DIR`, or the release's `priv/static/uploads`."
   def directory do
-    Path.join(:code.priv_dir(:quantum_billing), "static/uploads")
+    Application.get_env(:quantum_billing, :uploads_dir) ||
+      Path.join(:code.priv_dir(:quantum_billing), "static/uploads")
   end
 
   defp extension_for(content_type) do

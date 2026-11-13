@@ -37,6 +37,11 @@ defmodule QuantumBilling.Mail do
   rescue
     # gen_smtp raises on some option and DNS failures.
     exception -> {:error, error_message(exception)}
+  catch
+    # An adapter whose process is not running exits instead of returning.
+    :exit, reason ->
+      Logger.error("[Mail] the mail adapter exited: #{inspect(reason)}")
+      {:error, "The mail service is not available. Check the mail settings."}
   end
 
   @doc "The Swoosh config for the organisation's relay, or `[]` for the app mailer."
@@ -343,6 +348,11 @@ defmodule QuantumBilling.Mail do
 
   def error_message({:permanent_failure, _host, detail}),
     do: "The relay rejected the message: #{error_message(detail)}"
+
+  def error_message(:no_relay),
+    do:
+      "No mail relay is configured. Add one under Settings > SMTP, " <>
+        "or set SMTP_HOST on the server."
 
   def error_message(:econnrefused), do: "The SMTP server refused the connection."
   def error_message(:timeout), do: "The SMTP server did not answer in time."

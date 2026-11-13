@@ -1,6 +1,6 @@
 # Deployment and operations
 
-This guide covers release **v0.1.0**: the OTP release workflow, running it as a service behind a reverse proxy, versions and upgrades, and operational data. Read [configuration](configuration.md), [database](database.md), and the [multi-business model](technical-architecture.md#multi-business-model) before upgrading an installation that holds existing data. Back up the database before the first migration that moves existing tables into `biz_1`.
+This guide covers release **v0.1.0**: the OTP release workflow, Docker Compose, running it as a service behind a reverse proxy, versions and upgrades, and operational data. Read [configuration](configuration.md), [database](database.md), and the [multi-business model](technical-architecture.md#multi-business-model) before upgrading an installation that holds existing data. Back up the database before the first migration that moves existing tables into `biz_1`.
 
 ## Deployment shape
 
@@ -23,7 +23,7 @@ No Redis, proxy, object store, or separate worker service is needed. Each runnin
 
 ## OTP release
 
-The production host needs PostgreSQL 16 reachable over the network, system TLS trust, Chromium (or `PDF_CHROME_PATH`) and fonts for PDF rendering, and a persistent directory for `priv/static/uploads`. Build with Elixir 1.18.3 / OTP 27 on the same OS family as the target, from a configured build environment.
+The production host needs PostgreSQL 16 reachable over the network, system TLS trust, Chromium (or `PDF_CHROME_PATH`) and fonts for PDF rendering, and a persistent directory for uploads, named by `UPLOADS_DIR`. Build with Elixir 1.18.3 / OTP 27 on the same OS family as the target, from a configured build environment.
 
 Build from a clean checkout (a CI job or a fresh clone), not a working copy. The release copies `priv` whole, so a development `priv/static/uploads` would ship inside it.
 
@@ -52,6 +52,56 @@ _build/prod/rel/quantum_billing/bin/quantum_billing eval 'Application.ensure_all
 
 The release has no Mix executable, and production has no `/dev/mailbox` or `/dev/dashboard`; configure SMTP for registration and reset mail.
 
+## Docker Compose
+
+[`docker-compose.yml`](../docker-compose.yml) runs the same release on one host: PostgreSQL 16, a one-shot `migrate` container, then the app. The image ([`Dockerfile`](../Dockerfile)) includes Chromium and fonts for PDFs and runs as `nobody`.
+
+### Configure and start
+
+Compose reads variables from the shell or from `.env` beside the file. Set `DATABASE_USER`, `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY` and `PHX_HOST`; it refuses to start without the first five. Compose builds `DATABASE_URL` for its own `db` service, so the native `DB_*` settings do not apply.
+
+The database password is both the PostgreSQL password and part of a URL, so generate it URL-safe:
+
+```bash
+openssl rand -hex 24          # DATABASE_PASSWORD
+mix phx.gen.secret            # each of the three keys, separately
+docker compose up -d --build
+docker compose ps
+```
+
+Startup order is `db` healthy, then `migrate` exits successfully, then `app` starts and reports healthy through `/health`. Migrations run on every `up`; seeding does not.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `APP_BIND` | `127.0.0.1` | Host address the app port is published on. Keep loopback and put a TLS reverse proxy in front |
+| `APP_PORT` | `4000` | Host port |
+| `TRUSTED_PROXIES` | Empty | Set it to the Compose network's gateway (`docker network inspect <project>_default`) when the proxy runs on the host |
+
+The database port is not published. The `postgres_data` and `uploads` volumes hold the data and logos. The app and migrate containers run with a read-only root filesystem, a tmpfs `/tmp`, `no-new-privileges` and rotated logs.
+
+Production settings apply: `/dev/mailbox` and `/dev/dashboard` are absent. Without `SMTP_HOST`, boot prints a warning and app mail (sign-in links, password resets) fails with a clear message in the delivery ledger until a relay is set here or under Settings > SMTP.
+
+### Seed, logs and upgrades
+
+```bash
+# Optional first account, from SEED_ADMIN_* set before the containers were created.
+docker compose exec app bin/quantum_billing eval 'Application.ensure_all_started(:quantum_billing); QuantumBilling.Release.seed()'
+
+docker compose logs --tail=100 app migrate
+
+# Upgrade: back up first (below), then rebuild; migrate runs before the new app starts.
+git pull && docker compose up -d --build
+```
+
+Back up the database and the uploads volume from the running stack:
+
+```bash
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > quantum_billing.dump
+docker compose cp app:/app/uploads ./uploads-backup
+```
+
+`docker compose down` keeps the volumes. `docker compose down -v` deletes the database and uploads: it is a local reset, never an upgrade step.
+
 ## Run as a service
 
 These are starting points for one Linux host with systemd and nginx, and PostgreSQL on a private network. Replace `billing.example.com`, the paths and the certificate locations with your own.
@@ -70,6 +120,7 @@ SECRET_KEY_BASE=…
 TOTP_ENCRYPTION_KEY=…
 SECRETS_ENCRYPTION_KEY=…
 SMTP_HOST=…
+UPLOADS_DIR=/var/lib/quantum_billing/uploads
 ```
 
 `PHX_HOST` must be the host name browsers use. LiveView refuses a websocket from any other origin, which leaves pages loading but not interactive. `TRUSTED_PROXIES` names the proxy so that client addresses reach the IP allowlist, rate limits and audit log. [Configuration](configuration.md) lists every variable.
@@ -171,18 +222,15 @@ To make a release:
 
 While the major version is 0, any release may carry migrations that reshape or move data. Before upgrading, read the migrations of every version between the running one and the target. An older release may not understand the newer schema, so going back means restoring the backup, not starting the old build.
 
-Uploaded logos and design assets are stored in `priv/static/uploads` inside the versioned directory, so each new version starts without them. Keep them in a persistent directory and link it into every build you install:
+Uploaded logos and design assets go to `UPLOADS_DIR`. Without it they go to `priv/static/uploads` inside the versioned directory, and each new version starts without them. Set it once and move any existing uploads there:
 
 ```bash
-# Once: move the current uploads out of the release.
-sudo install -d -o quantum_billing -g quantum_billing /var/lib/quantum_billing
-sudo mv /opt/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads /var/lib/quantum_billing/uploads
-
-# After installing each build (use that build's version in the path).
-sudo ln -sfn /var/lib/quantum_billing/uploads /opt/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads
+# Once, before the first start with UPLOADS_DIR set.
+sudo install -d -o quantum_billing -g quantum_billing /var/lib/quantum_billing/uploads
+sudo cp -a /opt/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads/. /var/lib/quantum_billing/uploads/
 ```
 
-A clean build has no `priv/static/uploads`, so the link takes its place. With the link in place, back up `/var/lib/quantum_billing/uploads` rather than the path given under [Full installation backup](#full-installation-backup).
+An installation that already links `priv/static/uploads` to a persistent directory can keep doing so, or point `UPLOADS_DIR` at that directory and drop the link.
 
 ## Migration and upgrade process
 
@@ -231,7 +279,7 @@ cannot do them for you.
   (`PermitRootLogin no`), restricted to an admin network or a bastion, and
   `fail2ban` or equivalent.
 - Run the release as an unprivileged user that owns only its install
-  directory and `priv/static/uploads`.
+  directory and `UPLOADS_DIR`.
 - The reverse proxy must set `x-forwarded-proto`, and the application must be
   told the proxy's address (see `QuantumBillingWeb.ClientIP`) so that the IP
   allowlist, rate limits and audit log see real client addresses. Strip any
@@ -331,10 +379,10 @@ Use PostgreSQL backup tooling to capture the whole database, including `public`,
 pg_dump --dbname="$DATABASE_URL" -Fc > quantum_billing.dump
 ```
 
-Copy uploaded logos separately:
+Copy uploaded logos separately, from `UPLOADS_DIR` (or the Compose `uploads` volume, shown under [Docker Compose](#docker-compose)):
 
 ```bash
-cp -r _build/prod/rel/quantum_billing/lib/quantum_billing-0.1.0/priv/static/uploads ./uploads-backup
+cp -a /var/lib/quantum_billing/uploads ./uploads-backup
 ```
 
 Preserve the three required runtime keys and provider configuration in the deployment's secret-management/backup process. A database dump without the corresponding encryption keys cannot recover encrypted fields. Treat dumps and copies as sensitive installation data and keep them out of Git.

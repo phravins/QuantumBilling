@@ -30,14 +30,20 @@ defmodule QuantumBilling.Templates do
     Repo.all(from t in InvoiceTemplate, where: is_nil(t.archived_at), order_by: [asc: t.id])
   end
 
-  @doc "Every archived template — the designs in the Bin — most recently archived first."
-  def list_archived_templates do
-    Repo.all(
-      from t in InvoiceTemplate,
-        where: not is_nil(t.archived_at),
-        order_by: [desc: t.archived_at, desc: t.id]
-    )
+  @doc """
+  Archived templates — the designs in the Bin — most recently archived first;
+  `limit:` bounds the rows.
+  """
+  def list_archived_templates(opts \\ []) do
+    from(t in archived(), order_by: [desc: t.archived_at, desc: t.id])
+    |> QuantumBilling.Paging.bounded(opts)
+    |> Repo.all()
   end
+
+  @doc "How many designs are in the Bin."
+  def count_archived_templates, do: Repo.aggregate(archived(), :count)
+
+  defp archived, do: from(t in InvoiceTemplate, where: not is_nil(t.archived_at))
 
   @doc "One archived template by id, or `nil` — including for an id that is not a number."
   def get_archived_template(id) do
@@ -237,6 +243,19 @@ defmodule QuantumBilling.Templates do
 
   @doc "Whether any invoice was issued under this template."
   def in_use?(%InvoiceTemplate{} = template), do: referenced?(template)
+
+  @doc "The ids among `ids` of templates that `in_use?/1` keeps; one query."
+  def ids_in_use([]), do: MapSet.new()
+
+  def ids_in_use(ids) when is_list(ids) do
+    if :template_id in Invoice.__schema__(:fields) do
+      from(i in Invoice, where: i.template_id in ^ids, distinct: true, select: i.template_id)
+      |> Repo.all()
+      |> MapSet.new()
+    else
+      MapSet.new()
+    end
+  end
 
   defp audited({:ok, %InvoiceTemplate{} = template} = result, action, opts) do
     Audit.log_event(action, "InvoiceTemplate", template.id,

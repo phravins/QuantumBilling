@@ -50,6 +50,7 @@ Seeds do not update an existing password. See [getting started](getting-started.
 | `DNS_CLUSTER_QUERY` | Unset | DNSCluster discovery query |
 | `TRUSTED_PROXIES` | Empty | Comma-separated proxy IPs/CIDRs allowed to supply forwarded client IP |
 | `SLOW_QUERY_MS` | `500` | Slow-query logging threshold |
+| `UPLOADS_DIR` | The release's `priv/static/uploads` | Where uploaded logos and images are stored. Set it in production so uploads survive release upgrades; the Docker image sets `/app/uploads` |
 
 Do not set `PHX_SERVER=false` to disable a server: the condition checks presence, not a boolean conversion. Leave it unset. Numeric values must be valid integer strings.
 
@@ -57,7 +58,7 @@ Do not set `PHX_SERVER=false` to disable a server: the condition checks presence
 
 ## Email
 
-Mail uses business SMTP settings when a usable relay is configured; otherwise it uses the application mailer. Development defaults to Swoosh's local adapter. Tests use the test adapter. Environment SMTP configuration replaces the development adapter when a host is supplied; production should have a working relay for account confirmation/reset and document mail.
+Mail uses business SMTP settings when a usable relay is configured; otherwise it uses the application mailer. Development defaults to Swoosh's local adapter. Tests use the test adapter. Environment SMTP configuration replaces the development adapter when a host is supplied; production should have a working relay for account confirmation/reset and document mail. In production without `SMTP_HOST`, boot prints a warning and app mail fails with "No mail relay is configured" in the delivery ledger instead of crashing; a business's own relay under Settings > SMTP still sends.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -72,6 +73,18 @@ Mail uses business SMTP settings when a usable relay is configured; otherwise it
 Port 465 uses implicit TLS; other ports require STARTTLS. Verification normally checks the system trust store and relay hostname. SMTP credentials entered in settings are stored encrypted, and secret form fields do not render stored values. A blank secret input preserves the stored secret. Account mail is composed in `Accounts.UserNotifier`; invoice/e-way-bill mail has dedicated notifier modules and delivery records/jobs.
 
 `Accounts.UserNotifier` selects the current business, or business 1 when there is none, for account mail transport and its ledger. Queued document mail (invoices, receipts, e-way bills) runs in the business that queued it, so it uses that business's SMTP settings and delivery ledger.
+
+## Docker Compose
+
+Read only by [`docker-compose.yml`](../docker-compose.yml); see [deployment](deployment.md#docker-compose).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_USER` | Required | PostgreSQL user created in the `db` container |
+| `DATABASE_PASSWORD` | Required | Its password, also placed in `DATABASE_URL`: generate it URL-safe (`openssl rand -hex 24`) |
+| `DATABASE_NAME` | `quantum_billing_prod` | Database name |
+| `APP_BIND` | `127.0.0.1` | Host address the app port is published on |
+| `APP_PORT` | `4000` | Host port |
 
 ## Payments and UPI
 

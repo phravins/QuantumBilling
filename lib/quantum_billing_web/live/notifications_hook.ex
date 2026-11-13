@@ -48,7 +48,17 @@ defmodule QuantumBillingWeb.NotificationsHook do
 
   defp handle_feed_info(_message, socket), do: {:cont, socket}
 
-  defp prepend(socket, notification) do
+  # Subscribing comes before the feed is read, so a row created in between
+  # arrives twice; a second copy would duplicate its DOM id and count.
+  defp prepend(socket, %Notification{id: id} = notification) do
+    if Enum.any?(socket.assigns.notifications, &(&1.id == id)) do
+      {:halt, socket}
+    else
+      add_to_feed(socket, notification)
+    end
+  end
+
+  defp add_to_feed(socket, notification) do
     feed = Enum.take([notification | socket.assigns.notifications], Notifications.feed_limit())
 
     {:halt,

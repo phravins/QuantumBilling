@@ -1,0 +1,27 @@
+# Secrets never enter the build context.
+.env
+.env.*
+
+_build
+deps
+.git
+.elixir_ls
+.vscode
+.claude
+assets/node_modules
+*.tar.gz
+*.log
+*.dump
+*.sql
+docker-compose*.yml
+Dockerfile
+
+# Keeps local build output and uploads out of `COPY priv priv`.
+priv/static/assets
+priv/static/cache_manifest.json
+priv/static/uploads
+test
+docs
+*.md
+rel/artifacts
+tmp

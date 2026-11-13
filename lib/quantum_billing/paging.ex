@@ -36,6 +36,17 @@ defmodule QuantumBilling.Paging do
   end
 
   @doc """
+  Applies the `:limit` option, if any, to `query`. For lists that are read whole
+  by tests and exports but bounded on screen, such as the Bin.
+  """
+  def bounded(query, opts) do
+    case Keyword.get(opts, :limit) do
+      limit when is_integer(limit) and limit > 0 -> Ecto.Query.limit(query, ^limit)
+      _none -> query
+    end
+  end
+
+  @doc """
   Keyset paging for the API: `per_page` rows with ids below `before_id` (or the
   newest, for `nil`), newest first. Returns `%{rows:, per_page:, has_next?:}`.
   """

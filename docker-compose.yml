@@ -1,0 +1,119 @@
+# Production-style stack: PostgreSQL, a one-shot migration, then the app.
+# Values come from the shell or from .env; see the Docker Compose section of
+# .env.example and docs/deployment.md.
+
+x-app-env: &app-env
+  # The password goes into a URL: generate it URL-safe (`openssl rand -hex 24`).
+  DATABASE_URL: ecto://${DATABASE_USER:?set DATABASE_USER}:${DATABASE_PASSWORD:?set DATABASE_PASSWORD}@db:5432/${DATABASE_NAME:-quantum_billing_prod}
+  POOL_SIZE: ${POOL_SIZE:-20}
+  DB_QUEUE_TARGET_MS: ${DB_QUEUE_TARGET_MS:-150}
+  DB_QUEUE_INTERVAL_MS: ${DB_QUEUE_INTERVAL_MS:-1000}
+  DB_TIMEOUT_MS: ${DB_TIMEOUT_MS:-15000}
+  PHX_HOST: ${PHX_HOST:-localhost}
+  PORT: "4000"
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}
+  TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:?set SECRETS_ENCRYPTION_KEY}
+  SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+  SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+  SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_SSL: ${SMTP_SSL:-}
+  SMTP_TLS_VERIFY: ${SMTP_TLS_VERIFY:-true}
+  MAILER_FROM_EMAIL: ${MAILER_FROM_EMAIL:-}
+  RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+  RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+  RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+  IRP_CLIENT_ID: ${IRP_CLIENT_ID:-}
+  IRP_CLIENT_SECRET: ${IRP_CLIENT_SECRET:-}
+  IRP_SANDBOX: ${IRP_SANDBOX:-true}
+  NIC_EWB_API_URL: ${NIC_EWB_API_URL:-}
+  NIC_EWB_API_KEY: ${NIC_EWB_API_KEY:-}
+  GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+  GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+  # The reverse proxy's address as the app sees it, so client IPs in the audit
+  # log and rate limits are the real ones. A proxy on the host reaches the app
+  # from this network's gateway (`docker network inspect`, e.g. 172.18.0.1).
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  SLOW_QUERY_MS: ${SLOW_QUERY_MS:-500}
+
+# Both app containers: no root filesystem writes outside the volume and /tmp,
+# no privilege escalation, bounded logs.
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp:size=512m
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:?set DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME:-quantum_billing_prod}
+    # No published port: only the app reaches it, and 5432 stays free for a local Postgres.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    shm_size: 256m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  migrate:
+    <<: *hardening
+    build: .
+    image: quantum_billing:latest
+    command: ["bin/migrate"]
+    restart: "no"
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    <<: *hardening
+    build: .
+    image: quantum_billing:latest
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Loopback only: put a TLS reverse proxy (nginx, Caddy) in front. Set
+    # APP_BIND=0.0.0.0 only for a trusted network without one.
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-4000}:4000"
+    volumes:
+      - uploads:/app/uploads
+    # Oban finishes running jobs on SIGTERM; give it time before SIGKILL.
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  postgres_data:
+  uploads:

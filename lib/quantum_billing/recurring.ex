@@ -69,14 +69,18 @@ defmodule QuantumBilling.Recurring do
   @doc "Gets a profile that is in the Bin, or `nil`."
   def get_deleted_profile(id), do: fetch_by_id(RecurringProfile.binned(), id)
 
-  @doc "Every profile in the Bin, most recently binned first."
-  def list_deleted_profiles do
-    Repo.all(
-      from p in RecurringProfile.binned(),
-        order_by: [desc: p.deleted_at, desc: p.id],
-        preload: [:client]
+  @doc "Profiles in the Bin, most recently binned first; `limit:` bounds the rows."
+  def list_deleted_profiles(opts \\ []) do
+    from(p in RecurringProfile.binned(),
+      order_by: [desc: p.deleted_at, desc: p.id],
+      preload: [:client]
     )
+    |> Paging.bounded(opts)
+    |> Repo.all()
   end
+
+  @doc "How many profiles are in the Bin."
+  def count_deleted_profiles, do: Repo.aggregate(RecurringProfile.binned(), :count)
 
   defp fetch_by_id(query, id) do
     case Integer.parse(to_string(id)) do

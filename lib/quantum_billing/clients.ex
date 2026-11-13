@@ -370,10 +370,24 @@ defmodule QuantumBilling.Clients do
     Repo.exists?(from n in CreditNote, where: n.client_id == ^id)
   end
 
-  @doc "Every client in the Bin, most recently deleted first."
-  def list_deleted_clients do
-    Repo.all(from c in Client.binned(), order_by: [desc: c.deleted_at, desc: c.id])
+  @doc "The ids among `ids` of clients with credit notes, which `in_use?/1` keeps; one query."
+  def ids_in_use([]), do: MapSet.new()
+
+  def ids_in_use(ids) when is_list(ids) do
+    from(n in CreditNote, where: n.client_id in ^ids, distinct: true, select: n.client_id)
+    |> Repo.all()
+    |> MapSet.new()
   end
+
+  @doc "Clients in the Bin, most recently deleted first; `limit:` bounds the rows."
+  def list_deleted_clients(opts \\ []) do
+    from(c in Client.binned(), order_by: [desc: c.deleted_at, desc: c.id])
+    |> Paging.bounded(opts)
+    |> Repo.all()
+  end
+
+  @doc "How many clients are in the Bin."
+  def count_deleted_clients, do: Repo.aggregate(Client.binned(), :count)
 
   @doc "One client in the Bin by id, or `nil` — including for an id that is not a number."
   def get_deleted_client(id) do

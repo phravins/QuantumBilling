@@ -212,6 +212,68 @@ defmodule QuantumBillingWeb.BinLiveTest do
     end
   end
 
+  describe "a Bin with more than a screenful" do
+    # 101 clients, deleted a second apart: the oldest is the 101st.
+    defp binned_clients(count) do
+      now = DateTime.utc_now(:second)
+
+      for n <- 1..count do
+        {:ok, client} =
+          Clients.create_client(%{
+            "client_type" => "Unregistered",
+            "name" => "Bulk Client #{n}",
+            "phone" => "9876543210",
+            "billing_line1" => "1 Main Street",
+            "billing_city" => "Mumbai",
+            "billing_state" => "Maharashtra (27)",
+            "billing_pin" => "400001"
+          })
+
+        client
+        |> Ecto.Changeset.change(deleted_at: DateTime.add(now, -n))
+        |> Repo.update!()
+      end
+    end
+
+    defp rows_shown(view) do
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#bin-entries > [id^=bin-]")
+      |> Enum.count()
+    end
+
+    test "shows the newest hundred, counts them all and offers the rest", %{conn: conn} do
+      [newest | _] = clients = binned_clients(101)
+      oldest = List.last(clients)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+
+      assert has_element?(view, "#bin-count-all", "101")
+      assert has_element?(view, "#bin-count-client", "101")
+      assert rows_shown(view) == 100
+      assert has_element?(view, "#bin-client-#{newest.id}")
+      refute has_element?(view, "#bin-client-#{oldest.id}")
+
+      view |> element("#bin-show-more") |> render_click()
+
+      assert rows_shown(view) == 101
+      assert has_element?(view, "#bin-client-#{oldest.id}")
+      refute has_element?(view, "#bin-show-more")
+    end
+
+    test "a chip starts again from the newest hundred", %{conn: conn} do
+      binned_clients(101)
+      {:ok, view, _html} = live(conn, ~p"/bin")
+
+      view |> element("#bin-show-more") |> render_click()
+      view |> element("#bin-filter-client") |> render_click()
+
+      assert rows_shown(view) == 100
+      assert has_element?(view, "#bin-show-more")
+    end
+  end
+
   describe "with deleted records" do
     test "lists each kind with the two actions", %{conn: conn} do
       invoice = binned_invoice()
