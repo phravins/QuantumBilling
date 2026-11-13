@@ -183,8 +183,8 @@ defmodule QuantumBillingWeb.UserLive.Profile do
                 class={[
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
                   if(@current_scope.user.totp_confirmed_at,
-                    do: "bg-emerald-500/10 text-emerald-600",
-                    else: "bg-amber-500/10 text-amber-600"
+                    do: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                    else: "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                   )
                 ]}
               >

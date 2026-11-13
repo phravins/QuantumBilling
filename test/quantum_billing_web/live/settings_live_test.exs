@@ -118,6 +118,8 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert has_element?(view, "#company-name")
       assert has_element?(view, "#company-facts")
       assert has_element?(view, "#company-member-count")
+      assert has_element?(view, "#company-letterhead #company-registration")
+      assert has_element?(view, "#company-completeness [role='progressbar']")
       assert has_element?(view, "#company-edit-details[href='/settings/general']")
       assert has_element?(view, "#company-edit-designs[href='/settings/customization']")
       refute has_element?(view, "#settings-form")

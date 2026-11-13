@@ -248,8 +248,9 @@ Do not use `mix ecto.reset` or drop the database as an upgrade procedure. They d
 ## Security hardening
 
 The application enforces what it can: HTTPS (HSTS, Secure cookies, API refused
-over http), per-request membership checks, owner-only administration with
-mandatory 2FA for owners, CSP and the other browser headers, upload type and
+over http), per-request membership checks, owner-only administration,
+optional 2FA (mandatory for everyone once an owner turns on "Enforce 2FA for
+everyone" under Settings > Security), CSP and the other browser headers, upload type and
 size checks, rate limits shared across servers, and signed, pinned outbound
 webhooks. These steps belong to the host and network, and the application
 cannot do them for you.

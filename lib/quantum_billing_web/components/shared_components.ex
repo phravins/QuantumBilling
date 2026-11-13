@@ -207,9 +207,9 @@ defmodule QuantumBillingWeb.SharedComponents do
     """
   end
 
-  @positive "border-emerald-200 bg-emerald-50 text-emerald-700"
-  @pending "border-amber-200 bg-amber-50 text-amber-700"
-  @negative "border-rose-200 bg-rose-50 text-rose-700"
+  @positive "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+  @pending "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+  @negative "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
   @neutral "border-base-300 bg-base-200 text-base-content/60"
 
   defp status_badge_class("E-Invoice Generated"), do: @positive

@@ -43,7 +43,9 @@ defmodule QuantumBillingWeb.Legal.LegalComponents do
 
   def blank(assigns) do
     ~H"""
-    <span class="rounded bg-amber-100 px-1 font-medium text-amber-900">[{render_slot(@inner_block)}]</span>
+    <span class="rounded bg-amber-100 px-1 font-medium text-amber-900 dark:bg-amber-800 dark:text-amber-100">[{render_slot(
+      @inner_block
+    )}]</span>
     """
   end
 end

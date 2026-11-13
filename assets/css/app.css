@@ -296,6 +296,48 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* Dropdowns. daisyUI's 20% edge disappears on a white card, so a resting select
+   gets a firmer border and a slight lift. Focus, error and disabled keep
+   daisyUI's own colours, hence the :not() list. */
+:where(.select):not(:focus, :focus-within, .select-error, :disabled, [disabled]) {
+  border-color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+:where(.select):hover:not(:focus, :focus-within, .select-error, :disabled, [disabled]) {
+  border-color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--color-base-content) 14%, transparent);
+}
+
+/* The open list (browsers with customisable selects): a card that stands off the page. */
+@supports (appearance: base-select) {
+  :where(.select)::picker(select) {
+    border: 1px solid var(--color-base-300);
+    background-color: var(--color-base-100);
+    box-shadow:
+      0 10px 25px -5px rgb(0 0 0 / 0.18),
+      0 4px 10px -6px rgb(0 0 0 / 0.12);
+  }
+
+  :where(.select) option:is(:hover, :focus-visible) {
+    background-color: var(--color-base-200);
+  }
+
+  :where(.select) option:checked {
+    background-color: var(--color-base-300);
+    font-weight: 500;
+  }
+}
+
+/* Native popups elsewhere follow the theme's colours. */
+@supports not (appearance: base-select) {
+  :where(.select) option {
+    background-color: var(--color-base-100);
+    color: var(--color-base-content);
+  }
+}
+
 /* A field's error fades in instead of snapping into place. */
 @keyframes qb-error-in {
   from { opacity: 0; transform: translateY(-2px); }

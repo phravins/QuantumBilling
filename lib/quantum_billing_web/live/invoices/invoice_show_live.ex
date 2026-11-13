@@ -464,7 +464,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h3 class="text-base font-bold">QR Codes & Payments</h3>
               <p class="text-xs text-base-content/60">
                 Invoice {@invoice.invoice_number} &bull; Total Due:
-                <strong class="text-emerald-600">{money(@invoice.grand_total, @invoice.currency)}</strong>
+                <strong class="text-emerald-600 dark:text-emerald-400">{money(
+                  @invoice.grand_total,
+                  @invoice.currency
+                )}</strong>
               </p>
             </div>
             <button
@@ -493,7 +496,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             class="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3"
           >
             <div class="flex items-center justify-between">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Government E-Invoice Verified QR
               </h4>
               <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
@@ -512,7 +515,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             class="p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3"
           >
             <div class="flex items-center justify-between gap-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-700">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                 Demo QR – not verifiable
               </h4>
               <.portal_mode_badge mode="demo" compact />

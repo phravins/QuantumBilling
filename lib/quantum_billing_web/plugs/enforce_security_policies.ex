@@ -4,8 +4,8 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
 
     * the IP allowlist, using `ClientIP` (so `x-forwarded-for` can't spoof it)
     * the inactivity timeout, also checked on LiveView mount in `UserAuth`
-    * mandatory 2FA: for everyone if enforced, and for business owners unless
-      `:require_owner_2fa` is off
+    * mandatory 2FA, only when an owner turns on "Enforce 2FA for everyone"
+      under Settings > Security; otherwise two-factor is optional
 
   Settings come from `installation_settings`, not from any one business.
   """
@@ -107,7 +107,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
       exempt_path?(conn.request_path) ->
         conn
 
-      not required?(organization, user) ->
+      not required?(organization) ->
         conn
 
       true ->
@@ -115,7 +115,7 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
         |> fetch_flash()
         |> put_flash(
           :error,
-          "Two-factor authentication is required for your account. " <>
+          "Two-factor authentication is required on this installation. " <>
             "Set it up in your account settings to continue."
         )
         |> redirect(to: "/users/settings")
@@ -123,13 +123,9 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
     end
   end
 
-  # Asked only of someone not enrolled, so the query is not on every request.
-  defp required?(%{enforce_2fa: true}, _user), do: true
-
-  defp required?(_organization, user) do
-    Application.get_env(:quantum_billing, :require_owner_2fa, true) and
-      QuantumBilling.Businesses.owns_any?(user)
-  end
+  # Optional unless the installation enforces it.
+  defp required?(%{enforce_2fa: true}), do: true
+  defp required?(_organization), do: false
 
   # Only confirmed 2FA counts; starting enrolment stores a secret before any code is checked.
   defp enrolled?(user), do: QuantumBilling.Accounts.TwoFactor.enabled?(user)

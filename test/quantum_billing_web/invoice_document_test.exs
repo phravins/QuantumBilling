@@ -248,7 +248,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       %{screen: screen, printed: printed} = both(conn, invoice)
 
       expected = [
-        "#",
+        "S.No",
         "Item / Description",
         "HSN / SAC",
         "Qty",
@@ -269,7 +269,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
       %{screen: screen, printed: printed} = both(conn, invoice)
 
       expected = [
-        "#",
+        "S.No",
         "Item / Description",
         "HSN / SAC",
         "Qty",

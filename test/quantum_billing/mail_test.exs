@@ -1,5 +1,6 @@
 defmodule QuantumBilling.MailTest do
-  use QuantumBilling.DataCase, async: true
+  # Not async: one sender test sets the app relay address in application config.
+  use QuantumBilling.DataCase, async: false
 
   import Swoosh.TestAssertions
 
@@ -134,17 +135,52 @@ defmodule QuantumBilling.MailTest do
   end
 
   describe "sender/2" do
-    test "prefers the configured sender address, then the organisation's" do
-      assert {"Books", "billing@acme.test"} =
-               Mail.sender(
-                 %Organization{
-                   smtp_from_email: "billing@acme.test",
-                   smtp_from_name: "Books",
-                   email: "hello@acme.test"
-                 },
-                 nil
-               )
+    @relay %{smtp_host: "smtp.acme.test", smtp_username: "mailer@acme.test", smtp_password: "pw"}
 
+    test "with the business's relay, its Sender Email wins" do
+      organization =
+        struct(
+          Organization,
+          Map.merge(@relay, %{
+            smtp_from_email: "billing@acme.test",
+            smtp_from_name: "Books",
+            email: "hello@acme.test"
+          })
+        )
+
+      assert {"Books", "billing@acme.test"} = Mail.sender(organization, nil)
+    end
+
+    test "with the business's relay and no Sender Email, the SMTP username sends" do
+      organization = struct(Organization, Map.put(@relay, :email, "hello@acme.test"))
+
+      assert {_name, "mailer@acme.test"} = Mail.sender(organization, nil)
+    end
+
+    test "a username that is not an address falls back to the business email" do
+      organization =
+        struct(
+          Organization,
+          %{@relay | smtp_username: "apikey"} |> Map.put(:email, "hello@acme.test")
+        )
+
+      assert {_name, "hello@acme.test"} = Mail.sender(organization, nil)
+    end
+
+    test "through the app relay, the app's own address sends, not the business's" do
+      Application.put_env(:quantum_billing, :mailer_from_email, "app@relay.test")
+      on_exit(fn -> Application.delete_env(:quantum_billing, :mailer_from_email) end)
+
+      organization = %Organization{
+        smtp_from_email: "billing@acme.test",
+        email: "hello@acme.test",
+        company_name: "Acme"
+      }
+
+      assert {"Acme", "app@relay.test"} = Mail.sender(organization, nil)
+    end
+
+    test "with no app address configured, the business email is used" do
       assert {"Acme", "hello@acme.test"} =
                Mail.sender(%Organization{email: "hello@acme.test", company_name: "Acme"}, nil)
     end
@@ -152,6 +188,41 @@ defmodule QuantumBilling.MailTest do
     test "falls back to the invoice's company name before the application's own" do
       assert {"Acme Exports", _} = Mail.sender(%Organization{}, "Acme Exports")
       assert {"QuantumBilling", _} = Mail.sender(%Organization{}, nil)
+    end
+  end
+
+  describe "reply_to/2" do
+    test "points replies at the business when mail goes out from another address" do
+      email = Swoosh.Email.new() |> Swoosh.Email.from({"Acme", "mailer@acme.test"})
+
+      assert %{reply_to: {"", "hello@acme.test"}} =
+               Mail.reply_to(email, %Organization{email: "hello@acme.test"})
+    end
+
+    test "adds nothing when From is already the business email" do
+      email = Swoosh.Email.new() |> Swoosh.Email.from({"Acme", "Hello@Acme.test"})
+
+      assert %{reply_to: nil} = Mail.reply_to(email, %Organization{email: "hello@acme.test"})
+      assert %{reply_to: nil} = Mail.reply_to(email, %Organization{})
+    end
+  end
+
+  describe "error_message/1 for a refused sender" do
+    test "says to change Sender Email" do
+      message =
+        Mail.error_message(
+          {:permanent_failure, "smtp.acme.test",
+           "550 Sender verify failed for billing@acme.test\r\n"}
+        )
+
+      assert message =~ "doesn't accept the sender address"
+      assert message =~ "Sender Email"
+      assert message =~ "550 Sender verify failed"
+    end
+
+    test "other rejections keep the generic message" do
+      assert Mail.error_message({:permanent_failure, "smtp.acme.test", "552 Message too large"}) ==
+               "The relay rejected the message: 552 Message too large"
     end
   end
 

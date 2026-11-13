@@ -325,6 +325,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
         assigns,
         :columns,
         assigns.block.children
+        |> Enum.map(&serial_label/1)
         |> regime_columns(assigns.invoice)
         |> with_custom_columns(assigns.custom.items, assigns.invoice.items)
       )
@@ -636,6 +637,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
       do: Tax.category_label(category),
       else: Tax.percent_label(rate_bp)
   end
+
+  # Templates saved before the default became "S.No" still say "#".
+  defp serial_label(%{field: "serial", label: "#"} = column), do: %{column | label: "S.No"}
+  defp serial_label(column), do: column
 
   # VAT drops the HSN column unless a line has a code, and names the defaults for VAT.
   defp regime_columns(columns, %Invoice{tax_regime: "vat", items: items}) do

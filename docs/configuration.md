@@ -69,7 +69,7 @@ Mail uses business SMTP settings when a usable relay is configured; otherwise it
 | `SMTP_PASSWORD` | Unset | Relay authentication password |
 | `SMTP_SSL` | False unless port 465 | `true`/`1` requests implicit TLS; otherwise required STARTTLS |
 | `SMTP_TLS_VERIFY` | Enabled | `false`/`0` disables certificate verification for a deliberately configured self-signed relay |
-| `MAILER_FROM_EMAIL` | Settings/fallback sender logic | Fallback outgoing sender email |
+| `MAILER_FROM_EMAIL` | `QuantumBilling.Mail.sender/2` | From address for mail sent through the app relay; must be one `SMTP_USERNAME` may send from. Empty uses `SMTP_USERNAME` when it is an address. |
 
 Port 465 uses implicit TLS; other ports require STARTTLS. Verification normally checks the system trust store and relay hostname. SMTP credentials entered in settings are stored encrypted, and secret form fields do not render stored values. A blank secret input preserves the stored secret. Account mail is composed in `Accounts.UserNotifier`; invoice/e-way-bill mail has dedicated notifier modules and delivery records/jobs.
 

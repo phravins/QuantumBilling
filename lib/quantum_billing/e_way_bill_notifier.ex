@@ -59,6 +59,7 @@ defmodule QuantumBilling.EWayBillNotifier do
       |> subject(subject_for(bill))
       |> html_body(html_content(bill, from_name))
       |> text_body(text_content(bill, from_name))
+      |> Mail.reply_to(organization)
 
     {:ok, email}
   end

@@ -563,7 +563,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
               <table class="w-full">
                 <thead>
                   <tr class={table_head_class()}>
-                    <th class="w-8 pr-2 text-left">#</th>
+                    <th class="w-12 pr-2 text-left">S.No</th>
 
                     <th class="pr-2 text-left">
                       Item / Description<span class="ml-0.5 text-error">*</span>

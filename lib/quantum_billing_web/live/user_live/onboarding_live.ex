@@ -179,16 +179,16 @@ defmodule QuantumBillingWeb.OnboardingLive do
           class="qb-rise my-auto grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-[1fr_1.15fr] lg:gap-14"
         >
           <div class="flex justify-center lg:order-2">
-            <div class="relative flex w-full max-w-sm items-center justify-center rounded-xl border border-base-300 bg-base-200/50 p-6 sm:p-10">
+            <div class="relative flex w-full max-w-sm items-center justify-center">
               <%= case @step do %>
                 <% 1 -> %>
-                  <.welcome class="h-44 w-auto sm:h-56" />
+                  <.welcome class="h-52 w-auto sm:h-64" />
                 <% 2 -> %>
-                  <.profile class="h-44 w-auto sm:h-56" />
+                  <.profile class="h-52 w-auto sm:h-64" />
                 <% 3 -> %>
-                  <.organization class="h-44 w-auto sm:h-56" />
+                  <.organization class="h-52 w-auto sm:h-64" />
                 <% _ -> %>
-                  <.success class="qb-pop-in h-44 w-auto sm:h-56" />
+                  <.success class="qb-pop-in h-52 w-auto sm:h-64" />
               <% end %>
             </div>
           </div>

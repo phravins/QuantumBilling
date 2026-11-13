@@ -30,7 +30,7 @@ One installation serves many businesses. Each business keeps its books in its ow
 - **Recurring billing.** Profiles generate invoices on a daily schedule.
 - **Invoice designer.** Starting designs, layout blocks, letterheads, watermarks, payment details and printable custom fields.
 - **Custom fields.** Eleven field types on clients, invoices, invoice lines, credit notes, e-way bills and recurring profiles. They can show as list columns or filters, print on invoices, and pass through the API.
-- **Teams and security.** Owner and Staff roles, invitations, and TOTP two-factor authentication, which owners must use. Also an audit trail, security alert emails, a nonce CSP and rate limits.
+- **Teams and security.** Owner and Staff roles, invitations, and optional TOTP two-factor authentication, which an owner can make mandatory for everyone. Also an audit trail, security alert emails, a nonce CSP and rate limits.
 - **Integrations.** A REST API with idempotent writes, signed outgoing webhooks, and Google Calendar sync for compliance dates.
 - **Data.** A dashboard with a sales register and tax-summary CSV exports, and a per-business JSON backup and restore.
 

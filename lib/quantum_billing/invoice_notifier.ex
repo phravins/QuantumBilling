@@ -55,6 +55,7 @@ defmodule QuantumBilling.InvoiceNotifier do
       |> html_body(html_content(invoice, from_name))
       |> text_body(text_content(invoice, from_name))
       |> attachment(document_attachment(invoice))
+      |> Mail.reply_to(organization)
 
     {:ok, email}
   end

@@ -151,7 +151,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           type="button"
           phx-click="remove_block"
           phx-value-id={@block.id}
-          class={[row_action_class(), "hover:text-red-600"]}
+          class={[row_action_class(), "hover:text-red-600 dark:hover:text-red-400"]}
           title="Remove"
         >
           <.icon name="hero-x-mark" class="size-3.5" />
@@ -246,7 +246,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           type="button"
           id="remove-image"
           phx-click="remove_image"
-          class="text-xs text-base-content/50 hover:text-red-600"
+          class="text-xs text-base-content/50 hover:text-red-600 dark:hover:text-red-400"
         >
           Remove
         </button>
@@ -335,7 +335,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             id="remove-logo"
             phx-click="remove_logo"
             data-confirm="Remove the company logo? Every design uses it."
-            class="text-xs text-base-content/50 transition-colors hover:text-red-600"
+            class="text-xs text-base-content/50 transition-colors hover:text-red-600 dark:hover:text-red-400"
           >
             Remove
           </button>
@@ -433,7 +433,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             id="remove-background"
             phx-click="remove_background"
             data-confirm="Remove the letterhead from this design?"
-            class="text-xs text-base-content/50 hover:text-red-600"
+            class="text-xs text-base-content/50 hover:text-red-600 dark:hover:text-red-400"
           >
             Remove
           </button>
@@ -584,7 +584,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           type="button"
           phx-click="toggle_child"
           phx-value-field={field}
-          class={[row_action_class(), "size-5 hover:text-red-600"]}
+          class={[row_action_class(), "size-5 hover:text-red-600 dark:hover:text-red-400"]}
         >
           <.icon name="hero-x-mark" class="size-3" />
         </button>
@@ -1123,7 +1123,10 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             phx-click="delete_template"
             phx-value-id={template.id}
             data-confirm={"Move “#{template.name}” to the Bin? Invoices already issued with it keep the design they were issued with, and it can be restored from there."}
-            class={[secondary_button_class(), "h-8 px-2.5 text-xs hover:text-red-600"]}
+            class={[
+              secondary_button_class(),
+              "h-8 px-2.5 text-xs hover:text-red-600 dark:hover:text-red-400"
+            ]}
           >
             Delete
           </button>

@@ -121,6 +121,14 @@ config :quantum_billing, :google_calendar,
   client_id: System.get_env("GOOGLE_CALENDAR_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CALENDAR_CLIENT_SECRET")
 
+# The app relay's sender (see QuantumBilling.Mail.sender/2). Not in tests, so a
+# developer's .env doesn't change what they assert.
+if config_env() != :test do
+  config :quantum_billing,
+    mailer_from_email: System.get_env("MAILER_FROM_EMAIL"),
+    mailer_username: System.get_env("SMTP_USERNAME")
+end
+
 smtp_host = String.trim(System.get_env("SMTP_HOST") || "")
 
 # No app relay in prod: fail each send with a clear message rather than crash

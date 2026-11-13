@@ -44,6 +44,7 @@ defmodule QuantumBilling.Compliance.ReminderEmail do
     |> from({from_name, from_email})
     |> subject(subject_line(task, due_phrase))
     |> text_body(body(task, due_phrase))
+    |> Mail.reply_to(organization)
   end
 
   defp author(%Task{created_by_id: nil}), do: nil

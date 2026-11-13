@@ -88,8 +88,8 @@ defmodule QuantumBilling.AccountsFixtures do
   end
 
   @doc """
-  `user` with confirmed 2FA. `owner_fixture/1` does this, since owners must
-  have it.
+  `user` with confirmed 2FA. `owner_fixture/1` does this, so owner tests
+  also pass with "Enforce 2FA for everyone" on.
   """
   def enrol_two_factor(user) do
     user

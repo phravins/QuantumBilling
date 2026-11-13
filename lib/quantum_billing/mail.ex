@@ -21,6 +21,7 @@ defmodule QuantumBilling.Mail do
   alias QuantumBilling.Settings.Organization
 
   @connect_timeout_ms 15_000
+  @default_sender_email "invoices@quantumbilling.in"
 
   @doc "Sends `email` now. Returns `{:ok, meta}` or `{:error, human_message}`."
   def deliver(email, organization \\ nil)
@@ -106,7 +107,16 @@ defmodule QuantumBilling.Mail do
   def own_relay?(_organization), do: false
 
   @doc """
-  The `{name, email}` to send from: configured sender, then contact email, then `MAILER_FROM_EMAIL`.
+  The `{name, email}` to send from. Relays refuse a From address their account
+  may not use ("550 Sender verify failed"), so the address follows the relay
+  that carries the message:
+
+    * the business's own relay: its Sender Email, then its username when that
+      is an address, then the business email;
+    * the app relay: `MAILER_FROM_EMAIL`, then `SMTP_USERNAME` when that is an
+      address, then the business email.
+
+  Replies still reach the business; see `reply_to/2`.
   """
   def sender(organization \\ nil, fallback_name \\ nil)
 
@@ -114,10 +124,14 @@ defmodule QuantumBilling.Mail do
 
   def sender(%Organization{} = organization, fallback_name) do
     email =
-      presence(organization.smtp_from_email) ||
-        presence(organization.email) ||
-        System.get_env("MAILER_FROM_EMAIL") ||
-        "invoices@quantumbilling.in"
+      if relay_ready?(organization) do
+        presence(organization.smtp_from_email) ||
+          email_address(organization.smtp_username) ||
+          presence(organization.email) ||
+          app_sender_email()
+      else
+        app_sender_email() || presence(organization.email)
+      end
 
     name =
       presence(organization.smtp_from_name) ||
@@ -125,7 +139,45 @@ defmodule QuantumBilling.Mail do
         presence(organization.company_name) ||
         "QuantumBilling"
 
-    {name, email}
+    {name, email || @default_sender_email}
+  end
+
+  @doc """
+  Sets Reply-To to the business email when mail goes out from another address,
+  so customers who answer an invoice reach the business, not the relay account.
+  """
+  def reply_to(%Swoosh.Email{} = email, %Organization{} = organization) do
+    business = presence(organization.email)
+
+    case email.from do
+      {_name, from} when is_binary(business) and is_binary(from) ->
+        if String.downcase(from) == String.downcase(business),
+          do: email,
+          else: Swoosh.Email.reply_to(email, business)
+
+      _no_from ->
+        email
+    end
+  end
+
+  def reply_to(%Swoosh.Email{} = email, _no_organization), do: email
+
+  # The relay `smtp_config/1` will use, without its warning.
+  defp relay_ready?(%Organization{} = organization) do
+    presence(organization.smtp_host) != nil and
+      (presence(organization.smtp_username) == nil or presence(organization.smtp_password) != nil)
+  end
+
+  defp app_sender_email do
+    email_address(Application.get_env(:quantum_billing, :mailer_from_email)) ||
+      email_address(Application.get_env(:quantum_billing, :mailer_username))
+  end
+
+  defp email_address(value) do
+    case presence(value) do
+      nil -> nil
+      address -> if String.match?(address, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/), do: address
+    end
   end
 
   @doc "Sends a small test message synchronously, so Settings can show the relay's answer."
@@ -346,8 +398,17 @@ defmodule QuantumBilling.Mail do
   def error_message({:auth_failed, detail}),
     do: "The relay rejected the username or password: #{error_message(detail)}"
 
-  def error_message({:permanent_failure, _host, detail}),
-    do: "The relay rejected the message: #{error_message(detail)}"
+  def error_message({:permanent_failure, _host, detail}) do
+    relay_text = error_message(detail)
+
+    if sender_refused?(relay_text) do
+      "The relay doesn't accept the sender address. Under Settings > SMTP, set " <>
+        "Sender Email to an address your SMTP account may send from (often the SMTP " <>
+        "username), or leave it blank. The relay said: #{relay_text}"
+    else
+      "The relay rejected the message: #{relay_text}"
+    end
+  end
 
   def error_message(:no_relay),
     do:
@@ -369,6 +430,13 @@ defmodule QuantumBilling.Mail do
   def error_message(reason) when is_atom(reason), do: Atom.to_string(reason)
   def error_message(reason) when is_binary(reason), do: reason
   def error_message(reason), do: inspect(reason)
+
+  defp sender_refused?(relay_text) do
+    String.match?(
+      relay_text,
+      ~r/sender verify|not (a |an )?(valid|authori[sz]ed|permitted) sender|sender address rejected|not owned by user/i
+    )
+  end
 
   defp presence(value) when is_binary(value) do
     case String.trim(value) do

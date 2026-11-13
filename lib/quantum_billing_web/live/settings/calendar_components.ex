@@ -124,7 +124,7 @@ defmodule QuantumBillingWeb.CalendarComponents do
           <p
             :if={@connections["feed"] && !@new_feed_url}
             id="feed-active"
-            class="mt-3 text-xs font-medium text-emerald-600"
+            class="mt-3 text-xs font-medium text-emerald-600 dark:text-emerald-400"
           >
             Active
           </p>
@@ -178,14 +178,14 @@ defmodule QuantumBillingWeb.CalendarComponents do
     <p
       :if={@connection.last_error}
       id={"calendar-error-#{@connection.provider}"}
-      class="mt-3 text-xs font-medium text-rose-600"
+      class="mt-3 text-xs font-medium text-rose-600 dark:text-rose-400"
     >
       {@connection.last_error}
     </p>
     <p
       :if={!@connection.last_error}
       id={"calendar-connected-#{@connection.provider}"}
-      class="mt-3 text-xs font-medium text-emerald-600"
+      class="mt-3 text-xs font-medium text-emerald-600 dark:text-emerald-400"
     >
       Connected{last_synced(@connection.last_synced_at)}
     </p>

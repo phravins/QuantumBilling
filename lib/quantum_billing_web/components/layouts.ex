@@ -554,9 +554,15 @@ defmodule QuantumBillingWeb.Layouts do
   defp notification_icon("client"), do: "hero-user-plus"
   defp notification_icon(_other), do: "hero-information-circle"
 
-  defp notification_tone("success"), do: "bg-emerald-50 text-emerald-700"
-  defp notification_tone("warning"), do: "bg-amber-50 text-amber-700"
-  defp notification_tone("error"), do: "bg-rose-50 text-rose-700"
+  defp notification_tone("success"),
+    do: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+
+  defp notification_tone("warning"),
+    do: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+
+  defp notification_tone("error"),
+    do: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+
   defp notification_tone(_info), do: "bg-base-200 text-base-content/60"
 
   defp user_designation(%{user: %{designation: title}}) when is_binary(title) and title != "",
@@ -807,15 +813,15 @@ defmodule QuantumBillingWeb.Layouts do
 
         <p class="mt-2 text-sm text-base-content/60">Draft — not yet in effect.</p>
 
-        <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4">
-          <p class="text-sm font-semibold text-amber-900">
+        <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">
             Template pending legal review — do not publish as-is.
           </p>
 
-          <p class="mt-1 text-sm text-amber-800">
+          <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">
             This document is a starting structure, not legal advice. Have it reviewed by a
             qualified lawyer and fill in every
-            <span class="rounded bg-amber-200 px-1 font-medium text-amber-900">highlighted</span>
+            <span class="rounded bg-amber-200 px-1 font-medium text-amber-900 dark:bg-amber-800 dark:text-amber-100">highlighted</span>
             blank before making it public. Remove this notice once reviewed.
           </p>
         </div>

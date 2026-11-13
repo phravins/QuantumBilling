@@ -127,14 +127,17 @@ defmodule QuantumBillingWeb.Illustrations do
     """
   end
 
-  @doc "Someone waving hello, a speech bubble beside them: the first onboarding step."
+  @doc "Someone waving hello beside a fresh invoice and a few coins: the first onboarding step."
   attr :class, :any, default: "h-44 w-auto"
 
   def welcome(assigns) do
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
       <.blob />
-      <.person x={50} y={68} s={1.1} hair={:bun} glasses shirt={:ink}>
+
+      <.invoice_sheet x={154} y={18} angle={6} total />
+
+      <.person x={18} y={74} s={1.05} hair={:bun} glasses shirt={:ink}>
         <:arms>
           <.arm d="M78 86 C92 82 98 66 98 46" />
           <.hand x={98} y={40} />
@@ -142,28 +145,29 @@ defmodule QuantumBillingWeb.Illustrations do
         </:arms>
       </.person>
 
-      <path
-        d="M156 22 H214 C220 22 224 26 224 32 V58 C224 64 220 68 214 68 H180 L168 80 L170 68 H156 C150 68 146 64 146 58 V32 C146 26 150 22 156 22 Z"
-        class="fill-base-100 stroke-base-content"
-        stroke-width="3"
-        stroke-linejoin="round"
-      />
-      <circle :for={x <- [168, 185, 202]} cx={x} cy="45" r="4" class="fill-base-content" />
-
-      <.sparkle x={34} y={52} r={10} />
-      <.sparkle x={212} y={150} r={7} />
+      <.rupee_coin x={176} y={150} r={15} />
+      <.rupee_coin x={208} y={166} r={11} />
+      <.sparkle x={30} y={52} r={10} />
+      <.sparkle x={226} y={128} r={6} />
     </svg>
     """
   end
 
-  @doc "Someone holding up their ID card, a pencil beside it: the \"about you\" step."
+  @doc """
+  Someone holding up their ID card in front of an invoice whose "billed by"
+  details a pencil is filling in: the "about you" step.
+  """
   attr :class, :any, default: "h-44 w-auto"
 
   def profile(assigns) do
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
       <.blob />
-      <.person x={65} y={50} s={1.1} hair={:curly} shirt={:paper}>
+
+      <.invoice_sheet x={146} y={22} angle={8} />
+      <.pencil x={190} y={74} angle={32} />
+
+      <.person x={34} y={52} s={1.1} hair={:curly} shirt={:paper}>
         <:arms>
           <.arm d="M22 86 C12 94 14 102 22 106" shirt={:paper} />
           <.arm d="M78 86 C88 94 86 102 78 106" shirt={:paper} />
@@ -180,70 +184,105 @@ defmodule QuantumBillingWeb.Illustrations do
         </:front>
       </.person>
 
-      <.pencil x={200} y={100} angle={30} />
-      <.sparkle x={40} y={44} r={9} />
+      <.sparkle x={34} y={44} r={9} />
     </svg>
     """
   end
 
   @doc """
-  Two colleagues at a growth chart, an idea lighting up between them: the
-  organisation step.
+  A shopfront with its GSTIN on the wall and sales rising in the window, the
+  owner in front holding an invoice: the organisation step.
   """
   attr :class, :any, default: "h-44 w-auto"
 
   def organization(assigns) do
     ~H"""
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
-      <path
-        d="M14 120 C10 92 28 74 54 76 C80 78 96 100 92 132 C88 164 60 176 38 168 C18 160 16 140 14 120 Z"
-        class="fill-base-content/10"
-      />
-      <path
-        d="M150 96 C162 74 196 70 216 86 C236 102 236 140 218 160 C200 180 160 178 148 156 C138 138 140 112 150 96 Z"
-        class="fill-base-content/10"
-      />
+      <.blob />
 
-      <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-        <path d="M78 16 H162 V80 H78 Z" class="fill-base-100" />
-        <path d="M90 66 V54 M104 66 V44 M118 66 V48 M132 66 V34" stroke-width="7" />
-        <path d="M88 70 H152" stroke-linecap="round" />
-        <path d="M140 40 L150 28 M150 28 H142 M150 28 V36" stroke-linecap="round" />
+      <g
+        class="stroke-base-content"
+        stroke-width="3"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+      >
+        <path d="M126 62 H214 V170 H126 Z" class="fill-base-100" />
+
+        <path d="M120 20 H220 V42 H120 Z" class="fill-base-content" />
+        <path d="M132 31 H170" class="stroke-base-100" stroke-width="4" />
+        <path d="M178 31 H190" class="stroke-base-100" stroke-width="4" />
+
+        <path d="M116 42 H224 L218 62 H122 Z" class="fill-base-100" />
+        <path
+          d="M137 42 L135 62 H148 L149 42 Z M161 42 V62 H174 V42 Z M186 42 L187 62 H200 L198 42 Z"
+          class="fill-base-content"
+        />
+
+        <path d="M136 76 H184 V122 H136 Z" class="fill-base-100" />
+        <path
+          d="M146 114 V104 M156 114 V96 M166 114 V100 M176 114 V86"
+          stroke-width="6"
+          stroke-linecap="butt"
+        />
+        <path d="M144 98 L156 88 L166 92 L178 80" stroke-width="2" />
+
+        <path d="M192 96 H208 V170 H192 Z" class="fill-base-content" />
+        <path d="M108 170 H232" />
+      </g>
+      <circle cx="196" cy="134" r="1.8" class="fill-base-100" />
+
+      <g transform="translate(136 132) rotate(-4)">
+        <path
+          d="M0 0 H46 V22 H0 Z"
+          class="fill-base-100 stroke-base-content"
+          stroke-width="2.5"
+          stroke-linejoin="round"
+        />
+        <text
+          x="23"
+          y="10"
+          text-anchor="middle"
+          class="fill-base-content"
+          font-size="8"
+          font-weight="700"
+          letter-spacing="1"
+        >
+          GSTIN
+        </text>
+        <path
+          d="M7 16 H39"
+          class="stroke-base-content"
+          stroke-width="2"
+          stroke-dasharray="3 2"
+        />
       </g>
 
-      <.bulb x={52} y={36} />
-
-      <.person x={4} y={84} s={0.98} hair={:long} shirt={:ink}>
-        <:arms>
-          <.arm d="M78 86 C92 80 102 68 108 54" />
-          <.hand x={110} y={50} />
-        </:arms>
-      </.person>
-
-      <.person x={130} y={84} s={0.98} flip hair={:short} beard shirt={:paper}>
+      <.person x={4} y={84} s={0.98} hair={:short} beard shirt={:paper}>
         <:arms>
           <.arm d="M22 86 C14 92 16 98 24 100" shirt={:paper} />
           <.arm d="M78 86 C86 92 84 98 76 100" shirt={:paper} />
         </:arms>
         <:front>
           <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M22 80 H78 V114 H22 Z" class="fill-base-content" />
-            <path d="M28 74 H72 V108 H28 Z" class="fill-base-100" />
-            <path d="M36 84 H64 M36 92 H58 M36 100 H62" stroke-linecap="round" />
+            <path d="M24 72 H76 V114 H24 Z" class="fill-base-100" />
+            <path d="M31 80 H47" stroke-width="5" />
+            <path d="M31 92 H69 M31 99 H61" stroke-width="2" stroke-linecap="round" />
+            <path d="M52 107 H69" stroke-width="3.5" stroke-linecap="round" />
           </g>
           <.hand x={24} y={100} />
           <.hand x={76} y={100} />
         </:front>
       </.person>
 
-      <.sparkle x={186} y={30} r={9} />
+      <.rupee_coin x={98} y={52} r={12} />
+      <.sparkle x={34} y={50} r={9} />
     </svg>
     """
   end
 
   @doc """
-  Two people cheering under a tick that draws itself in, with confetti: after
-  choosing a company, and at the end of onboarding.
+  An invoice stamped PAID, a tick drawing itself in beside it, people cheering
+  and coins for confetti: after choosing a company, and at the end of onboarding.
   """
   attr :class, :any, default: "h-48 w-auto"
 
@@ -252,19 +291,45 @@ defmodule QuantumBillingWeb.Illustrations do
     <svg viewBox="0 0 240 200" class={@class} aria-hidden="true" fill="none">
       <.blob />
 
-      <g class="qb-pop-in">
-        <circle cx="120" cy="52" r="30" class="fill-base-content" />
+      <.invoice_sheet x={86} y={34} angle={-4} />
+
+      <g transform="translate(120 112) rotate(-14)" class="qb-pop-in">
         <path
-          d="M106 52l10 10 19-20"
+          d="M-34 -13 H34 V13 H-34 Z"
+          class="fill-base-100 stroke-emerald-600 dark:stroke-emerald-400"
+          stroke-width="3"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M-30 -9 H30 V9 H-30 Z"
+          class="stroke-emerald-600 dark:stroke-emerald-400"
+          stroke-width="1.5"
+        />
+        <text
+          y="5.5"
+          text-anchor="middle"
+          class="fill-emerald-600 dark:fill-emerald-400"
+          font-size="15"
+          font-weight="800"
+          letter-spacing="3"
+        >
+          PAID
+        </text>
+      </g>
+
+      <g class="qb-pop-in">
+        <circle cx="160" cy="38" r="20" class="fill-base-content" />
+        <path
+          d="M151 38l7 7 12-13"
           pathLength="1"
           class="stroke-base-100 qb-draw"
-          stroke-width="7"
+          stroke-width="5.5"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
       </g>
 
-      <.person x={18} y={90} s={0.92} hair={:curly} shirt={:paper}>
+      <.person x={0} y={104} s={0.8} hair={:curly} shirt={:paper}>
         <:arms>
           <.arm d="M22 86 C8 80 4 62 6 44" shirt={:paper} />
           <.hand x={6} y={38} />
@@ -273,7 +338,7 @@ defmodule QuantumBillingWeb.Illustrations do
         </:arms>
       </.person>
 
-      <.person x={130} y={90} s={0.92} flip hair={:bun} glasses shirt={:ink}>
+      <.person x={160} y={104} s={0.8} flip hair={:bun} glasses shirt={:ink}>
         <:arms>
           <.arm d="M22 86 C8 80 4 62 6 44" />
           <.hand x={6} y={38} />
@@ -283,12 +348,14 @@ defmodule QuantumBillingWeb.Illustrations do
       </.person>
 
       <g class="qb-confetti">
-        <.sparkle x={64} y={34} r={9} />
-        <.sparkle x={184} y={28} r={7} />
-        <circle cx="40" cy="70" r="4" class="fill-base-content" />
-        <circle cx="206" cy="78" r="4" class="fill-base-content" />
+        <.rupee_coin x={46} y={40} r={11} />
+        <.rupee_coin x={212} y={60} r={9} />
+        <.sparkle x={70} y={22} r={8} />
+        <.sparkle x={198} y={20} r={6} />
+        <circle cx="24" cy="78" r="3.5" class="fill-base-content" />
+        <circle cx="226" cy="98" r="3.5" class="fill-base-content" />
         <path
-          d="M86 16 l6 4 M160 14 l-5 5 M24 104 l7 -2 M214 112 l-7 -3"
+          d="M104 16 l6 4 M136 12 l-5 5 M30 112 l7 -2 M212 120 l-7 -3"
           class="stroke-base-content"
           stroke-width="3"
           stroke-linecap="round"
@@ -512,26 +579,67 @@ defmodule QuantumBillingWeb.Illustrations do
     """
   end
 
-  # A light bulb with rays: an idea.
+  # An invoice, 64 × 88 with a folded corner, its top-left at (x, y) and turned
+  # by `angle` degrees: a logo block, line items and a ruled total. `total`
+  # prints a rupee amount in the total row.
   attr :x, :any, required: true
   attr :y, :any, required: true
+  attr :angle, :any, default: 0
+  attr :total, :boolean, default: false
 
-  defp bulb(assigns) do
+  defp invoice_sheet(assigns) do
     ~H"""
     <g
-      transform={"translate(#{@x} #{@y})"}
+      transform={"translate(#{@x} #{@y}) rotate(#{@angle} 32 44)"}
       class="stroke-base-content"
       stroke-width="3"
-      stroke-linecap="round"
       stroke-linejoin="round"
+      stroke-linecap="round"
     >
-      <path
-        d="M-12 0 C-12 -16 12 -16 12 0 C12 8 6 10 6 16 H-6 C-6 10 -12 8 -12 0 Z"
+      <path d="M0 0 H50 L64 14 V88 H0 Z" class="fill-base-100" />
+      <path d="M50 0 V14 H64" />
+      <path d="M8 9 H22 V21 H8 Z" class="fill-base-content" />
+      <path d="M28 12 H42 M28 18 H38" stroke-width="2" />
+      <path d="M8 32 H56 M8 41 H48 M8 50 H52" stroke-width="2.2" />
+      <path d="M8 62 H56" stroke-width="1.5" stroke-dasharray="2 3" />
+      <%= if @total do %>
+        <text
+          x="56"
+          y="80"
+          text-anchor="end"
+          class="fill-base-content"
+          stroke="none"
+          font-size="13"
+          font-weight="700"
+        >
+          ₹ 4,250
+        </text>
+      <% else %>
+        <path d="M34 75 H56" stroke-width="4.5" />
+      <% end %>
+    </g>
+    """
+  end
+
+  # A rupee coin of radius `r` centred on (x, y).
+  attr :x, :any, required: true
+  attr :y, :any, required: true
+  attr :r, :any, default: 12
+
+  defp rupee_coin(assigns) do
+    ~H"""
+    <g transform={"translate(#{@x} #{@y})"}>
+      <circle r={@r} class="fill-base-content" />
+      <circle r={@r * 0.74} class="stroke-base-100" stroke-width="1.5" />
+      <text
+        y={@r * 0.36}
+        text-anchor="middle"
         class="fill-base-100"
-      />
-      <path d="M-6 16 H6 V24 H-6 Z" class="fill-base-content" />
-      <path d="M-4 4 L0 -2 L4 4" />
-      <path d="M0 -22 V-28 M-17 -14 L-22 -18 M17 -14 L22 -18 M-20 2 H-26 M20 2 H26" />
+        font-size={@r * 1.05}
+        font-weight="700"
+      >
+        ₹
+      </text>
     </g>
     """
   end

@@ -170,7 +170,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Catalog do
   ]
 
   @item_defaults %{
-    "serial" => %{label: "#", align: "left", format: "text", width: "auto"},
+    "serial" => %{label: "S.No", align: "left", format: "text", width: "auto"},
     "description" => %{label: "Item / Description", align: "left", format: "text", width: "grow"},
     "hsn_sac" => %{label: "HSN / SAC", align: "left", format: "text", width: "auto"},
     "quantity" => %{label: "Qty", align: "right", format: "text", width: "auto"},

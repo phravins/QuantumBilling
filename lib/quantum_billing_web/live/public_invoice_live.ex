@@ -160,7 +160,10 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
               Issued on {@invoice.invoice_date} | Total Due:
-              <strong class="text-emerald-600">{money(@invoice.grand_total, @invoice.currency)}</strong>
+              <strong class="text-emerald-600 dark:text-emerald-400">{money(
+                @invoice.grand_total,
+                @invoice.currency
+              )}</strong>
             </p>
           </div>
 
@@ -210,7 +213,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
 
         <div
           :if={@invoice.status == "Paid"}
-          class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 font-medium flex items-center gap-2"
+          class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-2"
         >
           <.icon name="hero-check-badge" class="size-5 shrink-0" />
           <span>Payment of {money(@invoice.grand_total, @invoice.currency)} was successfully received. Transaction Ref:
@@ -222,7 +225,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
           class="bg-base-100 p-6 rounded-2xl border border-emerald-500/30 shadow-md flex flex-col sm:flex-row items-center justify-between gap-6"
         >
           <div class="space-y-2 flex-1 text-center sm:text-left">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 font-bold text-xs">
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
               <.icon name="hero-qr-code" class="size-4" /> Instant UPI Payment
             </div>
             <h2 class="text-lg font-bold text-base-content">

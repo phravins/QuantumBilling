@@ -541,7 +541,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         </form>
 
         <:subtitle>
-          <span :if={@error} class="text-red-600">{@error}</span>
+          <span :if={@error} class="text-red-600 dark:text-red-400">{@error}</span>
           <span :if={is_nil(@error) and @saved_at} class="text-base-content/45">Saved</span>
           <span :if={is_nil(@error) and is_nil(@saved_at)}>
             {@count} blocks · changes save as you make them
@@ -598,7 +598,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
               type="button"
               phx-click="reset_layout"
               data-confirm="Reset this template to the standard layout? Your changes to it will be lost."
-              class="w-full rounded-field px-1 py-1 text-left text-xs text-base-content/45 hover:text-red-600"
+              class="w-full rounded-field px-1 py-1 text-left text-xs text-base-content/45 hover:text-red-600 dark:hover:text-red-400"
             >
               Reset to standard
             </button>
