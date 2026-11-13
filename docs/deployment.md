@@ -123,7 +123,7 @@ SMTP_HOST=…
 UPLOADS_DIR=/var/lib/quantum_billing/uploads
 ```
 
-`PHX_HOST` must be the host name browsers use. LiveView refuses a websocket from any other origin, which leaves pages loading but not interactive. `TRUSTED_PROXIES` names the proxy so that client addresses reach the IP allowlist, rate limits and audit log. [Configuration](configuration.md) lists every variable.
+`PHX_HOST` must be the host name browsers use. LiveView refuses a websocket from any other origin, which leaves pages loading but not interactive ("Something went wrong! Attempting to reconnect"); the log says "Could not check origin" and names the origin it saw. Behind a proxy that rewrites the `Origin` header, such as GitHub Codespaces port forwarding (which presents `http://localhost:4000`), list every origin in `PHX_CHECK_ORIGIN`, for example `//localhost,//name-4000.app.github.dev`. `TRUSTED_PROXIES` names the proxy so that client addresses reach the IP allowlist, rate limits and audit log. [Configuration](configuration.md) lists every variable.
 
 ### systemd
 

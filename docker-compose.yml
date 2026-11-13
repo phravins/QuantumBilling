@@ -10,6 +10,8 @@ x-app-env: &app-env
   DB_QUEUE_INTERVAL_MS: ${DB_QUEUE_INTERVAL_MS:-1000}
   DB_TIMEOUT_MS: ${DB_TIMEOUT_MS:-15000}
   PHX_HOST: ${PHX_HOST:-localhost}
+  # Comma-separated, e.g. //localhost,//name-4000.app.github.dev; empty = PHX_HOST only.
+  PHX_CHECK_ORIGIN: ${PHX_CHECK_ORIGIN:-}
   PORT: "4000"
   SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}
   TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}

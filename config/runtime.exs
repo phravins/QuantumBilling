@@ -254,7 +254,20 @@ if config_env() == :prod do
 
   config :quantum_billing, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # Origins allowed to open the LiveView socket. Empty allows PHX_HOST only.
+  # A list such as "//localhost,//my-app.example.com" (any scheme and port) is
+  # for proxies that rewrite the Origin header, such as GitHub Codespaces.
+  check_origin =
+    case String.trim(System.get_env("PHX_CHECK_ORIGIN") || "") do
+      "" ->
+        true
+
+      origins ->
+        origins |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+    end
+
   config :quantum_billing, QuantumBillingWeb.Endpoint,
+    check_origin: check_origin,
     url: [host: host, port: 443, scheme: "https"],
     http: [
       # Binds all IPv4 and IPv6 interfaces; use {0, 0, 0, 0, 0, 0, 0, 1} for local only.

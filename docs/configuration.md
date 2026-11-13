@@ -46,6 +46,7 @@ Seeds do not update an existing password. See [getting started](getting-started.
 | `DATABASE_SSL_CACERTFILE` | System CA store | CA bundle that signed the database certificate, for a private CA (most managed PostgreSQL services) |
 | `PORT` | `4000` | Runtime HTTP listener |
 | `PHX_HOST` | `example.com` in production | Host for generated production HTTPS URLs |
+| `PHX_CHECK_ORIGIN` | Empty (`PHX_HOST` only) | Comma-separated origins allowed to open the LiveView connection, such as `//localhost,//name-4000.app.github.dev`; for proxies that rewrite the `Origin` header |
 | `PHX_SERVER` | Unset | A present value enables endpoint server; release `bin/server` sets it |
 | `DNS_CLUSTER_QUERY` | Unset | DNSCluster discovery query |
 | `TRUSTED_PROXIES` | Empty | Comma-separated proxy IPs/CIDRs allowed to supply forwarded client IP |

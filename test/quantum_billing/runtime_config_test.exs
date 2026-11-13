@@ -8,7 +8,10 @@ defmodule QuantumBilling.RuntimeConfigTest do
   @seed_vars ~w(SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_ADMIN_USERNAME)
 
   setup %{tmp_dir: tmp_dir} do
-    vars = @required ++ @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER UPLOADS_DIR)
+    vars =
+      @required ++
+        @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER UPLOADS_DIR PHX_CHECK_ORIGIN)
+
     original = Map.new(vars, &{&1, System.get_env(&1)})
 
     on_exit(fn ->
@@ -98,6 +101,22 @@ defmodule QuantumBilling.RuntimeConfigTest do
 
     refute warning =~ "SMTP_HOST"
     assert config[:quantum_billing][QuantumBilling.Mailer][:adapter] == Swoosh.Adapters.SMTP
+  end
+
+  test "PHX_CHECK_ORIGIN lists the origins the live socket accepts", context do
+    System.put_env("DATABASE_URL", "ecto://test-user:test-password@localhost/test-db")
+    System.put_env("SMTP_HOST", "smtp.example.com")
+
+    endpoint = fn ->
+      Config.Reader.read!(context.runtime, env: :prod)[:quantum_billing][
+        QuantumBillingWeb.Endpoint
+      ]
+    end
+
+    assert endpoint.()[:check_origin] == true
+
+    System.put_env("PHX_CHECK_ORIGIN", " //localhost, //name-4000.app.github.dev ,")
+    assert endpoint.()[:check_origin] == ["//localhost", "//name-4000.app.github.dev"]
   end
 
   test "UPLOADS_DIR moves uploads outside the release, but never in tests", context do
