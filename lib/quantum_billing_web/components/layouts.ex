@@ -784,6 +784,9 @@ defmodule QuantumBillingWeb.Layouts do
   attr :current_scope, :map, default: nil
   attr :other_doc_path, :string, required: true
   attr :other_doc_label, :string, required: true
+  attr :effective_on, Date, required: true
+  attr :updated_on, Date, required: true
+  attr :summary, :string, default: nil
 
   slot :inner_block, required: true
 
@@ -811,20 +814,13 @@ defmodule QuantumBillingWeb.Layouts do
       <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <h1 class="text-3xl font-semibold tracking-tight text-base-content">{@title}</h1>
 
-        <p class="mt-2 text-sm text-base-content/60">Draft — not yet in effect.</p>
+        <p id="legal-dates" class="mt-2 text-sm text-base-content/60">
+          Effective {legal_date(@effective_on)} · Last updated {legal_date(@updated_on)}
+        </p>
 
-        <div class="mt-8 rounded-field border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-          <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">
-            Template pending legal review — do not publish as-is.
-          </p>
-
-          <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">
-            This document is a starting structure, not legal advice. Have it reviewed by a
-            qualified lawyer and fill in every
-            <span class="rounded bg-amber-200 px-1 font-medium text-amber-900 dark:bg-amber-800 dark:text-amber-100">highlighted</span>
-            blank before making it public. Remove this notice once reviewed.
-          </p>
-        </div>
+        <p :if={@summary} class="mt-6 text-sm leading-relaxed text-base-content/70">
+          {@summary}
+        </p>
 
         <div class="mt-10 space-y-8">
           {render_slot(@inner_block)}
@@ -846,6 +842,8 @@ defmodule QuantumBillingWeb.Layouts do
     <.flash_group flash={@flash} />
     """
   end
+
+  defp legal_date(%Date{} = date), do: Calendar.strftime(date, "%-d %B %Y")
 
   @doc """
   Renders the centered title + subtitle block above an auth form.
