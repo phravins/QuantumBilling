@@ -13,8 +13,8 @@ defmodule QuantumBillingWeb.SharedComponents do
                             "transition-colors hover:bg-base-200 hover:text-base-content"
 
   @filter_input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 pl-8 pr-3 " <>
-                        "text-xs placeholder:text-base-content/45 focus:outline-none " <>
-                        "focus:ring-2 focus:ring-base-content/10"
+                        "text-xs font-medium placeholder:text-base-content/45 focus:outline-none " <>
+                        "focus:border-(--qb-field-focus)"
 
   @filter_button_class "inline-flex h-8 items-center gap-1.5 rounded-field border " <>
                          "border-base-300 bg-base-100 px-2.5 text-xs text-base-content/60 " <>
@@ -27,25 +27,31 @@ defmodule QuantumBillingWeb.SharedComponents do
                       "transition-colors hover:bg-error/10 hover:text-error"
 
   @form_control_base "w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
-                       "text-base-content placeholder:text-base-content/40 focus:outline-none " <>
-                       "focus:border-base-content/30 focus:ring-2 focus:ring-base-content/10 " <>
+                       "font-medium text-base-content placeholder:text-base-content/40 " <>
+                       "focus:outline-none focus:border-(--qb-field-focus) " <>
                        "disabled:bg-base-200 disabled:text-base-content/60"
 
   @form_input_class "h-9 " <> @form_control_base
   @form_select_class "h-9 appearance-none pr-8 " <> @form_control_base
-  @form_textarea_class "min-h-24 py-2 " <> @form_control_base
-  @form_error_class "border-error focus:border-error focus:ring-error/15"
+  # Long text reads at 15px with relaxed leading; swapped in so it doesn't fight `text-sm`.
+  @form_textarea_class "min-h-24 py-2 " <>
+                         String.replace(
+                           @form_control_base,
+                           " text-sm ",
+                           " text-lg leading-relaxed "
+                         )
+  @form_error_class "border-error focus:border-error"
 
   @micro_label_class "text-2xs font-medium uppercase tracking-wider text-base-content/45"
 
   @avatar_class "flex size-7 items-center justify-center rounded-full text-2xs font-semibold"
 
   # Outranks daisyUI's .table padding.
-  @table_head_class "border-b border-base-300 text-xs font-semibold uppercase tracking-wider " <>
-                      "text-base-content/60 [&>th]:py-1.5"
+  @table_head_class "border-b border-base-300 bg-(--qb-head-bg) text-2xs font-semibold " <>
+                      "uppercase tracking-wider text-(--qb-faint) [&>th]:py-2.5"
 
-  @table_row_class "border-b border-base-300 text-sm last:border-0 hover:bg-base-200/60 " <>
-                     "[&>td]:py-2.5"
+  @table_row_class "border-b border-base-300 text-sm last:border-0 transition-colors " <>
+                     "hover:bg-(--qb-row-hover) [&>td]:py-3"
 
   @doc "The solid, near-black call-to-action button used in page headers."
   def action_button_class, do: @action_button_class
@@ -102,7 +108,7 @@ defmodule QuantumBillingWeb.SharedComponents do
     <.dynamic_tag
       tag_name={@as}
       class={[
-        "rounded-box border border-base-300 bg-base-100 shadow-sm",
+        "rounded-box border border-base-300 bg-base-100",
         @padding,
         @class
       ]}

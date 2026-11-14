@@ -536,7 +536,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
             name="name"
             value={@template.name}
             aria-label="Template name"
-            class="w-full max-w-sm rounded-field border border-transparent bg-transparent px-1 py-0.5 text-xl font-semibold tracking-tight hover:border-base-300 focus:border-base-300 focus:outline-none focus:ring-2 focus:ring-base-content/10"
+            class="w-full max-w-sm rounded-field border border-transparent bg-transparent px-1 py-0.5 text-xl font-semibold tracking-tight hover:border-base-300 focus:border-(--qb-field-focus) focus:outline-none"
           />
         </form>
 

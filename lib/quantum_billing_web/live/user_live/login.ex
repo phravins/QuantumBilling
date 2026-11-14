@@ -56,7 +56,7 @@ defmodule QuantumBillingWeb.UserLive.Login do
               field={f[:remember_me]}
               type="checkbox"
               label="Remember me"
-              class="size-4 rounded border-base-300 text-base-content focus:outline-none focus:ring-2 focus:ring-base-content/10"
+              class="size-4 rounded border-base-300 text-base-content focus:outline-none focus:border-(--qb-field-focus)"
             />
             <.link
               navigate={~p"/users/forgot-password"}

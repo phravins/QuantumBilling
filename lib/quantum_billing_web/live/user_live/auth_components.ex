@@ -6,9 +6,8 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   use QuantumBillingWeb, :verified_routes
 
   @input_class "h-8 w-full rounded-field border border-base-300 bg-base-100 px-3 text-sm " <>
-                 "text-base-content placeholder:text-base-content/45 transition-colors " <>
-                 "focus:outline-none focus:border-base-content/30 focus:ring-2 " <>
-                 "focus:ring-base-content/10"
+                 "font-medium text-base-content placeholder:text-base-content/45 transition-colors " <>
+                 "focus:outline-none focus:border-(--qb-field-focus)"
 
   @primary_button_class "inline-flex h-8 w-full items-center justify-center rounded-field " <>
                           "bg-primary text-sm font-medium text-primary-content " <>

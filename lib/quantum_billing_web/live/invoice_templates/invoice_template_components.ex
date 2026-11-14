@@ -205,7 +205,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
           <span class="mb-1 block text-xs text-base-content/60">Text</span> <textarea
             name="text"
             rows={if @block.type == :custom_text, do: "5", else: "2"}
-            class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+            class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:border-(--qb-field-focus)"
           >{@block.text}</textarea>
         </label>
       </form>
@@ -365,7 +365,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
             value={@page.watermark_text}
             maxlength="40"
             placeholder="e.g. COPY"
-            class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+            class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:border-(--qb-field-focus)"
           />
         </label>
         <div class="grid grid-cols-2 gap-2">
@@ -462,7 +462,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       <span class="mb-1 block text-xs text-base-content/60">{@label}</span>
       <select
         name={"page[#{@name}]"}
-        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:border-(--qb-field-focus)"
       >
         <option :for={{value, text} <- @options} value={value} selected={value == @value}>
           {text}
@@ -500,7 +500,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
       <span class="mb-1 block text-xs text-base-content/60">{@label}</span>
       <select
         name={@name}
-        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:border-(--qb-field-focus)"
       >
         <option :for={value <- @options} value={value} selected={value == @value}>{value}</option>
       </select>
@@ -516,7 +516,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateComponents do
         type={if @kind == :integer, do: "number", else: "text"}
         name={@name}
         value={@value}
-        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-base-content/10"
+        class="w-full rounded-field border border-base-300 bg-base-100 px-2 py-1.5 text-sm focus:outline-none focus:border-(--qb-field-focus)"
       />
     </label>
     """

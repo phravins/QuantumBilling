@@ -632,7 +632,7 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
                     maxlength="60"
                     placeholder={"Choice #{index + 1}"}
                     phx-debounce="300"
-                    class="h-8 min-w-0 flex-1 rounded-field border border-base-300 bg-base-100 px-2.5 text-sm transition-colors focus:border-base-content/40 focus:outline-none"
+                    class="h-8 min-w-0 flex-1 rounded-field border border-base-300 bg-base-100 px-2.5 text-sm transition-colors focus:border-(--qb-field-focus) focus:outline-none"
                   />
                   <button
                     id={"remove-choice-#{index}"}
