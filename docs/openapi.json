@@ -562,6 +562,9 @@
             },
             "additionalProperties": false
           },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"

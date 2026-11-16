@@ -13,6 +13,7 @@ defmodule QuantumBillingWeb.API.CustomFieldsTest do
   alias QuantumBilling.Clients
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Repo
 
   setup do
     user = owner_fixture()
@@ -36,6 +37,8 @@ defmodule QuantumBillingWeb.API.CustomFieldsTest do
     field.("client", %{"label" => "Credit score", "type" => "number", "include_in_api" => false})
     field.("invoice", %{"label" => "Deposit", "type" => "money", "include_in_api" => true})
     field.("invoice_item", %{"label" => "Batch", "type" => "text", "include_in_api" => true})
+    field.("e_way_bill", %{"label" => "Driver phone", "type" => "phone", "include_in_api" => true})
+    field.("e_way_bill", %{"label" => "Internal notes", "type" => "text", "include_in_api" => false})
     %{owner: user}
   end
 
@@ -148,5 +151,30 @@ defmodule QuantumBillingWeb.API.CustomFieldsTest do
     conn = raw |> api_conn() |> api_post(~p"/api/v1/invoices", body)
 
     assert %{"error" => %{"fields" => %{"custom_fields.deposit" => _}}} = json_response(conn, 422)
+  end
+
+  test "an e-way bill shows only the fields marked for the API", %{owner: owner} do
+    invoice = invoice_fixture()
+    bill = e_way_bill_fixture(invoice)
+
+    bill =
+      bill
+      |> Ecto.Changeset.change(
+        custom_fields: %{"driver_phone" => "+919876543210", "internal_notes" => "Confidential"}
+      )
+      |> Repo.update!()
+
+    {raw, _key} = api_key_fixture(["e_way_bills:read"], %{owner: owner})
+
+    # Show single bill
+    shown = raw |> api_conn() |> get(~p"/api/v1/e-way-bills/#{bill.id}") |> json_response(200)
+    assert shown["data"]["custom_fields"] == %{"driver_phone" => "+919876543210"}
+    refute Map.has_key?(shown["data"]["custom_fields"], "internal_notes")
+
+    # List bills
+    listed = raw |> api_conn() |> get(~p"/api/v1/e-way-bills") |> json_response(200)
+    item = Enum.find(listed["data"], &(&1["id"] == bill.id))
+    assert item["custom_fields"] == %{"driver_phone" => "+919876543210"}
+    refute Map.has_key?(item["custom_fields"], "internal_notes")
   end
 end

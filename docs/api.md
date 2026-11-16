@@ -169,8 +169,8 @@ is GST-only and is refused with `409 gst_only` under VAT.
 
 ## Custom fields
 
-Owners add their own fields at Settings › Data model. Clients, invoices and
-invoice lines carry them in a `custom_fields` object, keyed by each field's
+Owners add their own fields at Settings › Data model. Clients, invoices, invoice lines
+and e-way bills carry them in a `custom_fields` object, keyed by each field's
 `key` (fixed when the field is created). Only fields marked **Included in the
 API** appear in responses or are accepted in writes; any other key is refused
 by name (`"is not accepted by the API"`). Keys you leave out are left empty
@@ -197,7 +197,7 @@ fails the field's own check (a malformed email, a choice id that doesn't exist,
 a missing required field) is reported under `custom_fields`, or under that line
 in `items`, with the field's label in the message.
 Webhook payloads do not carry custom fields; fetch the record. Credit notes
-and e-way bills don't expose their custom fields through the API.
+don't expose their custom fields through the API.
 
 ## Endpoints
 

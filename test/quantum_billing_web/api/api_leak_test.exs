@@ -19,7 +19,7 @@ defmodule QuantumBillingWeb.API.LeakTest do
                   custom_fields created_at updated_at)
   @bill_keys ~w(id number date valid_until status distance_km mode_of_transport vehicle_number
                 transporter_id transporter_name cancelled_at cancellation_reason invoice
-                created_at updated_at)
+                custom_fields created_at updated_at)
 
   # Values that cannot occur by accident, one per column that must stay inside.
   @secrets %{
