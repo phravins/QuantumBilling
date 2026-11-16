@@ -50,7 +50,7 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
       :grand_total,
       :status
     ])
-    |> validate_required([:note_number, :note_type, :invoice_id, :client_id, :grand_total])
+    |> validate_required([:note_number, :note_type, :note_date, :invoice_id, :client_id, :grand_total])
     |> validate_length(:note_number, max: 16)
     |> validate_document_number()
     |> validate_number(:grand_total, greater_than_or_equal_to: 0)

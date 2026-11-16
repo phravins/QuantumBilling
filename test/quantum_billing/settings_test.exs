@@ -159,6 +159,14 @@ defmodule QuantumBilling.SettingsTest do
       assert message =~ "16 characters"
     end
 
+    test "revalidates existing prefixes when only padding is increased beyond 16 characters" do
+      assert {:error, changeset} =
+               save(%{"credit_note_prefix" => "ABCDEFGHIJK", "invoice_number_padding" => 5}, :invoice)
+
+      assert %{credit_note_prefix: [message]} = errors_on(changeset)
+      assert message =~ "16 characters"
+    end
+
     test "rejects prefix starting with 0, dash, or slash" do
       for bad_prefix <- ["-INV", "/INV", "0INV"] do
         assert {:error, changeset} = save(%{"invoice_prefix" => bad_prefix}, :invoice)

@@ -207,8 +207,9 @@ defmodule QuantumBilling.Settings.Organization do
   end
 
   defp validate_document_series(changeset, prefix_field, number_field) do
-    # Only validate series format when prefix or counter is modified in this changeset
-    if get_change(changeset, prefix_field) != nil or get_change(changeset, number_field) != nil do
+    # Only validate series format when prefix, counter, or padding is modified in this changeset
+    if get_change(changeset, prefix_field) != nil or get_change(changeset, number_field) != nil or
+         get_change(changeset, :invoice_number_padding) != nil do
       prefix = get_field(changeset, prefix_field)
       padding = get_field(changeset, :invoice_number_padding) || 0
       next_number = get_field(changeset, number_field) || 1

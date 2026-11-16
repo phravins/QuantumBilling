@@ -218,8 +218,8 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     CreditNote
     |> where(
       [n],
-      fragment("COALESCE(?, ?::date)", n.note_date, n.inserted_at) >= ^from and
-        fragment("COALESCE(?, ?::date)", n.note_date, n.inserted_at) <= ^to
+      fragment("COALESCE(?, ((? AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')::date)", n.note_date, n.inserted_at) >= ^from and
+        fragment("COALESCE(?, ((? AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')::date)", n.note_date, n.inserted_at) <= ^to
     )
     |> where([n], n.status != "Cancelled")
     # Notes on binned invoices are left out with their invoice.
@@ -277,7 +277,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
             %{
               "ntty" => if(note.note_type == "Credit", do: "C", else: "D"),
               "nt_num" => note.note_number,
-              "nt_dt" => format_date(note.note_date || note.inserted_at),
+              "nt_dt" => format_date(note.note_date || to_ist_date(note.inserted_at)),
               "p_gst_flag" => "N",
               "inum" => note.invoice.invoice_number,
               "idt" => format_date(note.invoice.invoice_date),
@@ -406,6 +406,21 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   defp rupees(paise) when is_integer(paise), do: paise / 100
 
   defp drop_nils(map), do: Map.reject(map, fn {_key, value} -> is_nil(value) end)
+
+  defp to_ist_date(%DateTime{} = dt) do
+    dt
+    |> QuantumBilling.Compliance.local_time("Asia/Kolkata")
+    |> NaiveDateTime.to_date()
+  end
+
+  defp to_ist_date(%NaiveDateTime{} = ndt) do
+    ndt
+    |> DateTime.from_naive!("Etc/UTC")
+    |> QuantumBilling.Compliance.local_time("Asia/Kolkata")
+    |> NaiveDateTime.to_date()
+  end
+
+  defp to_ist_date(other), do: other
 
   defp format_date(%Date{} = date), do: Calendar.strftime(date, "%d-%m-%Y")
   defp format_date(%DateTime{} = datetime), do: format_date(DateTime.to_date(datetime))
