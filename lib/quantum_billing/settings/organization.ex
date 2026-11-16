@@ -207,31 +207,36 @@ defmodule QuantumBilling.Settings.Organization do
   end
 
   defp validate_document_series(changeset, prefix_field, number_field) do
-    prefix = get_field(changeset, prefix_field)
-    padding = get_field(changeset, :invoice_number_padding) || 0
-    next_number = get_field(changeset, number_field) || 1
+    # Only validate series format when prefix or counter is modified in this changeset
+    if get_change(changeset, prefix_field) != nil or get_change(changeset, number_field) != nil do
+      prefix = get_field(changeset, prefix_field)
+      padding = get_field(changeset, :invoice_number_padding) || 0
+      next_number = get_field(changeset, number_field) || 1
 
-    cond do
-      is_nil(prefix) or prefix == "" ->
-        changeset
-
-      Regex.match?(~r/^[-/0]/, prefix) ->
-        add_error(changeset, prefix_field, "cannot start with 0, dash, or slash")
-
-      not Regex.match?(~r/^[A-Za-z0-9\-\/]+$/, prefix) ->
-        add_error(changeset, prefix_field, "may only contain letters, numbers, dashes and slashes")
-
-      byte_size(prefix) > 12 ->
-        validate_length(changeset, prefix_field, max: 12)
-
-      true ->
-        sample = "#{prefix}-#{next_number |> to_string() |> String.pad_leading(padding, "0")}"
-
-        if QuantumBilling.Compliance.document_number_valid?(sample) do
+      cond do
+        is_nil(prefix) or prefix == "" ->
           changeset
-        else
-          add_error(changeset, prefix_field, "cannot exceed 16 characters with padding")
-        end
+
+        not Regex.match?(~r/^[A-Za-z0-9\-\/]+$/, prefix) ->
+          add_error(changeset, prefix_field, "may only contain letters, numbers, dashes and slashes")
+
+        Regex.match?(~r/^[-/0]/, prefix) ->
+          add_error(changeset, prefix_field, "cannot start with 0, dash, or slash")
+
+        byte_size(prefix) > 12 ->
+          validate_length(changeset, prefix_field, max: 12)
+
+        true ->
+          sample = "#{prefix}-#{next_number |> to_string() |> String.pad_leading(padding, "0")}"
+
+          if QuantumBilling.Compliance.document_number_valid?(sample) do
+            changeset
+          else
+            add_error(changeset, prefix_field, "cannot exceed 16 characters with padding")
+          end
+      end
+    else
+      changeset
     end
   end
 

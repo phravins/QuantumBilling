@@ -110,7 +110,9 @@ defmodule QuantumBilling.CreditNotes do
         |> QuantumBilling.Compliance.local_time(locked.timezone || organization.timezone)
         |> NaiveDateTime.to_date()
 
-      note_date = Map.get(attrs, "note_date") || Map.get(attrs, :note_date, local_today)
+      # Statutory rule: Note date is determined server-side as today's date in business timezone.
+      # User-supplied note_date is intentionally ignored to prevent backdating.
+      note_date = local_today
 
       params = %{
         note_number: note_number,

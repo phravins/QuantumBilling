@@ -51,6 +51,8 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
       :status
     ])
     |> validate_required([:note_number, :note_type, :invoice_id, :client_id, :grand_total])
+    |> validate_length(:note_number, max: 16)
+    |> validate_document_number()
     |> validate_number(:grand_total, greater_than_or_equal_to: 0)
     |> validate_inclusion(:note_type, @types)
     |> validate_inclusion(:status, @statuses)
@@ -58,5 +60,15 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
     |> foreign_key_constraint(:invoice_id)
     |> foreign_key_constraint(:client_id)
     |> unique_constraint(:note_number)
+  end
+
+  defp validate_document_number(changeset) do
+    validate_change(changeset, :note_number, fn :note_number, number ->
+      if QuantumBilling.Compliance.document_number_valid?(number) do
+        []
+      else
+        [note_number: "must be at most 16 characters and comply with statutory numbering rules"]
+      end
+    end)
   end
 end

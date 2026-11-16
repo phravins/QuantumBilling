@@ -76,15 +76,20 @@ defmodule QuantumBilling.CreditNotesTest do
 
   test "concurrent creation produces consecutive numbers without collision" do
     %{invoice1: invoice1, invoice2: invoice2} = fixture()
+    business = Repo.business()
 
     task1 =
       Task.async(fn ->
-        CreditNotes.create_credit_note_for_invoice(invoice1, %{"reason" => "Task 1 note"})
+        Repo.with_business(business, fn ->
+          CreditNotes.create_credit_note_for_invoice(invoice1, %{"reason" => "Task 1 note"})
+        end)
       end)
 
     task2 =
       Task.async(fn ->
-        CreditNotes.create_credit_note_for_invoice(invoice2, %{"reason" => "Task 2 note"})
+        Repo.with_business(business, fn ->
+          CreditNotes.create_credit_note_for_invoice(invoice2, %{"reason" => "Task 2 note"})
+        end)
       end)
 
     assert {:ok, note1} = Task.await(task1)
@@ -92,5 +97,32 @@ defmodule QuantumBilling.CreditNotesTest do
 
     numbers = Enum.sort([note1.note_number, note2.note_number])
     assert numbers == ["CN-0001", "CN-0002"]
+  end
+
+  test "create_credit_note_for_invoice ignores caller-supplied note_date and enforces current date" do
+    %{invoice1: invoice1} = fixture()
+    past_date = ~D[2020-01-01]
+
+    assert {:ok, note} =
+             CreditNotes.create_credit_note_for_invoice(invoice1, %{
+               "reason" => "No backdating test",
+               "note_date" => past_date
+             })
+
+    assert note.note_date != past_date
+  end
+
+  test "CreditNote.changeset validates 16-character limit and statutory document numbering" do
+    changeset =
+      CreditNotes.CreditNote.changeset(%CreditNotes.CreditNote{}, %{
+        note_number: "CN-LONG-EXCEEDING-16-CHARS",
+        note_type: "Credit",
+        invoice_id: 1,
+        client_id: 1,
+        grand_total: 100
+      })
+
+    refute changeset.valid?
+    assert "should be at most 16 character(s)" in errors_on(changeset).note_number
   end
 end

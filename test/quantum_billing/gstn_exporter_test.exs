@@ -228,5 +228,24 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert {:ok, nov_json} = GSTNExporter.generate_gstr1_json("112026")
       assert nov_json["cdnr"] == []
     end
+
+    test "includes notes with nil note_date by falling back to inserted_at (restored legacy backup)" do
+      inv = invoice(%{invoice_number: "INV-LEGACY", client_gstin: "27CCCDE1234F1Z5"})
+
+      Repo.insert!(%QuantumBilling.CreditNotes.CreditNote{
+        note_number: "CN-LEGACY-01",
+        note_type: "Credit",
+        note_date: nil,
+        inserted_at: ~U[2026-12-15 10:00:00Z],
+        invoice_id: inv.id,
+        client_id: inv.client_id,
+        grand_total: 100_000,
+        status: "Issued"
+      })
+
+      assert {:ok, dec_json} = GSTNExporter.generate_gstr1_json("122026")
+      cdnr_notes = dec_json["cdnr"] |> Enum.flat_map(& &1["nt"])
+      assert Enum.any?(cdnr_notes, &(&1["nt_num"] == "CN-LEGACY-01" and &1["nt_dt"] == "15-12-2026"))
+    end
   end
 end

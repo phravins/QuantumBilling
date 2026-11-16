@@ -216,7 +216,11 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp credit_notes_for(from, to) do
     CreditNote
-    |> where([n], n.note_date >= ^from and n.note_date <= ^to)
+    |> where(
+      [n],
+      fragment("COALESCE(?, ?::date)", n.note_date, n.inserted_at) >= ^from and
+        fragment("COALESCE(?, ?::date)", n.note_date, n.inserted_at) <= ^to
+    )
     |> where([n], n.status != "Cancelled")
     # Notes on binned invoices are left out with their invoice.
     |> join(:left, [n], i in assoc(n, :invoice))
