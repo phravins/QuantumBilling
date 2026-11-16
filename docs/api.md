@@ -384,8 +384,9 @@ currency, and any left out default to the invoice's own. A note follows its
 invoice's tax regime; on a VAT invoice `tax_total` is VAT, spread across the
 invoice's rates in proportion. A note reads back as `id`, `number`, `type`, `reason`,
 `status`, `amounts` (`subtotal`, `tax_total`, `grand_total`), `invoice`
-(`{id, number}`), `client_id`, `created_at`, `updated_at`. Notes on an invoice
-in the Bin are hidden.
+(`{id, number}`), `client_id`, `created_at`, `updated_at`. `number` is allocated
+consecutively from the business's series (e.g. `CN-0001`, `DN-0001`) under GST Rule 53.
+Notes on an invoice in the Bin are hidden.
 
 ## OpenAPI
 

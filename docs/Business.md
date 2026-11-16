@@ -285,6 +285,10 @@ Dates advance by calendar months, clamping to the last valid day of the target m
 
 An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, client, source invoice, and Issued/Cancelled/Applied status. Default amounts are copied from the invoice; the user can enter an adjustment amount.
 
+Credit and debit notes have their own sequential numbering series (`credit_note_prefix`, `debit_note_prefix`), configured alongside invoices in Settings → Invoice. Each note receives a consecutive serial number (e.g. `CN-0001`, `DN-0001`) of at most 16 characters matching GST Rules 46(b) and 53, allocated atomically with the organization settings row locked `FOR UPDATE`. Each note also stores a statutory `note_date` in the business timezone (IST for GST businesses).
+
+*Legacy note numbers*: Credit and debit notes issued prior to consecutive numbering used the format `CN-<invoice>-<id>`. Issued numbers are part of the permanent statutory record and are preserved without renumbering; however, business owners should note that historic notes exceeding 16 characters or dating across UTC midnight may require manual adjustment if reported in amended GST returns.
+
 A note on a VAT invoice keeps that invoice's regime, and its VAT is split across the invoice's rates in the same proportions.
 
 A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Paid or cancelled invoices are excluded from the open-receivable adjustment calculation. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
@@ -382,6 +386,7 @@ The main boundaries to account for during acceptance testing are:
 - Custom fields extend the six existing record types. There are no custom record types, no field that links to another record, and no custom fields in webhook payloads or on credit notes and e-way bills in the API.
 - Recurring profiles substitute a fixed default line for absent/invalid items; profiles need explicit review before use with real customers.
 - Receivables track whole invoice Paid/unpaid state plus notes, rather than partial payments, refunds, settlement fees, or allocation of overpayments.
+- Credit and debit notes created prior to consecutive numbering retain their historic generated numbers (`CN-<invoice>-<id>`) and may require manual reconciliation in amended GST return filings.
 - Role restrictions are not field-level permissions; backup restoration requires the access check called out above.
 - Business JSON is a selective data backup and does not contain the whole deployed installation.
 

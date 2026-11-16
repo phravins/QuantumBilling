@@ -151,6 +151,28 @@ defmodule QuantumBilling.SettingsTest do
       assert {:ok, _} = save(%{"invoice_prefix" => "INV-24/25"}, :invoice)
     end
 
+    test "rejects prefix and padding combinations that exceed 16 characters" do
+      assert {:error, changeset} =
+               save(%{"invoice_prefix" => "QUANTUMBILLS", "invoice_number_padding" => 4}, :invoice)
+
+      assert %{invoice_prefix: [message]} = errors_on(changeset)
+      assert message =~ "16 characters"
+    end
+
+    test "rejects prefix starting with 0, dash, or slash" do
+      for bad_prefix <- ["-INV", "/INV", "0INV"] do
+        assert {:error, changeset} = save(%{"invoice_prefix" => bad_prefix}, :invoice)
+        assert %{invoice_prefix: [message]} = errors_on(changeset)
+        assert message =~ "cannot start with 0, dash, or slash"
+      end
+
+      for bad_prefix <- ["-CN", "/CN", "0CN"] do
+        assert {:error, changeset} = save(%{"credit_note_prefix" => bad_prefix}, :invoice)
+        assert %{credit_note_prefix: [message]} = errors_on(changeset)
+        assert message =~ "cannot start with 0, dash, or slash"
+      end
+    end
+
     test "saves bank details, normalising the IFSC and account number" do
       assert {:ok, organization} =
                save(
@@ -198,6 +220,26 @@ defmodule QuantumBilling.SettingsTest do
 
     test "copes with the unsaved defaults" do
       assert Settings.next_invoice_number(%Organization{}) == "INV-0001"
+    end
+  end
+
+  describe "next_credit_note_number/1 and next_debit_note_number/1" do
+    test "formats with prefix and padding" do
+      organization = %Organization{
+        credit_note_prefix: "CN",
+        credit_note_next_number: 5,
+        debit_note_prefix: "DN",
+        debit_note_next_number: 12,
+        invoice_number_padding: 4
+      }
+
+      assert Settings.next_credit_note_number(organization) == "CN-0005"
+      assert Settings.next_debit_note_number(organization) == "DN-0012"
+    end
+
+    test "copes with unsaved defaults" do
+      assert Settings.next_credit_note_number(%Organization{}) == "CN-0001"
+      assert Settings.next_debit_note_number(%Organization{}) == "DN-0001"
     end
   end
 

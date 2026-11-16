@@ -574,4 +574,15 @@ defmodule QuantumBilling.Compliance do
   defp due_phrase(1), do: "is due tomorrow"
   defp due_phrase(days) when days < 0, do: "is overdue"
   defp due_phrase(days), do: "is due in #{days} days"
+
+  @doc """
+  Returns whether a document number complies with GST Rule 46(b) and Rule 53:
+  - At most 16 characters long;
+  - Matches `^[A-Za-z1-9][A-Za-z0-9/-]*$`.
+  """
+  def document_number_valid?(number) when is_binary(number) do
+    byte_size(number) <= 16 and Regex.match?(~r/^[A-Za-z1-9][A-Za-z0-9\/-]*$/, number)
+  end
+
+  def document_number_valid?(_), do: false
 end

@@ -115,4 +115,26 @@ defmodule QuantumBilling.Settings do
 
     "#{prefix}-#{number |> to_string() |> String.pad_leading(padding, "0")}"
   end
+
+  @doc """
+  The credit note number that would be issued next, e.g. `"CN-0001"`.
+  """
+  def next_credit_note_number(%Organization{} = organization) do
+    prefix = organization.credit_note_prefix || "CN"
+    number = organization.credit_note_next_number || 1
+    padding = organization.invoice_number_padding || 0
+
+    "#{prefix}-#{number |> to_string() |> String.pad_leading(padding, "0")}"
+  end
+
+  @doc """
+  The debit note number that would be issued next, e.g. `"DN-0001"`.
+  """
+  def next_debit_note_number(%Organization{} = organization) do
+    prefix = organization.debit_note_prefix || "DN"
+    number = organization.debit_note_next_number || 1
+    padding = organization.invoice_number_padding || 0
+
+    "#{prefix}-#{number |> to_string() |> String.pad_leading(padding, "0")}"
+  end
 end

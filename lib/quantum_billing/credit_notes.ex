@@ -3,10 +3,13 @@ defmodule QuantumBilling.CreditNotes do
   Context module for managing Credit Notes and Debit Notes.
   """
   import Ecto.Query, warn: false
+  alias Ecto.Multi
   alias QuantumBilling.Repo
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Money
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
 
   # Notes on binned invoices are left out; a left join keeps notes with no invoice.
   def list_credit_notes do
@@ -63,9 +66,11 @@ defmodule QuantumBilling.CreditNotes do
   Raises a note against `invoice`. Amounts are rupees; missing ones default to the invoice's.
   """
   def create_credit_note_for_invoice(%Invoice{} = invoice, attrs \\ %{}) do
-    note_type = Map.get(attrs, "note_type") || Map.get(attrs, :note_type, "Credit")
-    prefix = if note_type == "Credit", do: "CN", else: "DN"
-    note_number = "#{prefix}-#{invoice.invoice_number}-#{System.unique_integer([:positive])}"
+    raw_type = Map.get(attrs, "note_type") || Map.get(attrs, :note_type, "Credit")
+    note_type = if to_string(raw_type) |> String.downcase() == "debit", do: "Debit", else: "Credit"
+
+    # Outside the transaction: creating the row inside it deadlocks concurrent callers.
+    organization = Settings.ensure_organization() || %Organization{}
 
     subtotal =
       Map.get(attrs, "subtotal") ||
@@ -85,35 +90,74 @@ defmodule QuantumBilling.CreditNotes do
 
     reason = Map.get(attrs, "reason") || Map.get(attrs, :reason, "Order modification / refund")
 
-    params = %{
-      note_number: note_number,
-      note_type: note_type,
-      invoice_id: invoice.id,
-      client_id: invoice.client_id,
-      reason: reason,
-      subtotal: subtotal,
-      tax_total: tax_total,
-      grand_total: grand_total,
-      status: "Issued"
-    }
-
-    params =
-      case Map.get(attrs, "custom_fields", Map.get(attrs, :custom_fields)) do
-        values when is_map(values) -> Map.put(params, :custom_fields, values)
-        _none -> params
+    Multi.new()
+    |> Multi.run(:organization, fn repo, _changes ->
+      case repo.one(from o in Organization, order_by: [asc: o.id], limit: 1, lock: "FOR UPDATE") do
+        nil -> {:ok, organization}
+        locked -> {:ok, locked}
       end
+    end)
+    |> Multi.insert(:credit_note, fn %{organization: locked} ->
+      note_number =
+        if note_type == "Credit" do
+          Settings.next_credit_note_number(locked)
+        else
+          Settings.next_debit_note_number(locked)
+        end
 
-    %CreditNote{tax_regime: invoice.tax_regime || "gst"}
-    |> CreditNote.changeset(params)
-    |> put_breakdown(invoice)
-    |> Repo.insert()
+      local_today =
+        DateTime.utc_now()
+        |> QuantumBilling.Compliance.local_time(locked.timezone || organization.timezone)
+        |> NaiveDateTime.to_date()
+
+      note_date = Map.get(attrs, "note_date") || Map.get(attrs, :note_date, local_today)
+
+      params = %{
+        note_number: note_number,
+        note_type: note_type,
+        note_date: note_date,
+        invoice_id: invoice.id,
+        client_id: invoice.client_id,
+        reason: reason,
+        subtotal: subtotal,
+        tax_total: tax_total,
+        grand_total: grand_total,
+        status: "Issued"
+      }
+
+      params =
+        case Map.get(attrs, "custom_fields", Map.get(attrs, :custom_fields)) do
+          values when is_map(values) -> Map.put(params, :custom_fields, values)
+          _none -> params
+        end
+
+      %CreditNote{tax_regime: invoice.tax_regime || "gst"}
+      |> CreditNote.changeset(params)
+      |> put_breakdown(invoice)
+    end)
+    |> Multi.run(:advance_number, fn repo, %{organization: locked} ->
+      changes =
+        if note_type == "Credit" do
+          %{credit_note_next_number: (locked.credit_note_next_number || 1) + 1}
+        else
+          %{debit_note_next_number: (locked.debit_note_next_number || 1) + 1}
+        end
+
+      locked
+      |> Ecto.Changeset.change(changes)
+      |> repo.insert_or_update()
+    end)
+    |> Repo.transaction()
     |> case do
-      {:ok, note} = result ->
+      {:ok, %{credit_note: note}} ->
         QuantumBilling.Webhooks.publish("credit_note.created", note.id)
-        result
+        {:ok, note}
 
-      error ->
-        error
+      {:error, :credit_note, changeset, _changes} ->
+        {:error, changeset}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
     end
   end
 

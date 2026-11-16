@@ -203,5 +203,30 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert json["cdnr"] == []
       assert json["hsn"]["data"] == []
     end
+
+    test "correctly assigns note raised at 00:30 IST on 1 December to December GSTR-1" do
+      # 00:30 IST on 2026-12-01 is 19:00 UTC on 2026-11-30
+      inv = invoice(%{invoice_number: "INV-DEC", client_gstin: "27CCCDE1234F1Z5"})
+
+      Repo.insert!(%QuantumBilling.CreditNotes.CreditNote{
+        note_number: "CN-0001",
+        note_type: "Credit",
+        note_date: ~D[2026-12-01],
+        inserted_at: ~U[2026-11-30 19:00:00Z],
+        invoice_id: inv.id,
+        client_id: inv.client_id,
+        grand_total: 118_000,
+        status: "Issued"
+      })
+
+      # December 2026 return ("122026") includes the note
+      assert {:ok, dec_json} = GSTNExporter.generate_gstr1_json("122026")
+      assert [%{"ctin" => "27CCCDE1234F1Z5", "nt" => [%{"nt_num" => "CN-0001", "nt_dt" => "01-12-2026"}]}] =
+               dec_json["cdnr"]
+
+      # November 2026 return ("112026") excludes it
+      assert {:ok, nov_json} = GSTNExporter.generate_gstr1_json("112026")
+      assert nov_json["cdnr"] == []
+    end
   end
 end

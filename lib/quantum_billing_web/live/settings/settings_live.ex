@@ -1422,6 +1422,32 @@ defmodule QuantumBillingWeb.SettingsLive do
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <.field field={f[:credit_note_prefix]} label="Credit Note Prefix" placeholder="CN" />
+        <.field field={f[:credit_note_next_number]} label="Next Credit Note Number" type="number" min="1" />
+      </div>
+
+      <div class="mt-2 rounded-field border border-base-300 bg-base-200 px-3.5 py-3">
+        <p class="text-xs text-base-content/60">Next credit note will be numbered</p>
+
+        <p class="mt-0.5 text-sm font-semibold tracking-tight">
+          {Settings.next_credit_note_number(Ecto.Changeset.apply_changes(@form.source))}
+        </p>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <.field field={f[:debit_note_prefix]} label="Debit Note Prefix" placeholder="DN" />
+        <.field field={f[:debit_note_next_number]} label="Next Debit Note Number" type="number" min="1" />
+      </div>
+
+      <div class="mt-2 rounded-field border border-base-300 bg-base-200 px-3.5 py-3">
+        <p class="text-xs text-base-content/60">Next debit note will be numbered</p>
+
+        <p class="mt-0.5 text-sm font-semibold tracking-tight">
+          {Settings.next_debit_note_number(Ecto.Changeset.apply_changes(@form.source))}
+        </p>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.field
           field={f[:invoice_due_days]}
           label="Default Payment Terms (days)"

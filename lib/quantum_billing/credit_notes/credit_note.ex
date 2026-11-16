@@ -19,6 +19,7 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
     field :tax_total, Paise, default: 0
     field :grand_total, Paise, default: 0
     field :status, :string, default: "Issued"
+    field :note_date, :date
     # Copied from the invoice; never cast from params.
     field :tax_regime, :string, default: "gst"
     field :tax_breakdown, {:array, :map}, default: []
@@ -40,6 +41,7 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
     |> cast(attrs, [
       :note_number,
       :note_type,
+      :note_date,
       :invoice_id,
       :client_id,
       :reason,

@@ -215,11 +215,8 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   defp absorb_hsn(_invoice, groups), do: groups
 
   defp credit_notes_for(from, to) do
-    from_at = DateTime.new!(from, ~T[00:00:00])
-    to_at = DateTime.new!(Date.add(to, 1), ~T[00:00:00])
-
     CreditNote
-    |> where([n], n.inserted_at >= ^from_at and n.inserted_at < ^to_at)
+    |> where([n], n.note_date >= ^from and n.note_date <= ^to)
     |> where([n], n.status != "Cancelled")
     # Notes on binned invoices are left out with their invoice.
     |> join(:left, [n], i in assoc(n, :invoice))
@@ -276,7 +273,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
             %{
               "ntty" => if(note.note_type == "Credit", do: "C", else: "D"),
               "nt_num" => note.note_number,
-              "nt_dt" => format_date(note.inserted_at),
+              "nt_dt" => format_date(note.note_date || note.inserted_at),
               "p_gst_flag" => "N",
               "inum" => note.invoice.invoice_number,
               "idt" => format_date(note.invoice.invoice_date),

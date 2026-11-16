@@ -55,6 +55,11 @@ defmodule QuantumBilling.Settings.Organization do
     field :invoice_due_days, :integer, default: 30
     field :invoice_terms, :string
 
+    field :credit_note_prefix, :string, default: "CN"
+    field :credit_note_next_number, :integer, default: 1
+    field :debit_note_prefix, :string, default: "DN"
+    field :debit_note_next_number, :integer, default: 1
+
     field :ewb_transport_mode, :string, default: "Road"
     field :ewb_transporter_id, :string
     field :ewb_threshold_value, Paise, default: 5_000_000
@@ -128,7 +133,9 @@ defmodule QuantumBilling.Settings.Organization do
               state currency financial_year timezone date_format)a
 
   @invoice ~w(invoice_prefix invoice_next_number invoice_number_padding
-              invoice_due_days invoice_terms)a
+              invoice_due_days invoice_terms
+              credit_note_prefix credit_note_next_number
+              debit_note_prefix debit_note_next_number)a
 
   @bank ~w(bank_account_name bank_name bank_account_number bank_ifsc bank_branch)a
 
@@ -189,13 +196,43 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_length(:bank_name, max: 120)
     |> validate_length(:bank_branch, max: 120)
     |> validate_required([:invoice_prefix, :invoice_next_number])
-    |> validate_format(:invoice_prefix, ~r/^[A-Za-z0-9\-\/]+$/,
-      message: "may only contain letters, numbers, dashes and slashes"
-    )
-    |> validate_length(:invoice_prefix, max: 12)
     |> validate_number(:invoice_next_number, greater_than: 0)
+    |> validate_number(:credit_note_next_number, greater_than: 0)
+    |> validate_number(:debit_note_next_number, greater_than: 0)
     |> validate_number(:invoice_number_padding, greater_than_or_equal_to: 0, less_than: 12)
     |> validate_number(:invoice_due_days, greater_than_or_equal_to: 0, less_than_or_equal_to: 365)
+    |> validate_document_series(:invoice_prefix, :invoice_next_number)
+    |> validate_document_series(:credit_note_prefix, :credit_note_next_number)
+    |> validate_document_series(:debit_note_prefix, :debit_note_next_number)
+  end
+
+  defp validate_document_series(changeset, prefix_field, number_field) do
+    prefix = get_field(changeset, prefix_field)
+    padding = get_field(changeset, :invoice_number_padding) || 0
+    next_number = get_field(changeset, number_field) || 1
+
+    cond do
+      is_nil(prefix) or prefix == "" ->
+        changeset
+
+      Regex.match?(~r/^[-/0]/, prefix) ->
+        add_error(changeset, prefix_field, "cannot start with 0, dash, or slash")
+
+      not Regex.match?(~r/^[A-Za-z0-9\-\/]+$/, prefix) ->
+        add_error(changeset, prefix_field, "may only contain letters, numbers, dashes and slashes")
+
+      byte_size(prefix) > 12 ->
+        validate_length(changeset, prefix_field, max: 12)
+
+      true ->
+        sample = "#{prefix}-#{next_number |> to_string() |> String.pad_leading(padding, "0")}"
+
+        if QuantumBilling.Compliance.document_number_valid?(sample) do
+          changeset
+        else
+          add_error(changeset, prefix_field, "cannot exceed 16 characters with padding")
+        end
+    end
   end
 
   def changeset(organization, attrs, :e_way_bill) do
