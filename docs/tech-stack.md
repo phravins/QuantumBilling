@@ -10,7 +10,7 @@ Versions below describe this checkout, not a recommendation to upgrade. `mix.exs
 | --- | --- | --- |
 | Application | `0.1.0` | Mix application/release name: `quantum_billing`. |
 | Elixir | `~> 1.17` in Mix; `1.18.3` recommended | Application language and Mix build/task tooling. |
-| Erlang/OTP | `27` recommended | BEAM runtime, OTP supervisors/processes, ETS, crypto, TLS and networking. The Mix project does not independently pin OTP. |
+| Erlang/OTP | `27` recommended; `27.3.4.8` pinned in `.tool-versions` | BEAM runtime, OTP supervisors/processes, ETS, crypto, TLS and networking. The Mix project does not pin OTP itself; `.tool-versions` pins `elixir 1.18.3-otp-27` and `erlang 27.3.4.8` (the same release the Dockerfile builds with) for asdf/mise users. |
 | PostgreSQL | `16` recommended | Persistent relational data, schemas per business, indexes/constraints, transactions and Oban queue storage. |
 | Chromium | Installed on the host; not version-pinned | Headless HTML-to-PDF rendering. |
 

@@ -16,6 +16,8 @@ Migrations keep each business's data in a `biz_<id>` schema; accounts and the bu
 | Chromium / Chrome | Generated PDFs; some delivery paths have an HTML fallback |
 | OpenSSL | Secret generation; `mix phx.gen.secret` is another option |
 
+The repository root has a `.tool-versions` file that pins Elixir 1.18.3 and Erlang/OTP 27.3.4.8. If you use asdf or mise, run `asdf install` or `mise install` from the repository root to install those versions.
+
 Node.js is not required by the current asset workflow. Mix downloads standalone Tailwind and esbuild binaries. Check the tools selected by your shell:
 
 ```bash
