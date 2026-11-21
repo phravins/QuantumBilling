@@ -343,7 +343,16 @@ When any invoice in the period charged VAT, the dashboard adds VAT to its tax tr
 
 General report sums combine taxable value and tax, rather than necessarily matching rounded grand totals. Client filtering uses the stored client name; separate clients with the same name can be combined in that view. Choose a status explicitly when the business question needs to exclude Drafts or Cancelled documents.
 
-GSTR-1 export is not available to a VAT business, and there is no VAT return export. It generates a JSON file for a selected `MMYYYY` period, grouping B2B, B2CL, B2CS, registered-counterparty notes (by note date), and HSN data. It excludes Cancelled and binned invoices, but includes Draft invoices because they already hold a number. It uses compiled classification thresholds and includes an HSN fallback for missing codes. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
+GSTR-1 export is not available to a VAT business, and there is no VAT return export. It generates a JSON file for a selected `MMYYYY` period with these tables:
+
+- **Table 4 (B2B):** invoices to registered buyers, by GSTIN, with the reverse-charge flag taken from the invoice.
+- **Table 5 (B2CL):** inter-state invoices to unregistered buyers above ₹1,00,000, or above ₹2,50,000 for invoices dated before 1 August 2024.
+- **Table 7 (B2CS):** all other consumer sales, by place of supply, rate and supply type.
+- **Table 9B:** credit and debit notes, by note date. Notes on Table 4 invoices go in CDNR, and notes on Table 5 invoices go in CDNUR. Notes on Table 7 sales have no row of their own; they are netted into Table 7.
+- **Table 12 (HSN):** by HSN/SAC code and rate, reported separately for B2B and B2C, with IGST, CGST and SGST. It is net of notes, and services (SAC codes starting 99) report no quantity.
+- **Table 13:** the document number ranges used in the month, by series. Cancelled and binned invoices are counted as cancelled.
+
+A note stores only its totals, so its rates and HSN codes are taken from its invoice and scaled to the note's taxable value and tax. Every table is built from the same line amounts, so Table 12 adds up to Tables 4, 5, 7 and 9B. Cess is always zero. The export leaves Cancelled and binned invoices out of the supplies, but includes Draft invoices because they already hold a number. A line with no HSN/SAC code is reported under 998311. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
 
 ## 13. Compliance calendar and HSN/SAC reference
 
