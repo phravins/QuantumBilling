@@ -39,7 +39,8 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
 
   @doc """
   `trusted` carries `note_number` and `note_date`, which the caller takes from
-  the business's series and timezone; they are never read from `attrs`.
+  the business's series and timezone; they are never read from `attrs`. Its
+  `creditable`, in paise, is the most a credit note on the invoice may be.
   """
   def changeset(credit_note, attrs, trusted \\ %{}) do
     credit_note
@@ -69,11 +70,27 @@ defmodule QuantumBilling.CreditNotes.CreditNote do
         else: [note_number: "must be at most 16 letters, numbers, - or /"]
     end)
     |> validate_number(:grand_total, greater_than_or_equal_to: 0)
+    |> validate_creditable(Map.get(trusted, :creditable))
     |> validate_inclusion(:note_type, @types)
     |> validate_inclusion(:status, @statuses)
     |> CustomFields.cast("credit_note", attrs)
     |> foreign_key_constraint(:invoice_id)
     |> foreign_key_constraint(:client_id)
     |> unique_constraint(:note_number)
+  end
+
+  # A debit note adds to the invoice, so only a credit note has a ceiling.
+  defp validate_creditable(changeset, nil), do: changeset
+
+  defp validate_creditable(changeset, creditable) do
+    if get_field(changeset, :note_type) == "Credit" do
+      validate_number(changeset, :grand_total,
+        less_than_or_equal_to: creditable,
+        message:
+          "is more than the #{QuantumBilling.Money.to_input(creditable)} left to credit on this invoice"
+      )
+    else
+      changeset
+    end
   end
 end

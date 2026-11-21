@@ -62,8 +62,9 @@ defmodule QuantumBilling.Payments do
 
   def safe_payment_url(_url), do: nil
 
-  @doc "Whether the invoice can still be paid at all: not once it is paid or cancelled."
-  def open_for_payment?(%Invoice{status: status}), do: status not in ["Paid", "Cancelled"]
+  @doc "Whether the invoice can still be paid at all: not once it is paid, credited or cancelled."
+  def open_for_payment?(%Invoice{status: status}),
+    do: status not in ["Paid", "Credited", "Cancelled"]
 
   @doc "Whether Razorpay and UPI can collect this invoice: they take INR only."
   def online_payable?(%Invoice{currency: currency}), do: currency in [nil, "INR"]
@@ -75,11 +76,12 @@ defmodule QuantumBilling.Payments do
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
 
-  Refused with `:already_paid`, `:cancelled` or `:unsupported_currency`.
+  Refused with `:already_paid`, `:credited`, `:cancelled` or `:unsupported_currency`.
   """
   def generate_payment_link(%Invoice{} = invoice) do
     cond do
       invoice.status == "Paid" -> {:error, :already_paid}
+      invoice.status == "Credited" -> {:error, :credited}
       invoice.status == "Cancelled" -> {:error, :cancelled}
       not online_payable?(invoice) -> {:error, :unsupported_currency}
       true -> create_payment_link(invoice)
@@ -176,6 +178,10 @@ defmodule QuantumBilling.Payments do
   defp verify_payment(%Invoice{status: "Cancelled"} = invoice, received, payment_id),
     do: reject_payment(invoice, :invoice_cancelled, received, payment_id)
 
+  # Credit notes already cover it; a payment now is owed back to the client.
+  defp verify_payment(%Invoice{status: "Credited"} = invoice, received, payment_id),
+    do: reject_payment(invoice, :invoice_credited, received, payment_id)
+
   # An already-paid invoice is left to reconcile_payment/2, which ignores repeats.
   defp verify_payment(%Invoice{status: "Paid"}, _received, _payment_id), do: :ok
 
@@ -234,6 +240,11 @@ defmodule QuantumBilling.Payments do
      "Not applied, as the invoice is cancelled. Refund payment #{payment_id} in Razorpay."}
   end
 
+  defp rejection_message(invoice, :invoice_credited, payment_id) do
+    {"Payment received for credited #{invoice.invoice_number}",
+     "Not applied, as credit notes already cover the invoice. Refund payment #{payment_id} in Razorpay."}
+  end
+
   defp rejection_message(invoice, reason, payment_id) do
     {"Payment for #{invoice.invoice_number} did not match the invoice",
      "Not marked paid (#{reason}). Review payment #{payment_id} in Razorpay."}
@@ -285,12 +296,13 @@ defmodule QuantumBilling.Payments do
   Records a payment made outside the gateway against `invoice`.
 
   `amount` is paise and must cover the invoice (no partial payments). `reference`
-  is stored with an `ext:` prefix. Refused for paid or cancelled invoices.
+  is stored with an `ext:` prefix. Refused for paid, credited or cancelled invoices.
   """
   def record_payment(%Invoice{} = invoice, reference, amount, audit_opts \\ [])
       when is_binary(reference) and is_integer(amount) do
     cond do
       invoice.status == "Paid" -> {:error, :already_paid}
+      invoice.status == "Credited" -> {:error, :credited}
       invoice.status == "Cancelled" -> {:error, :cancelled}
       amount < (invoice.grand_total || 0) -> {:error, :partial_payment}
       true -> reconcile_payment(invoice, "ext:" <> reference, audit_opts)
@@ -310,6 +322,9 @@ defmodule QuantumBilling.Payments do
 
   def reconcile_payment(%Invoice{status: "Cancelled"}, _payment_id, _audit_opts),
     do: {:error, :invoice_cancelled}
+
+  def reconcile_payment(%Invoice{status: "Credited"}, _payment_id, _audit_opts),
+    do: {:error, :invoice_credited}
 
   def reconcile_payment(%Invoice{} = invoice, payment_id, audit_opts) do
     case mark_paid(invoice, payment_id) do
@@ -379,6 +394,9 @@ defmodule QuantumBilling.Payments do
 
         "Cancelled" ->
           Repo.rollback(:invoice_cancelled)
+
+        "Credited" ->
+          Repo.rollback(:invoice_credited)
 
         _payable ->
           invoice

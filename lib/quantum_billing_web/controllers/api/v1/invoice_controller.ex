@@ -101,6 +101,9 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
         {:error, :cancelled} ->
           conflict(:cancelled, "A cancelled invoice cannot be paid.")
 
+        {:error, :credited} ->
+          conflict(:credited, "Credit notes already cover this invoice; nothing is owed.")
+
         {:error, :partial_payment} ->
           validation_failed(%{
             "amount" => [
@@ -140,6 +143,12 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
 
         {:error, :paid} ->
           conflict(:paid, "A paid invoice cannot be cancelled; raise a credit note instead.")
+
+        {:error, :credited} ->
+          conflict(
+            :credited,
+            "Credit notes already reverse this invoice; it cannot be cancelled."
+          )
 
         {:error, :irn_registered} ->
           conflict(:irn_registered, "This invoice has a live IRN. Cancel it on the IRP first.")

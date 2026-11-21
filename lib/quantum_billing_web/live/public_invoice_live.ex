@@ -75,8 +75,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
       nil ->
         {:noreply, invoice_gone(socket)}
 
-      %{status: status} when status in ["Paid", "Cancelled"] ->
-        # Paid or cancelled since the page opened: show it as it is now.
+      %{status: status} when status in ["Paid", "Credited", "Cancelled"] ->
+        # Paid, credited or cancelled since the page opened: show it as it is now.
         {:noreply, socket |> assign(:payment_error, nil) |> reload()}
 
       %{razorpay_payment_url: url} = invoice when is_binary(url) and url != "" ->
@@ -199,6 +199,14 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               class="inline-flex items-center gap-1 rounded-field border border-base-300 px-2.5 py-1 text-xs font-semibold text-base-content/70"
             >
               <.icon name="hero-no-symbol" class="size-4" /> Cancelled, not payable
+            </span>
+
+            <span
+              :if={@invoice.status == "Credited"}
+              id="invoice-credited"
+              class="inline-flex items-center gap-1 rounded-field border border-base-300 px-2.5 py-1 text-xs font-semibold text-base-content/70"
+            >
+              <.icon name="hero-receipt-refund" class="size-4" /> Credited, nothing to pay
             </span>
 
             <span

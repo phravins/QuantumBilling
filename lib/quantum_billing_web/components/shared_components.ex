@@ -224,6 +224,7 @@ defmodule QuantumBillingWeb.SharedComponents do
   defp status_badge_class("Draft"), do: @neutral
   defp status_badge_class("E-Invoice Failed"), do: @negative
   defp status_badge_class("Cancelled"), do: @neutral
+  defp status_badge_class("Credited"), do: @informative
   defp status_badge_class("Active"), do: @positive
   defp status_badge_class("Inactive"), do: @pending
   defp status_badge_class("Blocked"), do: @negative

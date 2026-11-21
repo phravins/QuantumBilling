@@ -146,7 +146,7 @@ Registered, composition, and SEZ client types require a GSTIN. The application c
 
 For a VAT business the client form asks for the client's country and VAT number instead, and checks the number's format for that country; the GSTIN, PAN and state checks are skipped. The form also shows any custom fields defined for clients.
 
-The directory's outstanding figures derive from invoices still owed, adjusted by non-cancelled credit and debit notes, and floored at zero. Credit limits, opening balances, and client status are stored client attributes; they are not a full credit-control or account-ledger engine. A saved credit limit does not establish an enforced approval workflow for new invoices.
+The directory's outstanding figures are, per client, the invoices still owed plus non-cancelled debit notes, less non-cancelled credit notes, floored at zero. A credit note on a paid invoice counts too, so it reduces what the same client owes on other invoices. Credit limits, opening balances, and client status are stored client attributes; they are not a full credit-control or account-ledger engine. A saved credit limit does not establish an enforced approval workflow for new invoices.
 
 Changing a client later does not automatically rewrite the customer details copied onto an existing invoice.
 
@@ -201,7 +201,7 @@ Exchange rate, export type, and LUT fields exist in the model too. Each invoice 
 
 ### Status and document actions
 
-Stored invoice statuses are Draft, Pending E-Invoice, E-Invoice Generated, E-Invoice Failed, Paid, and Cancelled.
+Stored invoice statuses are Draft, Pending E-Invoice, E-Invoice Generated, E-Invoice Failed, Paid, Credited, and Cancelled. Credited is set by credit notes, not chosen; see [Credit and debit adjustments](#11-credit-and-debit-adjustments).
 
 ```mermaid
 flowchart LR
@@ -211,6 +211,9 @@ flowchart LR
   F -->|Retry registration| P
   D -->|Verified payment| V[Paid]
   G -->|Verified payment| V
+  D -->|Credit notes reach the total| C[Credited]
+  G -->|Credit notes reach the total| C
+  C -->|Debit note| D
 ```
 
 This diagram shows the main implemented actions, not an enforced accounting state machine. Statuses are fields used by forms, jobs, filters, and integrations; the application does not provide a separate finalization or posting ledger. Review an issued document's changes and cancellations as operational decisions rather than assuming every status transition is blocked automatically.
@@ -315,7 +318,13 @@ Dates advance by calendar months, clamping to the last valid day of the target m
 
 ## 11. Credit and debit adjustments
 
-An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, note date, client, source invoice, and Issued/Cancelled/Applied status. Default amounts are copied from the invoice; the user can enter an adjustment amount.
+An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, note date, client, source invoice, and Issued/Cancelled/Applied status.
+
+A note cannot be raised on a Cancelled invoice or one in the Bin. A credit note can be at most what is left to credit on its invoice: the invoice total, plus its debit notes, less the credit notes already raised on it. Cancelled notes do not count. A debit note has no such limit. The invoice's row is locked while a note is raised, so two notes raised at once cannot together credit more than the invoice. The note form shows how much can still be credited and fills it in as the amount.
+
+An amount left out defaults to what can still be credited, or for a debit note, to the invoice total. A taxable value or tax left out is taken from the total in the invoice's own proportion, so the three always add up.
+
+When credit notes leave nothing to credit on an invoice that is not Paid, the invoice becomes **Credited**. A Credited invoice owes nothing: it cannot be paid, given a payment link, or cancelled, since its notes already reverse it, and a late Razorpay payment for it is flagged for refund. It can still be e-invoiced, and keeps the Credited status. A debit note on a Credited invoice makes it owed again, as E-Invoice Generated if it has an IRN, or Draft otherwise. A fully credited Paid invoice stays Paid, and the credit is the client's to use.
 
 Credit and debit notes each run their own consecutive series, as Rule 53 of the CGST Rules requires: `CN-0001`, `CN-0002`… and `DN-0001`, `DN-0002`…. The prefix and next number of each are set in Settings → Invoice, and they share the invoice padding. A note's number is allocated the same way an invoice's is, with the settings row locked, so notes raised at the same moment never share or skip a number. The number cannot be typed in or sent through the API. If a stored prefix would produce a number longer than 16 characters, the note is refused rather than issued, and the counter does not move.
 
@@ -323,11 +332,11 @@ The note date is the day the note is raised in the business's timezone (IST for 
 
 A note on a VAT invoice keeps that invoice's regime, and its VAT is split across the invoice's rates in the same proportions.
 
-A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Paid or cancelled invoices are excluded from the open-receivable adjustment calculation. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
+A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Notes on paid invoices reduce the same client's balance, but no client's balance goes below zero, so one client's credit never reduces what another owes. Notes on cancelled invoices are left out. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
 
 ## 12. Dashboard, exports, and return data
 
-The dashboard reads saved invoices to present invoice counts, billed values, open receivables, a six-month tax trend, status distribution, a tax summary by tax type and the top clients by invoice value for the current year, and the compliance calendar. There is no separate Reports page; the dashboard replaced it. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables use invoice statuses and note adjustments rather than a payment installment ledger.
+The dashboard reads saved invoices to present invoice counts, billed values, open receivables, a six-month tax trend, status distribution, a tax summary by tax type and the top clients by invoice value for the current year, and the compliance calendar. There is no separate Reports page; the dashboard replaced it. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables are the sum of the client balances, plus unpaid invoices with no client, rather than a payment installment ledger.
 
 The dashboard's Export menu downloads the current year as a GST tax summary or a sales register CSV. Both come from `/reports/export`, which also accepts date range, report type, invoice status, client name, and GSTIN parameters; the same filtered query drives the dashboard's tax summary and top clients. Large CSV exports stream rows rather than loading the entire report into a browser process.
 

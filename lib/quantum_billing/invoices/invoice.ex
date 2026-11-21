@@ -46,6 +46,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     "E-Invoice Generated",
     "E-Invoice Failed",
     "Paid",
+    # Credit notes have brought it to nothing owed.
+    "Credited",
     "Cancelled"
   ]
 

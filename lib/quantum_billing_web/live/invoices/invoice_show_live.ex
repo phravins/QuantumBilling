@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     only: [any_values?: 2, custom_details: 1, custom_inputs: 1]
 
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.CreditNotes
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.CustomFields
   alias QuantumBilling.EInvoice.IRPClient
@@ -63,6 +64,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:gst_tools?, gst_tools?(socket.assigns.current_scope, invoice))
          |> assign(:ewb_defaults, Settings.get_organization())
          |> assign(:show_qr_modal, false)
+         |> assign(:cn_creditable, 0)
          |> assign(:cn_definitions, CustomFields.active_definitions("credit_note"))
          |> assign_cn_form(CreditNote.changeset(%CreditNote{}, %{}))}
     end
@@ -172,6 +174,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       {:error, :cancelled} ->
         {:noreply, put_flash(socket, :error, "A cancelled invoice cannot be paid online.")}
 
+      {:error, :credited} ->
+        {:noreply,
+         put_flash(socket, :error, "Credit notes already cover this invoice; nothing is owed.")}
+
       {:error, :already_paid} ->
         {:noreply, put_flash(socket, :error, "This invoice is already paid.")}
 
@@ -192,7 +198,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           params
       end
 
-    case QuantumBilling.CreditNotes.create_credit_note_for_invoice(socket.assigns.invoice, params) do
+    case CreditNotes.create_credit_note_for_invoice(socket.assigns.invoice, params) do
       {:ok, cn} ->
         {:noreply,
          socket
@@ -201,16 +207,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign_cn_form(CreditNote.changeset(%CreditNote{}, %{}))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        # The number comes from Settings, not the form, so there is no field to highlight.
-        message =
-          if Keyword.has_key?(changeset.errors, :note_number),
-            do:
-              "The note number would break GST's 16-character limit. Shorten the note prefix or padding in Settings → Invoice.",
-            else: "Please fix the highlighted fields before issuing the note."
-
         {:noreply,
          socket
-         |> put_flash(:error, message)
+         |> put_flash(:error, cn_error_message(changeset))
+         |> assign_creditable()
          |> assign_cn_form(changeset)}
 
       {:error, reason} ->
@@ -227,7 +227,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   end
 
   def handle_event("toggle_cn_modal", _params, socket) do
-    {:noreply, assign(socket, :show_cn_modal, !Map.get(socket.assigns, :show_cn_modal, false))}
+    show? = !Map.get(socket.assigns, :show_cn_modal, false)
+    socket = assign(socket, :show_cn_modal, show?)
+
+    {:noreply, if(show?, do: assign_creditable(socket), else: socket)}
   end
 
   def handle_info({:invoice_changed, %{id: id}}, socket) do
@@ -655,12 +658,31 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
+          <p
+            id="cn-allowance"
+            class={[
+              "flex items-start gap-2 rounded-xl px-3 py-2 text-xs",
+              if(@cn_creditable > 0,
+                do: "bg-info/10 text-info",
+                else: "bg-base-200 text-base-content/70"
+              )
+            ]}
+          >
+            <.icon name="hero-information-circle" class="size-4 shrink-0" />
+            <span :if={@cn_creditable > 0}>
+              Up to <strong>{currency_symbol(@invoice.currency)}{money_input(@cn_creditable)}</strong>
+              can still be credited on this invoice.
+            </span>
+            <span :if={@cn_creditable == 0}>
+              Fully credited. Only a debit note can be issued.
+            </span>
+          </p>
           <form id="credit-note-form" phx-submit="issue_credit_note" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Note Type</label>
               <select name="note_type" class="select select-bordered w-full text-xs">
-                <option value="Credit">Credit Note (CN)</option>
-                <option value="Debit">Debit Note (DN)</option>
+                <option value="Credit" selected={@cn_creditable > 0}>Credit Note (CN)</option>
+                <option value="Debit" selected={@cn_creditable == 0}>Debit Note (DN)</option>
               </select>
             </div>
             <div>
@@ -682,7 +704,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 name="grand_total"
                 min="0"
                 step="0.01"
-                value={money_input(@invoice.grand_total)}
+                value={
+                  money_input(if(@cn_creditable > 0, do: @cn_creditable, else: @invoice.grand_total))
+                }
                 class="input input-bordered w-full text-xs"
                 required
               />
@@ -706,6 +730,41 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   # IRN and e-way bills are India GST: off for a VAT business or a VAT invoice.
   defp gst_tools?(scope, invoice), do: not Scope.vat?(scope) and invoice.tax_regime != "vat"
+
+  # Read when the modal opens, so it counts notes issued since the page loaded.
+  defp assign_creditable(socket),
+    do: assign(socket, :cn_creditable, CreditNotes.creditable(socket.assigns.invoice))
+
+  # The modal's plain inputs show no field errors, so the flash names the problem.
+  defp cn_error_message(changeset) do
+    errors = changeset.errors
+
+    cond do
+      # The number comes from Settings, not the form.
+      Keyword.has_key?(errors, :note_number) ->
+        "The note number would break GST's 16-character limit. Shorten the note prefix or padding in Settings → Invoice."
+
+      Keyword.has_key?(errors, :invoice_id) ->
+        "This invoice #{error_text(changeset, :invoice_id)}."
+
+      Keyword.has_key?(errors, :grand_total) ->
+        "The amount #{error_text(changeset, :grand_total)}."
+
+      true ->
+        "Please fix the highlighted fields before issuing the note."
+    end
+  end
+
+  defp error_text(changeset, field) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, opts} ->
+      Enum.reduce(opts, message, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Map.fetch!(field)
+    |> List.first()
+  end
 
   defp assign_cn_form(socket, changeset),
     do: assign(socket, :cn_form, to_form(changeset, as: "credit_note", id: "cn-form"))
@@ -798,6 +857,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             phx-click={JS.push("generate_payment_link") |> hide_drawer()}
           />
           <.drawer_item
+            :if={@invoice.status != "Cancelled"}
             id="drawer-credit-note"
             icon="hero-document-duplicate"
             label="Issue Credit/Debit Note"

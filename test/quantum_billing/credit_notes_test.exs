@@ -34,7 +34,7 @@ defmodule QuantumBilling.CreditNotesTest do
              CreditNotes.create_credit_note_for_invoice(invoice, %{
                "note_type" => "Credit",
                "reason" => "Discount applied after issue",
-               "grand_total" => Decimal.new("11800.00")
+               "grand_total" => Decimal.new("118.00")
              })
 
     assert cn.note_number == "CN-0001"

@@ -89,7 +89,7 @@ validation errors. Error responses never repeat the values you sent.
 | 404 | `not_found` | No such record — or one that is in the Bin; the two look identical |
 | 400 | `invalid_parameters` (`cursor`) | A cursor this API did not issue |
 | 409 | `idempotency_in_progress` | The first request with this key has not finished |
-| 409 | `already_paid`, `cancelled`, `already_cancelled`, `paid`, `irn_registered`, `live_e_way_bill` | The action conflicts with the invoice's state; see the action below |
+| 409 | `already_paid`, `cancelled`, `already_cancelled`, `paid`, `credited`, `irn_registered`, `live_e_way_bill` | The action conflicts with the invoice's state; see the action below |
 | 409 | `gst_only` | An India GST feature (IRP e-invoice) asked of a VAT business or a VAT invoice |
 | 422 | `validation_failed` | The body was rejected; see `fields` |
 | 422 | `idempotency_mismatch` | The key was already used for a different request |
@@ -344,8 +344,8 @@ accounting system has matched, for example. Needs `invoices:payments`.
 `amount` is paise and must cover the invoice's `grand_total`; partial payments
 are refused (422) rather than recorded as paid in full. The invoice becomes
 **Paid**, the customer gets a receipt, and `invoice.paid` is sent to webhooks,
-exactly as for a gateway payment. 409 `already_paid` or `cancelled` if it can't
-be paid. Returns the invoice.
+exactly as for a gateway payment. 409 `already_paid`, `cancelled` or `credited`
+(credit notes cover the whole invoice) if it can't be paid. Returns the invoice.
 
 ### `POST /api/v1/invoices/:id/cancel`
 
@@ -357,6 +357,7 @@ The invoice keeps its number and leaves GSTR-1. Refused with 409 when
 cancelling here would not be the whole story:
 
 - `paid` — raise a credit note instead;
+- `credited` — its credit notes already reverse it;
 - `irn_registered` — a live IRN must be cancelled on the IRP first;
 - `live_e_way_bill` — cancel the e-way bill first;
 - `already_cancelled`.
@@ -382,7 +383,14 @@ or `demo` (made by the sandbox, never filed with the government). Needs
 ```
 
 `type` is `credit` or `debit`; amounts are minor units of the invoice's
-currency, and any left out default to the invoice's own. A note follows its
+currency. A `grand_total` left out defaults to what can still be credited (for
+a debit note, the invoice's total), and a `subtotal` or `tax_total` left out is
+taken from the total in the invoice's own proportion. A credit note can be at
+most what is left to credit: the invoice's total plus its debit notes, less its
+credit notes. More is refused with 422 on `grand_total`, and a note on a
+cancelled invoice with 422 on `invoice_id`. A credit note that leaves nothing
+to credit on an unpaid invoice makes its status `Credited`; a debit note on it
+makes it owed again. A note follows its
 invoice's tax regime; on a VAT invoice `tax_total` is VAT, spread across the
 invoice's rates in proportion. A note reads back as `id`, `number`, `date`, `type`, `reason`,
 `status`, `amounts` (`subtotal`, `tax_total`, `grand_total`), `invoice`

@@ -113,15 +113,27 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Counts and totals across every invoice: `%{count:, revenue:, tax:, outstanding:, paid_count:}`.
 
-  `outstanding` is net of credit and debit notes.
+  `outstanding` is what clients owe, net of credit and debit notes: the sum of
+  `outstanding_by_client/1`, plus unpaid invoices without a client. A client's
+  spare credit lowers only their own balance, never another client's.
   """
   def totals do
-    invoices = invoice_totals()
-    adjustments = note_adjustments()
+    %{invoice_totals() | outstanding: client_balances() + unbilled_outstanding()}
+  end
 
-    outstanding = max(invoices.outstanding - adjustments.credits + adjustments.debits, 0)
+  defp client_balances do
+    from(o in subquery(outstanding_by_client()),
+      select: type(coalesce(sum(o.outstanding), 0), :integer)
+    )
+    |> Repo.one()
+  end
 
-    %{invoices | outstanding: outstanding}
+  # Notes need a client, so an invoice without one is owed in full.
+  defp unbilled_outstanding do
+    Invoice.kept()
+    |> where([i], is_nil(i.client_id) and i.status not in ["Paid", "Credited", "Cancelled"])
+    |> select([i], type(coalesce(sum(i.grand_total), 0), :integer))
+    |> Repo.one()
   end
 
   defp invoice_totals do
@@ -146,7 +158,7 @@ defmodule QuantumBilling.Invoices do
           coalesce(
             sum(
               fragment(
-                "CASE WHEN ? IN ('Paid', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
+                "CASE WHEN ? IN ('Paid', 'Credited', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
                 i.status,
                 i.grand_total
               )
@@ -164,73 +176,54 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # Notes against invoices still owed; a paid or cancelled invoice has nothing left to reduce.
-  defp note_adjustments do
-    totals =
-      CreditNote
-      |> join(:inner, [n], i in Invoice, on: i.id == n.invoice_id)
-      |> where([n], n.status != "Cancelled")
-      |> where([_n, i], i.status not in ["Paid", "Cancelled"])
-      |> where([_n, i], is_nil(i.deleted_at))
-      |> select([n], %{
-        credits:
-          type(coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0), :integer),
-        debits: type(coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0), :integer)
-      })
-      |> Repo.one()
-
-    case totals do
-      nil -> %{credits: 0, debits: 0}
-      totals -> totals
-    end
-  end
-
   @doc """
   What each client still owes, as a query of `%{client_id:, outstanding:}`.
+
+  Their unpaid invoices, less their credit notes and plus their debit notes,
+  never below zero. Notes on paid invoices count too: crediting a paid invoice
+  leaves the client credit to set against what else they owe. A credited
+  invoice's total and its notes cancel out. Cancelled notes, and anything on a
+  cancelled or binned invoice, do not count.
 
   Pass `client_ids` to limit the query to those clients.
   """
   def outstanding_by_client(client_ids \\ nil) do
+    invoices =
+      from i in Invoice.kept(),
+        where: not is_nil(i.client_id) and i.status not in ["Paid", "Cancelled"],
+        select: %{client_id: i.client_id, amount: i.grand_total}
+
     notes =
       from n in CreditNote,
-        where: n.status != "Cancelled",
-        group_by: n.invoice_id,
+        join: i in Invoice,
+        on: i.id == n.invoice_id,
+        where: n.status != "Cancelled" and i.status != "Cancelled" and is_nil(i.deleted_at),
         select: %{
-          invoice_id: n.invoice_id,
-          net:
-            sum(
-              fragment(
-                "CASE WHEN ? = 'Credit' THEN -? ELSE ? END",
-                n.note_type,
-                n.grand_total,
-                n.grand_total
-              )
+          client_id: n.client_id,
+          amount:
+            fragment(
+              "CASE WHEN ? = 'Credit' THEN -? ELSE ? END",
+              n.note_type,
+              n.grand_total,
+              n.grand_total
             )
         }
 
-    query =
-      from i in Invoice.kept(),
-        left_join: n in subquery(notes),
-        on: n.invoice_id == i.id,
-        where: not is_nil(i.client_id) and i.status not in ["Paid", "Cancelled"],
-        group_by: i.client_id,
-        select: %{
-          client_id: i.client_id,
-          outstanding:
-            type(
-              fragment(
-                "GREATEST(SUM(COALESCE(?, 0) + COALESCE(?, 0)), 0)",
-                i.grand_total,
-                n.net
-              ),
-              :integer
-            )
-        }
+    {invoices, notes} =
+      case client_ids do
+        nil ->
+          {invoices, notes}
 
-    case client_ids do
-      nil -> query
-      ids -> where(query, [i], i.client_id in ^ids)
-    end
+        ids ->
+          {where(invoices, [i], i.client_id in ^ids), where(notes, [n], n.client_id in ^ids)}
+      end
+
+    from e in subquery(union_all(invoices, ^notes)),
+      group_by: e.client_id,
+      select: %{
+        client_id: e.client_id,
+        outstanding: type(fragment("GREATEST(SUM(COALESCE(?, 0)), 0)", e.amount), :integer)
+      }
   end
 
   @doc "Totals for the invoices dated within `month`."
@@ -670,7 +663,7 @@ defmodule QuantumBilling.Invoices do
       {:ok, _job} ->
         # Not via update_invoice/2: a status stamp must not re-take the layout snapshot.
         invoice
-        |> Ecto.Changeset.change(%{status: "Pending E-Invoice"})
+        |> Ecto.Changeset.change(%{status: einvoice_status(invoice, "Pending E-Invoice")})
         |> Repo.update()
         |> case do
           {:ok, updated} ->
@@ -723,7 +716,7 @@ defmodule QuantumBilling.Invoices do
           signed_qr_code: qr,
           signed_invoice: jwt,
           irn_mode: mode,
-          status: "E-Invoice Generated"
+          status: einvoice_status(invoice, "E-Invoice Generated")
         })
         |> Repo.update()
         |> case do
@@ -742,9 +735,16 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
+  # A credited invoice is still a supply to register, but stays "Credited":
+  # status also says whether anything is owed.
+  defp einvoice_status(%Invoice{status: "Credited"}, _stamp), do: "Credited"
+  defp einvoice_status(_invoice, stamp), do: stamp
+
   # Status is not a form field, so it is set directly.
   defp mark_einvoice_failed(invoice) do
-    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
+    status = einvoice_status(invoice, "E-Invoice Failed")
+
+    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: status)) do
       broadcast_change(failed, :invoice_changed)
       Webhooks.publish("invoice.e_invoice_failed", failed.id)
     end
@@ -753,7 +753,8 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Cancels an invoice. It keeps its number and leaves GSTR-1.
 
-  Refused with `:already_cancelled`, `:paid` (needs a credit note),
+  Refused with `:already_cancelled`, `:paid` (needs a credit note), `:credited`
+  (its credit notes already reverse it),
   `:irn_registered` or `:live_e_way_bill`. `opts` carries audit fields.
 
   A Razorpay payment link is cancelled in the background
@@ -767,6 +768,9 @@ defmodule QuantumBilling.Invoices do
 
       invoice.status == "Paid" ->
         {:error, :paid}
+
+      invoice.status == "Credited" ->
+        {:error, :credited}
 
       is_binary(invoice.irn) and not Invoice.demo_irn?(invoice) ->
         {:error, :irn_registered}
@@ -799,6 +803,7 @@ defmodule QuantumBilling.Invoices do
     Repo.transaction(fn ->
       case Repo.one(from(i in Invoice, where: i.id == ^id, lock: "FOR UPDATE", select: i.status)) do
         "Paid" -> Repo.rollback(:paid)
+        "Credited" -> Repo.rollback(:credited)
         "Cancelled" -> Repo.rollback(:already_cancelled)
         _open -> cancel_and_queue_link(invoice)
       end

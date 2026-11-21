@@ -282,7 +282,7 @@ defmodule QuantumBilling.ClientBinTest do
         CreditNotes.create_credit_note_for_invoice(invoice, %{
           "note_type" => "Credit",
           "reason" => "Returned",
-          "grand_total" => Decimal.new("18000.00")
+          "grand_total" => Decimal.new("180.00")
         })
 
       gone = binned(client)
