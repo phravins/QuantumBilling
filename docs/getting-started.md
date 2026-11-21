@@ -20,11 +20,83 @@ The repository root has a `.tool-versions` file that pins Elixir 1.18.3 and Erla
 
 Node.js is not required by the current asset workflow. Mix downloads standalone Tailwind and esbuild binaries. Check the tools selected by your shell:
 
-```bash
+\`\`\`bash
 elixir --version
 mix --version
-psql --version
+\`\`\`
+
+## PostgreSQL with Docker (optional)
+
+If you do not have PostgreSQL 16 installed locally, you can run it using Docker Compose.
+
+Docker Desktop and Docker Compose must be installed and running.
+
+### 1. Configure `.env`
+
+Copy the environment template if you have not already done so:
+
+```powershell
+Copy-Item .env.example .env
 ```
+
+Set the following database variables in `.env`:
+
+```dotenv
+DB_USERNAME=quantum_billing
+DB_PASSWORD=quantum_billing_dev
+DB_HOSTNAME=localhost
+DB_PORT=5432
+DB_NAME=quantum_billing_dev
+DB_NAME_TEST=quantum_billing_test
+```
+
+Use the same username and password in `.env` and Docker Compose.
+
+### 2. Start PostgreSQL
+
+From the repository root, run:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+Check that the database is healthy:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+PostgreSQL is available at `localhost:5432`.
+
+### 3. Verify PostgreSQL and `pg_trgm`
+
+Check that PostgreSQL accepts connections:
+
+```bash
+docker compose -f docker-compose.dev.yml exec db pg_isready -U quantum_billing -d quantum_billing_dev
+```
+
+Verify that the required `pg_trgm` extension is available:
+
+```bash
+docker compose -f docker-compose.dev.yml exec db psql -U quantum_billing -d quantum_billing_dev -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+```
+
+The official PostgreSQL 16 image includes `pg_trgm`.
+
+### 4. Set up the application
+
+Continue with the dependency installation and database setup instructions in the native development section, starting with installing dependencies.
+
+To stop the database without deleting its data:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+The named volume preserves database data. Do not use `docker compose down -v` unless you intentionally want to delete it.
+
+The existing native PostgreSQL installation instructions remain available below.
 
 ## Native development setup
 
