@@ -25,6 +25,7 @@
 </p>
 
 <p align="center">
+  <a href="#demo">Demo</a> ·
   <a href="#features">Features</a> ·
   <a href="#run-locally">Run locally</a> ·
   <a href="#documentation">Documentation</a> ·
@@ -32,6 +33,16 @@
 </p>
 
 ![QuantumBilling dashboard: invoices issued, tax liability, receivables, GST by month, invoices by status, top clients and the compliance calendar](docs/assets/screenshots/dashboard.png)
+
+## Demo
+
+An 11-minute walkthrough: creating a business, filling in company details, and billing with QuantumBilling.
+
+<p align="center">
+  <a href="docs/assets/Video/QuantumBilling.mp4?raw=true">
+    <img src="docs/assets/Video/QuantumBilling-poster.jpg" alt="Watch the QuantumBilling demo video (11 minutes)" width="720">
+  </a>
+</p>
 
 ## What is QuantumBilling?
 
