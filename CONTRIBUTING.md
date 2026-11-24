@@ -224,11 +224,17 @@ params.
   struct, never cast. A crafted form post must not be able to mark an invoice
   Paid.
 
-### Money is integer paise
+### Money is integer minor units
 
-Store and compute money as integer paise through the `Money` and
-`Money.Paise` APIs. No floats, ever, and verify totals end to end. The API
-sends and receives paise too.
+Store and compute money as integer minor units of the record's currency
+(paise, fils, pence) through the `Money` APIs. Most currencies have two
+decimals; KWD, BHD and OMR have three (`QuantumBilling.Currency.exponent/1`),
+so parse and print with the currency: `Money.parse/2`, `Money.to_input/2`,
+`Money.cast_amount/4` and `Format.money/3`. The one-argument forms and the
+`Money.Paise` type are INR-only, for the GST paths (e-invoice, e-way bill,
+GSTN, UPI). No floats, ever, and verify totals end to end. The API sends and
+receives minor units too, with `currency_exponent` beside each document's
+`currency`.
 
 ### The external API
 

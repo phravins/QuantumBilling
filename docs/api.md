@@ -184,7 +184,7 @@ from the object; sending `null`, `""` or `[]` is the same as leaving it out.
 |---|---|
 | `text`, `long_text`, `email`, `phone`, `url` | String (up to 500 characters; 5,000 for `long_text`) |
 | `number` | Decimal string, e.g. `"12.5"` |
-| `money` | Integer minor units, like every amount (`125050` is 1,250.50) |
+| `money` | Integer minor units of the record's currency, like every amount (`125050` is 1,250.50; in KWD, BHD or OMR it is 125.050) |
 | `date` | `"YYYY-MM-DD"` |
 | `boolean` | `true` / `false` |
 | `select` | The choice's id |
@@ -227,9 +227,12 @@ The calling key's `name`, `prefix`, `scopes`, `expires_at` and `created_at`.
 
 **Every amount is an integer number of minor units of the invoice's
 `currency`** — paise for INR (₹1 = 100 paise), fils for AED, pence for GBP — in
-responses and in requests alike. `11800` above is ₹118.00. Integers, so nothing
-is lost to floating-point rounding on a tax figure. The API never converts
-between currencies.
+responses and in requests alike. `11800` above is ₹118.00. KWD, BHD and OMR
+have three decimals, so 1 dinar or rial is 1000 fils or baisa and `11800` is
+11.800. Every invoice, quotation and credit note carries `currency_exponent`,
+the number of decimal places (2, or 3 for those three), so a client never has
+to know the table. Integers, so nothing is lost to floating-point rounding on a
+tax figure. The API never converts between currencies.
 
 A VAT invoice has no CGST/SGST/IGST split. Its VAT is in `amounts.vat`, with
 one `tax_breakdown` row per rate (`rate_bp` is basis points: 500 = 5%), and the
@@ -250,7 +253,7 @@ client's VAT number in `client.tax_number`:
 `GET /invoices/:id` adds `items` (`position`, `description`, `hsn_sac`,
 `quantity`, `unit`, `rate`, `tax_rate`, `tax_rate_id`, `tax_rate_bp`,
 `tax_category`, `tax_name`, `amount`, `custom_fields`). `quantity` is a decimal
-sent as a string (`"2.5"`); `rate` and `amount` are minor units. A GST line has
+sent as a string (`"2.5"`); `rate` and `amount` are minor units of the invoice's currency. A GST line has
 its slab in `tax_rate`. A VAT line has `tax_rate` 0 and keeps the rate's name,
 category and basis points as they were when it was saved, so editing the rate
 later doesn't change it. `payment_url` is added only
@@ -290,8 +293,8 @@ line a `tax_rate_id` (or none, for the default rate):
 
 Required: `client_id`, `invoice_date`, 1–200 `items` each with a
 `description`, and, for a GST business, `place_of_supply`. `rate` is minor
-units of the business currency (`500000` is ₹5,000.00) and must be a whole
-number; `quantity` may be a number or a decimal string. A VAT rate that is
+units of the business currency (`500000` is ₹5,000.00, or 500.000 in a KWD
+business) and must be a whole number; `quantity` may be a number or a decimal string. A VAT rate that is
 archived or unknown is refused as `{"items": [{"tax_rate_id": ["…"]}]}`. See
 [Tax regimes](#tax-regimes) and [Custom fields](#custom-fields). The invoice
 is created as a **Draft**, in the business currency.
@@ -341,7 +344,7 @@ accounting system has matched, for example. Needs `invoices:payments`.
 {"reference": "NEFT-HDFC-0042", "amount": 1180000}
 ```
 
-`amount` is paise and must cover the invoice's `grand_total`; partial payments
+`amount` is minor units of the invoice's currency and must cover the invoice's `grand_total`; partial payments
 are refused (422) rather than recorded as paid in full. The invoice becomes
 **Paid**, the customer gets a receipt, and `invoice.paid` is sent to webhooks,
 exactly as for a gateway payment. 409 `already_paid`, `cancelled` or `credited`
@@ -383,7 +386,7 @@ or `demo` (made by the sandbox, never filed with the government). Needs
 ```
 
 `type` is `credit` or `debit`; amounts are minor units of the invoice's
-currency. A `grand_total` left out defaults to what can still be credited (for
+currency, which the note returns as `currency` and `currency_exponent`. A `grand_total` left out defaults to what can still be credited (for
 a debit note, the invoice's total), and a `subtotal` or `tax_total` left out is
 taken from the total in the invoice's own proportion. A credit note can be at
 most what is left to credit: the invoice's total plus its debit notes, less its

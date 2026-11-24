@@ -13,12 +13,16 @@ defmodule QuantumBillingWeb.API.QuotationParams do
 
   @top ~w(client_id quotation_date valid_until place_of_supply remarks terms items custom_fields)
 
-  @doc "`{:ok, client_id, attrs}` for `Quotations.create_quotation/2`, or `{:error, fields}`."
-  def cast(body, regime \\ "gst"),
+  @doc """
+  `{:ok, client_id, attrs}` for `Quotations.create_quotation/2`, or
+  `{:error, fields}`. Amounts are minor units of `currency`, the business's.
+  """
+  def cast(body, regime, currency),
     do:
       InvoiceParams.cast_document(body, regime, %{
         top: @top,
         object: "quotation",
-        item_object: "quotation_item"
+        item_object: "quotation_item",
+        currency: currency
       })
 end

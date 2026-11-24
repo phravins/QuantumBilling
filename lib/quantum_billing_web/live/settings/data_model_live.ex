@@ -306,7 +306,10 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
 
       :error ->
         value = FieldDefinition.default(dialog.definition)
-        if form_type(form) == "money", do: value && money_input(value), else: value
+        # Money defaults are kept in the business currency.
+        if form_type(form) == "money",
+          do: value && money_input(value, QuantumBilling.Settings.currency_code()),
+          else: value
     end
   end
 

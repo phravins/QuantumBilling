@@ -290,10 +290,10 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
                   <input
                     type="number"
                     min="0"
-                    step="0.01"
+                    step={QuantumBilling.Currency.step(@currency)}
                     id={item_f[:rate].id}
                     name={item_f[:rate].name}
-                    value={money_input(item_f[:rate].value)}
+                    value={money_input(item_f[:rate].value, @currency)}
                     class={form_input_class()}
                   />
                 </td>

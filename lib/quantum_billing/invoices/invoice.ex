@@ -169,8 +169,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> cast(attrs, @castable)
     |> change(Map.take(trusted, @trusted))
     |> default_currency(attrs, trusted)
+    |> freeze_currency("invoice")
     |> ensure_public_token()
     |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> validate_currency_regime()
     |> cast_items(attrs)
     |> validate_required([:invoice_date, :client_name])
     |> validate_inclusion(:invoice_type, @invoice_types)
@@ -223,7 +225,33 @@ defmodule QuantumBilling.Invoices.Invoice do
         do: {:vat, TaxRates.rates_by_id()},
         else: :gst
 
-    &InvoiceItem.changeset(&1, &2, definitions, tax)
+    currency = get_field(changeset, :currency)
+
+    &InvoiceItem.changeset(&1, &2, definitions, tax, currency)
+  end
+
+  # A saved document keeps its currency: every amount on it is in that
+  # currency's minor units. Nothing in the app changes it; this stops a
+  # crafted form or restore from doing so.
+  @doc false
+  def freeze_currency(changeset, noun) do
+    if changeset.data.id && changed?(changeset, :currency) do
+      changeset
+      |> delete_change(:currency)
+      |> add_error(:currency, "can't be changed after the #{noun} is saved")
+    else
+      changeset
+    end
+  end
+
+  # Three-decimal currencies are VAT-only (see QuantumBilling.Currency).
+  @doc false
+  def validate_currency_regime(changeset) do
+    currency = get_field(changeset, :currency)
+
+    if QuantumBilling.Currency.vat_only?(currency) and get_field(changeset, :tax_regime) != "vat",
+      do: add_error(changeset, :currency, "#{currency} needs the VAT tax regime"),
+      else: changeset
   end
 
   # India GST needs a state for the place of supply; VAT does not use one.
@@ -343,7 +371,8 @@ defmodule QuantumBilling.Invoices.Invoice do
       intra_state?: intra_state?(changeset),
       reverse_charge: get_field(changeset, :reverse_charge) == true,
       prices_include_tax: get_field(changeset, :prices_include_tax) == true,
-      round_to_whole_units: get_field(changeset, :round_to_whole_units) != false
+      round_to_whole_units: get_field(changeset, :round_to_whole_units) != false,
+      currency: get_field(changeset, :currency)
     }
   end
 

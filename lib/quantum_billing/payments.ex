@@ -340,8 +340,9 @@ defmodule QuantumBilling.Payments do
             [
               details: %{
                 payment_id: payment_id,
-                # Whole rupees, as older entries in the log hold.
-                amount: div(updated.grand_total || 0, 100)
+                # Whole units, as older entries in the log hold.
+                amount:
+                  div(updated.grand_total || 0, QuantumBilling.Currency.unit(updated.currency))
               }
             ]
         )
@@ -368,8 +369,8 @@ defmodule QuantumBilling.Payments do
         Webhooks.publish("invoice.paid", updated.id, %{
           invoice_number: updated.invoice_number,
           invoice_id: updated.id,
-          # Whole rupees, as integrations have always received it.
-          amount: div(updated.grand_total, 100),
+          # Whole units (rupees, dinars), as integrations have always received it.
+          amount: div(updated.grand_total, QuantumBilling.Currency.unit(updated.currency)),
           payment_id: payment_id,
           client_name: updated.client_name
         })

@@ -38,7 +38,8 @@ defmodule QuantumBillingWeb.API.V1.ClientController do
   end
 
   defp create_client(conn) do
-    with {:ok, attrs} <- ClientParams.cast(conn.body_params),
+    with {:ok, attrs} <-
+           ClientParams.cast(conn.body_params, QuantumBilling.Settings.currency_code()),
          {:ok, client} <- Clients.create_client(attrs) do
       {201, ClientJSON.show(%{client: client})}
     else

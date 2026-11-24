@@ -388,7 +388,8 @@ defmodule QuantumBillingWeb.InvoiceDocumentTest do
     end
 
     test "another currency prints its symbol and units", %{conn: conn, invoice: invoice} do
-      {:ok, invoice} = Invoices.update_invoice(invoice, %{"currency" => "AED"})
+      # A saved invoice keeps its currency, so the stored row is changed directly.
+      invoice = invoice |> Ecto.Changeset.change(currency: "AED") |> QuantumBilling.Repo.update!()
       %{screen: screen, printed: printed} = both(conn, invoice)
 
       for html <- [screen, printed] do

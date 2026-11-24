@@ -12,6 +12,10 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
   The business's regime decides the tax fields: a GST line takes `tax_rate`
   (a slab); a VAT line takes `tax_rate_id` (else the default rate) and the
   invoice `reverse_charge`. The other regime's fields are refused.
+
+  Amounts (`rate`, money custom fields) are integer minor units of the
+  business currency, the one the document will bill in: 100 to the unit, or
+  1000 for KWD, BHD and OMR.
   """
 
   alias QuantumBilling.CustomFields
@@ -29,25 +33,43 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
   @doc """
   `{:ok, client_id, attrs}` with `attrs` shaped for `Invoices.create_invoice/1`
   (less the client snapshot), or `{:error, fields}`. `regime` is the
-  business's, `"gst"` or `"vat"`.
+  business's, `"gst"` or `"vat"`, and `currency` its ISO code.
   """
-  def cast(body, regime \\ "gst"),
-    do: cast_document(body, regime, %{top: @top, object: "invoice", item_object: "invoice_item"})
+  def cast(body, regime, currency),
+    do:
+      cast_document(body, regime, %{
+        top: @top,
+        object: "invoice",
+        item_object: "invoice_item",
+        currency: currency
+      })
 
   @doc """
-  `cast/2` for another document with invoice-style lines (a quotation):
+  `cast/3` for another document with invoice-style lines (a quotation):
   `spec` names its allowed top-level fields (`:top`, with `client_id`,
-  `items` and `custom_fields`) and its custom-field objects (`:object`,
-  `:item_object`).
+  `items` and `custom_fields`), its custom-field objects (`:object`,
+  `:item_object`) and the `:currency` its amounts are in.
   """
-  def cast_document(%{} = body, regime, %{top: top, object: object, item_object: item_object}) do
+  def cast_document(
+        %{} = body,
+        regime,
+        %{top: top, object: object, item_object: item_object, currency: currency}
+      ) do
     {top_extra, item_extra} = Map.get(@regime_fields, regime, @regime_fields["gst"])
     top = top ++ top_extra
 
+    lines = %{
+      allowed: @item ++ item_extra,
+      regime: regime,
+      object: item_object,
+      currency: currency
+    }
+
     with :ok <- refuse_unknown(body, top, "", regime),
          {:ok, client_id} <- client_id(body["client_id"]),
-         {:ok, custom} <- custom_fields(body["custom_fields"], object, "custom_fields."),
-         {:ok, items} <- items(body["items"], @item ++ item_extra, regime, item_object) do
+         {:ok, custom} <-
+           custom_fields(body["custom_fields"], object, "custom_fields.", currency),
+         {:ok, items} <- items(body["items"], lines) do
       attrs =
         body
         |> Map.take(top -- ["client_id", "items", "custom_fields"])
@@ -90,15 +112,15 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
 
   defp client_id(_id), do: {:error, %{"client_id" => ["is required"]}}
 
-  defp custom_fields(nil, _object, _path), do: {:ok, nil}
+  defp custom_fields(nil, _object, _path, _currency), do: {:ok, nil}
 
-  defp custom_fields(values, object, path),
-    do: CustomFieldParams.cast(values, CustomFields.api_definitions(object), path)
+  defp custom_fields(values, object, path, currency),
+    do: CustomFieldParams.cast(values, CustomFields.api_definitions(object), path, currency)
 
   defp put_custom(attrs, nil), do: attrs
   defp put_custom(attrs, custom), do: Map.put(attrs, "custom_fields", custom)
 
-  defp items(items, allowed, regime, item_object)
+  defp items(items, %{allowed: allowed, regime: regime, object: item_object, currency: currency})
        when is_list(items) and items != [] and length(items) <= @max_items do
     items
     |> Enum.with_index()
@@ -107,9 +129,14 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
         path = "items.#{index}."
 
         with :ok <- refuse_unknown(item, allowed, path, regime),
-             {:ok, rate} <- rate(item["rate"], index),
+             {:ok, rate} <- rate(item["rate"], index, currency),
              {:ok, custom} <-
-               custom_fields(item["custom_fields"], item_object, path <> "custom_fields.") do
+               custom_fields(
+                 item["custom_fields"],
+                 item_object,
+                 path <> "custom_fields.",
+                 currency
+               ) do
           attrs =
             item
             |> Map.take(allowed -- ["custom_fields"])
@@ -128,22 +155,24 @@ defmodule QuantumBillingWeb.API.InvoiceParams do
     end)
   end
 
-  defp items(items, _allowed, _regime, _item_object)
-       when is_list(items) and length(items) > @max_items,
-       do: {:error, %{"items" => ["can contain at most #{@max_items} lines"]}}
+  defp items(items, _lines) when is_list(items) and length(items) > @max_items,
+    do: {:error, %{"items" => ["can contain at most #{@max_items} lines"]}}
 
-  defp items(_items, _allowed, _regime, _item_object),
+  defp items(_items, _lines),
     do: {:error, %{"items" => ["must be a non-empty list of lines"]}}
 
-  # API amounts are integer paise; the changeset expects rupees, so 125050 becomes "1250.50".
-  defp rate(nil, _index), do: {:ok, nil}
-  defp rate(paise, _index) when is_integer(paise) and paise >= 0, do: {:ok, Money.to_input(paise)}
+  # API amounts are integer minor units; the changeset reads major units, so
+  # 125050 becomes "1250.50" in INR and "125.050" in KWD.
+  defp rate(nil, _index, _currency), do: {:ok, nil}
 
-  defp rate(_other, index),
-    do: {:error, %{"items.#{index}.rate" => ["must be a whole number of paise, 0 or more"]}}
+  defp rate(minor, _index, currency) when is_integer(minor) and minor >= 0,
+    do: {:ok, Money.to_input(minor, currency)}
+
+  defp rate(_other, index, _currency),
+    do: {:error, %{"items.#{index}.rate" => ["must be a whole number of minor units, 0 or more"]}}
 
   defp put_rate(attrs, nil), do: attrs
-  defp put_rate(attrs, rupees), do: Map.put(attrs, "rate", rupees)
+  defp put_rate(attrs, major), do: Map.put(attrs, "rate", major)
 
   # The changeset casts from strings, as the form sends them.
   defp stringify(value) when is_binary(value), do: value

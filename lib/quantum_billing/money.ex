@@ -1,20 +1,26 @@
 defmodule QuantumBilling.Money do
   @moduledoc """
-  Money is integer paise; every rule for reading, rounding and writing it lives here.
+  Money is integer minor units; every rule for reading, rounding and writing it lives here.
 
-  Columns are `bigint`. Rounding is half-up, away from zero; the grand total is
-  rounded to the rupee and the difference shown as round-off. `parse/1`,
-  `to_input/1` and `to_rupees_decimal/1` are the only rupee crossings.
+  Columns are `bigint`. A currency has 100 minor units, or 1000 for KWD, BHD
+  and OMR (see `QuantumBilling.Currency.exponent/1`). Rounding is half-up, away
+  from zero; the grand total may be rounded to the whole unit and the difference
+  shown as round-off.
+
+  `parse/2`, `to_input/2` and `to_decimal/2` are the only crossings between
+  typed amounts and minor units. The one-argument forms are rupees and paise,
+  for the GST paths that only ever work in INR.
   """
+
+  import Ecto.Changeset, only: [put_change: 3, add_error: 3]
+
+  alias QuantumBilling.Currency
 
   # A leading ISO code, as in "AED 1,250", after an optional minus sign.
   @code_prefix ~r/^(-?)(?:#{Enum.join(QuantumBilling.Currency.codes(), "|")})/i
 
   @doc """
-  Reads a rupee amount as typed into a form, returning paise.
-
-  Accepts a currency sign or code (`₹`, `£`, `AED`), Indian or Western
-  grouping, spaces and up to two decimals. A number is taken as rupees too.
+  Reads a rupee amount as typed into a form, returning paise. See `parse/2`.
 
   ## Examples
 
@@ -30,32 +36,108 @@ defmodule QuantumBilling.Money do
       iex> QuantumBilling.Money.parse("12.345")
       :error
   """
-  def parse(rupees) when is_integer(rupees), do: {:ok, rupees * 100}
+  def parse(rupees), do: parse(rupees, "INR")
 
-  def parse(%Decimal{} = rupees) do
-    paise = Decimal.mult(rupees, 100)
+  @doc """
+  Reads an amount in `currency` as typed into a form, returning minor units.
 
-    if Decimal.integer?(paise), do: {:ok, Decimal.to_integer(paise)}, else: :error
+  Accepts a currency sign or code (`₹`, `£`, `AED`), Indian or Western
+  grouping, spaces and up to the currency's decimals. A number is taken as
+  whole units too.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.parse("12.345", "KWD")
+      {:ok, 12_345}
+
+      iex> QuantumBilling.Money.parse("BHD 1,250.5", "BHD")
+      {:ok, 1_250_500}
+
+      iex> QuantumBilling.Money.parse(12, "OMR")
+      {:ok, 12_000}
+
+      iex> QuantumBilling.Money.parse("12.345", "AED")
+      :error
+  """
+  def parse(major, currency) when is_integer(major), do: {:ok, major * Currency.unit(currency)}
+
+  def parse(%Decimal{} = major, currency) do
+    minor = Decimal.mult(major, Currency.unit(currency))
+
+    if Decimal.integer?(minor), do: {:ok, Decimal.to_integer(minor)}, else: :error
   end
 
-  def parse(rupees) when is_float(rupees), do: rupees |> Decimal.from_float() |> parse()
+  def parse(major, currency) when is_float(major),
+    do: major |> Decimal.from_float() |> parse(currency)
 
-  def parse(rupees) when is_binary(rupees) do
+  def parse(major, currency) when is_binary(major) do
     cleaned =
-      rupees
+      major
       |> String.replace(["₹", "£", "€", "$", ",", " "], "")
       |> String.replace(@code_prefix, "\\1")
       |> String.trim()
 
-    if Regex.match?(~r/^-?\d+(\.\d{1,2})?$/, cleaned),
-      do: cleaned |> Decimal.new() |> parse(),
-      else: :error
+    if Regex.match?(~r/^-?\d+(\.\d+)?$/, cleaned) and
+         decimal_places(cleaned) <= Currency.exponent(currency),
+       do: cleaned |> Decimal.new() |> parse(currency),
+       else: :error
   end
 
-  def parse(_rupees), do: :error
+  def parse(_major, _currency), do: :error
+
+  defp decimal_places(digits) do
+    case String.split(digits, ".") do
+      [_whole, fraction] -> String.length(fraction)
+      [_whole] -> 0
+    end
+  end
 
   @doc """
-  Paise as the plain rupee string a form input or a payload carries.
+  Casts `field` from `attrs` with `parse/2` in `currency` and puts it on the
+  changeset, for an amount whose currency only the parent record knows (an
+  Ecto type sees just the one value). A missing key leaves the field alone;
+  a blank one sets nil.
+  """
+  def cast_amount(%Ecto.Changeset{} = changeset, attrs, field, currency) when is_atom(field) do
+    case fetch_param(attrs, field) do
+      :error ->
+        changeset
+
+      {:ok, blank} when blank in [nil, ""] ->
+        put_change(changeset, field, nil)
+
+      {:ok, raw} ->
+        case parse(raw, currency) do
+          {:ok, minor} -> put_change(changeset, field, minor)
+          :error -> add_error(changeset, field, amount_error(currency))
+        end
+    end
+  end
+
+  defp fetch_param(attrs, field) when is_map(attrs) do
+    case Map.fetch(attrs, Atom.to_string(field)) do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(attrs, field)
+    end
+  end
+
+  defp fetch_param(_attrs, _field), do: :error
+
+  @doc """
+  The validation message for an amount `parse/2` refused in `currency`.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.amount_error("KWD")
+      "must be an amount with at most three decimal places"
+  """
+  def amount_error(currency) do
+    places = if Currency.exponent(currency) == 3, do: "three", else: "two"
+    "must be an amount with at most #{places} decimal places"
+  end
+
+  @doc """
+  Paise as the plain rupee string a form input or a payload carries. See `to_input/2`.
 
   ## Examples
 
@@ -66,14 +148,30 @@ defmodule QuantumBilling.Money do
       "-0.05"
 
   """
-  def to_input(nil), do: ""
+  def to_input(paise), do: to_input(paise, "INR")
 
-  def to_input(paise) when is_integer(paise) do
-    sign = if paise < 0, do: "-", else: ""
-    paise = abs(paise)
-    fraction = paise |> rem(100) |> Integer.to_string() |> String.pad_leading(2, "0")
+  @doc """
+  Minor units in `currency` as the plain string a form input or a payload carries.
 
-    "#{sign}#{div(paise, 100)}.#{fraction}"
+  ## Examples
+
+      iex> QuantumBilling.Money.to_input(12_345, "KWD")
+      "12.345"
+
+      iex> QuantumBilling.Money.to_input(-5, "OMR")
+      "-0.005"
+
+  """
+  def to_input(nil, _currency), do: ""
+
+  def to_input(minor, currency) when is_integer(minor) do
+    exponent = Currency.exponent(currency)
+    unit = Integer.pow(10, exponent)
+    sign = if minor < 0, do: "-", else: ""
+    minor = abs(minor)
+    fraction = minor |> rem(unit) |> Integer.to_string() |> String.pad_leading(exponent, "0")
+
+    "#{sign}#{div(minor, unit)}.#{fraction}"
   end
 
   @doc """
@@ -85,8 +183,21 @@ defmodule QuantumBilling.Money do
       Decimal.new("1250.50")
 
   """
-  def to_rupees_decimal(nil), do: Decimal.new("0.00")
-  def to_rupees_decimal(paise) when is_integer(paise), do: Decimal.new(to_input(paise))
+  def to_rupees_decimal(paise), do: to_decimal(paise, "INR")
+
+  @doc """
+  Minor units as a `Decimal` of whole units with the currency's places.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.to_decimal(12_345, "KWD")
+      Decimal.new("12.345")
+
+  """
+  def to_decimal(nil, currency), do: Decimal.new(to_input(0, currency))
+
+  def to_decimal(minor, currency) when is_integer(minor),
+    do: Decimal.new(to_input(minor, currency))
 
   @doc """
   Quantity × rate, rounded half-up to the paisa.
@@ -168,9 +279,24 @@ defmodule QuantumBilling.Money do
       iex> QuantumBilling.Money.round_to_rupee(1_180_050)
       {1_180_100, 50}
   """
-  def round_to_rupee(paise) when is_integer(paise) do
-    rounded = round_half_up(paise, 100) * 100
-    {rounded, rounded - paise}
+  def round_to_rupee(paise) when is_integer(paise), do: round_to_whole(paise, "INR")
+
+  @doc """
+  Rounds minor units to the nearest whole unit of `currency`, half-up:
+  `{rounded, round_off}`.
+
+  ## Examples
+
+      iex> QuantumBilling.Money.round_to_whole(12_500, "KWD")
+      {13_000, 500}
+
+      iex> QuantumBilling.Money.round_to_whole(-12_499, "BHD")
+      {-12_000, 499}
+  """
+  def round_to_whole(minor, currency) when is_integer(minor) do
+    unit = Currency.unit(currency)
+    rounded = round_half_up(minor, unit) * unit
+    {rounded, rounded - minor}
   end
 
   @doc """

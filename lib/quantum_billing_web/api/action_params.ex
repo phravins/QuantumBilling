@@ -48,13 +48,14 @@ defmodule QuantumBillingWeb.API.ActionParams do
 
   @doc """
   A credit or debit note: `type` ("credit" or "debit"), `reason`, and the
-  amounts in paise. A total left out defaults to what can still be credited
-  (for a debit note, the invoice's total), and a taxable value or tax left out
-  is taken from the total in the invoice's proportion, as in the application.
-  A credit note over what can still be credited is refused. Returns attrs for `CreditNotes.create_credit_note_for_invoice/2`,
-  whose amounts are rupees.
+  amounts in minor units of the invoice's `currency`. A total left out
+  defaults to what can still be credited (for a debit note, the invoice's
+  total), and a taxable value or tax left out is taken from the total in the
+  invoice's proportion, as in the application. A credit note over what can
+  still be credited is refused. Returns attrs for
+  `CreditNotes.create_credit_note_for_invoice/2`, whose amounts are major units.
   """
-  def credit_note(%{} = body) do
+  def credit_note(%{} = body, currency) do
     with :ok <- only(body, ~w(type reason subtotal tax_total grand_total)),
          {:ok, type} <- note_type(body["type"]),
          {:ok, reason} <- text(body, "reason", 200),
@@ -63,15 +64,15 @@ defmodule QuantumBillingWeb.API.ActionParams do
          {:ok, grand_total} <- paise(body, "grand_total", required: false) do
       attrs =
         %{"note_type" => type, "reason" => reason}
-        |> put_rupees("subtotal", subtotal)
-        |> put_rupees("tax_total", tax_total)
-        |> put_rupees("grand_total", grand_total)
+        |> put_major("subtotal", subtotal, currency)
+        |> put_major("tax_total", tax_total, currency)
+        |> put_major("grand_total", grand_total, currency)
 
       {:ok, attrs}
     end
   end
 
-  def credit_note(_body), do: {:error, %{"body" => ["must be a JSON object"]}}
+  def credit_note(_body, _currency), do: {:error, %{"body" => ["must be a JSON object"]}}
 
   defp only(body, allowed) do
     case body |> Map.keys() |> Enum.reject(&(&1 in allowed)) do
@@ -112,7 +113,7 @@ defmodule QuantumBillingWeb.API.ActionParams do
       nil when required? -> {:error, %{field => ["is required"]}}
       nil -> {:ok, nil}
       value when is_integer(value) and value >= 0 -> {:ok, value}
-      _other -> {:error, %{field => ["must be a whole number of paise, 0 or more"]}}
+      _other -> {:error, %{field => ["must be a whole number of minor units, 0 or more"]}}
     end
   end
 
@@ -120,6 +121,8 @@ defmodule QuantumBillingWeb.API.ActionParams do
   defp note_type("debit"), do: {:ok, "Debit"}
   defp note_type(_other), do: {:error, %{"type" => ["must be \"credit\" or \"debit\""]}}
 
-  defp put_rupees(attrs, _field, nil), do: attrs
-  defp put_rupees(attrs, field, paise), do: Map.put(attrs, field, Money.to_input(paise))
+  defp put_major(attrs, _field, nil, _currency), do: attrs
+
+  defp put_major(attrs, field, minor, currency),
+    do: Map.put(attrs, field, Money.to_input(minor, currency))
 end

@@ -157,7 +157,10 @@ defmodule QuantumBilling.InvoiceNotifier do
        do: "Rs. " <> Format.figure(total)
 
   defp plain_amount(%Invoice{currency: currency, grand_total: total}),
-    do: currency <> " " <> Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping)
+    do:
+      currency <>
+        " " <>
+        Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping, currency)
 
   defp irn_row(%Invoice{irn: nil}), do: ""
 

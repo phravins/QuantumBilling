@@ -27,7 +27,8 @@ defmodule QuantumBillingWeb.ClientNewLive do
       |> assign(:vat?, Tax.vat?(regime))
       |> assign(:country_options, country_options())
       |> assign(:custom_definitions, CustomFields.active_definitions("client"))
-      |> assign(:currency_symbol, currency_symbol(QuantumBilling.Settings.currency_code()))
+      |> assign(:currency, QuantumBilling.Settings.currency_code())
+      |> then(&assign(&1, :currency_symbol, currency_symbol(&1.assigns.currency)))
 
     {:ok, apply_action(socket, socket.assigns.live_action, params)}
   end
@@ -37,7 +38,9 @@ defmodule QuantumBillingWeb.ClientNewLive do
     |> assign(:page_title, "Add New Client")
     |> assign(:active_nav, :clients)
     |> assign(:client, %Client{})
-    |> assign_form(Clients.change_client(%Client{}, %{}, socket.assigns.regime))
+    |> assign_form(
+      Clients.change_client(%Client{}, %{}, socket.assigns.regime, socket.assigns.currency)
+    )
   end
 
   # Redirect on a missing id: the link may be stale.
@@ -53,14 +56,16 @@ defmodule QuantumBillingWeb.ClientNewLive do
         |> assign(:page_title, "Edit #{client.name}")
         |> assign(:active_nav, :clients)
         |> assign(:client, client)
-        |> assign_form(Clients.change_client(client, %{}, socket.assigns.regime))
+        |> assign_form(
+          Clients.change_client(client, %{}, socket.assigns.regime, socket.assigns.currency)
+        )
     end
   end
 
   def handle_event("validate", %{"client" => params}, socket) do
     changeset =
       socket.assigns.client
-      |> Clients.change_client(params, socket.assigns.regime)
+      |> Clients.change_client(params, socket.assigns.regime, socket.assigns.currency)
       |> Map.put(:action, :validate)
 
     {:noreply, assign_form(socket, changeset)}
@@ -383,6 +388,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                   field={f[:credit_limit]}
                   label={"Credit Limit (#{@currency_symbol})"}
                   type="money"
+                  currency={@currency}
                 />
                 <.field
                   field={f[:payment_terms_days]}
@@ -394,6 +400,7 @@ defmodule QuantumBillingWeb.ClientNewLive do
                   field={f[:opening_balance]}
                   label={"Opening Balance (#{@currency_symbol})"}
                   type="money"
+                  currency={@currency}
                 />
               </div>
 

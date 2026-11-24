@@ -64,7 +64,8 @@ defmodule QuantumBilling.Tax do
   @doc """
   The invoice totals for `items`. `ctx` holds `:regime` plus, for GST,
   `:intra_state?`, and for VAT `:reverse_charge` and `:prices_include_tax`.
-  `:round_to_whole_units` false leaves the total unrounded under either.
+  `:round_to_whole_units` false leaves the total unrounded under either; under
+  VAT `:currency` sets the whole unit (1000 fils for KWD).
   """
   def totals(items, %{regime: "vat"} = ctx), do: VAT.totals(items, ctx)
 

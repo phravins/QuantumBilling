@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "QuantumBilling API",
-    "version": "1.3.0",
-    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is an integer in the invoice currency's minor unit (paise for INR, fils for AED, pence for GBP, cents for EUR; 100 = one unit)."
+    "version": "1.4.0",
+    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is an integer in the currency's minor unit (paise for INR, fils for AED and KWD, baisa for OMR, pence for GBP, cents for EUR). `currency_exponent` on an invoice, quotation or note gives the decimal places: 2 (100 = one unit), or 3 for KWD, BHD and OMR (1000 = one unit). Amounts sent in a request use the same units as the document they belong to; for a new invoice or quotation that is the business currency."
   },
   "servers": [
     {
@@ -99,7 +99,7 @@
       },
       "CustomFields": {
         "type": "object",
-        "description": "The business's own fields marked \"Include in API\" in Settings › Data model, keyed by field key. Values: text, long_text, email, phone and url are strings; number is a decimal string; money is integer minor units of the currency (paise for INR); date is YYYY-MM-DD; boolean is true or false; select is a choice id; multi_select is a list of choice ids. When writing, a select or multi_select also accepts choice labels (any case), null clears a value, and any key not marked for the API is refused.",
+        "description": "The business's own fields marked \"Include in API\" in Settings › Data model, keyed by field key. Values: text, long_text, email, phone and url are strings; number is a decimal string; money is integer minor units of the record's currency (the document's, else the business currency; paise for INR); date is YYYY-MM-DD; boolean is true or false; select is a choice id; multi_select is a list of choice ids. When writing, a select or multi_select also accepts choice labels (any case), null clears a value, and any key not marked for the API is refused.",
         "additionalProperties": true
       },
       "Invoice": {
@@ -138,6 +138,14 @@
           "currency": {
             "type": "string",
             "nullable": true
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
           },
           "tax_regime": {
             "type": "string",
@@ -218,23 +226,23 @@
             "properties": {
               "taxable_value": {
                 "type": "integer",
-                "description": "taxable_value (minor units; 100 = one unit)"
+                "description": "taxable_value (minor units; 10^currency_exponent = one unit)"
               },
               "cgst": {
                 "type": "integer",
-                "description": "cgst (minor units; 100 = one unit)"
+                "description": "cgst (minor units; 10^currency_exponent = one unit)"
               },
               "sgst": {
                 "type": "integer",
-                "description": "sgst (minor units; 100 = one unit)"
+                "description": "sgst (minor units; 10^currency_exponent = one unit)"
               },
               "igst": {
                 "type": "integer",
-                "description": "igst (minor units; 100 = one unit)"
+                "description": "igst (minor units; 10^currency_exponent = one unit)"
               },
               "cess": {
                 "type": "integer",
-                "description": "cess (minor units; 100 = one unit)"
+                "description": "cess (minor units; 10^currency_exponent = one unit)"
               },
               "vat": {
                 "type": "integer",
@@ -242,11 +250,11 @@
               },
               "round_off": {
                 "type": "integer",
-                "description": "round_off (minor units; 100 = one unit)"
+                "description": "round_off (minor units; 10^currency_exponent = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (minor units; 100 = one unit)"
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
               }
             },
             "additionalProperties": false
@@ -328,7 +336,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
@@ -356,7 +364,7 @@
                 },
                 "amount": {
                   "type": "integer",
-                  "description": "Line amount (minor units; 100 = one unit)"
+                  "description": "Line amount (minor units; 10^currency_exponent = one unit)"
                 },
                 "custom_fields": {
                   "$ref": "#/components/schemas/CustomFields"
@@ -605,20 +613,32 @@
           "status": {
             "type": "string"
           },
+          "currency": {
+            "type": "string",
+            "description": "The invoice's currency, which the note's amounts are in"
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
+          },
           "amounts": {
             "type": "object",
             "properties": {
               "subtotal": {
                 "type": "integer",
-                "description": "subtotal (minor units; 100 = one unit)"
+                "description": "subtotal (minor units; 10^currency_exponent = one unit)"
               },
               "tax_total": {
                 "type": "integer",
-                "description": "tax_total (minor units; 100 = one unit)"
+                "description": "tax_total (minor units; 10^currency_exponent = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (minor units; 100 = one unit)"
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
               }
             },
             "additionalProperties": false
@@ -713,7 +733,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
@@ -864,7 +884,7 @@
           },
           "amount": {
             "type": "integer",
-            "description": "Must cover the grand total (minor units; 100 = one unit)"
+            "description": "Must cover the grand total (minor units; 10^currency_exponent = one unit)"
           }
         },
         "additionalProperties": false,
@@ -901,15 +921,15 @@
           },
           "subtotal": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           },
           "tax_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           },
           "grand_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           }
         },
         "additionalProperties": false,
@@ -982,6 +1002,14 @@
           "currency": {
             "type": "string",
             "nullable": true
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
           },
           "tax_regime": {
             "type": "string",
@@ -1062,23 +1090,23 @@
             "properties": {
               "taxable_value": {
                 "type": "integer",
-                "description": "taxable_value (minor units; 100 = one unit)"
+                "description": "taxable_value (minor units; 10^currency_exponent = one unit)"
               },
               "cgst": {
                 "type": "integer",
-                "description": "cgst (minor units; 100 = one unit)"
+                "description": "cgst (minor units; 10^currency_exponent = one unit)"
               },
               "sgst": {
                 "type": "integer",
-                "description": "sgst (minor units; 100 = one unit)"
+                "description": "sgst (minor units; 10^currency_exponent = one unit)"
               },
               "igst": {
                 "type": "integer",
-                "description": "igst (minor units; 100 = one unit)"
+                "description": "igst (minor units; 10^currency_exponent = one unit)"
               },
               "cess": {
                 "type": "integer",
-                "description": "cess (minor units; 100 = one unit)"
+                "description": "cess (minor units; 10^currency_exponent = one unit)"
               },
               "vat": {
                 "type": "integer",
@@ -1086,11 +1114,11 @@
               },
               "round_off": {
                 "type": "integer",
-                "description": "round_off (minor units; 100 = one unit)"
+                "description": "round_off (minor units; 10^currency_exponent = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (minor units; 100 = one unit)"
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
               }
             },
             "additionalProperties": false
@@ -1149,7 +1177,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
@@ -1177,7 +1205,7 @@
                 },
                 "amount": {
                   "type": "integer",
-                  "description": "Line amount (minor units; 100 = one unit)"
+                  "description": "Line amount (minor units; 10^currency_exponent = one unit)"
                 },
                 "custom_fields": {
                   "$ref": "#/components/schemas/CustomFields"
@@ -1247,7 +1275,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",

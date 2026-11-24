@@ -115,13 +115,16 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
   @doc "CSV headers for `definitions`."
   def export_headers(definitions), do: Enum.map(definitions, & &1.label)
 
-  @doc "A record's values for `definitions`, as CSV cells. Money is a plain number."
-  def export_cells(definitions, values) do
+  @doc """
+  A record's values for `definitions`, as CSV cells. Money is a plain number
+  in `currency`, the record's (an ISO code).
+  """
+  def export_cells(definitions, values, currency) do
     values = values || %{}
 
     Enum.map(definitions, fn definition ->
       case {definition.type, Map.get(values, definition.key)} do
-        {"money", paise} when is_integer(paise) -> QuantumBilling.Money.to_input(paise)
+        {"money", minor} when is_integer(minor) -> QuantumBilling.Money.to_input(minor, currency)
         {_type, value} -> display_value(definition, value) || ""
       end
     end)
@@ -191,7 +194,7 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
         type: definition.type,
         name: "#{form.name}[custom_fields][#{key}]",
         id: "#{form.id}_custom_fields_#{key}",
-        value: input_value(definition, submitted, stored(form), new_record?(form)),
+        value: input_value(definition, submitted, stored(form), new_record?(form), form),
         errors: input_errors(form, key, submitted),
         wide?: definition.type in ~w(long_text multi_select)
       )
@@ -322,7 +325,7 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
   defp stored(_form), do: %{}
 
   # Typed value, else stored value, else (on a record not yet submitted) the default.
-  defp input_value(definition, submitted, stored, new?) do
+  defp input_value(definition, submitted, stored, new?, form) do
     cond do
       is_map(submitted) and Map.has_key?(submitted, definition.key) ->
         case Map.fetch!(submitted, definition.key) do
@@ -331,10 +334,10 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
         end
 
       Map.has_key?(stored, definition.key) ->
-        stored_input(definition, Map.fetch!(stored, definition.key))
+        stored_input(definition, Map.fetch!(stored, definition.key), form)
 
       new? and is_nil(submitted) ->
-        stored_input(definition, FieldDefinition.default(definition))
+        stored_input(definition, FieldDefinition.default(definition), form)
 
       true ->
         nil
@@ -346,11 +349,21 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
 
   defp new_record?(_form), do: false
 
-  defp stored_input(%FieldDefinition{type: "money"}, paise) when is_integer(paise),
-    do: Format.money_input(paise)
+  defp stored_input(%FieldDefinition{type: "money"}, minor, form) when is_integer(minor),
+    do: Format.money_input(minor, form_currency(form))
 
-  defp stored_input(%FieldDefinition{type: "multi_select"}, ids), do: List.wrap(ids)
-  defp stored_input(_definition, value), do: value
+  defp stored_input(%FieldDefinition{type: "multi_select"}, ids, _form), do: List.wrap(ids)
+  defp stored_input(_definition, value, _form), do: value
+
+  # A document's own currency; anything else (a client, an item) is in the
+  # business currency, which has the same decimal places.
+  defp form_currency(%Phoenix.HTML.Form{source: %Ecto.Changeset{} = changeset}) do
+    if Map.has_key?(changeset.data, :currency),
+      do: Ecto.Changeset.get_field(changeset, :currency),
+      else: QuantumBilling.Settings.currency_code()
+  end
+
+  defp form_currency(_form), do: QuantumBilling.Settings.currency_code()
 
   # While typing, only inputs the person has used; after a failed save, all of them.
   defp input_errors(%Phoenix.HTML.Form{source: %Ecto.Changeset{} = changeset}, key, submitted) do

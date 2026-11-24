@@ -281,14 +281,16 @@ defmodule QuantumBilling.CustomFields.FieldDefinition do
   Checks one submitted value against the field's type.
 
   Returns `{:ok, stored}`, `:empty` when nothing was given, or `{:error, message}`.
-  Money is given in rupees and stored in paise. Choices accept the id or the label.
+  Money is given in major units of `currency` (an ISO code; nil is the
+  business currency) and stored in minor units. Choices accept the id or the
+  label.
   """
-  def cast_value(definition, raw)
+  def cast_value(definition, raw, currency \\ nil)
 
-  def cast_value(_definition, nil), do: :empty
-  def cast_value(_definition, []), do: :empty
+  def cast_value(_definition, nil, _currency), do: :empty
+  def cast_value(_definition, [], _currency), do: :empty
 
-  def cast_value(%__MODULE__{type: "multi_select"} = definition, raw) do
+  def cast_value(%__MODULE__{type: "multi_select"} = definition, raw, _currency) do
     values =
       raw
       |> List.wrap()
@@ -305,7 +307,7 @@ defmodule QuantumBilling.CustomFields.FieldDefinition do
     end
   end
 
-  def cast_value(%__MODULE__{type: "boolean"}, raw) do
+  def cast_value(%__MODULE__{type: "boolean"}, raw, _currency) do
     case raw do
       value when value in [true, "true", "on", "1", 1] -> {:ok, true}
       value when value in [false, "false", "off", "0", 0] -> {:ok, false}
@@ -314,26 +316,35 @@ defmodule QuantumBilling.CustomFields.FieldDefinition do
     end
   end
 
-  def cast_value(%__MODULE__{type: "money"}, raw) when is_binary(raw) or is_number(raw) do
+  def cast_value(%__MODULE__{type: "money"}, raw, currency)
+      when is_binary(raw) or is_number(raw) do
     if blank?(raw) do
       :empty
     else
-      case Money.parse(raw) do
-        {:ok, paise} when abs(paise) < 100_000_000_000_000 -> {:ok, paise}
-        _error -> {:error, "must be an amount, like 1250.50"}
+      currency = currency || QuantumBilling.Settings.currency_code()
+
+      case Money.parse(raw, currency) do
+        {:ok, minor} when abs(minor) < 100_000_000_000_000 -> {:ok, minor}
+        _error -> {:error, money_error(currency)}
       end
     end
   end
 
-  def cast_value(%__MODULE__{type: "number"}, raw) when is_number(raw),
-    do: cast_value(%__MODULE__{type: "number"}, to_string(raw))
+  def cast_value(%__MODULE__{type: "number"}, raw, currency) when is_number(raw),
+    do: cast_value(%__MODULE__{type: "number"}, to_string(raw), currency)
 
-  def cast_value(%__MODULE__{} = definition, raw) when is_binary(raw) do
+  def cast_value(%__MODULE__{} = definition, raw, _currency) when is_binary(raw) do
     value = String.trim(raw)
     if value == "", do: :empty, else: cast_string(definition, value)
   end
 
-  def cast_value(_definition, _raw), do: {:error, "is invalid"}
+  def cast_value(_definition, _raw, _currency), do: {:error, "is invalid"}
+
+  defp money_error(currency) do
+    if QuantumBilling.Currency.exponent(currency) == 3,
+      do: "must be an amount, like 1250.500",
+      else: "must be an amount, like 1250.50"
+  end
 
   defp cast_string(%{type: "text"}, value), do: max_length(value, 500)
   defp cast_string(%{type: "long_text"}, value), do: max_length(value, 5000)

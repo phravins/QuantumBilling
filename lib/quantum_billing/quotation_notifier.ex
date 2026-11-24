@@ -180,7 +180,10 @@ defmodule QuantumBilling.QuotationNotifier do
        do: "Rs. " <> Format.figure(total)
 
   defp plain_amount(%Quotation{currency: currency, grand_total: total}),
-    do: currency <> " " <> Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping)
+    do:
+      currency <>
+        " " <>
+        Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping, currency)
 
   defp escape(nil), do: ""
 

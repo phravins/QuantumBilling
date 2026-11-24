@@ -115,8 +115,10 @@ defmodule QuantumBilling.Quotations.Quotation do
     |> cast(attrs, @castable)
     |> change(Map.take(trusted, @trusted))
     |> default_currency(attrs, trusted)
+    |> Invoice.freeze_currency("quotation")
     |> ensure_public_token()
     |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> Invoice.validate_currency_regime()
     |> cast_items(attrs)
     |> validate_required([:quotation_date, :valid_until, :client_name])
     |> validate_length(:client_name, max: 255)
@@ -219,8 +221,10 @@ defmodule QuantumBilling.Quotations.Quotation do
         do: CustomFields.active_definitions("quotation_item"),
         else: []
 
+    currency = get_field(changeset, :currency)
+
     cast_assoc(changeset, :items,
-      with: &QuotationItem.changeset(&1, &2, tax, definitions),
+      with: &QuotationItem.changeset(&1, &2, tax, definitions, currency),
       sort_param: :items_sort,
       drop_param: :items_drop
     )

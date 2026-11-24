@@ -7,6 +7,7 @@ defmodule QuantumBilling.Settings do
 
   alias QuantumBilling.Audit
   alias QuantumBilling.Compliance
+  alias QuantumBilling.Currency
   alias QuantumBilling.Events
   alias QuantumBilling.InstallationSettings
   alias QuantumBilling.Repo
@@ -50,7 +51,7 @@ defmodule QuantumBilling.Settings do
   Builds a changeset for one section of the settings.
   """
   def change_organization(%Organization{} = organization, attrs, section) do
-    Organization.changeset(organization, attrs, section)
+    organization |> Organization.changeset(attrs, section) |> guard_decimal_places()
   end
 
   @doc """
@@ -60,7 +61,7 @@ defmodule QuantumBilling.Settings do
   `audit: false` for the defaults a new business is seeded with.
   """
   def update_section(%Organization{} = organization, attrs, section, opts \\ []) do
-    changeset = Organization.changeset(organization, attrs, section)
+    changeset = change_organization(organization, attrs, section)
     result = save(changeset, section)
 
     # Broadcast from the saving window, which has already re-rendered.
@@ -70,6 +71,38 @@ defmodule QuantumBilling.Settings do
     end
 
     result
+  end
+
+  # Client amounts and money custom fields are minor units of the business
+  # currency, so moving between two and three decimal places (INR to KWD)
+  # would scale them by ten. Allowed while the business holds no records.
+  defp guard_decimal_places(changeset) do
+    with {:ok, label} <- Ecto.Changeset.fetch_change(changeset, :currency),
+         true <- changeset.valid?,
+         from = Organization.currency_code(changeset.data),
+         to = Currency.code_from_label(label),
+         true <- Currency.exponent(from) != Currency.exponent(to),
+         true <- has_money_records?() do
+      Ecto.Changeset.add_error(
+        changeset,
+        :currency,
+        "can't move between two- and three-decimal currencies once you have clients or documents"
+      )
+    else
+      _same_places_or_empty -> changeset
+    end
+  end
+
+  defp has_money_records? do
+    Enum.any?(
+      [
+        QuantumBilling.Clients.Client,
+        QuantumBilling.Invoices.Invoice,
+        QuantumBilling.Quotations.Quotation,
+        QuantumBilling.Recurring.RecurringProfile
+      ],
+      &Repo.exists?/1
+    )
   end
 
   @section_titles %{

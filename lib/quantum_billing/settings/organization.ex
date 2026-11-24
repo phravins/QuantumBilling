@@ -198,6 +198,7 @@ defmodule QuantumBilling.Settings.Organization do
     |> GST.validate_gstin_matches_pan(:gstin, :pan)
     |> validate_inclusion(:state, EWayBillForm.states())
     |> validate_inclusion(:currency, @currencies)
+    |> validate_currency_regime(:currency)
     |> validate_inclusion(:date_format, @date_formats)
     |> validate_inclusion(:timezone, @timezones)
   end
@@ -245,6 +246,7 @@ defmodule QuantumBilling.Settings.Organization do
     )
     |> validate_required([:tax_regime])
     |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> validate_currency_regime(:tax_regime)
     |> validate_vat()
   end
 
@@ -469,6 +471,19 @@ defmodule QuantumBilling.Settings.Organization do
       |> Tax.validate_tax_number(:vat_number, country)
     else
       changeset
+    end
+  end
+
+  # Three-decimal currencies (KWD, BHD, OMR) bill under VAT only: GST
+  # e-invoices, e-way bills and returns are in rupees and paise.
+  defp validate_currency_regime(changeset, field) do
+    code = QuantumBilling.Currency.code_from_label(get_field(changeset, :currency))
+
+    cond do
+      not QuantumBilling.Currency.vat_only?(code) -> changeset
+      get_field(changeset, :tax_regime) == "vat" -> changeset
+      field == :currency -> add_error(changeset, :currency, "#{code} needs the VAT tax regime")
+      true -> add_error(changeset, :tax_regime, "must be VAT while the business bills in #{code}")
     end
   end
 

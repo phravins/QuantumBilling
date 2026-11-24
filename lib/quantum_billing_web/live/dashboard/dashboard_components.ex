@@ -335,7 +335,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def money_axis_label(minor, currency \\ "INR") do
     symbol = QuantumBillingWeb.Format.currency_symbol(currency)
     symbol = if QuantumBilling.Currency.letter_symbol?(currency), do: symbol <> " ", else: symbol
-    symbol <> axis_label(minor / 100, QuantumBilling.Currency.get(currency).grouping)
+    major = minor / QuantumBilling.Currency.unit(currency)
+    symbol <> axis_label(major, QuantumBilling.Currency.get(currency).grouping)
   end
 
   defp axis_label(major, :indian) when major >= 10_000_000, do: short(major / 10_000_000) <> "Cr"

@@ -565,8 +565,9 @@ defmodule QuantumBilling.Invoices do
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name,
-          # Whole rupees, as integrations have always received it.
-          grand_total: div(invoice.grand_total || 0, 100),
+          # Whole units (rupees, dinars), as integrations have always received it.
+          grand_total:
+            div(invoice.grand_total || 0, QuantumBilling.Currency.unit(invoice.currency)),
           invoice_date: to_string(invoice.invoice_date)
         })
 
@@ -928,8 +929,8 @@ defmodule QuantumBilling.Invoices do
       details: %{
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name,
-        # Whole rupees, as older entries in the log hold.
-        grand_total: div(invoice.grand_total || 0, 100)
+        # Whole units, as older entries in the log hold.
+        grand_total: div(invoice.grand_total || 0, QuantumBilling.Currency.unit(invoice.currency))
       }
     )
 

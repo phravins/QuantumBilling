@@ -14,6 +14,7 @@ defmodule QuantumBilling.Clients do
   alias QuantumBilling.Invoices
   alias QuantumBilling.Paging
   alias QuantumBilling.Repo
+  alias QuantumBilling.Settings
   alias QuantumBilling.Webhooks
 
   @doc "Subscribes the caller to client changes."
@@ -222,8 +223,8 @@ defmodule QuantumBilling.Clients do
   @doc """
   Builds a changeset for a client form.
   """
-  def change_client(%Client{} = client \\ %Client{}, attrs \\ %{}, regime \\ nil) do
-    Client.changeset(client, attrs, regime || tax_regime())
+  def change_client(%Client{} = client \\ %Client{}, attrs \\ %{}, regime \\ nil, currency \\ nil) do
+    Client.changeset(client, attrs, regime || tax_regime(), currency)
   end
 
   @doc """
@@ -231,7 +232,7 @@ defmodule QuantumBilling.Clients do
   """
   def create_client(attrs) do
     %Client{}
-    |> Client.changeset(attrs, tax_regime())
+    |> Client.changeset(attrs, tax_regime(), Settings.currency_code())
     |> Repo.insert()
     |> announce(:client_created)
     |> Audit.record(:client_created, "Client", &audit_opts/1)
@@ -241,7 +242,7 @@ defmodule QuantumBilling.Clients do
   Updates a client. A save that changes nothing is not logged.
   """
   def update_client(%Client{} = client, attrs) do
-    changeset = Client.changeset(client, attrs, tax_regime())
+    changeset = Client.changeset(client, attrs, tax_regime(), Settings.currency_code())
 
     changeset
     |> Repo.update()
@@ -267,10 +268,11 @@ defmodule QuantumBilling.Clients do
   """
   def import_clients(attrs_list, opts \\ []) when is_list(attrs_list) do
     regime = tax_regime()
+    currency = Settings.currency_code()
     definitions = CustomFields.active_definitions("client")
 
     attrs_list
-    |> insert_all_or_none(regime, definitions)
+    |> insert_all_or_none(regime, definitions, currency)
     |> case do
       {:ok, clients} ->
         Events.broadcast(Events.clients_topic(), {:clients_imported, length(clients)})
@@ -288,12 +290,12 @@ defmodule QuantumBilling.Clients do
     end
   end
 
-  defp insert_all_or_none([], _regime, _definitions), do: {:ok, []}
+  defp insert_all_or_none([], _regime, _definitions, _currency), do: {:ok, []}
 
-  defp insert_all_or_none(attrs_list, regime, definitions) do
+  defp insert_all_or_none(attrs_list, regime, definitions, currency) do
     Repo.transaction(fn ->
       Enum.map(attrs_list, fn attrs ->
-        case attrs |> Import.changeset(regime, definitions) |> Repo.insert() do
+        case attrs |> Import.changeset(regime, definitions, currency) |> Repo.insert() do
           {:ok, client} -> client
           {:error, changeset} -> Repo.rollback(changeset)
         end

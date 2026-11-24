@@ -111,7 +111,9 @@ Every invoice keeps the regime, rounding, and inclusive-pricing settings it was 
 
 Under VAT, the India GST features are hidden from the menus and refused if reached directly: IRP e-invoice registration and the e-invoice XML, e-way bills and their settings, the GSTR-1 export, the HSN finder, and the GST filing calendar. The compliance page stays, with the business's own tasks. A GST business sees no change.
 
-The business currency (Settings → General) can be INR, AED, SAR, QAR, GBP, EUR, or USD. New invoices take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
+The business currency (Settings → General) can be INR, AED, SAR, QAR, KWD, BHD, OMR, GBP, EUR, or USD. New invoices and quotations take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
+
+KWD, BHD and OMR have three decimals (1 dinar or rial = 1000 fils or baisa), so their amounts print as 12.345 and their forms accept three decimal places. They need the VAT tax regime: a GST business can't pick them, and the regime can't be switched to GST while the business bills in one. A saved invoice or quotation keeps its currency. Once the business has clients or documents, its currency can only change to one with the same number of decimals, because client balances, credit limits and money custom fields are stored in the business currency and would otherwise be misread by a factor of ten.
 
 ### Custom fields
 
@@ -156,7 +158,7 @@ Changing a client later does not automatically rewrite the customer details copi
 
 The invoice editor at `/invoices/new` accepts the client, document date, due date/payment terms, place of supply, invoice type, line items, remarks, terms, and design. Invoice types offered by the model are Tax Invoice, Bill of Supply, Export Invoice, Credit Note, and Debit Note. Offering a document type does not imply that every downstream integration accepts it.
 
-Each item contains a description, optional HSN/SAC code, quantity, unit, rate, GST percentage, and display order. Supported units are Nos, Kg, Ltr, Mtr, Box, Set, Pcs, and Hrs. Quantities must be positive and can have up to three decimal places. A rate can contain two decimal places and must be non-negative. The line GST choices currently come from the compiled list `0`, `5`, `18`, and `40`.
+Each item contains a description, optional HSN/SAC code, quantity, unit, rate, GST percentage, and display order. Supported units are Nos, Kg, Ltr, Mtr, Box, Set, Pcs, and Hrs. Quantities must be positive and can have up to three decimal places. A rate can have as many decimal places as the invoice currency (two, or three for KWD, BHD and OMR) and must be non-negative. The line GST choices currently come from the compiled list `0`, `5`, `18`, and `40`.
 
 At least one item, the invoice date, the place of supply, and the client name are required. A due date cannot precede the invoice date. Payment term presets include Due on Receipt and Net 7/15/30/45/60 Days, with a Custom option.
 
@@ -174,7 +176,7 @@ The selected design's layout XML is also copied to the invoice. A Draft can refr
 
 ### Calculation rules
 
-Money is held as integer minor units of the invoice currency (paise for INR, fils for AED, pence for GBP), while the forms accept whole units with up to two decimals. A GST invoice is calculated in these steps:
+Money is held as integer minor units of the invoice currency (paise for INR, fils for AED and KWD, pence for GBP), while the forms accept whole units with up to the currency's decimals: two, or three for KWD, BHD and OMR. A GST invoice is calculated in these steps:
 
 1. Calculate each line as quantity × rate and round half-up to the nearest paisa.
 2. Calculate each line's GST at its own percentage, again rounding half-up to a paisa.
@@ -434,7 +436,7 @@ The main boundaries to account for during acceptance testing are:
 - Demo IRNs and e-way bills are generated locally and are not filed. They are labelled as demo wherever they appear; Settings → Integrations shows the current mode of each portal.
 - Compliance dates and HSN rates are static application rules, returns are marked filed by hand rather than read from the GST portal, and exports are files rather than submission workflows.
 - Cess/TDS, complete multi-currency/export accounting, purchase ITC, bank reconciliation, inventory, and a general ledger are not implemented as complete business systems.
-- VAT covers invoicing, rates, credit notes and reports. There is no VAT return filing or e-invoicing for any VAT country, no currency conversion, and no three-decimal currencies (KWD, BHD, OMR).
+- VAT covers invoicing, rates, credit notes and reports. There is no VAT return filing or e-invoicing for any VAT country, and no currency conversion. KWD, BHD and OMR work only under VAT, so a business in Kuwait, which has no VAT, can't be set up yet, and there are no three-decimal GST export invoices.
 - Custom fields extend the six existing record types. There are no custom record types, no field that links to another record, and no custom fields in webhook payloads or on credit notes and e-way bills in the API.
 - Quotations can't be converted, edited or deleted through the API; it lists, reads, creates, emails, accepts and declines them. Their client links have no expiry of their own beyond Valid Until.
 - Recurring profiles substitute a fixed default line for absent/invalid items; profiles need explicit review before use with real customers.

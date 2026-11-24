@@ -52,7 +52,9 @@ defmodule QuantumBillingWeb.API.V1.QuotationController do
     organization = Settings.get_organization()
     regime = Organization.tax_regime(organization)
 
-    with {:ok, client_id, attrs} <- QuotationParams.cast(conn.body_params, regime),
+    currency = Organization.currency_code(organization)
+
+    with {:ok, client_id, attrs} <- QuotationParams.cast(conn.body_params, regime, currency),
          {:client, %Clients.Client{} = client} <- {:client, Clients.get_client(client_id)},
          attrs = attrs |> with_dates(organization) |> Map.merge(Invoices.client_snapshot(client)),
          {:ok, quotation} <- Quotations.create_quotation(actor(conn), attrs) do

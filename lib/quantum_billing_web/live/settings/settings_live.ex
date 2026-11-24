@@ -1346,6 +1346,7 @@ defmodule QuantumBillingWeb.SettingsLive do
         label="Currency"
         type="select"
         options={Organization.currencies()}
+        hint="KWD, BHD and OMR have three decimals and need the VAT tax regime."
       />
       <.field
         field={f[:date_format]}

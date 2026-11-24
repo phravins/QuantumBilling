@@ -281,11 +281,13 @@ defmodule QuantumBillingWeb.SharedComponents do
   A labelled form control. Extra attrs go to `CoreComponents.input/1`,
   which also draws the errors.
 
-  `type="money"` takes and shows a paise value in rupees.
+  `type="money"` takes and shows minor units in `currency` (INR unless given),
+  with the currency's decimal places.
   """
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
   attr :type, :string, default: "text"
+  attr :currency, :string, default: "INR", doc: "for `type=\"money\"`"
   attr :required, :boolean, default: false
   attr :hint, :string, default: nil
   attr :class, :any, default: nil
@@ -296,9 +298,12 @@ defmodule QuantumBillingWeb.SharedComponents do
 
   def field(%{type: "money"} = assigns) do
     rest =
-      %{min: "0", step: "0.01"}
+      %{min: "0", step: QuantumBilling.Currency.step(assigns.currency)}
       |> Map.merge(assigns.rest)
-      |> Map.put(:value, QuantumBillingWeb.Format.money_input(assigns.field.value))
+      |> Map.put(
+        :value,
+        QuantumBillingWeb.Format.money_input(assigns.field.value, assigns.currency)
+      )
 
     assigns
     |> assign(type: "number", rest: rest)

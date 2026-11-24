@@ -15,7 +15,8 @@ defmodule QuantumBilling.Tax.VAT do
 
   @doc """
   The totals for `items`. `ctx` takes `:reverse_charge`, `:prices_include_tax`
-  and `:round_to_whole_units`, all false when absent.
+  and `:round_to_whole_units`, all false when absent, and `:currency`, whose
+  whole unit the total rounds to (INR when absent).
   """
   def totals(items, ctx \\ %{}) do
     items = Enum.reject(items, &is_nil/1)
@@ -43,7 +44,7 @@ defmodule QuantumBilling.Tax.VAT do
 
     {grand_total, round_off} =
       if Map.get(ctx, :round_to_whole_units) == true,
-        do: Money.round_to_rupee(taxable_value + vat),
+        do: Money.round_to_whole(taxable_value + vat, Map.get(ctx, :currency)),
         else: {taxable_value + vat, 0}
 
     %{

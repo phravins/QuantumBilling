@@ -12,7 +12,7 @@ defmodule QuantumBillingWeb.API.LeakTest do
   alias QuantumBilling.Settings
 
   @invoice_keys ~w(id number type status invoice_date due_date payment_terms place_of_supply
-                   currency tax_regime reverse_charge tax_breakdown client amounts e_invoice
+                   currency currency_exponent tax_regime reverse_charge tax_breakdown client amounts e_invoice
                    remarks terms custom_fields created_at updated_at)
   @client_keys ~w(id type name display_name legal_name gstin pan tax_number country business_type
                   category email phone billing_address shipping_address payment_terms_days status

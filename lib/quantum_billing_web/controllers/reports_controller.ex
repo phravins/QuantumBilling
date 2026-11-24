@@ -31,21 +31,25 @@ defmodule QuantumBillingWeb.ReportsController do
   @doc "Streams the filtered report as CSV, straight from a database cursor."
   def export(conn, params) do
     filters = filters_from(params)
+    # One business never holds documents with different decimal places.
+    currency = QuantumBilling.Settings.currency_code()
 
     if filters.report_type == "Sales Register" do
-      stream_sales_register(conn, filters)
+      stream_sales_register(conn, filters, currency)
     else
       tax_rows = Reports.tax_rows(filters)
       vat? = Enum.any?(tax_rows, &(&1.vat != nil))
 
-      send_download(conn, {:binary, to_csv(headers(vat?), tax_summary_rows(tax_rows, vat?))},
+      send_download(
+        conn,
+        {:binary, to_csv(headers(vat?), tax_summary_rows(tax_rows, vat?, currency))},
         filename: filename(if(vat?, do: "tax-summary", else: "gst-tax-summary"), filters)
       )
     end
   end
 
   # The invoice's own fields follow the fixed columns, one per active field.
-  defp stream_sales_register(conn, filters) do
+  defp stream_sales_register(conn, filters, currency) do
     definitions = CustomFields.active_definitions("invoice")
     vat? = Reports.any_vat?(filters)
 
@@ -64,7 +68,7 @@ defmodule QuantumBillingWeb.ReportsController do
     {:ok, conn} =
       Reports.stream_rows(filters, fn rows ->
         rows
-        |> Stream.map(&csv_line(sales_register_row(&1, definitions, vat?)))
+        |> Stream.map(&csv_line(sales_register_row(&1, definitions, vat?, currency)))
         |> Enum.reduce_while(chunk!(conn, csv_line(headers)), fn line, conn ->
           case chunk(conn, line) do
             {:ok, conn} -> {:cont, conn}
@@ -110,19 +114,20 @@ defmodule QuantumBillingWeb.ReportsController do
     |> List.insert_at(-3, "VAT")
   end
 
-  defp tax_summary_rows(tax_summary, vat?) do
+  defp tax_summary_rows(tax_summary, vat?, currency) do
     Enum.map(tax_summary, fn row ->
       [
         row.label,
-        amount(row.taxable_value),
-        amount(row.cgst),
-        amount(row.sgst),
-        amount(row.igst)
-      ] ++ if(vat?, do: [amount(row.vat)], else: []) ++ [amount(row.total_tax)]
+        amount(row.taxable_value, currency),
+        amount(row.cgst, currency),
+        amount(row.sgst, currency),
+        amount(row.igst, currency)
+      ] ++
+        if(vat?, do: [amount(row.vat, currency)], else: []) ++ [amount(row.total_tax, currency)]
     end)
   end
 
-  defp sales_register_row(row, definitions, vat?) do
+  defp sales_register_row(row, definitions, vat?, currency) do
     vat = Map.get(row, :vat, 0)
     total_tax = row.cgst + row.sgst + row.igst + row.cess + vat
     # Round off included, so the column matches the invoice's own total.
@@ -135,17 +140,17 @@ defmodule QuantumBillingWeb.ReportsController do
       tax_number(row, vat?),
       row.status,
       row.tax_type,
-      amount(row.taxable_value),
-      amount(row.cgst),
-      amount(row.sgst),
-      amount(row.igst),
-      amount(row.cess)
+      amount(row.taxable_value, currency),
+      amount(row.cgst, currency),
+      amount(row.sgst, currency),
+      amount(row.igst, currency),
+      amount(row.cess, currency)
     ] ++
-      if(vat?, do: [amount(vat)], else: []) ++
+      if(vat?, do: [amount(vat, currency)], else: []) ++
       [
-        amount(total_tax),
-        amount(grand_total)
-      ] ++ CustomFieldComponents.export_cells(definitions, Map.get(row, :custom_fields))
+        amount(total_tax, currency),
+        amount(grand_total, currency)
+      ] ++ CustomFieldComponents.export_cells(definitions, Map.get(row, :custom_fields), currency)
   end
 
   defp tax_number(%{gstin: gstin} = row, true) when gstin in [nil, ""],
@@ -153,9 +158,9 @@ defmodule QuantumBillingWeb.ReportsController do
 
   defp tax_number(row, _vat?), do: row.gstin
 
-  # Plain rupee numbers, from paise, so a spreadsheet can sum them.
-  defp amount(nil), do: ""
-  defp amount(paise), do: Money.to_input(paise)
+  # Plain numbers, from minor units, so a spreadsheet can sum them.
+  defp amount(nil, _currency), do: ""
+  defp amount(minor, currency), do: Money.to_input(minor, currency)
 
   defp filename(prefix, filters) do
     slug =

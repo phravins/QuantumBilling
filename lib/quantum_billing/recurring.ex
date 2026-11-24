@@ -328,7 +328,8 @@ defmodule QuantumBilling.Recurring do
     CustomFields.carry_over(
       values,
       CustomFields.active_definitions("recurring_profile"),
-      CustomFields.active_definitions("invoice")
+      CustomFields.active_definitions("invoice"),
+      QuantumBilling.Settings.currency_code()
     )
   end
 

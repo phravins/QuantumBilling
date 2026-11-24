@@ -683,7 +683,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           >
             <.icon name="hero-information-circle" class="size-4 shrink-0" />
             <span :if={@cn_creditable > 0}>
-              Up to <strong>{currency_symbol(@invoice.currency)}{money_input(@cn_creditable)}</strong>
+              Up to
+              <strong>{currency_symbol(@invoice.currency)}{money_input(
+                @cn_creditable,
+                @invoice.currency
+              )}</strong>
               can still be credited on this invoice.
             </span>
             <span :if={@cn_creditable == 0}>
@@ -716,9 +720,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 type="number"
                 name="grand_total"
                 min="0"
-                step="0.01"
+                step={QuantumBilling.Currency.step(@invoice.currency)}
                 value={
-                  money_input(if(@cn_creditable > 0, do: @cn_creditable, else: @invoice.grand_total))
+                  money_input(
+                    if(@cn_creditable > 0, do: @cn_creditable, else: @invoice.grand_total),
+                    @invoice.currency
+                  )
                 }
                 class="input input-bordered w-full text-xs"
                 required

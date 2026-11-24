@@ -17,7 +17,7 @@ defmodule QuantumBilling.Clients.Client do
 
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
-  alias QuantumBilling.Money.Paise
+  alias QuantumBilling.Money
   alias QuantumBilling.Tax
 
   @gstin_types ["Registered Business", "Composition Scheme", "SEZ Unit"]
@@ -90,9 +90,10 @@ defmodule QuantumBilling.Clients.Client do
     field :shipping_state, :string
     field :shipping_pin, :string
 
-    field :credit_limit, Paise, default: 0
+    # Minor units of the business currency; parsed by Money.cast_amount/4.
+    field :credit_limit, :integer, default: 0
     field :payment_terms_days, :integer, default: 30
-    field :opening_balance, Paise, default: 0
+    field :opening_balance, :integer, default: 0
     field :notes, :string
 
     field :status, :string, default: "Active"
@@ -111,15 +112,21 @@ defmodule QuantumBilling.Clients.Client do
                billing_line1 billing_line2 billing_city billing_state billing_pin
                shipping_same_as_billing shipping_line1 shipping_line2 shipping_city
                shipping_state shipping_pin
-               credit_limit payment_terms_days opening_balance notes status
+               payment_terms_days notes status
                tax_number country)a
 
   @doc """
   Builds a client changeset. `regime` is the business's: `"gst"` or `"vat"`.
+  `currency` is the business currency's ISO code, which reads `credit_limit`,
+  `opening_balance` and money custom fields; nil looks it up when needed.
   """
-  def changeset(client, attrs, regime \\ "gst") do
+  def changeset(client, attrs, regime \\ "gst", currency \\ nil) do
+    currency = currency || if(money_sent?(attrs), do: QuantumBilling.Settings.currency_code())
+
     client
     |> cast(attrs, @castable)
+    |> Money.cast_amount(attrs, :credit_limit, currency)
+    |> Money.cast_amount(attrs, :opening_balance, currency)
     |> validate_required([:client_type, :name, :phone])
     |> validate_length(:name, max: 160)
     |> validate_inclusion(:client_type, @client_types)
@@ -140,12 +147,21 @@ defmodule QuantumBilling.Clients.Client do
       less_than_or_equal_to: 365
     )
     |> validate_length(:notes, max: 2000)
-    |> CustomFields.cast("client", attrs)
+    |> CustomFields.cast("client", attrs, nil, currency)
     |> unique_constraint(:gstin,
       name: :clients_gstin_unique,
       message: "is already registered to another client"
     )
   end
+
+  defp money_sent?(attrs) when is_map(attrs),
+    do:
+      Enum.any?(
+        ~w(credit_limit opening_balance)a,
+        &(Map.has_key?(attrs, &1) or Map.has_key?(attrs, to_string(&1)))
+      )
+
+  defp money_sent?(_attrs), do: false
 
   @doc "Narrows `query` to clients that are not in the Bin."
   def kept(query \\ __MODULE__) do

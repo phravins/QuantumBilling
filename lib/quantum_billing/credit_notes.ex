@@ -107,7 +107,8 @@ defmodule QuantumBilling.CreditNotes do
       trusted = %{
         note_number: Settings.next_note_number(org, series(note_type)),
         note_date: Compliance.local_date(DateTime.utc_now(), org.timezone),
-        creditable: creditable
+        creditable: creditable,
+        currency: current.currency
       }
 
       %CreditNote{tax_regime: current.tax_regime || "gst"}
@@ -211,10 +212,11 @@ defmodule QuantumBilling.CreditNotes do
     end
   end
 
-  defp default_total("Credit", _invoice, creditable), do: Money.to_rupees_decimal(creditable)
+  defp default_total("Credit", invoice, creditable),
+    do: Money.to_decimal(creditable, invoice.currency)
 
   defp default_total(_debit, invoice, _creditable),
-    do: Money.to_rupees_decimal(invoice.grand_total)
+    do: Money.to_decimal(invoice.grand_total, invoice.currency)
 
   # The form sends only the total, so the taxable value and tax are taken from
   # it in the invoice's own proportion, so the three always add up. A value
@@ -222,21 +224,23 @@ defmodule QuantumBilling.CreditNotes do
   defp split(attrs, grand_total, invoice) do
     subtotal = attr(attrs, :subtotal)
     tax_total = attr(attrs, :tax_total)
+    currency = invoice.currency
+    parse = &Money.parse(&1, currency)
+    decimal = &Money.to_decimal(&1, currency)
 
-    case {Money.parse(grand_total), subtotal && Money.parse(subtotal),
-          tax_total && Money.parse(tax_total)} do
+    case {parse.(grand_total), subtotal && parse.(subtotal), tax_total && parse.(tax_total)} do
       {_total, {:ok, _subtotal}, {:ok, _tax}} ->
         {subtotal, tax_total}
 
       {{:ok, total}, nil, nil} ->
         taxable = proportion(total, invoice)
-        {Money.to_rupees_decimal(taxable), Money.to_rupees_decimal(total - taxable)}
+        {decimal.(taxable), decimal.(total - taxable)}
 
       {{:ok, total}, {:ok, taxable}, nil} ->
-        {subtotal, Money.to_rupees_decimal(total - taxable)}
+        {subtotal, decimal.(total - taxable)}
 
       {{:ok, total}, nil, {:ok, tax}} ->
-        {Money.to_rupees_decimal(total - tax), tax_total}
+        {decimal.(total - tax), tax_total}
 
       _unparsed ->
         {subtotal || 0, tax_total || 0}

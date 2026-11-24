@@ -8,14 +8,14 @@ defmodule QuantumBilling.Quotations.QuotationItem do
 
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices.InvoiceItem
-  alias QuantumBilling.Money.Paise
 
   schema "quotation_items" do
     field :description, :string
     field :hsn_sac, :string
     field :quantity, :decimal, default: Decimal.new(1)
     field :unit, :string, default: "Nos"
-    field :rate, Paise, default: 0
+    # Minor units of the quotation's currency, as on an invoice line.
+    field :rate, :integer, default: 0
     field :tax_rate, :integer, default: 18
     # VAT snapshot of the chosen rate.
     belongs_to :tax_rate_ref, QuantumBilling.TaxRates.TaxRate, foreign_key: :tax_rate_id
@@ -36,10 +36,11 @@ defmodule QuantumBilling.Quotations.QuotationItem do
   @doc """
   The invoice item changeset, applied to a quotation line. `tax` is `:gst` or
   `{:vat, rates_by_id}`. `definitions` are the "quotation_item" custom fields,
-  loaded once per quotation by the caller (`nil` loads them here).
+  loaded once per quotation by the caller (`nil` loads them here). `currency`
+  is the quotation's ISO code.
   """
-  def changeset(item, attrs, tax \\ :gst, definitions \\ nil) do
+  def changeset(item, attrs, tax, definitions, currency) do
     definitions = definitions || CustomFields.active_definitions("quotation_item")
-    InvoiceItem.changeset(item, attrs, definitions, tax)
+    InvoiceItem.changeset(item, attrs, definitions, tax, currency)
   end
 end

@@ -48,9 +48,11 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   defp create_invoice(conn) do
     key = conn.assigns.api_key
 
-    regime = QuantumBilling.Settings.get_organization() |> Organization.tax_regime()
+    organization = QuantumBilling.Settings.get_organization()
+    regime = Organization.tax_regime(organization)
+    currency = Organization.currency_code(organization)
 
-    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params, regime),
+    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params, regime, currency),
          {:client, %Clients.Client{} = client} <- {:client, Clients.get_client(client_id)},
          {:ok, invoice} <-
            attrs |> Map.merge(Invoices.client_snapshot(client)) |> Invoices.create_invoice() do

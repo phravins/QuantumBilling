@@ -4,7 +4,9 @@ defmodule QuantumBillingWeb.API.V1.QuotationJSON do
 
   `status` is what the screens show: Draft, Sent, Accepted, Declined, or
   Expired for an open quotation past `valid_until`. `invoice_id` is the
-  invoice it was converted into, else nil. Amounts are paise. The client
+  invoice it was converted into, else nil. Amounts are integer minor units
+  of `currency`, with `currency_exponent` decimal places (3 for KWD, BHD and
+  OMR, else 2). The client
   link (`public_url`, once the quotation has one) needs `quotations:write`,
   since whoever holds it can accept the quotation.
   `custom_fields` holds only the fields marked "Include in API".
@@ -19,7 +21,7 @@ defmodule QuantumBillingWeb.API.V1.QuotationJSON do
   alias QuantumBilling.Quotations.Quotation
 
   @fields ~w(id number status quotation_date valid_until place_of_supply currency
-             tax_regime reverse_charge tax_breakdown client amounts invoice_id remarks
+             currency_exponent tax_regime reverse_charge tax_breakdown client amounts invoice_id remarks
              terms custom_fields created_at updated_at)a
 
   @item_fields ~w(position description hsn_sac quantity unit rate tax_rate tax_rate_id
@@ -61,6 +63,7 @@ defmodule QuantumBillingWeb.API.V1.QuotationJSON do
       valid_until: quotation.valid_until,
       place_of_supply: quotation.place_of_supply,
       currency: quotation.currency,
+      currency_exponent: QuantumBilling.Currency.exponent(quotation.currency),
       tax_regime: quotation.tax_regime,
       reverse_charge: quotation.reverse_charge,
       tax_breakdown: Enum.map(quotation.tax_breakdown || [], &breakdown_row/1),

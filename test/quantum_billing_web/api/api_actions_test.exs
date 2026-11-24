@@ -213,7 +213,8 @@ defmodule QuantumBillingWeb.API.ActionsTest do
 
     test "the serializer's fields are exactly the documented ones" do
       assert QuantumBillingWeb.API.V1.CreditNoteJSON.fields() ==
-               ~w(id number date type reason status amounts invoice client_id created_at updated_at)a
+               ~w(id number date type reason status currency currency_exponent amounts invoice
+                  client_id created_at updated_at)a
     end
 
     test "refuse a bad type and fields the API does not take" do

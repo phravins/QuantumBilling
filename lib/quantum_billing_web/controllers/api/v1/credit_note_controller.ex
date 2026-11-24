@@ -42,7 +42,7 @@ defmodule QuantumBillingWeb.API.V1.CreditNoteController do
   def create(conn, %{"invoice_id" => invoice_id}) do
     Idempotency.run(conn, fn ->
       with {:invoice, %{} = invoice} <- {:invoice, Invoices.get_invoice(invoice_id)},
-           {:ok, attrs} <- ActionParams.credit_note(conn.body_params),
+           {:ok, attrs} <- ActionParams.credit_note(conn.body_params, invoice.currency),
            {:ok, note} <- CreditNotes.create_credit_note_for_invoice(invoice, attrs) do
         {201, CreditNoteJSON.show(%{note: CreditNotes.get_listed_credit_note(note.id)})}
       else

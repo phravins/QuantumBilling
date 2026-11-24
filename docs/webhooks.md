@@ -149,6 +149,9 @@ its first endpoint, marked **legacy format**. It keeps receiving
 {"id": "evt_…", "event": "invoice.paid", "payload": {"invoice_id": 42, "amount": 1180}, "sent_at": "…"}
 ```
 
+`amount` is whole units of the invoice's currency (rupees, dirhams, dinars),
+rounded down.
+
 It's still signed with `x-quantumbilling-signature: sha256=<hex>`, an
 HMAC-SHA256 of the body alone. When you're ready, update the receiver to the
 format above and press **Rotate secret**: that moves the endpoint to the thin

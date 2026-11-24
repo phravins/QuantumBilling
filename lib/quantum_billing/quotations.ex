@@ -469,7 +469,8 @@ defmodule QuantumBilling.Quotations do
   """
   def invoice_params(%Quotation{} = quotation) do
     quotation = Repo.preload(quotation, :items)
-    item_carry = carry_fn("quotation_item", "invoice_item")
+    currency = quotation.currency
+    item_carry = carry_fn("quotation_item", "invoice_item", currency)
 
     %{
       "client_id" => (quotation.client_id && to_string(quotation.client_id)) || "",
@@ -492,18 +493,18 @@ defmodule QuantumBilling.Quotations do
         |> Enum.sort_by(& &1.position)
         |> Enum.with_index()
         |> Map.new(fn {item, index} ->
-          {to_string(index), item |> item_params(index) |> put_custom(item_carry, item)}
+          {to_string(index), item |> item_params(index, currency) |> put_custom(item_carry, item)}
         end)
     }
     |> maybe_put("template_id", quotation.template_id)
-    |> put_custom(carry_fn("quotation", "invoice"), quotation)
+    |> put_custom(carry_fn("quotation", "invoice", currency), quotation)
   end
 
   # Values of fields the invoice shares by key and type; the rest stay on the quotation.
-  defp carry_fn(from_object, to_object) do
+  defp carry_fn(from_object, to_object, currency) do
     from = CustomFields.active_definitions(from_object)
     to = if from == [], do: [], else: CustomFields.active_definitions(to_object)
-    &CustomFields.carry_over(&1, from, to)
+    &CustomFields.carry_over(&1, from, to, currency)
   end
 
   defp put_custom(params, carry, %{custom_fields: values}) do
@@ -513,13 +514,13 @@ defmodule QuantumBilling.Quotations do
     end
   end
 
-  defp item_params(%QuotationItem{} = item, index) do
+  defp item_params(%QuotationItem{} = item, index, currency) do
     %{
       "description" => item.description,
       "hsn_sac" => item.hsn_sac,
       "quantity" => Decimal.to_string(item.quantity, :normal),
       "unit" => item.unit,
-      "rate" => Money.to_input(item.rate),
+      "rate" => Money.to_input(item.rate, currency),
       "tax_rate" => to_string(item.tax_rate),
       "position" => to_string(index)
     }
