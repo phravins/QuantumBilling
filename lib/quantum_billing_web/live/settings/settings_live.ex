@@ -328,18 +328,26 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   def handle_event("set_default_template", %{"id" => id}, socket) do
-    with_template(socket, id, &Templates.set_default/1, "That design could not be made default.")
+    if Scope.owner?(socket.assigns.current_scope) do
+      with_template(socket, id, &Templates.set_default/1, "That design could not be made default.")
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
   end
 
   def handle_event("delete_template", %{"id" => id}, socket) do
-    user_id = socket.assigns.current_scope.user.id
+    if Scope.owner?(socket.assigns.current_scope) do
+      user_id = socket.assigns.current_scope.user.id
 
-    with_template(
-      socket,
-      id,
-      &Templates.delete_template(&1, user_id: user_id),
-      "That design could not be removed."
-    )
+      with_template(
+        socket,
+        id,
+        &Templates.delete_template(&1, user_id: user_id),
+        "That design could not be removed."
+      )
+    else
+      {:noreply, put_flash(socket, :error, "Those settings are limited to account owners.")}
+    end
   end
 
   def handle_event("validate", %{"organization" => params}, socket) do
@@ -599,6 +607,18 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # The tax system and VAT identity decide every invoice's tax: owners only.
   @owner_tax_fields ~w(tax_regime vat_number vat_country prices_include_tax round_to_whole_units)
+  # Compliance identity and state determine tax logic: owners only.
+  @owner_general_fields ~w(company_name trade_name gstin pan state)
+  # Invoice numbering series: owners only.
+  @owner_invoice_fields ~w(invoice_prefix invoice_next_number invoice_number_padding)
+
+  defp restrict_params(params, %{assigns: %{section: :general, current_scope: scope}}) do
+    if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_general_fields)
+  end
+
+  defp restrict_params(params, %{assigns: %{section: :invoice, current_scope: scope}}) do
+    if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_invoice_fields)
+  end
 
   defp restrict_params(params, %{assigns: %{section: :tax, current_scope: scope}}) do
     if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_tax_fields)
@@ -1332,6 +1352,8 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :general} = assigns) do
+    assigns = assign(assigns, :owner?, Scope.owner?(assigns.current_scope))
+
     ~H"""
     <.form
       :let={f}
@@ -1341,14 +1363,33 @@ defmodule QuantumBillingWeb.SettingsLive do
       phx-submit="save"
       class="grid grid-cols-1 gap-3 sm:grid-cols-2"
     >
-      <.field field={f[:company_name]} label="Company Name" required />
+      <.field
+        field={f[:company_name]}
+        label="Company Name"
+        required
+        readonly={not @owner?}
+        hint={if not @owner?, do: "Only owners can change this"}
+      />
       <.field
         field={f[:gstin]}
         label="GSTIN"
         placeholder="27AABCA1234A1Z5"
-        hint="15 characters. The PAN is embedded in it."
-      /> <.field field={f[:trade_name]} label="Trade Name" />
-      <.field field={f[:pan]} label="PAN" placeholder="AABCA1234A" />
+        readonly={not @owner?}
+        hint={if not @owner?, do: "Only owners can change this", else: "15 characters. The PAN is embedded in it."}
+      />
+      <.field
+        field={f[:trade_name]}
+        label="Trade Name"
+        readonly={not @owner?}
+        hint={if not @owner?, do: "Only owners can change this"}
+      />
+      <.field
+        field={f[:pan]}
+        label="PAN"
+        placeholder="AABCA1234A"
+        readonly={not @owner?}
+        hint={if not @owner?, do: "Only owners can change this"}
+      />
       <div class="sm:row-span-2">
         <.field field={f[:address]} label="Address" type="textarea" rows="4" />
       </div>
@@ -1359,6 +1400,8 @@ defmodule QuantumBillingWeb.SettingsLive do
         type="select"
         prompt="Select state"
         options={EWayBillForm.states()}
+        disabled={not @owner?}
+        hint={if not @owner?, do: "Only owners can change this"}
       />
       <%!-- Separate fields: the e-invoice export needs the city and PIN. --%>
       <.field field={f[:city]} label="City" placeholder="Mumbai" />
@@ -1399,17 +1442,35 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :invoice} = assigns) do
+    assigns = assign(assigns, :owner?, Scope.owner?(assigns.current_scope))
+
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <.field field={f[:invoice_prefix]} label="Invoice Prefix" required placeholder="INV" />
-        <.field field={f[:invoice_next_number]} label="Next Number" type="number" required min="1" />
+        <.field
+          field={f[:invoice_prefix]}
+          label="Invoice Prefix"
+          required
+          placeholder="INV"
+          readonly={not @owner?}
+          hint={if not @owner?, do: "Only owners can change this"}
+        />
+        <.field
+          field={f[:invoice_next_number]}
+          label="Next Number"
+          type="number"
+          required
+          min="1"
+          readonly={not @owner?}
+          hint={if not @owner?, do: "Only owners can change this"}
+        />
         <.field
           field={f[:invoice_number_padding]}
           label="Number Padding"
           type="number"
           min="0"
-          hint="Leading zeros."
+          readonly={not @owner?}
+          hint={if not @owner?, do: "Only owners can change this", else: "Leading zeros."}
         />
       </div>
 

@@ -305,6 +305,85 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
       assert Settings.get_organization().default_gst_rate == 28
     end
+
+    test "staff cannot change company identity in General settings", %{conn: conn} do
+      {:ok, owner_view, _html} = live(conn, ~p"/settings/general")
+
+      owner_view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "company_name" => "Original Owner Corp",
+          "gstin" => "27AABCA1234A1Z5",
+          "pan" => "AABCA1234A",
+          "state" => "Maharashtra (27)",
+          "city" => "Mumbai"
+        }
+      })
+      |> render_submit()
+
+      assert Settings.get_organization().company_name == "Original Owner Corp"
+      assert Settings.get_organization().gstin == "27AABCA1234A1Z5"
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      staff_conn = log_in_user(conn, staff)
+      {:ok, staff_view, html} = live(staff_conn, ~p"/settings/general")
+
+      assert html =~ "Only owners can change this"
+
+      staff_view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "company_name" => "Hacked Corp",
+          "gstin" => "29AABCB5678B1Z6",
+          "state" => "Karnataka (29)",
+          "city" => "Bengaluru"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.company_name == "Original Owner Corp"
+      assert org.gstin == "27AABCA1234A1Z5"
+      assert org.state == "Maharashtra (27)"
+      assert org.city == "Bengaluru"
+    end
+
+    test "staff cannot change or rewind invoice numbering in Invoice settings", %{conn: conn} do
+      {:ok, owner_view, _html} = live(conn, ~p"/settings/invoice")
+
+      owner_view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "invoice_prefix" => "INV",
+          "invoice_next_number" => "100",
+          "invoice_due_days" => "30"
+        }
+      })
+      |> render_submit()
+
+      assert Settings.get_organization().invoice_next_number == 100
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      staff_conn = log_in_user(conn, staff)
+      {:ok, staff_view, html} = live(staff_conn, ~p"/settings/invoice")
+
+      assert html =~ "Only owners can change this"
+
+      staff_view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "invoice_prefix" => "MALICIOUS",
+          "invoice_next_number" => "1",
+          "invoice_due_days" => "15"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.invoice_prefix == "INV"
+      assert org.invoice_next_number == 100
+      assert org.invoice_due_days == 15
+    end
   end
 
   describe "smtp delivery log" do
@@ -845,6 +924,31 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       |> render_click()
 
       assert Enum.map(Templates.list_templates(), & &1.id) == [original.id]
+    end
+
+    test "staff cannot delete template or set default template", %{conn: conn} do
+      original = Templates.ensure_default()
+      {:ok, copy} = Templates.duplicate_template(original)
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      staff_conn = log_in_user(conn, staff)
+      {:ok, view, _html} = live(staff_conn, ~p"/settings/customization")
+
+      result =
+        view
+        |> element(~s(button[phx-click="set_default_template"][phx-value-id="#{copy.id}"]))
+        |> render_click()
+
+      assert result =~ "Those settings are limited to account owners."
+      assert Templates.default_template().id == original.id
+
+      result_delete =
+        view
+        |> element(~s(button[phx-click="delete_template"][phx-value-id="#{copy.id}"]))
+        |> render_click()
+
+      assert result_delete =~ "Those settings are limited to account owners."
+      assert Templates.get_template(copy.id) != nil
     end
 
     # The whole point of the upload is a file that survives the request and is
