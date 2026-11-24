@@ -203,21 +203,39 @@ defmodule QuantumBilling.Accounts do
 
   @doc "Gives `user` the role `role` in `business`. Refuses to demote the last owner."
   def set_role(%Business{} = business, %User{} = user, role) when is_binary(role) do
-    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
-      nil ->
-        {:error, :not_a_member}
+    Repo.transaction(fn ->
+      # Lock owner memberships for update to serialize concurrent owner changes
+      _owners =
+        Repo.all(
+          from m in Membership,
+            where: m.business_id == ^business.id and m.role == "owner",
+            lock: "FOR UPDATE"
+        )
 
-      %Membership{role: ^role} = membership ->
-        {:ok, membership}
+      case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+        nil ->
+          Repo.rollback(:not_a_member)
 
-      %Membership{role: "owner"} = membership ->
-        if count_owners(business) <= 1,
-          do: {:error, :last_owner},
-          else: change_role(membership, role)
+        %Membership{role: ^role} = membership ->
+          membership
 
-      membership ->
-        change_role(membership, role)
-    end
+        %Membership{role: "owner"} = membership ->
+          if count_owners(business) <= 1 do
+            Repo.rollback(:last_owner)
+          else
+            case change_role(membership, role) do
+              {:ok, updated} -> updated
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end
+
+        membership ->
+          case change_role(membership, role) do
+            {:ok, updated} -> updated
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
   end
 
   defp change_role(membership, role) do
@@ -228,18 +246,36 @@ defmodule QuantumBilling.Accounts do
 
   @doc "Removes `user` from `business`. Refuses to remove the last owner."
   def remove_member(%Business{} = business, %User{} = user) do
-    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
-      nil ->
-        {:error, :not_a_member}
+    Repo.transaction(fn ->
+      # Lock owner memberships for update to serialize concurrent owner removals
+      _owners =
+        Repo.all(
+          from m in Membership,
+            where: m.business_id == ^business.id and m.role == "owner",
+            lock: "FOR UPDATE"
+        )
 
-      %Membership{role: "owner"} = membership ->
-        if count_owners(business) <= 1,
-          do: {:error, :last_owner},
-          else: Repo.delete(membership)
+      case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+        nil ->
+          Repo.rollback(:not_a_member)
 
-      membership ->
-        Repo.delete(membership)
-    end
+        %Membership{role: "owner"} = membership ->
+          if count_owners(business) <= 1 do
+            Repo.rollback(:last_owner)
+          else
+            case Repo.delete(membership) do
+              {:ok, deleted} -> deleted
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end
+
+        membership ->
+          case Repo.delete(membership) do
+            {:ok, deleted} -> deleted
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
   end
 
   @doc "`business`'s pending and recent invitations, newest first."
