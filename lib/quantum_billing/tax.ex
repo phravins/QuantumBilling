@@ -12,6 +12,7 @@ defmodule QuantumBilling.Tax do
 
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Tax.EURates
   alias QuantumBilling.Tax.GST
   alias QuantumBilling.Tax.VAT
 
@@ -59,24 +60,12 @@ defmodule QuantumBilling.Tax do
        {"Reduced 5%", "reduced", 500},
        {"Zero-rated", "zero", 0},
        {"Exempt", "exempt", 0}
-     ]},
-    {"BE", "Belgium", nil, [{"Standard 21%", "standard", 2100}, {"Reduced 6%", "reduced", 600}]},
-    {"DE", "Germany", nil, [{"Standard 19%", "standard", 1900}, {"Reduced 7%", "reduced", 700}]},
-    {"ES", "Spain", nil, [{"Standard 21%", "standard", 2100}, {"Reduced 10%", "reduced", 1000}]},
-    {"FR", "France", nil, [{"Standard 20%", "standard", 2000}, {"Reduced 5.5%", "reduced", 550}]},
-    {"IE", "Ireland", nil,
-     [{"Standard 23%", "standard", 2300}, {"Reduced 13.5%", "reduced", 1350}]},
-    {"IT", "Italy", nil, [{"Standard 22%", "standard", 2200}, {"Reduced 10%", "reduced", 1000}]},
-    {"NL", "Netherlands", nil,
-     [{"Standard 21%", "standard", 2100}, {"Reduced 9%", "reduced", 900}]}
+     ]}
   ]
 
-  # Every EU preset also zero-rates, exempts and reverse-charges.
-  @eu_extras [
-    {"Zero-rated", "zero", 0},
-    {"Exempt", "exempt", 0},
-    {"Intra-EU reverse charge", "reverse_charge", 0}
-  ]
+  # EU rates, member states and shared provenance entries live in EURates
+  @eu EURates.member_states()
+  @eu_extras EURates.eu_extras()
 
   @doc """
   The invoice totals for `items`. `ctx` holds `:regime` plus, for GST,
@@ -195,19 +184,30 @@ defmodule QuantumBilling.Tax do
   def parse_percent(_value), do: :error
 
   @doc "The VAT countries as `{code, name}`."
-  def countries, do: Enum.map(@countries, fn {code, name, _format, _presets} -> {code, name} end)
+  def countries do
+    non_eu = Enum.map(@countries, fn {code, name, _format, _presets} -> {code, name} end)
+    (non_eu ++ EURates.countries()) |> Enum.uniq_by(&elem(&1, 0))
+  end
 
-  def country_codes, do: Enum.map(@countries, &elem(&1, 0))
+  def country_codes, do: Enum.map(countries(), &elem(&1, 0))
 
-  def country_name(code),
-    do: Enum.find_value(@countries, code, fn {c, name, _, _} -> if c == code, do: name end)
+  def country_name(code) do
+    if EURates.member_state?(code) do
+      EURates.country_name(code)
+    else
+      Enum.find_value(@countries, code, fn {c, name, _, _} -> if c == code, do: name end)
+    end
+  end
 
   @doc "The rates a country starts with, as `{name, category, rate_bp}`."
   def presets(code) do
-    case List.keyfind(@countries, code, 0) do
-      {code, _name, _format, presets} when code in @eu -> presets ++ @eu_extras
-      {_code, _name, _format, presets} -> presets
-      nil -> [{"Standard", "standard", 0}, {"Zero-rated", "zero", 0}, {"Exempt", "exempt", 0}]
+    if EURates.member_state?(code) do
+      EURates.presets(code)
+    else
+      case List.keyfind(@countries, code, 0) do
+        {_code, _name, _format, presets} -> presets
+        nil -> [{"Standard", "standard", 0}, {"Zero-rated", "zero", 0}, {"Exempt", "exempt", 0}]
+      end
     end
   end
 
@@ -219,10 +219,18 @@ defmodule QuantumBilling.Tax do
   def tax_number_valid?(country, number) when is_binary(number) do
     number = normalize_tax_number(number)
 
-    case List.keyfind(@countries, country, 0) do
-      {code, _name, nil, _presets} -> Regex.match?(~r/^#{code}[A-Z0-9]{2,13}$/, number)
-      {_code, _name, format, _presets} -> Regex.match?(format, number)
-      nil -> Regex.match?(~r/^[A-Z0-9]{3,20}$/, number)
+    cond do
+      EURates.member_state?(country) ->
+        Regex.match?(~r/^#{country}[A-Z0-9]{2,13}$/, number)
+
+      entry = List.keyfind(@countries, country, 0) ->
+        case entry do
+          {code, _name, nil, _presets} -> Regex.match?(~r/^#{code}[A-Z0-9]{2,13}$/, number)
+          {_code, _name, format, _presets} -> Regex.match?(format, number)
+        end
+
+      true ->
+        Regex.match?(~r/^[A-Z0-9]{3,20}$/, number)
     end
   end
 
