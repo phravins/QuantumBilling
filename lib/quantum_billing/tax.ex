@@ -30,8 +30,6 @@ defmodule QuantumBilling.Tax do
   # Categories that never carry tax, whatever rate is entered.
   @untaxed ~w(zero exempt reverse_charge out_of_scope)
 
-  @eu ~w(BE DE ES FR IE IT NL)
-
   @gst_only %{
     e_invoice: "IRP e-invoicing is part of India GST; this business charges VAT.",
     e_way_bills: "E-way bills are part of India GST; this business charges VAT.",
@@ -62,10 +60,6 @@ defmodule QuantumBilling.Tax do
        {"Exempt", "exempt", 0}
      ]}
   ]
-
-  # EU rates, member states and shared provenance entries live in EURates
-  @eu EURates.member_states()
-  @eu_extras EURates.eu_extras()
 
   @doc """
   The invoice totals for `items`. `ctx` holds `:regime` plus, for GST,
@@ -220,6 +214,9 @@ defmodule QuantumBilling.Tax do
     number = normalize_tax_number(number)
 
     cond do
+      country in ["GR", "EL"] ->
+        Regex.match?(~r/^EL[A-Z0-9]{2,13}$/, number)
+
       EURates.member_state?(country) ->
         Regex.match?(~r/^#{country}[A-Z0-9]{2,13}$/, number)
 

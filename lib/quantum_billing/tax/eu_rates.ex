@@ -8,8 +8,7 @@ defmodule QuantumBilling.Tax.EURates do
   """
 
   @source "European Commission Taxes in Europe Database (TEDB)"
-  @verified_on "2026-11-20"
-  @effective_from "2024-01-01"
+  @verified_on "2026-11-24"
 
   @eu_extras [
     {"Zero-rated", "zero", 0},
@@ -19,33 +18,192 @@ defmodule QuantumBilling.Tax.EURates do
 
   # All 27 European Union Member States with official VAT rates (in basis points)
   @member_states %{
-    "AT" => {"Austria", [{"Standard 20%", "standard", 2000}, {"Reduced 10%", "reduced", 1000}, {"Reduced 13%", "reduced", 1300}]},
-    "BE" => {"Belgium", [{"Standard 21%", "standard", 2100}, {"Reduced 6%", "reduced", 600}, {"Reduced 12%", "reduced", 1200}]},
-    "BG" => {"Bulgaria", [{"Standard 20%", "standard", 2000}, {"Reduced 9%", "reduced", 900}]},
-    "CY" => {"Cyprus", [{"Standard 19%", "standard", 1900}, {"Reduced 9%", "reduced", 900}, {"Reduced 5%", "reduced", 500}]},
-    "CZ" => {"Czechia", [{"Standard 21%", "standard", 2100}, {"Reduced 12%", "reduced", 1200}]},
-    "DE" => {"Germany", [{"Standard 19%", "standard", 1900}, {"Reduced 7%", "reduced", 700}]},
-    "DK" => {"Denmark", [{"Standard 25%", "standard", 2500}]},
-    "EE" => {"Estonia", [{"Standard 22%", "standard", 2200}, {"Reduced 9%", "reduced", 900}]},
-    "ES" => {"Spain", [{"Standard 21%", "standard", 2100}, {"Reduced 10%", "reduced", 1000}, {"Super-reduced 4%", "reduced", 400}]},
-    "FI" => {"Finland", [{"Standard 25.5%", "standard", 2550}, {"Reduced 14%", "reduced", 1400}, {"Reduced 10%", "reduced", 1000}]},
-    "FR" => {"France", [{"Standard 20%", "standard", 2000}, {"Reduced 10%", "reduced", 1000}, {"Reduced 5.5%", "reduced", 550}, {"Super-reduced 2.1%", "reduced", 210}]},
-    "GR" => {"Greece", [{"Standard 24%", "standard", 2400}, {"Reduced 13%", "reduced", 1300}, {"Reduced 6%", "reduced", 600}]},
-    "HR" => {"Croatia", [{"Standard 25%", "standard", 2500}, {"Reduced 13%", "reduced", 1300}, {"Reduced 5%", "reduced", 500}]},
-    "HU" => {"Hungary", [{"Standard 27%", "standard", 2700}, {"Reduced 18%", "reduced", 1800}, {"Reduced 5%", "reduced", 500}]},
-    "IE" => {"Ireland", [{"Standard 23%", "standard", 2300}, {"Reduced 13.5%", "reduced", 1350}, {"Reduced 9%", "reduced", 900}, {"Super-reduced 4.8%", "reduced", 480}]},
-    "IT" => {"Italy", [{"Standard 22%", "standard", 2200}, {"Reduced 10%", "reduced", 1000}, {"Reduced 5%", "reduced", 500}, {"Super-reduced 4%", "reduced", 400}]},
-    "LT" => {"Lithuania", [{"Standard 21%", "standard", 2100}, {"Reduced 9%", "reduced", 900}, {"Reduced 5%", "reduced", 500}]},
-    "LU" => {"Luxembourg", [{"Standard 17%", "standard", 1700}, {"Reduced 14%", "reduced", 1400}, {"Reduced 8%", "reduced", 800}, {"Super-reduced 3%", "reduced", 300}]},
-    "LV" => {"Latvia", [{"Standard 21%", "standard", 2100}, {"Reduced 12%", "reduced", 1200}, {"Reduced 5%", "reduced", 500}]},
-    "MT" => {"Malta", [{"Standard 18%", "standard", 1800}, {"Reduced 7%", "reduced", 700}, {"Reduced 5%", "reduced", 500}]},
-    "NL" => {"Netherlands", [{"Standard 21%", "standard", 2100}, {"Reduced 9%", "reduced", 900}]},
-    "PL" => {"Poland", [{"Standard 23%", "standard", 2300}, {"Reduced 8%", "reduced", 800}, {"Reduced 5%", "reduced", 500}]},
-    "PT" => {"Portugal", [{"Standard 23%", "standard", 2300}, {"Reduced 13%", "reduced", 1300}, {"Reduced 6%", "reduced", 600}]},
-    "RO" => {"Romania", [{"Standard 19%", "standard", 1900}, {"Reduced 9%", "reduced", 900}, {"Reduced 5%", "reduced", 500}]},
-    "SE" => {"Sweden", [{"Standard 25%", "standard", 2500}, {"Reduced 12%", "reduced", 1200}, {"Reduced 6%", "reduced", 600}]},
-    "SI" => {"Slovenia", [{"Standard 22%", "standard", 2200}, {"Reduced 9.5%", "reduced", 950}, {"Reduced 5%", "reduced", 500}]},
-    "SK" => {"Slovakia", [{"Standard 23%", "standard", 2300}, {"Reduced 19%", "reduced", 1900}, {"Reduced 5%", "reduced", 500}]}
+    "AT" =>
+      {"Austria",
+       [
+         {"Standard 20%", "standard", 2000},
+         {"Reduced 10%", "reduced", 1000},
+         {"Reduced 13%", "reduced", 1300}
+       ]},
+    "BE" =>
+      {"Belgium",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 6%", "reduced", 600},
+         {"Reduced 12%", "reduced", 1200}
+       ]},
+    "BG" =>
+      {"Bulgaria",
+       [
+         {"Standard 20%", "standard", 2000},
+         {"Reduced 9%", "reduced", 900}
+       ]},
+    "CY" =>
+      {"Cyprus",
+       [
+         {"Standard 19%", "standard", 1900},
+         {"Reduced 9%", "reduced", 900},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "CZ" =>
+      {"Czechia",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 12%", "reduced", 1200}
+       ]},
+    "DE" =>
+      {"Germany",
+       [
+         {"Standard 19%", "standard", 1900},
+         {"Reduced 7%", "reduced", 700}
+       ]},
+    "DK" =>
+      {"Denmark",
+       [
+         {"Standard 25%", "standard", 2500}
+       ]},
+    "EE" =>
+      {"Estonia",
+       [
+         {"Standard 24%", "standard", 2400},
+         {"Reduced 13%", "reduced", 1300},
+         {"Reduced 9%", "reduced", 900}
+       ]},
+    "ES" =>
+      {"Spain",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 10%", "reduced", 1000},
+         {"Super-reduced 4%", "reduced", 400}
+       ]},
+    "FI" =>
+      {"Finland",
+       [
+         {"Standard 25.5%", "standard", 2550},
+         {"Reduced 13.5%", "reduced", 1350},
+         {"Reduced 10%", "reduced", 1000}
+       ]},
+    "FR" =>
+      {"France",
+       [
+         {"Standard 20%", "standard", 2000},
+         {"Reduced 10%", "reduced", 1000},
+         {"Reduced 5.5%", "reduced", 550},
+         {"Super-reduced 2.1%", "reduced", 210}
+       ]},
+    "GR" =>
+      {"Greece",
+       [
+         {"Standard 24%", "standard", 2400},
+         {"Reduced 13%", "reduced", 1300},
+         {"Reduced 6%", "reduced", 600}
+       ]},
+    "HR" =>
+      {"Croatia",
+       [
+         {"Standard 25%", "standard", 2500},
+         {"Reduced 13%", "reduced", 1300},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "HU" =>
+      {"Hungary",
+       [
+         {"Standard 27%", "standard", 2700},
+         {"Reduced 18%", "reduced", 1800},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "IE" =>
+      {"Ireland",
+       [
+         {"Standard 23%", "standard", 2300},
+         {"Reduced 13.5%", "reduced", 1350},
+         {"Reduced 9%", "reduced", 900},
+         {"Super-reduced 4.8%", "reduced", 480}
+       ]},
+    "IT" =>
+      {"Italy",
+       [
+         {"Standard 22%", "standard", 2200},
+         {"Reduced 10%", "reduced", 1000},
+         {"Reduced 5%", "reduced", 500},
+         {"Super-reduced 4%", "reduced", 400}
+       ]},
+    "LT" =>
+      {"Lithuania",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 12%", "reduced", 1200},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "LU" =>
+      {"Luxembourg",
+       [
+         {"Standard 17%", "standard", 1700},
+         {"Reduced 14%", "reduced", 1400},
+         {"Reduced 8%", "reduced", 800},
+         {"Super-reduced 3%", "reduced", 300}
+       ]},
+    "LV" =>
+      {"Latvia",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 12%", "reduced", 1200},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "MT" =>
+      {"Malta",
+       [
+         {"Standard 18%", "standard", 1800},
+         {"Reduced 7%", "reduced", 700},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "NL" =>
+      {"Netherlands",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 9%", "reduced", 900}
+       ]},
+    "PL" =>
+      {"Poland",
+       [
+         {"Standard 23%", "standard", 2300},
+         {"Reduced 8%", "reduced", 800},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "PT" =>
+      {"Portugal",
+       [
+         {"Standard 23%", "standard", 2300},
+         {"Reduced 13%", "reduced", 1300},
+         {"Reduced 6%", "reduced", 600}
+       ]},
+    "RO" =>
+      {"Romania",
+       [
+         {"Standard 21%", "standard", 2100},
+         {"Reduced 11%", "reduced", 1100}
+       ]},
+    "SE" =>
+      {"Sweden",
+       [
+         {"Standard 25%", "standard", 2500},
+         {"Reduced 12%", "reduced", 1200},
+         {"Reduced 6%", "reduced", 600}
+       ]},
+    "SI" =>
+      {"Slovenia",
+       [
+         {"Standard 22%", "standard", 2200},
+         {"Reduced 9.5%", "reduced", 950},
+         {"Reduced 5%", "reduced", 500}
+       ]},
+    "SK" =>
+      {"Slovakia",
+       [
+         {"Standard 23%", "standard", 2300},
+         {"Reduced 19%", "reduced", 1900},
+         {"Reduced 5%", "reduced", 500}
+       ]}
   }
 
   @doc "The source of the VAT rate data."
@@ -53,9 +211,6 @@ defmodule QuantumBilling.Tax.EURates do
 
   @doc "Date the rates were verified against the official source."
   def verified_on, do: @verified_on
-
-  @doc "The effective from date of the rates dataset."
-  def effective_from, do: @effective_from
 
   @doc "Shared EU tax exemptions, zero-rates, and reverse charge rules."
   def eu_extras, do: @eu_extras
@@ -105,8 +260,7 @@ defmodule QuantumBilling.Tax.EURates do
             category: category,
             rate_bp: rate_bp,
             source: @source,
-            verified_on: @verified_on,
-            effective_from: @effective_from
+            verified_on: @verified_on
           }
         end)
 
