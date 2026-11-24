@@ -6,7 +6,7 @@ defmodule QuantumBillingWeb.API.V1.CreditNoteController do
   """
   use QuantumBillingWeb, :controller
 
-  alias QuantumBilling.{Audit, CreditNotes, Invoices}
+  alias QuantumBilling.{CreditNotes, Invoices}
   alias QuantumBillingWeb.API.{ActionParams, Error, Idempotency, Pagination}
   alias QuantumBillingWeb.API.V1.CreditNoteJSON
   alias QuantumBillingWeb.Plugs.RequireScope
@@ -44,12 +44,6 @@ defmodule QuantumBillingWeb.API.V1.CreditNoteController do
       with {:invoice, %{} = invoice} <- {:invoice, Invoices.get_invoice(invoice_id)},
            {:ok, attrs} <- ActionParams.credit_note(conn.body_params),
            {:ok, note} <- CreditNotes.create_credit_note_for_invoice(invoice, attrs) do
-        Audit.log_event(:credit_note_created, "CreditNote", note.id,
-          api_key_id: conn.assigns.api_key.id,
-          ip_address: conn.assigns.api_client_ip,
-          details: %{"number" => note.note_number, "invoice_id" => invoice.id, "via" => "api"}
-        )
-
         {201, CreditNoteJSON.show(%{note: CreditNotes.get_listed_credit_note(note.id)})}
       else
         {:invoice, nil} ->

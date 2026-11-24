@@ -8,6 +8,7 @@ defmodule QuantumBillingWeb.UserAuth do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.Audit
   alias QuantumBilling.Businesses
   alias QuantumBilling.Events
   alias QuantumBilling.InstallationSettings
@@ -15,6 +16,7 @@ defmodule QuantumBillingWeb.UserAuth do
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.RateLimiter
+  alias QuantumBillingWeb.ClientIP
 
   @owner_only_message "That area is limited to account owners."
 
@@ -319,9 +321,10 @@ defmodule QuantumBillingWeb.UserAuth do
   """
   def fetch_current_business(conn, _opts) do
     case conn.assigns[:current_scope] do
-      %Scope{user: %Accounts.User{}} = scope ->
+      %Scope{user: %Accounts.User{} = user} = scope ->
         scope = choose_business(scope, get_session(conn, :business_id))
         Repo.put_business(scope.business)
+        Audit.put_actor(user_actor(user, ClientIP.client_ip(conn)))
         scope = put_tax_regime(scope)
 
         conn
@@ -746,13 +749,39 @@ defmodule QuantumBillingWeb.UserAuth do
       end)
 
     case socket.assigns.current_scope do
-      %Scope{business: business} = scope ->
+      %Scope{business: business, user: user} = scope ->
         Repo.put_business(business)
+        Audit.put_actor(user_actor(user, socket_ip(socket)))
         Phoenix.Component.assign(socket, :current_scope, put_tax_regime(scope))
 
       nil ->
         Repo.put_business(nil)
+        # Only the client pages behind a shared link write anything signed out.
+        Audit.put_actor(%{via: "public_link", ip_address: socket_ip(socket)})
         socket
+    end
+  end
+
+  # Who the audit trail names for this member's actions.
+  defp user_actor(%Accounts.User{} = user, ip_address) do
+    name =
+      case String.trim(user.full_name || "") do
+        "" -> user.email
+        full_name -> full_name
+      end
+
+    %{user_id: user.id, ip_address: ip_address, name: name}
+  end
+
+  defp user_actor(_no_user, ip_address), do: %{ip_address: ip_address}
+
+  # A nested LiveView has no connect info of its own.
+  defp socket_ip(socket) do
+    if socket.private[:connect_info] do
+      ClientIP.from_connect_info(
+        Phoenix.LiveView.get_connect_info(socket, :peer_data),
+        Phoenix.LiveView.get_connect_info(socket, :x_headers)
+      )
     end
   end
 

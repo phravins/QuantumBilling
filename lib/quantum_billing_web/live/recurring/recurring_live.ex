@@ -84,15 +84,28 @@ defmodule QuantumBillingWeb.RecurringLive do
   end
 
   def handle_event("toggle_status", %{"id" => id}, socket) do
-    profile = Recurring.get_profile!(id)
-    new_status = if profile.status == "Active", do: "Paused", else: "Active"
+    with %{} = profile <- Recurring.get_profile(id),
+         new_status = if(profile.status == "Active", do: "Paused", else: "Active"),
+         {:ok, _updated} <- Recurring.update_profile(profile, %{status: new_status}) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Profile status updated to #{new_status}.")
+       |> load_profiles()}
+    else
+      nil ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "That profile no longer exists.")
+         |> load_profiles()}
 
-    {:ok, _updated} = Recurring.update_profile(profile, %{status: new_status})
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Profile status updated to #{new_status}.")
-     |> load_profiles()}
+      {:error, reason} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not change the profile: #{QuantumBilling.ErrorMessages.text(reason)}"
+         )}
+    end
   end
 
   def handle_event("run_now", _params, socket) do

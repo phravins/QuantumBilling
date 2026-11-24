@@ -20,8 +20,29 @@ defmodule QuantumBillingWeb.ClientIP do
 
   @doc "The address a request came from, as an `:inet` tuple."
   def client_ip_tuple(%Plug.Conn{remote_ip: remote_ip} = conn) do
+    resolve(remote_ip, Plug.Conn.get_req_header(conn, "x-forwarded-for"))
+  end
+
+  @doc """
+  The address a LiveView's client connected from, as a string, or `nil`.
+
+  Takes the socket's `:peer_data` and `:x_headers` connect info, and trusts
+  `x-forwarded-for` under the same rule as `client_ip/1`.
+  """
+  def from_connect_info(%{address: address}, x_headers) when is_tuple(address) do
+    forwarded =
+      for {name, value} <- List.wrap(x_headers),
+          String.downcase(name) == "x-forwarded-for",
+          do: value
+
+    address |> resolve(forwarded) |> to_string_ip()
+  end
+
+  def from_connect_info(_peer_data, _x_headers), do: nil
+
+  defp resolve(remote_ip, forwarded) do
     if trusted_proxy?(remote_ip) do
-      conn
+      forwarded
       |> forwarded_chain()
       |> Enum.reverse()
       |> Enum.find(&(!trusted_proxy?(&1)))
@@ -71,9 +92,8 @@ defmodule QuantumBillingWeb.ClientIP do
   def to_string_ip(address) when is_binary(address), do: address
   def to_string_ip(_address), do: "unknown"
 
-  defp forwarded_chain(conn) do
-    conn
-    |> Plug.Conn.get_req_header("x-forwarded-for")
+  defp forwarded_chain(values) do
+    values
     |> Enum.flat_map(&String.split(&1, ","))
     |> Enum.map(&String.trim/1)
     |> Enum.map(&parse/1)

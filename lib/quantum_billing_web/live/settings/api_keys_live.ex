@@ -278,7 +278,12 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
           </fieldset>
 
           <div class="mt-4 flex justify-end">
-            <button id="create-api-key" type="submit" class={action_button_class()}>
+            <button
+              id="create-api-key"
+              type="submit"
+              phx-disable-with="Creating…"
+              class={action_button_class()}
+            >
               <.icon name="hero-key" class="size-4" /> Create key
             </button>
           </div>

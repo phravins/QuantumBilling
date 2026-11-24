@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.Audit
   alias QuantumBilling.Businesses.Membership
 
   @last_owner_message "This is the only owner. Make somebody else an owner first."
@@ -38,6 +39,11 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
     case Accounts.invite(business, email, role, inviter, url_fun) do
       {:ok, {:invited, invitation}} ->
+        Audit.log_event(:member_invited, "Invitation", invitation.id,
+          label: invitation.email,
+          details: %{"email" => invitation.email, "role" => role}
+        )
+
         QuantumBilling.SecurityAlerts.admin_event(
           business,
           inviter,
@@ -51,6 +57,11 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
          |> load_team()}
 
       {:ok, {:added, membership}} ->
+        Audit.log_event(:member_invited, "User", membership.user.id,
+          label: membership.user.email,
+          details: %{"email" => membership.user.email, "role" => role, "existing_account" => true}
+        )
+
         QuantumBilling.SecurityAlerts.admin_event(
           business,
           inviter,
@@ -89,20 +100,38 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
         {:noreply, load_team(socket)}
 
       invitation ->
-        {:ok, _} = Accounts.revoke_invitation(invitation)
+        case Accounts.revoke_invitation(invitation) do
+          {:ok, _revoked} ->
+            Audit.log_event(:invitation_revoked, "Invitation", invitation.id,
+              label: invitation.email,
+              details: %{"email" => invitation.email, "role" => invitation.role}
+            )
 
-        {:noreply,
-         socket
-         |> put_flash(:info, "Invitation to #{invitation.email} withdrawn.")
-         |> load_team()}
+            {:noreply,
+             socket
+             |> put_flash(:info, "Invitation to #{invitation.email} withdrawn.")
+             |> load_team()}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "That invitation could not be withdrawn. Please try again.")
+             |> load_team()}
+        end
     end
   end
 
   def handle_event("set_role", %{"id" => id, "role" => role}, socket) do
-    with %Membership{user: user} <- find_member(socket, id) do
+    with %Membership{user: user, role: old_role} <- find_member(socket, id) do
       case Accounts.set_role(socket.assigns.current_scope.business, user, role) do
         {:ok, _membership} ->
-          audit(socket, :member_role_changed, user, %{"role" => role})
+          if old_role != role do
+            audit(socket, :member_role_changed, user,
+              details: %{"role" => role},
+              changes: %{"role" => %{"from" => old_role, "to" => role}}
+            )
+          end
+
           QuantumBillingWeb.UserAuth.disconnect_user(user)
 
           {:noreply,
@@ -123,10 +152,10 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
   end
 
   def handle_event("remove", %{"id" => id}, socket) do
-    with %Membership{user: user} <- find_member(socket, id) do
+    with %Membership{user: user, role: old_role} <- find_member(socket, id) do
       case Accounts.remove_member(socket.assigns.current_scope.business, user) do
         {:ok, _membership} ->
-          audit(socket, :member_removed, user, %{})
+          audit(socket, :member_removed, user, details: %{"role" => old_role})
           QuantumBillingWeb.UserAuth.disconnect_user(user)
 
           {:noreply,
@@ -150,11 +179,16 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
     Enum.find(socket.assigns.members, &(to_string(&1.user_id) == user_id))
   end
 
-  defp audit(socket, action, user, details) do
+  # Logged here rather than in `Accounts`: this page is the only place a
+  # member's role or place on the team changes.
+  defp audit(socket, action, user, opts) do
     %{business: business, user: actor} = socket.assigns.current_scope
+    details = Keyword.fetch!(opts, :details)
 
-    QuantumBilling.Audit.log_event(action, "User", user.id,
+    Audit.log_event(action, "User", user.id,
       user_id: actor.id,
+      label: user.email,
+      changes: Keyword.get(opts, :changes),
       details: Map.put(details, "email", user.email)
     )
 
@@ -209,7 +243,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
             <option value="owner">Owner</option>
           </select>
 
-          <button type="submit" class={action_button_class()}>
+          <button type="submit" phx-disable-with="Sending…" class={action_button_class()}>
             <.icon name="hero-paper-airplane" class="size-4" /> Send invitation
           </button>
         </form>

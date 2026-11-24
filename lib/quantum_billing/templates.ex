@@ -81,36 +81,64 @@ defmodule QuantumBilling.Templates do
 
   @doc "Creates a template."
   def create_template(attrs) do
+    attrs
+    |> insert_template()
+    |> audited(:invoice_template_created, [])
+  end
+
+  defp insert_template(attrs) do
     %InvoiceTemplate{}
     |> InvoiceTemplate.changeset(attrs)
     |> Repo.insert()
     |> broadcast()
   end
 
-  @doc "Updates a template."
+  @doc """
+  Updates a template.
+
+  The designer saves on every change, so one member's edits within ten
+  minutes are one entry in the audit log.
+  """
   def update_template(%InvoiceTemplate{} = template, attrs) do
-    template
-    |> InvoiceTemplate.changeset(attrs)
+    changeset = InvoiceTemplate.changeset(template, attrs)
+
+    changeset
     |> Repo.update()
     |> broadcast()
+    |> Audit.record(:invoice_template_updated, "InvoiceTemplate", fn updated ->
+      case Audit.changes(changeset, summarize: [:layout_xml]) do
+        none when none == %{} -> :skip
+        changes -> [changes: changes, merge_within: 10] ++ audit_opts(updated)
+      end
+    end)
   end
 
   @doc "Copies a template under a new name. The copy is never the default."
   def duplicate_template(%InvoiceTemplate{} = template) do
-    create_template(%{
+    %{
       "name" => copy_name(template.name),
       "layout_xml" => template.layout_xml,
       "accent" => template.accent,
       "is_default" => false
-    })
+    }
+    |> insert_template()
+    |> Audit.record(:invoice_template_duplicated, "InvoiceTemplate", fn copy ->
+      [label: copy.name, details: %{name: copy.name, copied_from: template.name}]
+    end)
   end
 
   @doc "Creates a design from a parsed document under `name` or the next free variant."
   def create_from_document(%QuantumBillingWeb.InvoiceDoc.Document{} = document, name) do
+    document
+    |> insert_from_document(name)
+    |> audited(:invoice_template_created, [])
+  end
+
+  defp insert_from_document(document, name) do
     name = name |> to_string() |> String.trim() |> String.slice(0, 50)
     name = if name == "", do: "Design", else: name
 
-    create_template(%{
+    insert_template(%{
       "name" => free_name([name | Enum.map(2..50, &"#{name} #{&1}")], name),
       "layout_xml" => Layout.to_xml(document),
       "accent" => current_accent(),
@@ -156,7 +184,8 @@ defmodule QuantumBilling.Templates do
              :ok <- validate_import(document) do
           document
           |> Layout.strip_assets(keep?)
-          |> create_from_document(name)
+          |> insert_from_document(name)
+          |> audited(:invoice_template_imported, [])
         end
     end
   end
@@ -186,9 +215,14 @@ defmodule QuantumBilling.Templates do
     |> Multi.update(:set, InvoiceTemplate.changeset(template, %{"is_default" => true}))
     |> Repo.transaction()
     |> case do
-      {:ok, %{set: saved}} -> broadcast({:ok, saved})
-      {:error, :set, changeset, _changes} -> {:error, changeset}
-      {:error, _step, reason, _changes} -> {:error, reason}
+      {:ok, %{set: saved}} ->
+        {:ok, saved} |> broadcast() |> audited(:invoice_template_set_default, [])
+
+      {:error, :set, changeset, _changes} ->
+        {:error, changeset}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
     end
   end
 
@@ -258,15 +292,20 @@ defmodule QuantumBilling.Templates do
   end
 
   defp audited({:ok, %InvoiceTemplate{} = template} = result, action, opts) do
-    Audit.log_event(action, "InvoiceTemplate", template.id,
-      user_id: Keyword.get(opts, :user_id),
-      details: %{name: template.name}
+    Audit.log_event(
+      action,
+      "InvoiceTemplate",
+      template.id,
+      [user_id: Keyword.get(opts, :user_id)] ++ audit_opts(template)
     )
 
     result
   end
 
   defp audited(result, _action, _opts), do: result
+
+  defp audit_opts(%InvoiceTemplate{} = template),
+    do: [label: template.name, details: %{name: template.name}]
 
   @doc """
   What to render `invoice` with: `{layout, accent, logo}`.

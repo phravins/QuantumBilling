@@ -104,7 +104,12 @@ defmodule QuantumBillingWeb.QuotationShowLive do
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not queue the email: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not queue the email: #{QuantumBilling.ErrorMessages.text(reason)}"
+         )}
     end
   end
 

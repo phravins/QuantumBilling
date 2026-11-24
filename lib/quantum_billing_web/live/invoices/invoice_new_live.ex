@@ -292,13 +292,23 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/invoices"} class={secondary_button_class()}>Cancel</.link>
-            <button type="submit" form="invoice-form" class={secondary_button_class()}>
+            <button
+              type="submit"
+              phx-disable-with="Saving…"
+              form="invoice-form"
+              class={secondary_button_class()}
+            >
               <.icon name="hero-document-text" class="size-4" /> {if @invoice.id,
                 do: "Save Changes",
                 else: "Save Draft"}
             </button>
 
-            <button type="submit" form="invoice-form" class={action_button_class()}>
+            <button
+              type="submit"
+              phx-disable-with="Saving…"
+              form="invoice-form"
+              class={action_button_class()}
+            >
               <.icon name="hero-eye" class="size-4" /> Preview Invoice
             </button>
           </div>

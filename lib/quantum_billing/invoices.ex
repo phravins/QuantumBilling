@@ -551,6 +551,14 @@ defmodule QuantumBilling.Invoices do
     |> case do
       {:ok, %{invoice: invoice, quotation: quotation}} ->
         broadcast_change(invoice, :invoice_changed)
+
+        Audit.log_event(
+          :invoice_created,
+          "Invoice",
+          invoice.id,
+          [user_id: Keyword.get(opts, :user_id)] ++ audit_opts(invoice)
+        )
+
         audit_conversion(quotation, invoice, Keyword.get(opts, :user_id))
 
         Webhooks.publish("invoice.created", invoice.id, %{
@@ -626,19 +634,52 @@ defmodule QuantumBilling.Invoices do
   only while the invoice is a draft.
   """
   def update_invoice(%Invoice{} = invoice, attrs) do
-    invoice
-    |> Repo.preload(:items)
-    |> Invoice.changeset(drop_layout_unless_draft(attrs, invoice), refresh_layout(attrs, invoice))
+    changeset =
+      invoice
+      |> Repo.preload(:items)
+      |> Invoice.changeset(
+        drop_layout_unless_draft(attrs, invoice),
+        refresh_layout(attrs, invoice)
+      )
+
+    changeset
     |> Repo.update()
     |> case do
       {:ok, invoice} ->
         broadcast_change(invoice, :invoice_changed)
         Webhooks.publish("invoice.updated", invoice.id)
+        audit_update(changeset, invoice)
         {:ok, Repo.preload(invoice, :items, force: true)}
 
       {:error, changeset} ->
         {:error, changeset}
     end
+  end
+
+  # The template's layout refreshes on every draft save, so alone it is not an edit.
+  defp audit_update(changeset, invoice) do
+    changes = Audit.changes(changeset, summarize: [:layout_xml, :tax_breakdown])
+
+    if Map.drop(changes, ["layout_xml", "tax_breakdown"]) != %{} do
+      Audit.log_event(
+        :invoice_updated,
+        "Invoice",
+        invoice.id,
+        [changes: changes] ++ audit_opts(invoice)
+      )
+    end
+  end
+
+  @doc "`Audit.log_event/4` options naming an invoice: its number, client and total."
+  def audit_opts(%Invoice{} = invoice) do
+    [
+      label: invoice.invoice_number,
+      details: %{
+        invoice_number: invoice.invoice_number,
+        client_name: invoice.client_name,
+        total: Format.money(invoice.grand_total, invoice.currency)
+      }
+    ]
   end
 
   @doc """
@@ -668,6 +709,7 @@ defmodule QuantumBilling.Invoices do
         |> case do
           {:ok, updated} ->
             broadcast_change(updated, :invoice_changed)
+            Audit.log_event(:e_invoice_requested, "Invoice", updated.id, audit_opts(updated))
             {:ok, :queued}
 
           {:error, changeset} ->
@@ -692,8 +734,9 @@ defmodule QuantumBilling.Invoices do
       submit_einvoice(invoice)
     else
       {:error, problems} when is_list(problems) ->
-        mark_einvoice_failed(invoice)
-        {:error, Enum.join(problems, " ")}
+        reason = Enum.join(problems, " ")
+        mark_einvoice_failed(invoice, reason)
+        {:error, reason}
     end
   end
 
@@ -723,6 +766,12 @@ defmodule QuantumBilling.Invoices do
           {:ok, invoice} ->
             broadcast_change(invoice, :invoice_changed)
             Webhooks.publish("invoice.e_invoice_generated", invoice.id)
+
+            Audit.log_event(:e_invoice_generated, "Invoice", invoice.id,
+              label: invoice.invoice_number,
+              details: Map.put(audit_details(invoice), :irn, irn)
+            )
+
             {:ok, Repo.preload(invoice, :items, force: true)}
 
           {:error, changeset} ->
@@ -730,7 +779,7 @@ defmodule QuantumBilling.Invoices do
         end
 
       {:error, reason} ->
-        mark_einvoice_failed(invoice)
+        mark_einvoice_failed(invoice, reason)
         {:error, reason}
     end
   end
@@ -741,14 +790,22 @@ defmodule QuantumBilling.Invoices do
   defp einvoice_status(_invoice, stamp), do: stamp
 
   # Status is not a form field, so it is set directly.
-  defp mark_einvoice_failed(invoice) do
+  defp mark_einvoice_failed(invoice, reason) do
     status = einvoice_status(invoice, "E-Invoice Failed")
 
     with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: status)) do
       broadcast_change(failed, :invoice_changed)
       Webhooks.publish("invoice.e_invoice_failed", failed.id)
+
+      Audit.log_event(:e_invoice_failed, "Invoice", failed.id,
+        label: failed.invoice_number,
+        details:
+          Map.put(audit_details(failed), :reason, QuantumBilling.ErrorMessages.text(reason))
+      )
     end
   end
+
+  defp audit_details(invoice), do: audit_opts(invoice)[:details]
 
   @doc """
   Cancels an invoice. It keeps its number and leaves GSTR-1.
@@ -784,7 +841,9 @@ defmodule QuantumBilling.Invoices do
             :invoice_cancelled,
             "Invoice",
             cancelled.id,
-            Keyword.put(opts, :details, %{
+            opts
+            |> Keyword.put(:label, cancelled.invoice_number)
+            |> Keyword.put(:details, %{
               "reason" => reason,
               "number" => cancelled.invoice_number
             })
@@ -865,6 +924,7 @@ defmodule QuantumBilling.Invoices do
   defp announce({:ok, invoice} = result, action, opts) do
     Audit.log_event(action, "Invoice", invoice.id,
       user_id: Keyword.get(opts, :user_id),
+      label: invoice.invoice_number,
       details: %{
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name,

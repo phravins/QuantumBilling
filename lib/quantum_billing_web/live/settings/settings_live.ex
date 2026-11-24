@@ -765,7 +765,12 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   defp upload_message(:not_accepted), do: "That has to be a PNG, JPEG, GIF or WebP image."
   defp upload_message(:too_many_files), do: "One logo at a time."
-  defp upload_message(other), do: "That file could not be uploaded (#{inspect(other)})."
+  defp upload_message(_other), do: "That file could not be uploaded. Try again."
+
+  defp backup_upload_message(:too_large), do: "That backup is larger than 50MB."
+  defp backup_upload_message(:not_accepted), do: "Choose a .json backup file."
+  defp backup_upload_message(:too_many_files), do: "One backup file at a time."
+  defp backup_upload_message(_other), do: "That file could not be uploaded. Try again."
 
   # A design may show the same file (uploads are content-addressed).
   defp delete_logo_file(path) do
@@ -850,7 +855,7 @@ defmodule QuantumBillingWeb.SettingsLive do
       [:too_large | _] -> "That file is too large."
       [:not_accepted | _] -> "Choose a .xml design file, or a PNG or JPEG image."
       [:too_many_files | _] -> "One file at a time."
-      [other | _] -> "That file could not be uploaded (#{inspect(other)})."
+      [_other | _] -> "That file could not be uploaded. Try again."
     end
   end
 
@@ -880,7 +885,12 @@ defmodule QuantumBillingWeb.SettingsLive do
         <.header>
           {section(@section).title}
           <:actions :if={@form}>
-            <button type="submit" form="settings-form" class={action_button_class()}>
+            <button
+              type="submit"
+              phx-disable-with="Saving…"
+              form="settings-form"
+              class={action_button_class()}
+            >
               <.icon name="hero-check" class="size-4" /> Save Changes
             </button>
           </:actions>
@@ -1146,7 +1156,12 @@ defmodule QuantumBillingWeb.SettingsLive do
             <button type="button" phx-click="close_rate" class={secondary_button_class()}>
               Cancel
             </button>
-            <button id="save-rate" type="submit" class={action_button_class()}>
+            <button
+              id="save-rate"
+              type="submit"
+              phx-disable-with="Saving…"
+              class={action_button_class()}
+            >
               <.icon name="hero-check" class="size-4" /> Save Rate
             </button>
           </div>
@@ -2110,12 +2125,26 @@ defmodule QuantumBillingWeb.SettingsLive do
             </div>
           </div>
 
-          <p :for={error <- upload_errors(@uploads.backup_file)} class="text-xs text-error">
-            {inspect(error)}
+          <p
+            :for={
+              error <-
+                Enum.uniq(
+                  upload_errors(@uploads.backup_file) ++
+                    Enum.flat_map(
+                      @uploads.backup_file.entries,
+                      &upload_errors(@uploads.backup_file, &1)
+                    )
+                )
+            }
+            id={"backup-upload-error-#{error}"}
+            class="text-xs text-error"
+          >
+            {backup_upload_message(error)}
           </p>
 
           <button
             type="submit"
+            phx-disable-with="Restoring…"
             disabled={@uploads.backup_file.entries == []}
             class={[action_button_class(), "disabled:opacity-50"]}
           >

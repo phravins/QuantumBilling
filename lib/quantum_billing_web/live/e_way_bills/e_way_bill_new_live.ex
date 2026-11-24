@@ -120,7 +120,7 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
       {:error, reason} ->
         message =
           NICClient.error_message(reason) ||
-            "Could not generate the e-way bill: #{inspect(reason)}"
+            "Could not generate the e-way bill: #{QuantumBilling.ErrorMessages.text(reason)}"
 
         {:noreply,
          socket
@@ -260,7 +260,12 @@ defmodule QuantumBillingWeb.EWayBillNewLive do
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/e-way-bills"} class={secondary_button_class()}>Cancel</.link>
-            <button type="submit" form="ewb-form" class={action_button_class()}>
+            <button
+              type="submit"
+              phx-disable-with="Generating…"
+              form="ewb-form"
+              class={action_button_class()}
+            >
               <.icon name="hero-document-check" class="size-4" /> Generate E-Way Bill
             </button>
           </div>

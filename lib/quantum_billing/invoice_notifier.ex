@@ -33,6 +33,13 @@ defmodule QuantumBilling.InvoiceNotifier do
            %{"delivery_id" => delivery.id, "invoice_id" => invoice.id, "kind" => kind}
            |> EmailWorker.new()
            |> Oban.insert() do
+      if kind == "invoice" do
+        QuantumBilling.Audit.log_event(:invoice_emailed, "Invoice", invoice.id,
+          label: invoice.invoice_number,
+          details: %{invoice_number: invoice.invoice_number, to: recipient}
+        )
+      end
+
       {:ok, delivery}
     else
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}

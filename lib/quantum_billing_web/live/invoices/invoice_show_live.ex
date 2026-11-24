@@ -15,6 +15,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
+  alias QuantumBilling.ErrorMessages
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
@@ -95,7 +96,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         {:noreply, put_flash(socket, :error, Tax.gst_only_message(:e_invoice))}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not queue the E-Invoice: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not queue the E-Invoice: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -120,7 +122,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not queue the email: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not queue the email: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -151,7 +154,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:show_ewb_modal, false)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to generate E-Way Bill: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not generate the e-way bill: #{ErrorMessages.text(reason)}"
+         )}
     end
   end
 
@@ -183,7 +191,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       {:error, reason} ->
         {:noreply,
-         put_flash(socket, :error, "Failed to generate Payment Link: #{inspect(reason)}")}
+         put_flash(
+           socket,
+           :error,
+           "Could not create the payment link: #{ErrorMessages.text(reason)}"
+         )}
     end
   end
 
@@ -214,7 +226,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign_cn_form(changeset)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to issue Credit Note: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not issue the note: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -637,7 +650,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             </div>
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
               <button type="button" phx-click="toggle_ewb_modal" class="btn btn-sm btn-ghost">Cancel</button>
-              <button type="submit" class="btn btn-sm btn-primary">Generate EWB</button>
+              <button type="submit" phx-disable-with="Generating…" class="btn btn-sm btn-primary">Generate EWB</button>
             </div>
           </form>
         </div>
@@ -719,7 +732,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             />
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
               <button type="button" phx-click="toggle_cn_modal" class="btn btn-sm btn-ghost">Cancel</button>
-              <button type="submit" class="btn btn-sm btn-warning">Issue Note</button>
+              <button type="submit" phx-disable-with="Issuing…" class="btn btn-sm btn-warning">Issue Note</button>
             </div>
           </form>
         </div>

@@ -507,7 +507,12 @@ defmodule QuantumBillingWeb.UserLive.Settings do
         </div>
 
         <:footer>
-          <button type="submit" id="send-email-link" class={action_button_class()}>
+          <button
+            type="submit"
+            phx-disable-with="Sending…"
+            id="send-email-link"
+            class={action_button_class()}
+          >
             <.icon name="hero-paper-airplane" class="size-4" /> Send confirmation link
           </button>
         </:footer>
@@ -735,7 +740,7 @@ defmodule QuantumBillingWeb.UserLive.Settings do
                   required
                   class={[form_input_class(), "w-36 text-center tracking-[0.3em]"]}
                 />
-                <button type="submit" class={action_button_class()}>
+                <button type="submit" phx-disable-with="Verifying…" class={action_button_class()}>
                   <.icon name="hero-check" class="size-4" /> Verify and turn on
                 </button>
 

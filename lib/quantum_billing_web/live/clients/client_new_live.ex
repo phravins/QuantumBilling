@@ -149,7 +149,12 @@ defmodule QuantumBillingWeb.ClientNewLive do
         <:actions>
           <div class="flex items-center gap-2">
             <.link navigate={~p"/clients"} class={secondary_button_class()}>Cancel</.link>
-            <button type="submit" form="client-form" class={action_button_class()}>
+            <button
+              type="submit"
+              phx-disable-with="Saving…"
+              form="client-form"
+              class={action_button_class()}
+            >
               <.icon name="hero-check" class="size-4" />
               {if @live_action == :edit, do: "Save Changes", else: "Save Client"}
             </button>

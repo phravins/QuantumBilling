@@ -248,7 +248,8 @@ defmodule QuantumBilling.Businesses do
     organization = Settings.ensure_organization()
     general = %{"company_name" => name, "gstin" => attrs["gstin"] || attrs[:gstin]}
 
-    with {:ok, _organization} <- Settings.update_section(organization, general, :general) do
+    with {:ok, _organization} <-
+           Settings.update_section(organization, general, :general, audit: false) do
       Templates.ensure_default()
       {:ok, _membership} = put_membership(creator, business, "owner")
       :ok

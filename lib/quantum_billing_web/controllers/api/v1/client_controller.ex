@@ -2,7 +2,7 @@ defmodule QuantumBillingWeb.API.V1.ClientController do
   @moduledoc "`/api/v1/clients`: list, fetch and create, through `QuantumBilling.Clients`."
   use QuantumBillingWeb, :controller
 
-  alias QuantumBilling.{Audit, Clients}
+  alias QuantumBilling.Clients
   alias QuantumBillingWeb.API.{ClientParams, Error, Idempotency, Pagination}
   alias QuantumBillingWeb.API.V1.ClientJSON
   alias QuantumBillingWeb.Plugs.RequireScope
@@ -40,12 +40,6 @@ defmodule QuantumBillingWeb.API.V1.ClientController do
   defp create_client(conn) do
     with {:ok, attrs} <- ClientParams.cast(conn.body_params),
          {:ok, client} <- Clients.create_client(attrs) do
-      Audit.log_event(:client_created, "Client", client.id,
-        api_key_id: conn.assigns.api_key.id,
-        ip_address: conn.assigns.api_client_ip,
-        details: %{"name" => client.name, "via" => "api"}
-      )
-
       {201, ClientJSON.show(%{client: client})}
     else
       {:error, %Ecto.Changeset{} = changeset} ->

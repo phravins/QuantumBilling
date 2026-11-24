@@ -291,8 +291,17 @@ defmodule QuantumBilling.Backup do
         timeout: :infinity
       )
       |> case do
-        {:ok, counts} -> {:ok, counts}
-        {:error, reason} -> {:error, reason}
+        {:ok, counts} ->
+          # After the commit: the restore replaced the log with the backup's.
+          QuantumBilling.Audit.log_event(:backup_restored, "Backup", nil,
+            label: "Backup",
+            details: %{records: counts |> Map.values() |> Enum.sum()}
+          )
+
+          {:ok, counts}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end

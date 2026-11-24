@@ -200,7 +200,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
 
   defp cancel_error(reason) do
     NICClient.error_message(reason) ||
-      "The portal refused the cancellation: #{inspect(reason)}"
+      "The cancellation failed: #{QuantumBilling.ErrorMessages.text(reason)}"
   end
 
   defp part_b_error(:gone), do: "That e-way bill no longer exists."
@@ -212,7 +212,8 @@ defmodule QuantumBillingWeb.EWayBillsLive do
   defp part_b_error(%Ecto.Changeset{}), do: "Enter the new vehicle number."
 
   defp part_b_error(reason) do
-    NICClient.error_message(reason) || "The portal refused the update: #{inspect(reason)}"
+    NICClient.error_message(reason) ||
+      "The update failed: #{QuantumBilling.ErrorMessages.text(reason)}"
   end
 
   def render(assigns) do
@@ -488,7 +489,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             <button type="button" phx-click="close_action" class={secondary_button_class()}>
               Keep it
             </button>
-            <button type="submit" class="btn btn-sm btn-error">Cancel e-way bill</button>
+            <button type="submit" phx-disable-with="Cancelling…" class="btn btn-sm btn-error">Cancel e-way bill</button>
           </div>
         </form>
       </.action_modal>
@@ -566,7 +567,7 @@ defmodule QuantumBillingWeb.EWayBillsLive do
             <button type="button" phx-click="close_action" class={secondary_button_class()}>
               Close
             </button>
-            <button type="submit" class={action_button_class()}>Update Vehicle</button>
+            <button type="submit" phx-disable-with="Updating…" class={action_button_class()}>Update Vehicle</button>
           </div>
         </form>
       </.action_modal>

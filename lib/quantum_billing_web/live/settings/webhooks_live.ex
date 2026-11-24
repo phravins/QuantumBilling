@@ -300,7 +300,12 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
           </fieldset>
 
           <div class="mt-4 flex justify-end">
-            <button id="create-webhook" type="submit" class={action_button_class()}>
+            <button
+              id="create-webhook"
+              type="submit"
+              phx-disable-with="Adding…"
+              class={action_button_class()}
+            >
               <.icon name="hero-plus" class="size-4" /> Add endpoint
             </button>
           </div>

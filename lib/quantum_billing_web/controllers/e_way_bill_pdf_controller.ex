@@ -51,7 +51,10 @@ defmodule QuantumBillingWeb.EWayBillPdfController do
 
         {:error, reason} ->
           conn
-          |> put_flash(:error, "That PDF could not be produced (#{inspect(reason)}).")
+          |> put_flash(
+            :error,
+            "That PDF could not be produced. #{QuantumBilling.ErrorMessages.text(reason)}"
+          )
           |> redirect(to: ~p"/e-way-bills/#{bill.id}/print")
       end
     end)

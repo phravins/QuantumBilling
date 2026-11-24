@@ -127,9 +127,10 @@ defmodule QuantumBilling.CreditNotes do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{note: note, invoice_status: changed}} ->
+      {:ok, %{note: note, invoice: locked, invoice_status: changed}} ->
         if changed, do: QuantumBilling.Invoices.broadcast_change(changed, :invoice_changed)
         QuantumBilling.Webhooks.publish("credit_note.created", note.id)
+        audit_created(note, locked || invoice)
         {:ok, note}
 
       {:error, :note, changeset, _changes} ->
@@ -138,6 +139,22 @@ defmodule QuantumBilling.CreditNotes do
       {:error, _step, reason, _changes} ->
         {:error, reason}
     end
+  end
+
+  defp audit_created(note, invoice) do
+    action = if note.note_type == "Debit", do: :debit_note_created, else: :credit_note_created
+
+    QuantumBilling.Audit.log_event(action, "CreditNote", note.id,
+      label: note.note_number,
+      details: %{
+        number: note.note_number,
+        invoice_id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        client_name: invoice.client_name,
+        total: QuantumBillingWeb.Format.money(note.grand_total, invoice.currency),
+        reason: note.reason
+      }
+    )
   end
 
   @doc """

@@ -9,6 +9,11 @@ defmodule QuantumBillingWeb.BackupController do
   def download(conn, _params) do
     filename = "quantumbilling-backup-#{Date.utc_today()}.json"
 
+    QuantumBilling.Audit.log_event(:backup_downloaded, "Backup", nil,
+      label: filename,
+      details: %{file: filename}
+    )
+
     conn =
       conn
       |> put_resp_content_type("application/json")

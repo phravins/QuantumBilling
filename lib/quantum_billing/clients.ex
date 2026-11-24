@@ -234,16 +234,24 @@ defmodule QuantumBilling.Clients do
     |> Client.changeset(attrs, tax_regime())
     |> Repo.insert()
     |> announce(:client_created)
+    |> Audit.record(:client_created, "Client", &audit_opts/1)
   end
 
   @doc """
-  Updates a client.
+  Updates a client. A save that changes nothing is not logged.
   """
   def update_client(%Client{} = client, attrs) do
-    client
-    |> Client.changeset(attrs, tax_regime())
+    changeset = Client.changeset(client, attrs, tax_regime())
+
+    changeset
     |> Repo.update()
     |> announce(:client_updated)
+    |> Audit.record(:client_updated, "Client", fn updated ->
+      case Audit.changes(changeset) do
+        none when none == %{} -> :skip
+        changes -> [changes: changes] ++ audit_opts(updated)
+      end
+    end)
   end
 
   @doc """
@@ -398,15 +406,20 @@ defmodule QuantumBilling.Clients do
   end
 
   defp audited({:ok, %Client{} = client} = result, action, opts) do
-    Audit.log_event(action, "Client", client.id,
-      user_id: Keyword.get(opts, :user_id),
-      details: %{name: client.name, gstin: client.gstin}
+    Audit.log_event(
+      action,
+      "Client",
+      client.id,
+      [user_id: Keyword.get(opts, :user_id)] ++ audit_opts(client)
     )
 
     result
   end
 
   defp audited(result, _action, _opts), do: result
+
+  defp audit_opts(%Client{} = client),
+    do: [label: client.name, details: %{name: client.name, gstin: client.gstin}]
 
   @doc "Whether a client of this type must supply a GSTIN."
   defdelegate gstin_required?(client_type), to: Client

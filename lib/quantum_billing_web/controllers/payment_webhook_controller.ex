@@ -36,6 +36,7 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
          :ok <- verify_signature(conn, raw_body, business) do
       # The endpoint clears this again before the next request on the connection.
       Repo.put_business(business)
+      QuantumBilling.Audit.put_actor(%{via: "razorpay"})
       process(conn, params)
     else
       nil ->

@@ -99,8 +99,16 @@ defmodule QuantumBilling.BackupTest do
       refute json =~ "hunter2-in-the-backup"
       refute json =~ "whsec_in_the_backup"
       refute json =~ "rzp_webhook_in_the_backup"
-      refute json =~ "razorpay_webhook_secret"
-      refute json =~ "smtp_password"
+
+      data = Jason.decode!(json)
+      refute Map.has_key?(data["organization"], "razorpay_webhook_secret")
+      refute Map.has_key?(data["organization"], "smtp_password")
+
+      # The audit trail says the password changed, never what it is.
+      assert Enum.any?(
+               data["audit_logs"],
+               &(get_in(&1, ["details", "changes", "smtp_password"]) == %{"redacted" => true})
+             )
 
       # Configuration that is not a credential still travels.
       assert json =~ "rzp_live_travels"
