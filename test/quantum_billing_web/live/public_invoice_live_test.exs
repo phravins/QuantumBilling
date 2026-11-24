@@ -23,6 +23,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
     {:ok, view, html} = live(conn, ~p"/pay/#{invoice.public_token}")
     assert html =~ "INV-9910"
     assert html =~ "Zeta Logistics"
+    assert html =~ "Issued on 01 Mar 2026"
     assert html =~ "Pay Now via UPI / Card"
 
     # Clicking pay_now triggers redirect or payment link creation

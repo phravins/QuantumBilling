@@ -116,7 +116,7 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
               Quotation {@quotation.number}
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
-              Dated {@quotation.quotation_date} | Valid until {@quotation.valid_until} | Total:
+              Dated {format_date(@quotation.quotation_date)} · Valid until {format_date(@quotation.valid_until)} · Total:
               <strong class="text-base-content">{money(@quotation.grand_total, @quotation.currency)}</strong>
             </p>
           </div>

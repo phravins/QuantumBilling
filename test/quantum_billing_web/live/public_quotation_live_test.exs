@@ -48,6 +48,20 @@ defmodule QuantumBillingWeb.PublicQuotationLiveTest do
     refute has_element?(view, "#public-quotation-accepted")
   end
 
+  test "formats quotation dates in the header", %{conn: conn, quotation: quotation} do
+    quotation =
+      quotation
+      |> Ecto.Changeset.change(
+        quotation_date: ~D[2026-11-21],
+        valid_until: ~D[2026-12-21]
+      )
+      |> Repo.update!()
+
+    {:ok, _view, html} = live(conn, PublicQuotationLive.path(quotation.public_token))
+
+    assert html =~ "Dated 21 Nov 2026 · Valid until 21 Dec 2026"
+  end
+
   test "accepting records the client's answer", %{conn: conn, quotation: quotation} do
     {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
 

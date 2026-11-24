@@ -168,7 +168,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               Tax Invoice {@invoice.invoice_number}
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
-              Issued on {@invoice.invoice_date} | Total Due:
+              Issued on {format_date(@invoice.invoice_date)} · Total Due:
               <strong class="text-emerald-600 dark:text-emerald-400">{money(
                 @invoice.grand_total,
                 @invoice.currency
