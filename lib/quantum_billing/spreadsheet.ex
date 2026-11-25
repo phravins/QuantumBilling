@@ -160,9 +160,108 @@ defmodule QuantumBilling.Spreadsheet do
   defp not_xlsx, do: "This doesn't look like an Excel (.xlsx) file."
 
   defp unzip_one(binary, name) do
-    case :zip.unzip(binary, [:memory, {:file_list, [String.to_charlist(name)]}]) do
-      {:ok, [{_name, xml}]} -> {:ok, xml}
-      _missing -> {:error, not_xlsx()}
+    case find_zip_entry(binary, name) do
+      {:ok, 8, compressed_data} ->
+        inflate_safe(compressed_data, @max_unzipped)
+
+      {:ok, 0, stored_data} ->
+        if byte_size(stored_data) > @max_unzipped do
+          {:error, "The spreadsheet is too large to read."}
+        else
+          {:ok, stored_data}
+        end
+
+      _fallback ->
+        case :zip.unzip(binary, [:memory, {:file_list, [String.to_charlist(name)]}]) do
+          {:ok, [{_name, xml}]} when byte_size(xml) <= @max_unzipped -> {:ok, xml}
+          {:ok, [{_name, xml}]} when byte_size(xml) > @max_unzipped ->
+            {:error, "The spreadsheet is too large to read."}
+
+          _missing ->
+            {:error, not_xlsx()}
+        end
+    end
+  end
+
+  # Scans local file headers to find the entry and extract raw payload without full inflation
+  defp find_zip_entry(
+         <<0x04034B50::little-32, _ver::16, flags::16, comp_method::16, _time::16, _date::16,
+           _crc::32, comp_size::32, _uncomp_size::32, fn_len::16, extra_len::16, rest::binary>>,
+         name
+       ) do
+    has_data_descriptor? = Bitwise.band(flags, 0x08) != 0
+
+    case rest do
+      <<entry_name::binary-size(fn_len), _extra::binary-size(extra_len), payload::binary>> ->
+        if entry_name == name and not has_data_descriptor? do
+          case payload do
+            <<data::binary-size(comp_size), _::binary>> -> {:ok, comp_method, data}
+            _ -> :error
+          end
+        else
+          if not has_data_descriptor? and byte_size(payload) >= comp_size do
+            <<_skipped::binary-size(comp_size), next_rest::binary>> = payload
+            find_zip_entry(next_rest, name)
+          else
+            :error
+          end
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp find_zip_entry(_other, _name), do: :error
+
+  # Inflates deflated bytes in streaming chunks using :zlib, stopping once limit is exceeded
+  defp inflate_safe(data, max_bytes) do
+    z = :zlib.open()
+
+    try do
+      :zlib.inflateInit(z, -15)
+      do_inflate_safe(z, data, 0, [], max_bytes)
+    after
+      :zlib.close(z)
+    end
+  rescue
+    _ -> {:error, "The spreadsheet could not be read. Is it damaged?"}
+  end
+
+  defp do_inflate_safe(z, data, total_size, acc, max_bytes) do
+    case :zlib.safeInflate(z, data) do
+      {:continue, uncompressed} ->
+        chunk_len = IO.iodata_length(uncompressed)
+        new_total = total_size + chunk_len
+
+        if new_total > max_bytes do
+          {:error, "The spreadsheet is too large to read."}
+        else
+          do_inflate_safe(z, [], new_total, [uncompressed | acc], max_bytes)
+        end
+
+      {:finished, uncompressed} ->
+        chunk_len = IO.iodata_length(uncompressed)
+        new_total = total_size + chunk_len
+
+        if new_total > max_bytes do
+          {:error, "The spreadsheet is too large to read."}
+        else
+          {:ok, acc |> Enum.reverse() |> List.insert_at(-1, uncompressed) |> IO.iodata_to_binary()}
+        end
+
+      {:need_more, uncompressed} ->
+        chunk_len = IO.iodata_length(uncompressed)
+        new_total = total_size + chunk_len
+
+        if new_total > max_bytes do
+          {:error, "The spreadsheet is too large to read."}
+        else
+          {:ok, acc |> Enum.reverse() |> List.insert_at(-1, uncompressed) |> IO.iodata_to_binary()}
+        end
+
+      _other ->
+        {:error, "The spreadsheet could not be read. Is it damaged?"}
     end
   end
 

@@ -112,6 +112,16 @@ defmodule QuantumBilling.SpreadsheetTest do
       assert {:error, "The spreadsheet is too large to read."} =
                %{"xl/worksheets/sheet1.xml" => huge} |> xlsx() |> Spreadsheet.parse("x.xlsx")
     end
+
+    test "refuses an archive whose central directory understates the sheet's size (zip bomb guard)" do
+      # Highly compressible: 60 MB unzipped data (exceeds 50 MB limit)
+      huge = :binary.copy("0", 60_000_000)
+      archive = %{"xl/worksheets/sheet1.xml" => huge} |> xlsx()
+
+      # Streaming inflation stops once decompressed bytes pass @max_unzipped,
+      # protecting against zip-bombs where central directory declared sizes are forged.
+      assert {:error, "The spreadsheet is too large to read."} = Spreadsheet.parse(archive, "x.xlsx")
+    end
   end
 
   test "refuses old .xls and other formats" do
