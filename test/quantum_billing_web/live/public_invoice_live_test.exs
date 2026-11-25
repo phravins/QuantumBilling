@@ -30,6 +30,32 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
     assert render_click(view, "pay_now")
   end
 
+  test "public invoice page sends noindex header and meta tag", %{conn: conn} do
+    invoice =
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-NOINDEX",
+        invoice_date: ~D[2026-03-01],
+        place_of_supply: "Maharashtra",
+        company_state: "Maharashtra",
+        client_name: "Private Customer",
+        public_token: "tok_noindex_page",
+        grand_total: 10000
+      })
+
+    conn = get(conn, ~p"/pay/#{invoice.public_token}")
+
+    assert conn.status == 200
+    assert get_resp_header(conn, "x-robots-tag") == ["noindex, nofollow"]
+    assert html_response(conn, 200) =~ ~s(name="robots" content="noindex, nofollow")
+  end
+
+  test "robots.txt disallows public invoice routes" do
+    robots = File.read!(Path.expand("../../../priv/static/robots.txt", __DIR__))
+
+    assert robots =~ "Disallow: /p/"
+    assert robots =~ "Disallow: /pay/"
+  end
+
   test "the customer's document download does not require a login", %{conn: conn} do
     invoice =
       Repo.insert!(%Invoice{
@@ -49,6 +75,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
     conn = get(conn, ~p"/pay/#{invoice.public_token}/pdf")
 
     assert conn.status == 200
+    assert get_resp_header(conn, "x-robots-tag") == ["noindex, nofollow"]
     refute redirected_to?(conn)
 
     case QuantumBillingWeb.InvoiceDoc.PDF.executable() do

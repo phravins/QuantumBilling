@@ -27,6 +27,10 @@ defmodule QuantumBillingWeb.Router do
     plug QuantumBillingWeb.Plugs.EnforceSecurityPolicies
   end
 
+  pipeline :public_invoice_noindex do
+    plug :put_public_invoice_noindex
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
     plug QuantumBillingWeb.Plugs.ApiResponseHeaders
@@ -47,7 +51,7 @@ defmodule QuantumBillingWeb.Router do
     plug QuantumBillingWeb.Plugs.CalendarFeedRateLimit
   end
 
-  # Public legal pages, linked from sign-in and sign-up.
+  # Public legal pages and quotations.
   scope "/", QuantumBillingWeb do
     pipe_through :browser
 
@@ -55,16 +59,34 @@ defmodule QuantumBillingWeb.Router do
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
       live "/terms", TermsLive, :index
       live "/privacy", PrivacyLive, :index
-      # `/pay/:token` is the legacy link, for the first business.
-      live "/p/:slug/:token", PublicInvoiceLive, :show
-      live "/pay/:token", PublicInvoiceLive, :show
       live "/q/:slug/:token", PublicQuotationLive, :show
     end
 
-    # Outside the live_session, which takes only live routes.
-    get "/p/:slug/:token/pdf", InvoicePdfController, :public
-    get "/pay/:token/pdf", InvoicePdfController, :public
     get "/q/:slug/:token/pdf", QuotationPdfController, :public
+  end
+
+  # Public invoice links: crawlers must not index these customer documents.
+  scope "/p", QuantumBillingWeb do
+    pipe_through [:browser, :public_invoice_noindex]
+
+    live_session :public_invoice,
+      on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
+      live "/:slug/:token", PublicInvoiceLive, :show
+    end
+
+    get "/:slug/:token/pdf", InvoicePdfController, :public
+  end
+
+  # Legacy public invoice links.
+  scope "/pay", QuantumBillingWeb do
+    pipe_through [:browser, :public_invoice_noindex]
+
+    live_session :legacy_public_invoice,
+      on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
+      live "/:token", PublicInvoiceLive, :show
+    end
+
+    get "/:token/pdf", InvoicePdfController, :public
   end
 
   # Owner-only: account administration and the full export.
@@ -321,5 +343,9 @@ defmodule QuantumBillingWeb.Router do
     pipe_through :browser
 
     match :*, "/*path", PageController, :not_found
+  end
+
+  defp put_public_invoice_noindex(conn, _opts) do
+    Plug.Conn.put_resp_header(conn, "x-robots-tag", "noindex, nofollow")
   end
 end

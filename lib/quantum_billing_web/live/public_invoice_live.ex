@@ -51,6 +51,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
         {:ok,
          socket
          |> assign(:page_title, "Tax Invoice #{invoice.invoice_number}")
+         |> assign(:noindex, true)
          |> assign(:payment_error, nil)
          |> assign(:invoice, invoice)
          |> assign(:business, business)
