@@ -36,6 +36,8 @@ defmodule QuantumBilling.ErrorMessages do
     not_enabled: "This feature is turned off in Settings.",
     unavailable: "The service is not available right now. Try again shortly.",
     timeout: "The service did not answer in time. Try again.",
+    no_renderer:
+      "PDF export is not available on this server. Use your browser's Print option to save as PDF.",
     closed: "The connection closed before the work finished. Try again.",
     in_use: "It is still in use, so it cannot be removed.",
     not_in_bin: "That item is no longer in the Bin.",

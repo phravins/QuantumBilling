@@ -50,6 +50,7 @@ defmodule QuantumBilling.ErrorMessagesTest do
       assert ErrorMessages.text(:not_found) == "That record no longer exists."
       assert ErrorMessages.text(:in_use) =~ "still in use"
       assert ErrorMessages.text(:timeout) =~ "did not answer in time"
+      assert ErrorMessages.text(:no_renderer) =~ "PDF export is not available"
     end
 
     test "a sentence is passed through" do
