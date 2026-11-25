@@ -2,7 +2,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDFTest do
   @moduledoc """
   What comes out of the renderer, when there is a browser here to run it.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias QuantumBillingWeb.InvoiceDoc.PDF
 
@@ -21,6 +21,70 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDFTest do
         :ok
       else
         {:ok, skip: true}
+      end
+    end
+
+    test "kills the browser process and cleans temporary files on timeout" do
+      timeout_binary =
+        System.find_executable("timeout") || System.find_executable("gtimeout")
+
+      if timeout_binary do
+        directory =
+          Path.join(System.tmp_dir!(), "qb-pdf-test-#{System.unique_integer([:positive])}")
+
+        File.mkdir_p!(directory)
+
+        script = Path.join(directory, "fake-chrome")
+        pid_file = Path.join(directory, "child.pid")
+
+        File.write!(script, """
+        #!/bin/sh
+        sleep 30 &
+        echo $! > "$FAKE_CHROME_PID_FILE"
+        wait
+        """)
+
+        File.chmod!(script, 0o755)
+
+        old_chrome = System.get_env("PDF_CHROME_PATH")
+        old_pid_file = System.get_env("FAKE_CHROME_PID_FILE")
+
+        System.put_env("PDF_CHROME_PATH", script)
+        System.put_env("FAKE_CHROME_PID_FILE", pid_file)
+
+        on_exit(fn ->
+          if old_chrome,
+            do: System.put_env("PDF_CHROME_PATH", old_chrome),
+            else: System.delete_env("PDF_CHROME_PATH")
+
+          if old_pid_file,
+            do: System.put_env("FAKE_CHROME_PID_FILE", old_pid_file),
+            else: System.delete_env("FAKE_CHROME_PID_FILE")
+
+          File.rm_rf(directory)
+        end)
+
+        before =
+          System.tmp_dir!()
+          |> Path.join("qb-pdf-*")
+          |> Path.wildcard()
+          |> MapSet.new()
+
+        assert {:error, :timeout} = PDF.render("<html></html>", timeout: 300)
+
+        pid = File.read!(pid_file) |> String.trim()
+
+        Process.sleep(1100)
+        {process, _} = System.cmd("ps", ["-p", pid, "-o", "pid="])
+        assert String.trim(process) == ""
+
+        after_dirs =
+          System.tmp_dir!()
+          |> Path.join("qb-pdf-*")
+          |> Path.wildcard()
+          |> MapSet.new()
+
+        assert after_dirs == before
       end
     end
 

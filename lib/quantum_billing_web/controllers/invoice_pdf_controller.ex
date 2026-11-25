@@ -53,6 +53,14 @@ defmodule QuantumBillingWeb.InvoicePdfController do
               content_type: "application/pdf"
             )
 
+          {:error, :busy} ->
+            conn
+            |> put_flash(
+              :error,
+              "The server is busy making other PDFs. Please try again in a few seconds."
+            )
+            |> redirect(to: ~p"/invoices/#{invoice.id}/pdf")
+
           {:error, :no_renderer} ->
             conn
             |> put_flash(
@@ -94,6 +102,14 @@ defmodule QuantumBillingWeb.InvoicePdfController do
             send_download(conn, {:binary, pdf},
               filename: "#{invoice.invoice_number || "invoice"}.pdf",
               content_type: "application/pdf"
+            )
+
+          {:error, :busy} ->
+            conn
+            |> put_resp_header("retry-after", "5")
+            |> send_resp(
+              :service_unavailable,
+              "The server is busy making other PDFs. Please try again in a few seconds."
             )
 
           {:error, _reason} ->
