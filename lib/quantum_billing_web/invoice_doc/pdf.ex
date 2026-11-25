@@ -15,8 +15,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
   @doc """
   Renders `html` to a PDF binary.
 
-  Returns `{:ok, pdf}` or `{:error, reason}`: `:no_renderer`, `:timeout` or
-  `{:exit, status, output}`. Option: `:timeout` in ms (default 20,000).
+  Returns `{:ok, pdf}` or `{:error, reason}`: `:no_renderer`, `:timeout`,
+  `:timeout_unavailable`, or `{:exit, status, output}`. Option: `:timeout` in ms (default 20,000).
   """
   def render(html, opts \\ []) when is_binary(html) do
     case executable() do
@@ -74,28 +74,38 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
       "--no-default-browser-check",
       "--virtual-time-budget=5000",
       "--user-data-dir=#{Path.join(directory, "profile")}",
-      # Both spellings: Chrome renamed the switch and ignores the old one.
       "--no-pdf-header-footer",
       "--print-to-pdf-no-header",
       "--print-to-pdf=#{output}",
       "file://" <> source
     ]
 
-    task =
-      Task.async(fn ->
-        System.cmd(binary, arguments, stderr_to_stdout: true)
-      end)
+    timeout_binary =
+      System.find_executable("timeout") || System.find_executable("gtimeout")
 
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {_output, 0}} ->
-        :ok
+    if is_nil(timeout_binary) do
+      {:error, :timeout_unavailable}
+    else
+      duration = :erlang.float_to_binary(timeout / 1000, decimals: 3) <> "s"
 
-      {:ok, {output, status}} ->
-        {:error, {:exit, status, String.slice(output, 0, 500)}}
+      {command_output, status} =
+        System.cmd(
+          timeout_binary,
+          ["--signal=TERM", "--kill-after=1s", duration, binary | arguments],
+          stderr_to_stdout: true
+        )
 
-      nil ->
-        Logger.error("[PDF] #{binary} did not finish within #{timeout}ms")
-        {:error, :timeout}
+      case status do
+        0 ->
+          :ok
+
+        status when status in [124, 137] ->
+          Logger.error("[PDF] #{binary} did not finish within #{timeout}ms")
+          {:error, :timeout}
+
+        status ->
+          {:error, {:exit, status, String.slice(command_output, 0, 500)}}
+      end
     end
   end
 
