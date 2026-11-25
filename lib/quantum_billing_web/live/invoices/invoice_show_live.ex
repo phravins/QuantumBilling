@@ -5,6 +5,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   """
   use QuantumBillingWeb, :live_view
 
+  require Ecto.Query
+
   import QuantumBillingWeb.CustomFieldComponents,
     only: [any_values?: 2, custom_details: 1, custom_inputs: 1]
 
@@ -17,7 +19,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Clients.Client
   alias QuantumBilling.Payments.QRCode
+  alias QuantumBilling.Payments.PaymentReminder
+  alias QuantumBilling.Payments.PaymentReminderNotifier
+  alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Tax
   alias QuantumBilling.Templates
@@ -45,6 +51,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:page_title, invoice.invoice_number)
          |> assign(:active_nav, :invoices)
          |> assign(:invoice, invoice)
+         |> assign(:payment_reminders, payment_reminder_history(invoice))
          # Archived too: an issued invoice keeps the values it was issued with.
          |> assign(
            :custom_definitions,
@@ -114,6 +121,57 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not queue the email: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("send_payment_reminder", _params, socket) do
+    invoice = socket.assigns.invoice
+
+    cond do
+      client_reminders_opted_out?(invoice) ->
+        {:noreply, put_flash(socket, :error, "This client has opted out of payment reminders.")}
+
+      invoice.status in ["Draft", "Paid", "Cancelled"] ->
+        {:noreply, put_flash(socket, :error, "A reminder cannot be sent for this invoice.")}
+
+      true ->
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        changeset =
+          PaymentReminder.changeset(%PaymentReminder{}, %{
+            invoice_id: invoice.id,
+            step: 999,
+            sent_at: now
+          })
+
+        case Repo.insert(changeset) do
+          {:ok, reminder} ->
+            case PaymentReminderNotifier.deliver_async(invoice, 999) do
+              {:ok, delivery} ->
+                {:noreply,
+                 socket
+                 |> put_flash(:info, "Payment reminder queued for #{delivery.to_email}.")
+                 |> assign(:payment_reminders, payment_reminder_history(invoice))}
+
+              {:error, reason} ->
+                Repo.delete(reminder)
+
+                {:noreply,
+                 put_flash(socket, :error, "Could not queue the reminder: #{inspect(reason)}")}
+            end
+
+          {:error, changeset} ->
+            if Keyword.has_key?(changeset.errors, :step) do
+              {:noreply,
+               put_flash(
+                 socket,
+                 :error,
+                 "A manual reminder has already been queued for this invoice."
+               )}
+            else
+              {:noreply, put_flash(socket, :error, "Could not record the reminder.")}
+            end
+        end
     end
   end
 
@@ -241,6 +299,25 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   end
 
   # Images are inlined, as on the PDF: an `/uploads` request after a session timeout would break.
+  defp client_reminders_opted_out?(%Invoice{client_id: nil}), do: false
+
+  defp client_reminders_opted_out?(%Invoice{client_id: client_id}) do
+    case Repo.get(Client, client_id) do
+      %Client{reminders_opt_out: true} -> true
+      _ -> false
+    end
+  end
+
+  defp payment_reminder_history(invoice) do
+    query =
+      Ecto.Query.from(r in PaymentReminder,
+        where: r.invoice_id == ^invoice.id,
+        order_by: [desc: r.sent_at]
+      )
+
+    Repo.all(query)
+  end
+
   defp inline_images(invoice, doc, logo) do
     {InvoicePdfGenerator.inline_logo(logo), Extras.build(invoice, doc, inline: true)}
   end
@@ -434,6 +511,44 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           currency={@invoice.currency}
           class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4"
         />
+      </.card>
+
+      <.card id="invoice-payment-reminders" class="mb-3">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold">Payment reminders</h2>
+            <p class="text-xs text-base-content/60">
+              Send a manual reminder and review reminders queued for this invoice.
+            </p>
+          </div>
+          <button
+            :if={@invoice.status not in ["Draft", "Paid", "Cancelled"]}
+            type="button"
+            phx-click="send_payment_reminder"
+            data-confirm="Queue a payment reminder email for this invoice?"
+            class={secondary_button_class()}
+          >
+            <.icon name="hero-envelope" class="size-4" /> Send reminder
+          </button>
+        </div>
+        <div :if={@payment_reminders == []} class="mt-3 text-xs text-base-content/60">
+          No payment reminders have been queued.
+        </div>
+        <ul :if={@payment_reminders != []} class="mt-3 divide-y divide-base-200">
+          <li
+            :for={reminder <- @payment_reminders}
+            class="flex items-center justify-between gap-3 py-2 text-sm"
+          >
+            <span>
+              {if reminder.step == 999,
+                do: "Manual reminder",
+                else: "Scheduled reminder (#{reminder.step} days)"}
+            </span>
+            <time class="text-xs text-base-content/60">
+              {Calendar.strftime(reminder.sent_at, "%d %b %Y, %I:%M %p")}
+            </time>
+          </li>
+        </ul>
       </.card>
 
       <div id="invoice-sheet-desk" class="rounded-box bg-base-200 p-3 sm:p-8">

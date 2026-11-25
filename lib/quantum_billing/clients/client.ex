@@ -76,6 +76,7 @@ defmodule QuantumBilling.Clients.Client do
     field :phone_country_code, :string, default: "+91"
     field :phone, :string
     field :email, :string
+    field :reminders_opt_out, :boolean, default: false
 
     field :billing_line1, :string
     field :billing_line2, :string
@@ -112,7 +113,7 @@ defmodule QuantumBilling.Clients.Client do
                shipping_same_as_billing shipping_line1 shipping_line2 shipping_city
                shipping_state shipping_pin
                credit_limit payment_terms_days opening_balance notes status
-               tax_number country)a
+               tax_number country reminders_opt_out)a
 
   @doc """
   Builds a client changeset. `regime` is the business's: `"gst"` or `"vat"`.

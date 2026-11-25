@@ -70,6 +70,35 @@ defmodule QuantumBilling.Workers.EmailWorkerTest do
       assert reloaded.delivered_at
     end
 
+    test "sends a payment reminder and marks its delivery sent" do
+      invoice = invoice_fixture(%{status: "E-Invoice Generated"})
+
+      {:ok, delivery} =
+        Mail.record_queued(%{
+          to_email: "client@example.com",
+          kind: "reminder",
+          subject: "Payment reminder",
+          invoice_id: invoice.id
+        })
+
+      assert :ok =
+               perform_job(
+                 %{
+                   "delivery_id" => delivery.id,
+                   "invoice_id" => invoice.id,
+                   "payment_reminder" => true,
+                   "step" => 0
+                 },
+                 1
+               )
+
+      assert_email_sent(to: [{"", "client@example.com"}])
+
+      reloaded = Mail.get_delivery(delivery.id)
+      assert reloaded.status == "sent"
+      assert reloaded.delivered_at
+    end
+
     test "discards a job whose delivery row is gone" do
       assert :discard = perform_job(%{"delivery_id" => 0, "invoice_id" => 0}, 1)
     end

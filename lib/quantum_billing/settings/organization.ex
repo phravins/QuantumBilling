@@ -79,6 +79,8 @@ defmodule QuantumBilling.Settings.Organization do
     field :notify_ewb_generated, :boolean, default: true
     field :notify_filing_reminders, :boolean, default: true
     field :reminder_lead_days, :integer, default: 7
+    field :payment_reminders_enabled, :boolean, default: false
+    field :payment_reminder_days, {:array, :integer}, default: [-3, 0, 7]
 
     field :language, :string, default: "en"
     field :rows_per_page, :integer, default: 10
@@ -141,7 +143,8 @@ defmodule QuantumBilling.Settings.Organization do
           vat_country prices_include_tax round_to_whole_units)a
 
   @notifications ~w(notify_invoice_created notify_ewb_generated
-                    notify_filing_reminders reminder_lead_days)a
+                    notify_filing_reminders reminder_lead_days
+                    payment_reminders_enabled payment_reminder_days)a
 
   @preferences ~w(language rows_per_page)a
 
@@ -226,6 +229,7 @@ defmodule QuantumBilling.Settings.Organization do
       greater_than_or_equal_to: 1,
       less_than_or_equal_to: 60
     )
+    |> validate_payment_reminder_days()
   end
 
   def changeset(organization, attrs, :preferences) do
@@ -268,6 +272,19 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_number(:session_timeout_minutes, greater_than: 0, less_than_or_equal_to: 10_080)
     |> validate_number(:audit_retention_days, greater_than: 0, less_than_or_equal_to: 3_650)
     |> validate_allowed_ips()
+  end
+
+  defp validate_payment_reminder_days(changeset) do
+    validate_change(changeset, :payment_reminder_days, fn :payment_reminder_days, days ->
+      valid? =
+        is_list(days) and days != [] and
+          length(days) == length(Enum.uniq(days)) and
+          Enum.all?(days, &(is_integer(&1) and &1 >= -30 and &1 <= 365))
+
+      if valid?,
+        do: [],
+        else: [payment_reminder_days: "must contain unique offsets from -30 to 365"]
+    end)
   end
 
   # Credentials for other systems: never rendered back into the settings page.
