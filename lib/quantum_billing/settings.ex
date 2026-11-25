@@ -73,9 +73,9 @@ defmodule QuantumBilling.Settings do
     result
   end
 
-  # Client amounts and money custom fields are minor units of the business
-  # currency, so moving between two and three decimal places (INR to KWD)
-  # would scale them by ten. Allowed while the business holds no records.
+  # Client amounts, money custom fields and their defaults are minor units of
+  # the business currency, so moving between two and three decimal places
+  # (INR to KWD) would scale them by ten. Allowed while there are none.
   defp guard_decimal_places(changeset) do
     with {:ok, label} <- Ecto.Changeset.fetch_change(changeset, :currency),
          true <- changeset.valid?,
@@ -86,7 +86,8 @@ defmodule QuantumBilling.Settings do
       Ecto.Changeset.add_error(
         changeset,
         :currency,
-        "can't move between two- and three-decimal currencies once you have clients or documents"
+        "can't move between two- and three-decimal currencies once you have clients, " <>
+          "documents or default amounts on custom fields"
       )
     else
       _same_places_or_empty -> changeset
@@ -102,7 +103,16 @@ defmodule QuantumBilling.Settings do
         QuantumBilling.Recurring.RecurringProfile
       ],
       &Repo.exists?/1
+    ) or money_defaults?()
+  end
+
+  defp money_defaults? do
+    from(d in QuantumBilling.CustomFields.FieldDefinition,
+      where: d.type == "money",
+      select: d.options
     )
+    |> Repo.all()
+    |> Enum.any?(&Map.has_key?(&1 || %{}, "default"))
   end
 
   @section_titles %{

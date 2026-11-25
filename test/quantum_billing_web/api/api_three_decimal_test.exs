@@ -11,7 +11,9 @@ defmodule QuantumBillingWeb.API.ThreeDecimalTest do
 
   alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.Businesses
+  alias QuantumBilling.Clients
   alias QuantumBilling.Currency
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices
   alias QuantumBilling.Settings
   alias QuantumBilling.TaxRates
@@ -103,13 +105,43 @@ defmodule QuantumBillingWeb.API.ThreeDecimalTest do
     assert data["amounts"]["subtotal"] + data["amounts"]["tax_total"] == 11_000
   end
 
+  test "a client says which currency its money custom fields are in", %{
+    owner: owner,
+    client: client
+  } do
+    scope =
+      Scope.put_membership(
+        Scope.for_user(owner),
+        Businesses.get_membership(owner, Businesses.default!().id)
+      )
+
+    {:ok, _} =
+      CustomFields.create_definition(scope, "client", %{"label" => "Deposit", "type" => "money"})
+
+    {:ok, client} = Clients.update_client(client, %{"custom_fields" => %{"deposit" => "5.125"}})
+
+    {raw, _key} = api_key_fixture(["clients:read"], %{owner: owner})
+
+    data =
+      raw
+      |> api_conn()
+      |> get(~p"/api/v1/clients/#{client.id}")
+      |> json_response(200)
+      |> Map.fetch!("data")
+
+    assert data["currency"] == "BHD"
+    assert data["currency_exponent"] == 3
+    assert data["custom_fields"]["deposit"] == 5_125
+  end
+
   test "the sales register CSV shows three decimals", %{conn: conn, owner: owner, client: client} do
     create_invoice(owner, client)
 
     body =
       conn
       |> log_in_user(owner)
-      |> get(~p"/reports/export?#{[report_type: "Sales Register", date_range: "This Year"]}")
+      # "All Time", so the fixed invoice date is in range whatever year it runs.
+      |> get(~p"/reports/export?#{[report_type: "Sales Register", date_range: "All Time"]}")
       |> response(200)
 
     assert body =~ "24.690"

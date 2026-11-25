@@ -16,6 +16,7 @@ defmodule QuantumBilling.ThreeDecimalCurrencyTest do
   alias QuantumBilling.Clients
   alias QuantumBilling.CreditNotes
   alias QuantumBilling.Currency
+  alias QuantumBilling.CustomFields
   alias QuantumBilling.Invoices
   alias QuantumBilling.Quotations
   alias QuantumBilling.Settings
@@ -24,6 +25,9 @@ defmodule QuantumBilling.ThreeDecimalCurrencyTest do
   alias QuantumBillingWeb.InvoicePdfGenerator
 
   @bahrain_vat "200000000000003"
+
+  @places_error "can't move between two- and three-decimal currencies once you have " <>
+                  "clients, documents or default amounts on custom fields"
 
   @client %{
     "client_type" => "Registered Business",
@@ -313,13 +317,34 @@ defmodule QuantumBilling.ThreeDecimalCurrencyTest do
         save(:tax, %{"tax_regime" => "vat", "vat_country" => "BH", "vat_number" => @bahrain_vat})
 
       assert {:error, changeset} = save(:general, general("BHD"))
-
-      assert "can't move between two- and three-decimal currencies once you have clients or documents" in errors_on(
-               changeset
-             ).currency
+      assert @places_error in errors_on(changeset).currency
 
       # The same number of decimals is still fine.
       assert {:ok, _} = save(:general, general("AED"))
+    end
+
+    test "is refused while a money custom field has a default, which would be read ten times smaller",
+         %{owner: owner} do
+      definition =
+        field_fixture(
+          "client",
+          %{"label" => "Deposit", "type" => "money", "default" => "100.00"},
+          owner
+        )
+
+      {:ok, _} =
+        save(:tax, %{"tax_regime" => "vat", "vat_country" => "BH", "vat_number" => @bahrain_vat})
+
+      assert {:error, changeset} = save(:general, general("BHD"))
+      assert @places_error in errors_on(changeset).currency
+      assert Settings.currency_code() == "INR"
+      assert CustomFields.get_definition!(definition.id).options["default"] == 10_000
+
+      # A money field without a default holds nothing to misread.
+      {:ok, _} =
+        CustomFields.update_definition(owner, definition, %{"default" => ""})
+
+      assert {:ok, _} = save(:general, general("BHD"))
     end
 
     test "a GST invoice can't be in one" do

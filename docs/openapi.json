@@ -488,6 +488,18 @@
           "status": {
             "type": "string"
           },
+          "currency": {
+            "type": "string",
+            "description": "The business currency, which money custom fields are in"
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. A money custom field of 12345 is 123.45, or 12.345 when this is 3."
+          },
           "custom_fields": {
             "$ref": "#/components/schemas/CustomFields"
           },

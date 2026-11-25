@@ -113,7 +113,7 @@ Under VAT, the India GST features are hidden from the menus and refused if reach
 
 The business currency (Settings → General) can be INR, AED, SAR, QAR, KWD, BHD, OMR, GBP, EUR, or USD. New invoices and quotations take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
 
-KWD, BHD and OMR have three decimals (1 dinar or rial = 1000 fils or baisa), so their amounts print as 12.345 and their forms accept three decimal places. They need the VAT tax regime: a GST business can't pick them, and the regime can't be switched to GST while the business bills in one. A saved invoice or quotation keeps its currency. Once the business has clients or documents, its currency can only change to one with the same number of decimals, because client balances, credit limits and money custom fields are stored in the business currency and would otherwise be misread by a factor of ten.
+KWD, BHD and OMR have three decimals (1 dinar or rial = 1000 fils or baisa), so their amounts print as 12.345 and their forms accept three decimal places. They need the VAT tax regime: a GST business can't pick them, and the regime can't be switched to GST while the business bills in one. A saved invoice or quotation keeps its currency. Once the business has clients, documents or a default amount on a money custom field, its currency can only change to one with the same number of decimals, because client balances, credit limits, money custom fields and their defaults are stored in the business currency and would otherwise be misread by a factor of ten.
 
 ### Custom fields
 

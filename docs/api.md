@@ -229,7 +229,7 @@ The calling key's `name`, `prefix`, `scopes`, `expires_at` and `created_at`.
 `currency`** — paise for INR (₹1 = 100 paise), fils for AED, pence for GBP — in
 responses and in requests alike. `11800` above is ₹118.00. KWD, BHD and OMR
 have three decimals, so 1 dinar or rial is 1000 fils or baisa and `11800` is
-11.800. Every invoice, quotation and credit note carries `currency_exponent`,
+11.800. Every invoice, quotation, credit note and client carries `currency_exponent`,
 the number of decimal places (2, or 3 for those three), so a client never has
 to know the table. Integers, so nothing is lost to floating-point rounding on a
 tax figure. The API never converts between currencies.
@@ -310,7 +310,11 @@ shows it.
 `id`, `type`, `name`, `display_name`, `legal_name`, `gstin`, `pan`,
 `tax_number`, `country`, `business_type`, `category`, `email`, `phone`,
 `billing_address`, `shipping_address` (each `{line1, line2, city, state, pin}`),
-`payment_terms_days`, `status`, `custom_fields`, `created_at`, `updated_at`.
+`payment_terms_days`, `status`, `currency`, `currency_exponent`,
+`custom_fields`, `created_at`, `updated_at`.
+
+`currency` is the business currency and `currency_exponent` its decimal places:
+a money custom field is minor units of that currency.
 
 `tax_number` is the client's VAT number and `country` its ISO-2 country code
 (`IN` by default), used by VAT businesses in place of `gstin` and `pan`.

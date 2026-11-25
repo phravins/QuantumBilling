@@ -16,7 +16,7 @@ defmodule QuantumBillingWeb.API.LeakTest do
                    remarks terms custom_fields created_at updated_at)
   @client_keys ~w(id type name display_name legal_name gstin pan tax_number country business_type
                   category email phone billing_address shipping_address payment_terms_days status
-                  custom_fields created_at updated_at)
+                  currency currency_exponent custom_fields created_at updated_at)
   @bill_keys ~w(id number date valid_until status distance_km mode_of_transport vehicle_number
                 transporter_id transporter_name cancelled_at cancellation_reason invoice
                 custom_fields created_at updated_at)
