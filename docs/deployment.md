@@ -204,6 +204,29 @@ The release listens on all interfaces, so the firewall must keep `PORT` closed t
 - replace `X-Forwarded-For` with the peer address;
 - pass the websocket upgrade.
 
+### Reverse proxy (Caddy)
+
+```caddy
+billing.example.com {
+  reverse_proxy 127.0.0.1:4000
+}
+```
+
+Caddy automatically terminates TLS, forwards `X-Forwarded-For` and `X-Forwarded-Proto`, and handles websocket upgrades. Set `TRUSTED_PROXIES=127.0.0.1` in QuantumBilling's environment when Caddy runs on the same host.
+
+### Behind Coolify / PaaS (Traefik)
+
+When running behind Coolify or a PaaS container proxy (like Traefik):
+1. Find the proxy container's address on the Docker network:
+   ```bash
+   docker inspect coolify-proxy --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{"\n"}}{{end}}'
+   ```
+2. Configure `TRUSTED_PROXIES` in your environment with the proxy IP or the network CIDR (recommended, since container IPs change on recreation):
+   ```dotenv
+   TRUSTED_PROXIES=172.16.0.0/12
+   ```
+   QuantumBilling automatically unwraps dual-stack IPv4-mapped addresses (e.g. `::ffff:172.19.0.2` → `172.19.0.2`), verifies trusted proxy hops, and records the genuine client IP in the audit log and rate limiters.
+
 ## Versions and upgrades
 
 | What | Current | Where it is set |

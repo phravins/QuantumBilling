@@ -98,4 +98,54 @@ defmodule QuantumBillingWeb.ClientIPTest do
       refute ClientIP.allowed?("10.0.0.1", [])
     end
   end
+
+  describe "to_string_ip/1" do
+    test "formats standard IPv4 and IPv6 addresses" do
+      assert ClientIP.to_string_ip({192, 168, 1, 1}) == "192.168.1.1"
+      assert ClientIP.to_string_ip({0, 0, 0, 0, 0, 0, 0, 1}) == "::1"
+    end
+
+    test "unwraps IPv4-mapped IPv6 tuple to standard IPv4 string" do
+      # Dual-stack listener reports {0, 0, 0, 0, 0, 0xFFFF, 0xAC13, 0x0002} for 172.19.0.2
+      mapped_tuple = {0, 0, 0, 0, 0, 0xFFFF, 0xAC13, 0x0002}
+      assert ClientIP.to_string_ip(mapped_tuple) == "172.19.0.2"
+    end
+
+    test "unwraps IPv4-mapped IPv6 string representation" do
+      assert ClientIP.to_string_ip("::ffff:172.19.0.2") == "172.19.0.2"
+    end
+  end
+
+  describe "unwrapped client_ip_tuple and proxy warning" do
+    test "client_ip/1 and client_ip_tuple/1 unwrap IPv4-mapped peer" do
+      mapped_conn = conn({0, 0, 0, 0, 0, 0xFFFF, 0xAC13, 0x0002})
+      assert ClientIP.client_ip(mapped_conn) == "172.19.0.2"
+      assert ClientIP.client_ip_tuple(mapped_conn) == {172, 19, 0, 2}
+    end
+
+    test "trusted proxy matches IPv4-mapped peer and resolves client IP" do
+      Application.put_env(:quantum_billing, :trusted_proxies, ["172.16.0.0/12"])
+      mapped_proxy_conn = conn({0, 0, 0, 0, 0, 0xFFFF, 0xAC13, 0x0002}, "203.0.113.195")
+
+      assert ClientIP.client_ip(mapped_proxy_conn) == "203.0.113.195"
+      assert ClientIP.client_ip_tuple(mapped_proxy_conn) == {203, 0, 113, 195}
+    end
+
+    test "logs one-time warning when forwarded header arrives from private network without TRUSTED_PROXIES" do
+      ClientIP.reset_warning_state!()
+      Application.put_env(:quantum_billing, :trusted_proxies, [])
+
+      import ExUnit.CaptureLog
+
+      log =
+        capture_log(fn ->
+          ClientIP.client_ip(conn({172, 19, 0, 2}, "203.0.113.195"))
+          # Second request must not re-emit the warning
+          ClientIP.client_ip(conn({172, 19, 0, 2}, "203.0.113.195"))
+        end)
+
+      assert log =~ "[security] Requests are arriving through a proxy (peer 172.19.0.2 sends x-forwarded-for)"
+      assert log =~ "TRUSTED_PROXIES is empty"
+    end
+  end
 end
