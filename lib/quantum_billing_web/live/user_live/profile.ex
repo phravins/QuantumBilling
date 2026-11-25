@@ -123,37 +123,45 @@ defmodule QuantumBillingWeb.UserLive.Profile do
             </div>
 
             <div class="absolute right-3 top-3 sm:static sm:pb-1">
-              <div class="dropdown dropdown-end">
-                <div
-                  id="profile-menu"
-                  tabindex="0"
-                  role="button"
-                  class={[row_action_class(), "size-9"]}
-                  aria-label="Profile options"
-                >
+              <.action_menu
+                id="profile-menu"
+                label="Profile options"
+                trigger_class={[row_action_class(), "size-9"]}
+                menu_class="z-20 mt-1 w-56 text-sm"
+              >
+                <:trigger>
                   <.icon name="hero-ellipsis-horizontal" class="size-5" />
-                </div>
-                <ul
-                  tabindex="0"
-                  class="dropdown-content menu z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
-                >
-                  <li>
-                    <button id="profile-menu-shuffle" type="button" phx-click="shuffle_banner">
-                      <.icon name="hero-sparkles" class="size-4" /> New banner scene
-                    </button>
-                  </li>
-                  <li>
-                    <.link navigate={~p"/users/settings"}>
-                      <.icon name="hero-pencil-square" class="size-4" /> Edit profile
-                    </.link>
-                  </li>
-                  <li>
-                    <.link navigate={~p"/users/settings?#{[tab: :password]}"}>
-                      <.icon name="hero-lock-closed" class="size-4" /> Password &amp; security
-                    </.link>
-                  </li>
-                </ul>
-              </div>
+                </:trigger>
+                <li>
+                  <button
+                    id="profile-menu-shuffle"
+                    type="button"
+                    role="menuitem"
+                    class="flex w-full items-center gap-2 rounded-field px-3 py-2 text-left hover:bg-base-200"
+                    phx-click="shuffle_banner"
+                  >
+                    <.icon name="hero-sparkles" class="size-4" /> New banner scene
+                  </button>
+                </li>
+                <li>
+                  <.link
+                    role="menuitem"
+                    class="flex items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                    navigate={~p"/users/settings"}
+                  >
+                    <.icon name="hero-pencil-square" class="size-4" /> Edit profile
+                  </.link>
+                </li>
+                <li>
+                  <.link
+                    role="menuitem"
+                    class="flex items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                    navigate={~p"/users/settings?#{[tab: :password]}"}
+                  >
+                    <.icon name="hero-lock-closed" class="size-4" /> Password &amp; security
+                  </.link>
+                </li>
+              </.action_menu>
             </div>
           </div>
         </div>

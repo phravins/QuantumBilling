@@ -430,21 +430,28 @@ defmodule QuantumBillingWeb.ComplianceLive do
           <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
 
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class={secondary_button_class()}>
+            <.action_menu
+              id="compliance-status-filter"
+              label="Filter compliance tasks by status"
+              trigger_class={secondary_button_class()}
+              menu_class="w-56"
+            >
+              <:trigger>
                 <.icon name="hero-funnel" class="size-4" /> {@status_filter}
                 <.icon name="hero-chevron-down" class="size-4" />
-              </div>
-
-              <ul
-                tabindex="0"
-                class="dropdown-content menu z-30 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-              >
-                <li :for={status <- Compliance.statuses()}>
-                  <a phx-click="filter_status" phx-value-status={status}>{status}</a>
-                </li>
-              </ul>
-            </div>
+              </:trigger>
+              <li :for={status <- Compliance.statuses()}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="w-full rounded-field px-3 py-2 text-left hover:bg-base-200"
+                  phx-click="filter_status"
+                  phx-value-status={status}
+                >
+                  {status}
+                </button>
+              </li>
+            </.action_menu>
           </div>
           <.tabs categories={Compliance.category_tabs(@obligations)} active={@category} />
 

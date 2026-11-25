@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
 
   import QuantumBillingWeb.SharedComponents,
     only: [
+      action_menu: 1,
       filter_button_class: 0,
       form_input_class: 0,
       form_select_class: 0,
@@ -492,20 +493,18 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
   def custom_filters(assigns) do
     ~H"""
     <div :if={@definitions != []} id={@id} class="contents">
-      <div
+      <.action_menu
         :for={definition <- @definitions}
         id={"#{@id}-#{definition.key}"}
-        class="dropdown dropdown-end"
+        label={"Filter by #{definition.label}"}
+        trigger_class={[
+          filter_button_class(),
+          Map.has_key?(@filters, definition.key) &&
+            "border-primary/40 bg-primary/5 text-base-content"
+        ]}
+        menu_class="z-10 mt-2 max-h-72 w-56 overflow-y-auto"
       >
-        <div
-          tabindex="0"
-          role="button"
-          class={[
-            filter_button_class(),
-            Map.has_key?(@filters, definition.key) &&
-              "border-primary/40 bg-primary/5 text-base-content"
-          ]}
-        >
+        <:trigger>
           <.icon name="hero-adjustments-horizontal" class="size-3.5" />
           <span class="max-w-40 truncate">
             {definition.label}<span :if={Map.has_key?(@filters, definition.key)}>: {filter_label(
@@ -514,25 +513,24 @@ defmodule QuantumBillingWeb.CustomFieldComponents do
             )}</span>
           </span>
           <.icon name="hero-chevron-down" class="size-3.5" />
-        </div>
-
-        <ul
-          tabindex="0"
-          class="dropdown-content menu z-10 mt-2 max-h-72 w-56 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-        >
-          <li :for={{label, value} <- filter_options(definition)}>
-            <a
-              id={"#{@id}-#{definition.key}-#{if value == "", do: "any", else: value}"}
-              phx-click={@event}
-              phx-value-key={definition.key}
-              phx-value-value={value}
-              class={Map.get(@filters, definition.key, "") == value && "menu-active"}
-            >
-              {label}
-            </a>
-          </li>
-        </ul>
-      </div>
+        </:trigger>
+        <li :for={{label, value} <- filter_options(definition)}>
+          <button
+            id={"#{@id}-#{definition.key}-#{if value == "", do: "any", else: value}"}
+            type="button"
+            role="menuitem"
+            phx-click={@event}
+            phx-value-key={definition.key}
+            phx-value-value={value}
+            class={[
+              "w-full rounded-field px-3 py-2 text-left hover:bg-base-200",
+              Map.get(@filters, definition.key, "") == value && "bg-base-200"
+            ]}
+          >
+            {label}
+          </button>
+        </li>
+      </.action_menu>
     </div>
     """
   end

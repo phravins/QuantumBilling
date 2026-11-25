@@ -260,21 +260,28 @@ defmodule QuantumBillingWeb.EWayBillsLive do
         </form>
 
         <div class="flex items-center gap-2">
-          <div class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class={filter_button_class()}>
+          <.action_menu
+            id="e-way-bill-status-filter"
+            label="Filter e-way bills by status"
+            trigger_class={filter_button_class()}
+            menu_class="z-10 mt-2 w-56"
+          >
+            <:trigger>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
-            </div>
-
-            <ul
-              tabindex="0"
-              class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-            >
-              <li :for={s <- @status_options}>
-                <a phx-click="filter_status" phx-value-status={s}>{s}</a>
-              </li>
-            </ul>
-          </div>
+            </:trigger>
+            <li :for={s <- @status_options}>
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-field px-3 py-2 text-left hover:bg-base-200"
+                phx-click="filter_status"
+                phx-value-status={s}
+              >
+                {s}
+              </button>
+            </li>
+          </.action_menu>
 
           <%!-- Carries the current filters so the export matches the table. --%>
           <.link

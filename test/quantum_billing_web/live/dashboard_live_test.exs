@@ -38,6 +38,12 @@ defmodule QuantumBillingWeb.DashboardLiveTest do
     assert has_element?(view, "#dashboard-tax-summary")
     assert has_element?(view, "#dashboard-top-clients")
     assert has_element?(view, "#dashboard-export")
+
+    assert has_element?(
+             view,
+             ~s(#dashboard-export-trigger[aria-haspopup="menu"][aria-expanded="false"])
+           )
+
     assert has_element?(view, ~s(#export-tax-summary[href^="/reports/export"]))
     assert has_element?(view, ~s(#export-sales-register[href*="Sales+Register"]))
     assert html =~ "Compliance Calendar"

@@ -240,21 +240,28 @@ defmodule QuantumBillingWeb.ClientsLive do
             filters={@custom_filter}
           />
 
-          <div class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class={filter_button_class()}>
+          <.action_menu
+            id="client-status-filter"
+            label="Filter clients by status"
+            trigger_class={filter_button_class()}
+            menu_class="w-56"
+          >
+            <:trigger>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
-            </div>
-
-            <ul
-              tabindex="0"
-              class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-            >
-              <li :for={s <- @status_options}>
-                <a phx-click="filter_status" phx-value-status={s}>{s}</a>
-              </li>
-            </ul>
-          </div>
+            </:trigger>
+            <li :for={s <- @status_options}>
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-field px-3 py-2 text-left hover:bg-base-200"
+                phx-click="filter_status"
+                phx-value-status={s}
+              >
+                {s}
+              </button>
+            </li>
+          </.action_menu>
 
           <.link
             id="clients-export"
@@ -393,65 +400,65 @@ defmodule QuantumBillingWeb.ClientsLive do
                         <.icon name="hero-eye" class="size-4" />
                       </.link>
 
-                      <%!-- Opens upward on the lower rows so the menu stays inside the card. --%>
-                      <div class={[
-                        "dropdown dropdown-end",
-                        index >= div(length(@rows), 2) && "dropdown-top"
-                      ]}>
-                        <div
-                          tabindex="0"
-                          role="button"
-                          class={row_action_class()}
-                          aria-label={"More actions for #{row.name}"}
-                        >
+                      <.action_menu
+                        id={"client-row-actions-#{row.id}"}
+                        label={"More actions for #{row.name}"}
+                        trigger_class={row_action_class()}
+                        menu_class="w-52"
+                      >
+                        <:trigger>
                           <.icon name="hero-ellipsis-vertical" class="size-4" />
-                        </div>
-
-                        <ul
-                          tabindex="0"
-                          class="dropdown-content menu z-20 w-52 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-                        >
-                          <li>
-                            <.link navigate={~p"/clients/#{row.id}/edit"}>
-                              <.icon name="hero-pencil-square" class="size-4" /> Edit client
-                            </.link>
-                          </li>
-
-                          <li>
-                            <.link navigate={~p"/invoices?q=#{row.name}"}>
-                              <.icon name="hero-document-text" class="size-4" /> View invoices
-                            </.link>
-                          </li>
-
-                          <li>
-                            <.link navigate={~p"/invoices/new"}>
-                              <.icon name="hero-plus" class="size-4" /> New invoice
-                            </.link>
-                          </li>
-
-                          <li class="menu-title px-3 pt-2 text-xs">Status</li>
-
-                          <li :for={status <- Clients.statuses()}>
-                            <button
-                              type="button"
-                              phx-click="set_status"
-                              phx-value-id={row.id}
-                              phx-value-status={status}
-                              disabled={row.status == status}
-                              class={row.status == status && "text-base-content/45"}
-                            >
-                              <.icon
-                                name={
-                                  if row.status == status,
-                                    do: "hero-check-circle",
-                                    else: "hero-arrow-right-circle"
-                                }
-                                class="size-4"
-                              /> {status}
-                            </button>
-                          </li>
-                        </ul>
-                      </div>
+                        </:trigger>
+                        <li>
+                          <.link
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            navigate={~p"/clients/#{row.id}/edit"}
+                          >
+                            <.icon name="hero-pencil-square" class="size-4" /> Edit client
+                          </.link>
+                        </li>
+                        <li>
+                          <.link
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            navigate={~p"/invoices?q=#{row.name}"}
+                          >
+                            <.icon name="hero-document-text" class="size-4" /> View invoices
+                          </.link>
+                        </li>
+                        <li>
+                          <.link
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            navigate={~p"/invoices/new"}
+                          >
+                            <.icon name="hero-plus" class="size-4" /> New invoice
+                          </.link>
+                        </li>
+                        <li class="px-3 pt-2 text-xs font-semibold text-base-content/60">Status</li>
+                        <li :for={status <- Clients.statuses()}>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            phx-click="set_status"
+                            phx-value-id={row.id}
+                            phx-value-status={status}
+                            disabled={row.status == status}
+                            class={row.status == status && "text-base-content/45"}
+                          >
+                            <.icon
+                              name={
+                                if row.status == status,
+                                  do: "hero-check-circle",
+                                  else: "hero-arrow-right-circle"
+                              }
+                              class="size-4"
+                            /> {status}
+                          </button>
+                        </li>
+                      </.action_menu>
 
                       <button
                         type="button"
