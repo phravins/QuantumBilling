@@ -41,6 +41,15 @@ defmodule QuantumBilling.AuditChangesTest do
       assert Audit.changes(changeset, summarize: [:name], skip: [:email]) ==
                %{"name" => %{"changed" => true}}
     end
+
+    test "masks sensitive fields like bank_account_number" do
+      org = %Settings.Organization{bank_account_number: "1234567890"}
+      changeset = Ecto.Changeset.change(org, bank_account_number: "9876543210")
+
+      assert Audit.changes(changeset) == %{
+               "bank_account_number" => %{"from" => "••••7890", "to" => "••••3210"}
+             }
+    end
   end
 
   describe "edits through the contexts" do
