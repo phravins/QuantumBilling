@@ -149,7 +149,7 @@ defmodule QuantumBillingWeb.HsnFinderLive do
               />
             </div>
 
-            <button type="submit" class={action_button_class()}>
+            <button type="submit" phx-disable-with="Searching…" class={action_button_class()}>
               <.icon name="hero-magnifying-glass" class="size-4" /> Search
             </button>
           </form>

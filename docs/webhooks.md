@@ -38,6 +38,12 @@ was when the event was queued.
 | `e_way_bill.generated` | `e_way_bill` | An e-way bill is generated |
 | `e_way_bill.cancelled` | `e_way_bill` | An e-way bill is cancelled |
 | `credit_note.created` | `credit_note` | A credit or debit note is raised |
+| `quotation.created` | `quotation` | A quotation is created (in the app or by the API) |
+| `quotation.updated` | `quotation` | A quotation is edited |
+| `quotation.sent` | `quotation` | A Draft is marked Sent, by the button or by emailing it |
+| `quotation.accepted` | `quotation` | A quotation is accepted, in the app, by the API, or by the client on its link |
+| `quotation.declined` | `quotation` | A quotation is declined, in the same ways |
+| `quotation.converted` | `quotation` | An invoice is saved from an accepted quotation; `invoice.created` is sent for the invoice too. Fetch the quotation for its `invoice_id` |
 | `webhook.test` | `endpoint` | **Send test** on the webhooks page |
 
 ## The request
@@ -142,6 +148,9 @@ its first endpoint, marked **legacy format**. It keeps receiving
 ```json
 {"id": "evt_…", "event": "invoice.paid", "payload": {"invoice_id": 42, "amount": 1180}, "sent_at": "…"}
 ```
+
+`amount` is whole units of the invoice's currency (rupees, dirhams, dinars),
+rounded down.
 
 It's still signed with `x-quantumbilling-signature: sha256=<hex>`, an
 HMAC-SHA256 of the body alone. When you're ready, update the receiver to the

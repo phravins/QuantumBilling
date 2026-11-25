@@ -2,13 +2,29 @@ defmodule QuantumBilling.ComplianceTest do
   use ExUnit.Case, async: true
 
   alias QuantumBilling.Compliance
+  alias QuantumBilling.Compliance.Filing
 
   # Every function takes the reference date, so nothing here depends on when the
-  # suite runs.
+  # suite runs. Filings are passed in, so nothing here touches the database
+  # (compliance_filings_test.exs covers the stored ones).
   @today ~D[2024-05-28]
   @gstin "27AABCU9603R1ZM"
+  @no_filings %{}
 
-  defp obligations(today \\ @today), do: Compliance.obligations(today)
+  defp obligations(today \\ @today, filings \\ @no_filings),
+    do: Compliance.obligations(today, filings)
+
+  # GSTR-1 for Apr 2024 (period 042024), due 11 May 2024.
+  defp filed_april_gstr1 do
+    %{
+      {"GSTR-1", "042024"} => %Filing{
+        type: "GSTR-1",
+        period_key: "042024",
+        filed_on: ~D[2024-05-10],
+        arn: "AA2704241234567"
+      }
+    }
+  end
 
   defp find(obligations, type, period) do
     Enum.find(obligations, &(&1.type == type and &1.period_label == period))
@@ -99,9 +115,28 @@ defmodule QuantumBilling.ComplianceTest do
       assert find(obligations(~D[2024-05-12]), "GSTR-1", "Apr 2024").status == "Overdue"
     end
 
-    test "is never Filed while there are no filing records" do
+    test "is never Filed without a filing record" do
       refute Enum.any?(obligations(), &(&1.status == "Filed"))
-      assert Enum.all?(obligations(), &(&1.filed_on == nil))
+      assert Enum.all?(obligations(), &(&1.filed_on == nil and &1.filing == nil))
+    end
+
+    test "a filing makes its return Filed with its date, not Overdue" do
+      april = find(obligations(@today, filed_april_gstr1()), "GSTR-1", "Apr 2024")
+
+      assert april.status == "Filed"
+      assert april.filed_on == ~D[2024-05-10]
+      assert april.filing.arn == "AA2704241234567"
+
+      # Without the filing the same return is past due.
+      assert find(obligations(), "GSTR-1", "Apr 2024").status == "Overdue"
+    end
+
+    test "a filing marks only its own type and period" do
+      obligations = obligations(@today, filed_april_gstr1())
+
+      assert find(obligations, "GSTR-3B", "Apr 2024").status == "Overdue"
+      assert find(obligations, "GSTR-1", "May 2024").status == "Pending"
+      assert Enum.count(obligations, &(&1.status == "Filed")) == 1
     end
   end
 
@@ -141,7 +176,7 @@ defmodule QuantumBilling.ComplianceTest do
     end
 
     test "counts out the full year: twelve of each monthly return, plus the annuals" do
-      tracked = Compliance.tracked_obligations(@today, %{gstin: @gstin})
+      tracked = Compliance.tracked_obligations(@today, %{gstin: @gstin}, @no_filings)
 
       assert length(tracked) == 26
       assert Enum.count(tracked, &(&1.type == "GSTR-1")) == 12
@@ -155,14 +190,14 @@ defmodule QuantumBilling.ComplianceTest do
       }
 
       assert "CMP-08" in Enum.map(
-               Compliance.tracked_obligations(@today, organization),
+               Compliance.tracked_obligations(@today, organization, @no_filings),
                & &1.type
              )
     end
 
     defp tracked_types(registration) do
       @today
-      |> Compliance.tracked_obligations(registration)
+      |> Compliance.tracked_obligations(registration, @no_filings)
       |> Enum.map(& &1.type)
       |> Enum.uniq()
     end
@@ -180,6 +215,11 @@ defmodule QuantumBilling.ComplianceTest do
       summary = Compliance.summary(obligations())
 
       assert_in_delta summary.filed_pct + summary.pending_pct + summary.overdue_pct, 100.0, 0.1
+    end
+
+    test "counts a filed return as filed" do
+      assert Compliance.summary(obligations()).filed == 0
+      assert Compliance.summary(obligations(@today, filed_april_gstr1())).filed == 1
     end
 
     test "an empty list gives zeros rather than dividing by zero" do
@@ -218,6 +258,12 @@ defmodule QuantumBilling.ComplianceTest do
     test "is empty when nothing is outstanding" do
       assert Compliance.upcoming([], @today) == []
     end
+
+    test "leaves a filed return out" do
+      upcoming = Compliance.upcoming(obligations(@today, filed_april_gstr1()), @today, 30)
+
+      refute Enum.any?(upcoming, &(&1.type == "GSTR-1" and &1.period_key == "042024"))
+    end
   end
 
   describe "filter/2" do
@@ -244,6 +290,13 @@ defmodule QuantumBilling.ComplianceTest do
 
       assert rows != []
       assert Enum.all?(rows, &(&1.status == "Overdue"))
+    end
+
+    test "the Filed status finds a filed return" do
+      assert Compliance.filter(obligations(), %{status: "Filed"}) == []
+
+      assert [%{type: "GSTR-1", period_key: "042024"}] =
+               Compliance.filter(obligations(@today, filed_april_gstr1()), %{status: "Filed"})
     end
 
     test "combines category and status" do

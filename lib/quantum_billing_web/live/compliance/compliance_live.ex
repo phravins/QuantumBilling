@@ -3,9 +3,10 @@ defmodule QuantumBillingWeb.ComplianceLive do
   The Compliance page: filing status for the year, obligations, what is due
   next and a month calendar.
 
-  The schedule comes from `Compliance` rules for this registration; with no
-  filings table yet, statuses come from dates. Hand-added tasks join the same
-  rows (with `:task`). `render/1` derives rows from the filter state each pass.
+  The schedule comes from `Compliance` rules for this registration. A return
+  marked filed from its detail panel is Filed; otherwise its status comes from
+  the due date. Hand-added tasks join the same rows (with `:task`). `render/1`
+  derives rows from the filter state each pass.
   """
   use QuantumBillingWeb, :live_view
 
@@ -32,7 +33,8 @@ defmodule QuantumBillingWeb.ComplianceLive do
      |> assign(:calendar_year, today.year)
      |> assign(:calendar_month, today.month)
      |> assign(:selected_date, nil)
-     |> assign(:selected, nil)}
+     |> assign(:selected, nil)
+     |> assign(:filing_form, nil)}
   end
 
   def handle_event("filter_category", %{"category" => category}, socket) do
@@ -122,11 +124,72 @@ defmodule QuantumBillingWeb.ComplianceLive do
           nil
       end
 
-    {:noreply, assign(socket, :selected, selected)}
+    {:noreply, socket |> assign(:selected, selected) |> assign(:filing_form, nil)}
   end
 
   def handle_event("close_detail", _params, socket) do
-    {:noreply, assign(socket, :selected, nil)}
+    {:noreply, socket |> assign(:selected, nil) |> assign(:filing_form, nil)}
+  end
+
+  # The return being marked is always the open detail panel's, never a param.
+  def handle_event("open_filing", _params, socket) do
+    form =
+      %{"filed_on" => Date.to_iso8601(socket.assigns.today)}
+      |> Compliance.change_filing()
+      |> to_form()
+
+    {:noreply, assign(socket, :filing_form, form)}
+  end
+
+  def handle_event("cancel_filing", _params, socket) do
+    {:noreply, assign(socket, :filing_form, nil)}
+  end
+
+  def handle_event("validate_filing", %{"filing" => params}, socket) do
+    form =
+      params
+      |> Compliance.change_filing()
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, :filing_form, form)}
+  end
+
+  def handle_event("save_filing", %{"filing" => params}, %{assigns: %{selected: %{}}} = socket) do
+    %{type: type, period_key: period_key, period_label: label} = socket.assigns.selected
+
+    case Compliance.mark_filed(socket.assigns.current_scope, type, period_key, params) do
+      {:ok, _filing} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{type} for #{label} marked as filed.")
+         |> refresh_selected()}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :filing_form, to_form(changeset))}
+
+      {:error, :unknown_obligation} ->
+        {:noreply, filing_gone(socket)}
+    end
+  end
+
+  def handle_event("undo_filing", _params, %{assigns: %{selected: %{}}} = socket) do
+    %{type: type, period_key: period_key, period_label: label} = socket.assigns.selected
+
+    case Compliance.undo_filed(socket.assigns.current_scope, type, period_key) do
+      {:ok, _filing} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{type} for #{label} is no longer marked as filed.")
+         |> refresh_selected()}
+
+      {:error, _not_found} ->
+        {:noreply, filing_gone(socket)}
+    end
+  end
+
+  def handle_event(event, _params, socket) when event in ["save_filing", "undo_filing"] do
+    {:noreply, socket}
   end
 
   # Clicking the selected day or an empty one clears the filter.
@@ -140,7 +203,11 @@ defmodule QuantumBillingWeb.ComplianceLive do
         _nothing_to_filter_by -> nil
       end
 
-    {:noreply, socket |> assign(:selected_date, selected) |> assign(:selected, nil)}
+    {:noreply,
+     socket
+     |> assign(:selected_date, selected)
+     |> assign(:selected, nil)
+     |> assign(:filing_form, nil)}
   end
 
   def handle_event("clear_day", _params, socket) do
@@ -201,6 +268,26 @@ defmodule QuantumBillingWeb.ComplianceLive do
         {:ok, _task} = action.(scope, task)
         {:noreply, socket |> assign(:selected, nil) |> load_rows()}
     end
+  end
+
+  # Reloads the rows and the open panel, so both show the new status.
+  defp refresh_selected(socket) do
+    %{type: type, due_date: due_date} = socket.assigns.selected
+    socket = socket |> assign(:filing_form, nil) |> load_rows()
+
+    selected =
+      Enum.find(
+        socket.assigns.obligations,
+        &(&1.type == type and &1.due_date == due_date and is_nil(&1[:task]))
+      )
+
+    assign(socket, :selected, selected)
+  end
+
+  defp filing_gone(socket) do
+    socket
+    |> put_flash(:error, "That return has changed. The page has been refreshed.")
+    |> refresh_selected()
   end
 
   defp task_gone(socket) do
@@ -378,7 +465,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </div>
 
           <div :if={@selected} class="mt-4">
-            <.obligation_detail obligation={@selected} />
+            <.obligation_detail obligation={@selected} filing_form={@filing_form} />
           </div>
 
           <%!-- Separate empty states: no data at all vs. a filter that excluded everything. --%>
@@ -560,6 +647,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
                       <div :if={!row[:task]} class="flex gap-1">
                         <button
+                          id={"view-#{row_id(row)}"}
                           type="button"
                           phx-click="show_detail"
                           phx-value-due={row.due_date}

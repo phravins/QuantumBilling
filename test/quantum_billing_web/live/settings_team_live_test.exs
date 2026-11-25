@@ -15,10 +15,11 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
   setup :register_and_log_in_owner
 
   describe "the sidebar" do
-    test "keeps the Settings sections open on the Team page", %{conn: conn} do
+    test "shows the settings sidebar with Team active", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/team")
 
-      assert has_element?(view, "#settings-sections-toggle[checked]")
+      assert has_element?(view, "#settings-back")
+      assert has_element?(view, ~s(#settings-link-team[aria-current="page"]))
     end
   end
 

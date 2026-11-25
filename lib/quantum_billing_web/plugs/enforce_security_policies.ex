@@ -3,7 +3,8 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
   Applies the installation's security policy to browser requests:
 
     * the IP allowlist, using `ClientIP` (so `x-forwarded-for` can't spoof it)
-    * the inactivity timeout, also checked on LiveView mount in `UserAuth`
+    * the inactivity timeout, also checked on LiveView mount in `UserAuth`;
+      each request also marks the session in use, for "one device at a time"
     * mandatory 2FA, only when an owner turns on "Enforce 2FA for everyone"
       under Settings > Security; otherwise two-factor is optional
 
@@ -78,6 +79,8 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPolicies do
         |> QuantumBillingWeb.UserAuth.log_out_user()
         |> halt()
       else
+        # Marks this device in use, for "one device at a time".
+        QuantumBilling.Accounts.touch_session(get_session(conn, :user_token))
         put_session(conn, :last_activity_at, now)
       end
     else

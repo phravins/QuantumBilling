@@ -212,12 +212,19 @@ defmodule QuantumBillingWeb.ComplianceComponents do
     """
   end
 
-  @doc "The detail panel for a row: what the obligation is, its period and due date."
+  @doc """
+  The detail panel for a row: what the obligation is, its period and due date,
+  and marking it filed (or undoing that). `filing_form` is set while the
+  mark-as-filed form is open.
+  """
   attr :obligation, :map, required: true
+  attr :filing_form, Phoenix.HTML.Form, default: nil
 
   def obligation_detail(assigns) do
+    assigns = assign(assigns, :filing, assigns.obligation[:filing])
+
     ~H"""
-    <div class="rounded-box border border-base-300 bg-base-200/60 p-4">
+    <div id="obligation-detail" class="rounded-box border border-base-300 bg-base-200/60 p-4">
       <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold tracking-tight">
@@ -247,7 +254,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
         <div>
           <dt class="text-2xs uppercase tracking-wider text-base-content/45">Status</dt>
 
-          <dd class="mt-0.5 text-sm">{@obligation.status}</dd>
+          <dd id="obligation-detail-status" class="mt-0.5 text-sm">{@obligation.status}</dd>
         </div>
 
         <div>
@@ -261,7 +268,111 @@ defmodule QuantumBillingWeb.ComplianceComponents do
 
           <dd class="mt-0.5 text-sm">{rule(@obligation.type)}</dd>
         </div>
+
+        <div :if={@filing && @filing.arn}>
+          <dt class="text-2xs uppercase tracking-wider text-base-content/45">ARN</dt>
+
+          <dd id="obligation-detail-arn" class="mt-0.5 font-mono text-sm">{@filing.arn}</dd>
+        </div>
       </dl>
+
+      <p
+        :if={@filing && @filing.note}
+        id="obligation-detail-note"
+        class="mt-3 whitespace-pre-line text-sm text-base-content/70"
+      >
+        {@filing.note}
+      </p>
+
+      <div
+        :if={@filing}
+        class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-base-300 pt-3"
+      >
+        <p class="flex items-center gap-1.5 text-xs text-base-content/60">
+          <.icon name="hero-check-badge" class="size-4 text-emerald-500" />
+          Marked as filed. Reminders and calendar events for it have stopped.
+        </p>
+
+        <button
+          id="undo-filed-button"
+          type="button"
+          phx-click="undo_filing"
+          data-confirm={"Mark #{@obligation.type} for #{@obligation.period_label} as not filed? Its reminders start again."}
+          class={secondary_button_class()}
+        >
+          <.icon name="hero-arrow-uturn-left" class="size-4" /> Undo
+        </button>
+      </div>
+
+      <div
+        :if={is_nil(@filing) and is_nil(@filing_form)}
+        class="mt-4 flex justify-end border-t border-base-300 pt-3"
+      >
+        <button
+          id="mark-filed-button"
+          type="button"
+          phx-click="open_filing"
+          class={action_button_class()}
+        >
+          <.icon name="hero-check" class="size-4" /> Mark as filed
+        </button>
+      </div>
+
+      <.form
+        :if={is_nil(@filing) and @filing_form}
+        for={@filing_form}
+        id="filing-form"
+        phx-change="validate_filing"
+        phx-submit="save_filing"
+        class="mt-4 border-t border-base-300 pt-3 motion-safe:animate-[qb-rise_180ms_ease-out]"
+      >
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <.input
+            field={@filing_form[:filed_on]}
+            type="date"
+            label="Filed on"
+            max={Date.to_iso8601(Date.utc_today())}
+            required
+          />
+          <.input
+            field={@filing_form[:arn]}
+            type="text"
+            label="ARN (optional)"
+            placeholder="AA0705241234567"
+            maxlength="20"
+            autocomplete="off"
+            phx-debounce="300"
+            phx-mounted={JS.focus()}
+          />
+        </div>
+
+        <.input
+          field={@filing_form[:note]}
+          type="textarea"
+          label="Note (optional)"
+          maxlength="500"
+          phx-debounce="300"
+        />
+
+        <div class="mt-3 flex justify-end gap-2">
+          <button
+            id="filing-cancel"
+            type="button"
+            phx-click="cancel_filing"
+            class={secondary_button_class()}
+          >
+            Cancel
+          </button>
+          <button
+            id="filing-save"
+            type="submit"
+            phx-disable-with="Saving…"
+            class={action_button_class()}
+          >
+            Save
+          </button>
+        </div>
+      </.form>
     </div>
     """
   end

@@ -1,6 +1,7 @@
 defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
   use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Compliance.Filing
   alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Notifications
   alias QuantumBilling.Settings
@@ -28,6 +29,13 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorkerTest do
                "GSTR-3B for Apr 2024 is overdue",
                "GSTR-1 for Apr 2024 is overdue"
              ]
+    end
+
+    test "a return marked filed is not reminded about" do
+      Repo.insert!(%Filing{type: "GSTR-3B", period_key: "042024", filed_on: ~D[2024-05-19]})
+
+      assert ComplianceReminderWorker.remind(registration(), @today) == 1
+      assert titles() == ["GSTR-1 for Apr 2024 is overdue"]
     end
 
     test "an overdue return is an error, not a warning" do

@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "QuantumBilling API",
-    "version": "1.2.0",
-    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is an integer in the invoice currency's minor unit (paise for INR, fils for AED, pence for GBP, cents for EUR; 100 = one unit)."
+    "version": "1.4.0",
+    "description": "Server-to-server API for one business's books. See docs/api.md for authentication, errors, idempotency and paging, and docs/webhooks.md for events. Every amount is an integer in the currency's minor unit (paise for INR, fils for AED and KWD, baisa for OMR, pence for GBP, cents for EUR). `currency_exponent` on an invoice, quotation or note gives the decimal places: 2 (100 = one unit), or 3 for KWD, BHD and OMR (1000 = one unit). Amounts sent in a request use the same units as the document they belong to; for a new invoice or quotation that is the business currency."
   },
   "servers": [
     {
@@ -99,7 +99,7 @@
       },
       "CustomFields": {
         "type": "object",
-        "description": "The business's own fields marked \"Include in API\" in Settings › Data model, keyed by field key. Values: text, long_text, email, phone and url are strings; number is a decimal string; money is integer minor units of the currency (paise for INR); date is YYYY-MM-DD; boolean is true or false; select is a choice id; multi_select is a list of choice ids. When writing, a select or multi_select also accepts choice labels (any case), null clears a value, and any key not marked for the API is refused.",
+        "description": "The business's own fields marked \"Include in API\" in Settings › Data model, keyed by field key. Values: text, long_text, email, phone and url are strings; number is a decimal string; money is integer minor units of the record's currency (the document's, else the business currency; paise for INR); date is YYYY-MM-DD; boolean is true or false; select is a choice id; multi_select is a list of choice ids. When writing, a select or multi_select also accepts choice labels (any case), null clears a value, and any key not marked for the API is refused.",
         "additionalProperties": true
       },
       "Invoice": {
@@ -138,6 +138,14 @@
           "currency": {
             "type": "string",
             "nullable": true
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
           },
           "tax_regime": {
             "type": "string",
@@ -218,23 +226,23 @@
             "properties": {
               "taxable_value": {
                 "type": "integer",
-                "description": "taxable_value (minor units; 100 = one unit)"
+                "description": "taxable_value (minor units; 10^currency_exponent = one unit)"
               },
               "cgst": {
                 "type": "integer",
-                "description": "cgst (minor units; 100 = one unit)"
+                "description": "cgst (minor units; 10^currency_exponent = one unit)"
               },
               "sgst": {
                 "type": "integer",
-                "description": "sgst (minor units; 100 = one unit)"
+                "description": "sgst (minor units; 10^currency_exponent = one unit)"
               },
               "igst": {
                 "type": "integer",
-                "description": "igst (minor units; 100 = one unit)"
+                "description": "igst (minor units; 10^currency_exponent = one unit)"
               },
               "cess": {
                 "type": "integer",
-                "description": "cess (minor units; 100 = one unit)"
+                "description": "cess (minor units; 10^currency_exponent = one unit)"
               },
               "vat": {
                 "type": "integer",
@@ -242,11 +250,11 @@
               },
               "round_off": {
                 "type": "integer",
-                "description": "round_off (minor units; 100 = one unit)"
+                "description": "round_off (minor units; 10^currency_exponent = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (minor units; 100 = one unit)"
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
               }
             },
             "additionalProperties": false
@@ -328,7 +336,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
@@ -356,7 +364,7 @@
                 },
                 "amount": {
                   "type": "integer",
-                  "description": "Line amount (minor units; 100 = one unit)"
+                  "description": "Line amount (minor units; 10^currency_exponent = one unit)"
                 },
                 "custom_fields": {
                   "$ref": "#/components/schemas/CustomFields"
@@ -480,6 +488,18 @@
           "status": {
             "type": "string"
           },
+          "currency": {
+            "type": "string",
+            "description": "The business currency, which money custom fields are in"
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. A money custom field of 12345 is 123.45, or 12.345 when this is 3."
+          },
           "custom_fields": {
             "$ref": "#/components/schemas/CustomFields"
           },
@@ -583,7 +603,13 @@
             "type": "integer"
           },
           "number": {
-            "type": "string"
+            "type": "string",
+            "description": "From the business's credit (CN) or debit (DN) note series: at most 16 letters, digits, - and /, e.g. CN-0001."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The note's date where the business is (IST for an Indian business). GSTR-1 reports the note in this date's month."
           },
           "type": {
             "type": "string",
@@ -599,20 +625,32 @@
           "status": {
             "type": "string"
           },
+          "currency": {
+            "type": "string",
+            "description": "The invoice's currency, which the note's amounts are in"
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
+          },
           "amounts": {
             "type": "object",
             "properties": {
               "subtotal": {
                 "type": "integer",
-                "description": "subtotal (minor units; 100 = one unit)"
+                "description": "subtotal (minor units; 10^currency_exponent = one unit)"
               },
               "tax_total": {
                 "type": "integer",
-                "description": "tax_total (minor units; 100 = one unit)"
+                "description": "tax_total (minor units; 10^currency_exponent = one unit)"
               },
               "grand_total": {
                 "type": "integer",
-                "description": "grand_total (minor units; 100 = one unit)"
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
               }
             },
             "additionalProperties": false
@@ -707,7 +745,7 @@
                 },
                 "rate": {
                   "type": "integer",
-                  "description": "Rate (minor units; 100 = one unit)"
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
                 },
                 "tax_rate": {
                   "type": "integer",
@@ -858,7 +896,7 @@
           },
           "amount": {
             "type": "integer",
-            "description": "Must cover the grand total (minor units; 100 = one unit)"
+            "description": "Must cover the grand total (minor units; 10^currency_exponent = one unit)"
           }
         },
         "additionalProperties": false,
@@ -895,15 +933,15 @@
           },
           "subtotal": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           },
           "tax_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           },
           "grand_total": {
             "type": "integer",
-            "description": "Defaults to the invoice's (minor units; 100 = one unit)"
+            "description": "Defaults to the invoice's (minor units; 10^currency_exponent = one unit)"
           }
         },
         "additionalProperties": false,
@@ -935,6 +973,358 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Quotation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "number": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Draft",
+              "Sent",
+              "Accepted",
+              "Declined",
+              "Expired"
+            ],
+            "description": "Expired: Draft or Sent past valid_until. Moving valid_until later revives it"
+          },
+          "quotation_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date",
+            "description": "The last day the quotation can be accepted"
+          },
+          "place_of_supply": {
+            "type": "string",
+            "nullable": true,
+            "description": "GST: the state supplied to. VAT: usually null"
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "currency_exponent": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "Decimal places of `currency`: 3 for KWD, BHD and OMR, else 2. An amount of 12345 is 123.45, or 12.345 when this is 3."
+          },
+          "tax_regime": {
+            "type": "string",
+            "enum": [
+              "gst",
+              "vat"
+            ],
+            "description": "The regime the quotation was raised under"
+          },
+          "reverse_charge": {
+            "type": "boolean",
+            "description": "VAT only: the customer accounts for the VAT, so none is charged"
+          },
+          "tax_breakdown": {
+            "type": "array",
+            "description": "VAT only: one row per rate used. Empty for GST",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "reduced",
+                    "zero",
+                    "exempt",
+                    "reverse_charge",
+                    "out_of_scope"
+                  ]
+                },
+                "rate_bp": {
+                  "type": "integer",
+                  "description": "Basis points (750 = 7.5%)"
+                },
+                "taxable": {
+                  "type": "integer",
+                  "description": "Taxable amount (minor units)"
+                },
+                "tax": {
+                  "type": "integer",
+                  "description": "VAT at this rate (minor units)"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "client": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "nullable": true
+              },
+              "name": {
+                "type": "string"
+              },
+              "gstin": {
+                "type": "string",
+                "nullable": true
+              },
+              "tax_number": {
+                "type": "string",
+                "nullable": true,
+                "description": "VAT: the customer's VAT number or TRN"
+              },
+              "state": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "amounts": {
+            "type": "object",
+            "properties": {
+              "taxable_value": {
+                "type": "integer",
+                "description": "taxable_value (minor units; 10^currency_exponent = one unit)"
+              },
+              "cgst": {
+                "type": "integer",
+                "description": "cgst (minor units; 10^currency_exponent = one unit)"
+              },
+              "sgst": {
+                "type": "integer",
+                "description": "sgst (minor units; 10^currency_exponent = one unit)"
+              },
+              "igst": {
+                "type": "integer",
+                "description": "igst (minor units; 10^currency_exponent = one unit)"
+              },
+              "cess": {
+                "type": "integer",
+                "description": "cess (minor units; 10^currency_exponent = one unit)"
+              },
+              "vat": {
+                "type": "integer",
+                "description": "vat (minor units; 0 on GST quotations)"
+              },
+              "round_off": {
+                "type": "integer",
+                "description": "round_off (minor units; 10^currency_exponent = one unit)"
+              },
+              "grand_total": {
+                "type": "integer",
+                "description": "grand_total (minor units; 10^currency_exponent = one unit)"
+              }
+            },
+            "additionalProperties": false
+          },
+          "invoice_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The invoice it was converted into, else null"
+          },
+          "remarks": {
+            "type": "string",
+            "nullable": true
+          },
+          "terms": {
+            "type": "string",
+            "nullable": true
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "public_url": {
+            "type": "string",
+            "description": "Only for keys with quotations:write, once the quotation has a client link (it is made when the quotation is emailed). Whoever holds it can accept or decline"
+          },
+          "items": {
+            "type": "array",
+            "description": "On single-quotation responses only",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "hsn_sac": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quantity": {
+                  "type": "string",
+                  "description": "Decimal, as a string"
+                },
+                "unit": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "rate": {
+                  "type": "integer",
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
+                },
+                "tax_rate": {
+                  "type": "integer",
+                  "description": "GST slab, percent. 0 on VAT lines"
+                },
+                "tax_rate_id": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "VAT: the business tax rate chosen"
+                },
+                "tax_rate_bp": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "VAT: the rate when saved, in basis points (750 = 7.5%)"
+                },
+                "tax_category": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "VAT: standard, reduced, zero, exempt, reverse_charge or out_of_scope"
+                },
+                "tax_name": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "VAT: the rate's name when saved"
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Line amount (minor units; 10^currency_exponent = one unit)"
+                },
+                "custom_fields": {
+                  "$ref": "#/components/schemas/CustomFields"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "QuotationCreate": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer"
+          },
+          "quotation_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Defaults to today"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date",
+            "description": "Defaults to quotation_date plus the business's validity period (Settings → Numbering)"
+          },
+          "place_of_supply": {
+            "type": "string",
+            "description": "Required for GST"
+          },
+          "remarks": {
+            "type": "string"
+          },
+          "terms": {
+            "type": "string"
+          },
+          "reverse_charge": {
+            "type": "boolean",
+            "description": "VAT only"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "hsn_sac": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "oneOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "rate": {
+                  "type": "integer",
+                  "description": "Rate (minor units; 10^currency_exponent = one unit)"
+                },
+                "tax_rate": {
+                  "type": "integer",
+                  "description": "GST only: slab percent"
+                },
+                "tax_rate_id": {
+                  "type": "integer",
+                  "description": "VAT only: a business tax rate id; defaults to the default rate"
+                },
+                "custom_fields": {
+                  "$ref": "#/components/schemas/CustomFields"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "description"
+              ]
+            }
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CustomFields"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "client_id",
+          "items"
+        ],
+        "description": "Created as a Draft with the next quotation number. Tax fields follow the business's regime, as for invoices. The client's details are copied from client_id."
+      },
+      "QuotationEmail": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "One address; defaults to the client's email on the quotation"
           }
         },
         "additionalProperties": false
@@ -2535,6 +2925,710 @@
             }
           }
         ]
+      }
+    },
+    "/quotations": {
+      "get": {
+        "summary": "List quotations (the Bin is left out)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Quotation"
+                      }
+                    },
+                    "meta": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/PageMeta"
+                        },
+                        {
+                          "$ref": "#/components/schemas/CursorMeta"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "paginate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cursor"
+              ]
+            },
+            "description": "Start cursor paging"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "`next_cursor` from the previous page"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Draft",
+                "Sent",
+                "Accepted",
+                "Declined",
+                "Expired"
+              ]
+            },
+            "description": "Draft and Sent leave out expired quotations; Expired lists only those"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Quotation number or client name"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create a quotation (as a Draft)",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Quotation"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing Idempotency-Key, or bad parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; see `code`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed, or Idempotency-Key reused with a different body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:write",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Unique per intended write; a retry with the same key and body replays the first response"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotationCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotations/{id}": {
+      "get": {
+        "summary": "Fetch a quotation, with items",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Quotation"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quotation (or in the Bin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/quotations/{id}/send": {
+      "post": {
+        "summary": "Email a quotation to the client",
+        "responses": {
+          "202": {
+            "description": "Queued; a Draft becomes Sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Quotation"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quotation (or in the Bin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing Idempotency-Key, or bad parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; see `code`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed, or Idempotency-Key reused with a different body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Unique per intended write; a retry with the same key and body replays the first response"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotationEmail"
+              }
+            }
+          }
+        },
+        "description": "Queues an email with the quotation's PDF attached and the client link, where it can be accepted or declined. 409 `expired` once past valid_until; 422 when there is no valid recipient."
+      }
+    },
+    "/quotations/{id}/accept": {
+      "post": {
+        "summary": "Accept a quotation",
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Quotation"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quotation (or in the Bin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing Idempotency-Key, or bad parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; see `code`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed, or Idempotency-Key reused with a different body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Unique per intended write; a retry with the same key and body replays the first response"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Draft or Sent, and not expired. Otherwise 409 `invalid_transition`. Send an empty object or no body."
+      }
+    },
+    "/quotations/{id}/decline": {
+      "post": {
+        "summary": "Decline a quotation",
+        "responses": {
+          "200": {
+            "description": "Declined",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Quotation"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quotation (or in the Bin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; see retry-after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks this scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing Idempotency-Key, or bad parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; see `code`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed, or Idempotency-Key reused with a different body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "quotations:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Unique per intended write; a retry with the same key and body replays the first response"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Draft or Sent. Otherwise 409 `invalid_transition`. Send an empty object or no body."
       }
     }
   }

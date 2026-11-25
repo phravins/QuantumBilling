@@ -3,15 +3,16 @@ defmodule QuantumBilling.Compliance do
   The GST compliance calendar and hand-made tasks.
 
   Obligations (GSTR-1, GSTR-3B, CMP-08, GSTR-9, GSTR-9C) are generated from the
-  statutory due dates, not stored. Filing records don't exist yet, so each
-  resolves to "Pending" or "Overdue". Tasks from `Compliance.Task` become rows
-  of the same shape via `task_row/2`.
+  statutory due dates, not stored. A `Compliance.Filing` row, keyed by type and
+  period, marks one "Filed"; without one it is "Pending" or "Overdue". Tasks
+  from `Compliance.Task` become rows of the same shape via `task_row/2`.
   """
   import Ecto.Query, warn: false
 
   alias QuantumBilling.Accounts.Scope
   alias QuantumBilling.Audit
   alias QuantumBilling.Calendars
+  alias QuantumBilling.Compliance.Filing
   alias QuantumBilling.Compliance.ReminderEmail
   alias QuantumBilling.Compliance.Task
   alias QuantumBilling.Notifications
@@ -55,15 +56,28 @@ defmodule QuantumBilling.Compliance do
     "FY #{from.year}-#{from.year |> Kernel.+(1) |> to_string() |> String.slice(2..3)}"
   end
 
-  @doc "Every obligation in the financial year containing `today`, by due date."
-  def obligations(today \\ Date.utc_today()) do
+  @doc """
+  Every obligation in the financial year containing `today`, by due date.
+
+  `filings` is a map from `list_filings/0`; `nil` reads it from the database
+  once for the whole list.
+  """
+  def obligations(today \\ Date.utc_today(), filings \\ nil) do
     {fy_start, _fy_end} = financial_year(today)
+    filings = filings || list_filings()
 
     (monthly_obligations(fy_start) ++
        quarterly_obligations(fy_start) ++
        annual_obligations(fy_start))
-    |> Enum.map(&resolve_status(&1, today))
+    |> Enum.map(&resolve_status(&1, today, filings))
     |> Enum.sort_by(& &1.due_date, Date)
+  end
+
+  @doc "The business's filings, keyed `{type, period_key}`."
+  def list_filings do
+    Filing
+    |> Repo.all()
+    |> Map.new(&{{&1.type, &1.period_key}, &1})
   end
 
   # Twelve periods from April, each due on a fixed day of the next month.
@@ -123,20 +137,16 @@ defmodule QuantumBilling.Compliance do
     end
   end
 
-  defp resolve_status(obligation, today) do
-    filed_on = filed_on(obligation)
+  defp resolve_status(obligation, today, filings) do
+    case Map.get(filings, {obligation.type, obligation.period_key}) do
+      %Filing{} = filing ->
+        Map.merge(obligation, %{status: "Filed", filed_on: filing.filed_on, filing: filing})
 
-    status =
-      cond do
-        filed_on != nil -> "Filed"
-        Date.compare(obligation.due_date, today) == :lt -> "Overdue"
-        true -> "Pending"
-      end
-
-    Map.merge(obligation, %{status: status, filed_on: filed_on})
+      nil ->
+        status = if Date.before?(obligation.due_date, today), do: "Overdue", else: "Pending"
+        Map.merge(obligation, %{status: status, filed_on: nil, filing: nil})
+    end
   end
-
-  defp filed_on(_obligation), do: nil
 
   @doc """
   The obligations this business tracks, based on its registration.
@@ -144,12 +154,12 @@ defmodule QuantumBilling.Compliance do
   No GSTIN, or a VAT business: none. Composition: CMP-08 and annual returns.
   Regular: GSTR-1, GSTR-3B and annual returns.
   """
-  def tracked_obligations(today \\ Date.utc_today(), registration \\ nil) do
+  def tracked_obligations(today \\ Date.utc_today(), registration \\ nil, filings \\ nil) do
     if registered?(registration) do
       composition? = composition_scheme?(registration)
 
       today
-      |> obligations()
+      |> obligations(filings)
       |> Enum.filter(&applies?(&1, composition?))
     else
       []
@@ -464,6 +474,86 @@ defmodule QuantumBilling.Compliance do
 
   defp in_business(%Scope{business: business}, fun), do: Repo.with_business(business, fun)
 
+  @doc "A form changeset for marking a return filed."
+  def change_filing(attrs \\ %{}, today \\ local_date()) do
+    Filing.changeset(%Filing{}, attrs, today)
+  end
+
+  @doc """
+  Records that the return `type` for `period_key` was filed, as any member may.
+
+  Only an obligation the calendar generates (this financial year or the last)
+  can be marked, so made-up keys are refused with `:unknown_obligation`. The
+  date may not be after today where the business is. Audited, and the
+  calendar sync drops the return's event.
+  """
+  def mark_filed(%Scope{} = scope, type, period_key, attrs) do
+    in_business(scope, fn ->
+      today = local_date()
+
+      case find_obligation(type, period_key, today) do
+        nil ->
+          {:error, :unknown_obligation}
+
+        obligation ->
+          %Filing{
+            type: obligation.type,
+            period_key: obligation.period_key,
+            user_id: scope.user.id
+          }
+          |> Filing.changeset(attrs, today)
+          |> Repo.insert()
+          |> after_filing(scope, :mark_compliance_filed, obligation)
+      end
+    end)
+  end
+
+  @doc """
+  Removes the filing for `type` and `period_key`, so the return is Pending or
+  Overdue again. Audited with what was removed.
+  """
+  def undo_filed(%Scope{} = scope, type, period_key) do
+    in_business(scope, fn ->
+      with %{} = obligation <- find_obligation(type, period_key, local_date()),
+           %Filing{} = filing <- Repo.get_by(Filing, type: type, period_key: period_key) do
+        filing
+        |> Repo.delete()
+        |> after_filing(scope, :undo_compliance_filed, obligation)
+      else
+        nil -> {:error, :not_found}
+      end
+    end)
+  end
+
+  # This year's obligations and last year's, since last year's annual returns
+  # fall due in this one.
+  defp find_obligation(type, period_key, today) when is_binary(type) and is_binary(period_key) do
+    [today, shift_months(today, -12)]
+    |> Enum.flat_map(&obligations(&1, %{}))
+    |> Enum.find(&(&1.type == type and &1.period_key == period_key))
+  end
+
+  defp find_obligation(_type, _period_key, _today), do: nil
+
+  defp after_filing({:ok, filing} = result, scope, action, obligation) do
+    Audit.log_event(action, "ComplianceFiling", filing.id,
+      user_id: scope.user.id,
+      details: %{
+        type: filing.type,
+        period: obligation.period_label,
+        period_key: filing.period_key,
+        filed_on: filing.filed_on,
+        arn: filing.arn
+      }
+    )
+
+    _ = Calendars.enqueue_sync()
+
+    result
+  end
+
+  defp after_filing(error, _scope, _action, _obligation), do: error
+
   @doc "A task as a row of the same shape as an obligation."
   def task_row(%Task{} = task, %Date{} = today) do
     %{
@@ -503,6 +593,23 @@ defmodule QuantumBilling.Compliance do
   def remind_due_tasks(%DateTime{} = now) do
     local = local_time(now)
     remind_tasks(NaiveDateTime.to_date(local), NaiveDateTime.to_time(local))
+  end
+
+  @doc """
+  Whether `number` may number an invoice, credit note or debit note under
+  Rule 46(b) and Rule 53 of the CGST Rules, as GSTR-1 and the e-invoice portal
+  check it: at most 16 characters, only letters, digits, `-` and `/`, and not
+  starting with `-`, `/` or `0`.
+  """
+  def document_number_valid?(number) when is_binary(number) do
+    String.length(number) <= 16 and number =~ ~r/^[A-Za-z1-9][A-Za-z0-9\/-]*$/
+  end
+
+  def document_number_valid?(_number), do: false
+
+  @doc "Today's date where the business is, at `now`."
+  def local_date(%DateTime{} = now \\ DateTime.utc_now(), timezone \\ nil) do
+    now |> local_time(timezone) |> NaiveDateTime.to_date()
   end
 
   @doc "`now` as wall-clock time where the business is."

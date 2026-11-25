@@ -57,6 +57,18 @@ defmodule QuantumBilling.Settings.Organization do
     field :invoice_due_days, :integer, default: 30
     field :invoice_terms, :string
 
+    # Each note type runs its own series (Rule 53), padded like invoices.
+    field :credit_note_prefix, :string, default: "CN"
+    field :credit_note_next_number, :integer, default: 1
+    field :debit_note_prefix, :string, default: "DN"
+    field :debit_note_next_number, :integer, default: 1
+
+    # Quotations run their own series too; they are not tax documents.
+    field :quotation_prefix, :string, default: "QT"
+    field :quotation_next_number, :integer, default: 1
+    # How long a new quotation stays valid, in days.
+    field :quotation_validity_days, :integer, default: 30
+
     field :ewb_transport_mode, :string, default: "Road"
     field :ewb_transporter_id, :string
     field :ewb_threshold_value, Paise, default: 5_000_000
@@ -101,6 +113,8 @@ defmodule QuantumBilling.Settings.Organization do
     # Integrations. The credentials among them are encrypted.
     field :razorpay_key_id, :string
     field :razorpay_key_secret, Encrypted.Secret, redact: true
+    # Verifies incoming Razorpay webhooks for this business only.
+    field :razorpay_webhook_secret, Encrypted.Secret, redact: true
     field :irp_username, :string
     field :irp_password, Encrypted.Secret, redact: true
     field :irp_client_id, :string
@@ -112,6 +126,7 @@ defmodule QuantumBilling.Settings.Organization do
     field :allowed_ips, :string, virtual: true
     field :session_timeout_minutes, :integer, default: 60, virtual: true
     field :enforce_2fa, :boolean, default: false, virtual: true
+    field :single_session, :boolean, default: false, virtual: true
     field :audit_retention_days, :integer, default: 90
 
     field :doc_logo_path, :string
@@ -132,7 +147,17 @@ defmodule QuantumBilling.Settings.Organization do
               state currency financial_year timezone date_format)a
 
   @invoice ~w(invoice_prefix invoice_next_number invoice_number_padding
-              invoice_due_days invoice_terms)a
+              invoice_due_days invoice_terms credit_note_prefix credit_note_next_number
+              debit_note_prefix debit_note_next_number quotation_prefix
+              quotation_next_number quotation_validity_days)a
+
+  # Each numbering series as {prefix field, next number field}.
+  @series [
+    {:invoice_prefix, :invoice_next_number},
+    {:credit_note_prefix, :credit_note_next_number},
+    {:debit_note_prefix, :debit_note_next_number},
+    {:quotation_prefix, :quotation_next_number}
+  ]
 
   @bank ~w(bank_account_name bank_name bank_account_number bank_ifsc bank_branch)a
 
@@ -153,10 +178,10 @@ defmodule QuantumBilling.Settings.Organization do
   @smtp ~w(smtp_host smtp_port smtp_username smtp_password smtp_ssl smtp_from_email smtp_from_name)a
 
   # `webhook_url` and `webhook_secret` are legacy; webhooks have their own endpoints now.
-  @integrations ~w(upi_vpa upi_payee_name razorpay_key_id razorpay_key_secret irp_username
-                   irp_password irp_client_id)a
+  @integrations ~w(upi_vpa upi_payee_name razorpay_key_id razorpay_key_secret
+                   razorpay_webhook_secret irp_username irp_password irp_client_id)a
 
-  @security ~w(allowed_ips session_timeout_minutes enforce_2fa audit_retention_days)a
+  @security ~w(allowed_ips session_timeout_minutes enforce_2fa single_session audit_retention_days)a
 
   @doc "The changeset for one Settings section."
   def changeset(organization, attrs, section)
@@ -176,6 +201,7 @@ defmodule QuantumBilling.Settings.Organization do
     |> GST.validate_gstin_matches_pan(:gstin, :pan)
     |> validate_inclusion(:state, EWayBillForm.states())
     |> validate_inclusion(:currency, @currencies)
+    |> validate_currency_regime(:currency)
     |> validate_inclusion(:date_format, @date_formats)
     |> validate_inclusion(:timezone, @timezones)
   end
@@ -193,14 +219,18 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_length(:bank_account_name, max: 120)
     |> validate_length(:bank_name, max: 120)
     |> validate_length(:bank_branch, max: 120)
-    |> validate_required([:invoice_prefix, :invoice_next_number])
-    |> validate_format(:invoice_prefix, ~r/^[A-Za-z0-9\-\/]+$/,
-      message: "may only contain letters, numbers, dashes and slashes"
-    )
-    |> validate_length(:invoice_prefix, max: 12)
-    |> validate_number(:invoice_next_number, greater_than: 0)
     |> validate_number(:invoice_number_padding, greater_than_or_equal_to: 0, less_than: 12)
     |> validate_number(:invoice_due_days, greater_than_or_equal_to: 0, less_than_or_equal_to: 365)
+    |> validate_required([:quotation_validity_days])
+    |> validate_number(:quotation_validity_days,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 365
+    )
+    |> check_constraint(:quotation_validity_days,
+      name: :organization_settings_quotation_validity_valid,
+      message: "must be between 1 and 365 days"
+    )
+    |> validate_series()
   end
 
   def changeset(organization, attrs, :e_way_bill) do
@@ -219,6 +249,7 @@ defmodule QuantumBilling.Settings.Organization do
     )
     |> validate_required([:tax_regime])
     |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> validate_currency_regime(:tax_regime)
     |> validate_vat()
   end
 
@@ -288,7 +319,12 @@ defmodule QuantumBilling.Settings.Organization do
   end
 
   # Credentials for other systems: never rendered back into the settings page.
-  @write_only ~w(smtp_password razorpay_key_secret irp_password webhook_secret)a
+  @write_only ~w(smtp_password razorpay_key_secret razorpay_webhook_secret irp_password
+                 webhook_secret)a
+
+  @doc "Whether this business has its own Razorpay webhook secret, without revealing it."
+  def razorpay_webhook_secret_set?(%__MODULE__{razorpay_webhook_secret: secret}),
+    do: is_binary(secret) and String.trim(secret) != ""
 
   @doc """
   The organisation with stored secrets blanked for display. A blank secret on save keeps the stored one.
@@ -334,6 +370,54 @@ defmodule QuantumBilling.Settings.Organization do
   end
 
   # The common mistake is entering an email address.
+  @doc """
+  A document number from its series, e.g. `document_number("CN", 7, 4)` is
+  `"CN-0007"`.
+  """
+  def document_number(prefix, number, padding) do
+    "#{prefix}-#{number |> to_string() |> String.pad_leading(padding || 0, "0")}"
+  end
+
+  # Every series must give numbers GST accepts (Rule 46(b), Rule 53). Only the
+  # next number is checked: at the usual padding it takes thousands more
+  # documents to grow a digit, and changing the prefix starts a new series.
+  defp validate_series(changeset) do
+    Enum.reduce(@series, changeset, fn {prefix, next}, changeset ->
+      changeset
+      |> validate_required([prefix, next])
+      |> validate_format(prefix, ~r/^[A-Za-z1-9][A-Za-z0-9\/-]*$/,
+        message: "must start with a letter or 1-9 and use only letters, numbers, - and /"
+      )
+      |> validate_length(prefix, max: 12)
+      |> validate_number(next, greater_than: 0)
+      |> validate_series_length(prefix, next)
+    end)
+  end
+
+  defp validate_series_length(changeset, prefix, next) do
+    if Keyword.has_key?(changeset.errors, prefix) or Keyword.has_key?(changeset.errors, next) or
+         Keyword.has_key?(changeset.errors, :invoice_number_padding) do
+      changeset
+    else
+      number =
+        document_number(
+          get_field(changeset, prefix),
+          get_field(changeset, next),
+          get_field(changeset, :invoice_number_padding)
+        )
+
+      if QuantumBilling.Compliance.document_number_valid?(number) do
+        changeset
+      else
+        add_error(
+          changeset,
+          prefix,
+          "makes numbers longer than 16 characters (#{number}); shorten the prefix or padding"
+        )
+      end
+    end
+  end
+
   defp validate_upi_vpa(changeset) do
     case get_field(changeset, :upi_vpa) do
       blank when blank in [nil, ""] ->
@@ -404,6 +488,19 @@ defmodule QuantumBilling.Settings.Organization do
       |> Tax.validate_tax_number(:vat_number, country)
     else
       changeset
+    end
+  end
+
+  # Three-decimal currencies (KWD, BHD, OMR) bill under VAT only: GST
+  # e-invoices, e-way bills and returns are in rupees and paise.
+  defp validate_currency_regime(changeset, field) do
+    code = QuantumBilling.Currency.code_from_label(get_field(changeset, :currency))
+
+    cond do
+      not QuantumBilling.Currency.vat_only?(code) -> changeset
+      get_field(changeset, :tax_regime) == "vat" -> changeset
+      field == :currency -> add_error(changeset, :currency, "#{code} needs the VAT tax regime")
+      true -> add_error(changeset, :tax_regime, "must be VAT while the business bills in #{code}")
     end
   end
 

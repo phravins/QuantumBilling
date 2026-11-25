@@ -21,7 +21,8 @@ defmodule QuantumBillingWeb.ClientExportController do
   def export(conn, params) do
     regime = conn.assigns.current_scope.tax_regime
     definitions = CustomFields.active_definitions("client")
-    columns = columns(regime)
+    currency = QuantumBilling.Settings.currency_code()
+    columns = columns(regime, currency)
 
     clients =
       Clients.export_rows(
@@ -36,7 +37,7 @@ defmodule QuantumBillingWeb.ClientExportController do
     rows =
       Enum.map(clients, fn client ->
         Enum.map(columns, fn {_header, value} -> to_string(value.(client)) end) ++
-          CustomFieldComponents.export_cells(definitions, client.custom_fields)
+          CustomFieldComponents.export_cells(definitions, client.custom_fields, currency)
       end)
 
     send_download(conn, {:binary, Enum.map_join([headers | rows], &CSV.line/1)},
@@ -60,7 +61,7 @@ defmodule QuantumBillingWeb.ClientExportController do
 
   defp custom_filters(_params), do: %{}
 
-  defp columns(regime) do
+  defp columns(regime, currency) do
     postal = if regime == "vat", do: "Postal code", else: "PIN code"
 
     [
@@ -88,9 +89,9 @@ defmodule QuantumBillingWeb.ClientExportController do
         {"Business type", & &1.business_type},
         {"Category", & &1.category},
         {"Payment terms (days)", & &1.payment_terms_days},
-        {"Credit limit", &amount(&1.credit_limit)},
-        {"Opening balance", &amount(&1.opening_balance)},
-        {"Outstanding", &amount(&1.outstanding)},
+        {"Credit limit", &amount(&1.credit_limit, currency)},
+        {"Opening balance", &amount(&1.opening_balance, currency)},
+        {"Outstanding", &amount(&1.outstanding, currency)},
         {"Status", & &1.status},
         {"Notes", & &1.notes}
       ]
@@ -120,7 +121,7 @@ defmodule QuantumBillingWeb.ClientExportController do
     }
   end
 
-  # Plain numbers, from paise, so a spreadsheet can sum them.
-  defp amount(nil), do: ""
-  defp amount(paise), do: Money.to_input(paise)
+  # Plain numbers, from minor units in the business currency, so a spreadsheet can sum them.
+  defp amount(nil, _currency), do: ""
+  defp amount(minor, currency), do: Money.to_input(minor, currency)
 end

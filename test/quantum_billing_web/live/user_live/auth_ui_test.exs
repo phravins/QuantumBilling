@@ -31,11 +31,11 @@ defmodule QuantumBillingWeb.UserLive.AuthUITest do
     end
 
     test "shows QuantumBilling branding and no sidebar", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/users/register")
+      {:ok, view, html} = live(conn, ~p"/users/register")
 
       assert html =~ "QuantumBilling"
-      # the tagline sits at the foot of every auth screen
-      assert html =~ "GST invoicing, e-way bills and compliance — all in one place."
+      # the OSWORKS credit sits at the foot of every auth screen
+      assert has_element?(view, "#osworks-credit[href='https://osworks.in'] #osworks-mark")
       # the app shell's sidebar links must not leak onto the auth screens
       refute html =~ ~s(href="/invoices")
       refute html =~ "Need Help?"

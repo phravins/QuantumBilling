@@ -127,16 +127,34 @@ defmodule QuantumBilling.ClientsPageTest do
 
     test "is never negative" do
       globex = Clients.get_client_by_name("Globex Ltd")
-      invoice = invoice_fixture(globex, %{grand_total: 100_000})
+      paid = invoice_fixture(globex, %{grand_total: 500_000, status: "Paid"})
+      invoice_fixture(globex, %{grand_total: 100_000})
 
+      # Credit on a paid invoice beyond what the client still owes.
       {:ok, _} =
-        CreditNotes.create_credit_note_for_invoice(invoice, %{
+        CreditNotes.create_credit_note_for_invoice(paid, %{
           "note_type" => "Credit",
           "grand_total" => Decimal.new("4000")
         })
 
       assert Clients.outstanding(globex) == 0
       assert %{"Globex Ltd" => 0} = outstanding_by_name(Clients.page().rows)
+    end
+
+    test "is reduced by a credit note on a paid invoice" do
+      globex = Clients.get_client_by_name("Globex Ltd")
+      paid = invoice_fixture(globex, %{grand_total: 500_000, status: "Paid"})
+      invoice_fixture(globex, %{grand_total: 300_000})
+
+      {:ok, _} =
+        CreditNotes.create_credit_note_for_invoice(paid, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("1000")
+        })
+
+      # 3,000 owed less the 1,000 credit the returned goods left the client.
+      assert Clients.outstanding(globex) == 200_000
+      assert %{"Globex Ltd" => 200_000} = outstanding_by_name(Clients.page().rows)
     end
 
     test "sorts the whole directory, not just the page" do

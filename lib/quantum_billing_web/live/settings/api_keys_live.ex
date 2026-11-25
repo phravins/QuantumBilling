@@ -25,7 +25,10 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
     "clients:write" => "Create clients",
     "e_way_bills:read" => "List and fetch e-way bills",
     "credit_notes:read" => "List and fetch credit and debit notes",
-    "credit_notes:write" => "Raise credit and debit notes against invoices"
+    "credit_notes:write" => "Raise credit and debit notes against invoices",
+    "quotations:read" => "List and fetch quotations",
+    "quotations:write" =>
+      "Create, email, accept and decline quotations; see each one's client link"
   }
 
   def mount(_params, _session, socket) do
@@ -136,6 +139,7 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
       flash={@flash}
       current_scope={@current_scope}
       active_nav={@active_nav}
+      sidebar={:settings}
       active_sub={:"api-keys"}
     >
       <.header>
@@ -274,7 +278,12 @@ defmodule QuantumBillingWeb.SettingsLive.ApiKeys do
           </fieldset>
 
           <div class="mt-4 flex justify-end">
-            <button id="create-api-key" type="submit" class={action_button_class()}>
+            <button
+              id="create-api-key"
+              type="submit"
+              phx-disable-with="Creating…"
+              class={action_button_class()}
+            >
               <.icon name="hero-key" class="size-4" /> Create key
             </button>
           </div>

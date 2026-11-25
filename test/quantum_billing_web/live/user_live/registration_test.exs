@@ -123,12 +123,15 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
     test "is closed without an invitation once an account exists", %{conn: conn} do
       _first = registered_user_fixture()
 
-      {:ok, _lv, html} = live(conn, ~p"/users/register")
+      {:ok, lv, html} = live(conn, ~p"/users/register")
 
       # Every account here shares one set of books, so they are handed out
       # rather than claimed.
       assert html =~ "Registration is by invitation"
       refute html =~ "registration_form"
+      assert has_element?(lv, "#registration-closed")
+      assert has_element?(lv, "#registration-sign-in[href='/users/log-in']")
+      assert has_element?(lv, "#auth-top-link[href='/users/log-in']", "Login")
     end
 
     test "an invitation works once", %{conn: conn} do

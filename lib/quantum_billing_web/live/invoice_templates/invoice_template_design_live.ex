@@ -250,7 +250,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> mark_saved()}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, :error, first_error(changeset))}
+        {:noreply, assign(socket, :error, QuantumBilling.ErrorMessages.first_message(changeset))}
     end
   end
 
@@ -440,18 +440,11 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
         socket |> assign(:template, template) |> assign(:error, nil) |> mark_saved()
 
       {:error, changeset} ->
-        assign(socket, :error, first_error(changeset))
+        assign(socket, :error, QuantumBilling.ErrorMessages.first_message(changeset))
     end
   end
 
   defp mark_saved(socket), do: assign(socket, :saved_at, Time.utc_now())
-
-  defp first_error(changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
-    |> Enum.flat_map(fn {_field, messages} -> List.wrap(messages) end)
-    |> List.first()
-  end
 
   defp with_selected(socket, fun) do
     doc = socket.assigns.doc

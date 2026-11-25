@@ -1,10 +1,13 @@
 defmodule QuantumBillingWeb.SettingsLive.DataModel do
   @moduledoc """
-  Owner-only: the business's own fields on clients, invoices and other records.
+  Owner-only: the records QuantumBilling keeps (its objects) and the business's
+  own fields on them.
 
-  One tab per object. Fields can be added, edited, reordered and archived;
-  archived ones keep their values and can be restored, or deleted once no
-  record holds a value.
+  Without `?object=` it lists the objects with their field and record counts.
+  With one, it shows that object's built-in (Standard) fields, which cannot be
+  changed, and its Custom fields, which can be added, edited, reordered and
+  archived; archived ones keep their values and can be restored, or deleted
+  once no record holds a value.
   """
   use QuantumBillingWeb, :live_view
 
@@ -21,16 +24,25 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
      socket
      |> assign(:page_title, "Data model")
      |> assign(:objects, CustomFields.objects())
-     |> assign(:object, "client")
+     |> assign(:object, nil)
      |> assign(:dialog, nil)
+     |> stream_configure(:object_rows, dom_id: &"object-#{&1.object}")
      |> stream_configure(:fields, dom_id: &"field-#{&1.id}")
      |> stream_configure(:archived, dom_id: &"archived-field-#{&1.id}")}
   end
 
   def handle_params(params, _uri, socket) do
-    object = if params["object"] in @objects, do: params["object"], else: "client"
+    object = if params["object"] in @objects, do: params["object"]
 
     {:noreply, socket |> assign(:object, object) |> assign(:dialog, nil) |> load()}
+  end
+
+  defp load(%{assigns: %{object: nil}} = socket) do
+    socket
+    |> assign(:counts, CustomFields.active_counts())
+    |> assign(:records, CustomFields.record_counts())
+    |> assign(:object_search, to_form(%{"q" => ""}, as: :objects))
+    |> stream_objects("")
   end
 
   defp load(socket) do
@@ -40,12 +52,40 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
 
     socket
     |> assign(:counts, CustomFields.active_counts())
+    |> assign(:standard_fields, CustomFields.standard_fields(object))
     |> assign(:field_count, length(fields))
     |> assign(:archived_count, length(archived))
     |> assign(:first_id, fields |> List.first() |> then(&(&1 && &1.id)))
     |> assign(:last_id, fields |> List.last() |> then(&(&1 && &1.id)))
     |> stream(:fields, fields, reset: true)
     |> stream(:archived, archived, reset: true)
+  end
+
+  defp stream_objects(socket, search) do
+    term = search |> String.trim() |> String.downcase()
+
+    rows =
+      for {object, label} <- socket.assigns.objects,
+          term == "" or String.contains?(String.downcase(label), term) do
+        %{
+          object: object,
+          label: label,
+          standard: length(CustomFields.standard_fields(object)),
+          custom: Map.get(socket.assigns.counts, object, 0),
+          records: Map.get(socket.assigns.records, object, 0)
+        }
+      end
+
+    socket
+    |> assign(:object_count, length(rows))
+    |> stream(:object_rows, rows, reset: true)
+  end
+
+  def handle_event("search_objects", %{"objects" => %{"q" => q}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:object_search, to_form(%{"q" => q}, as: :objects))
+     |> stream_objects(q)}
   end
 
   ## The add/edit dialog
@@ -266,7 +306,10 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
 
       :error ->
         value = FieldDefinition.default(dialog.definition)
-        if form_type(form) == "money", do: value && money_input(value), else: value
+        # Money defaults are kept in the business currency.
+        if form_type(form) == "money",
+          do: value && money_input(value, QuantumBilling.Settings.currency_code()),
+          else: value
     end
   end
 
@@ -280,12 +323,49 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
     Enum.find_value(objects, object, fn {key, label} -> if key == object, do: label end)
   end
 
+  attr :origin, :atom, values: [:standard, :custom], required: true
+
+  defp origin_badge(assigns) do
+    ~H"""
+    <span class={[
+      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+      if(@origin == :standard,
+        do: "bg-base-200 text-base-content/70",
+        else: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+      )
+    ]}>
+      {if @origin == :standard, do: "Standard", else: "Custom"}
+    </span>
+    """
+  end
+
+  defp object_icon("client"), do: "hero-user-group"
+  defp object_icon("invoice"), do: "hero-document-text"
+  defp object_icon("invoice_item"), do: "hero-list-bullet"
+  defp object_icon("quotation"), do: "hero-clipboard-document-list"
+  defp object_icon("quotation_item"), do: "hero-list-bullet"
+  defp object_icon("credit_note"), do: "hero-receipt-refund"
+  defp object_icon("e_way_bill"), do: "hero-truck"
+  defp object_icon("recurring_profile"), do: "hero-arrow-path"
+  defp object_icon(_object), do: "hero-cube"
+
+  defp standard_kind(:text), do: "Text"
+  defp standard_kind(:number), do: "Number"
+  defp standard_kind(:money), do: "Amount"
+  defp standard_kind(:date), do: "Date"
+  defp standard_kind(:boolean), do: "Yes / no"
+  defp standard_kind(:link), do: "Link"
+  defp standard_kind(:other), do: "Other"
+
+  defp humanize(key), do: key |> String.replace("_", " ") |> String.capitalize()
+
   def render(assigns) do
     ~H"""
     <Layouts.app
       flash={@flash}
       current_scope={@current_scope}
       active_nav={:settings}
+      sidebar={:settings}
       active_sub={:"data-model"}
     >
       <.header>
@@ -296,225 +376,302 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
         </:subtitle>
       </.header>
 
-      <nav
-        id="data-model-objects"
-        class="-mx-1 mb-4 flex gap-1 overflow-x-auto px-1 pb-1"
-        aria-label="Record types"
-      >
-        <.link
-          :for={{object, label} <- @objects}
-          id={"object-tab-#{object}"}
-          patch={~p"/settings/data-model?#{[object: object]}"}
-          aria-current={if object == @object, do: "page"}
-          class={[
-            "flex shrink-0 items-center gap-1.5 rounded-field border px-3 py-1.5 text-sm transition-all duration-150",
-            if(object == @object,
-              do: "border-base-content bg-base-content text-base-100 shadow-sm",
-              else:
-                "border-base-300 bg-base-100 text-base-content/70 hover:border-base-content/30 hover:text-base-content"
-            )
-          ]}
-        >
-          {label}
-          <span
-            :if={Map.get(@counts, object, 0) > 0}
-            class={[
-              "rounded-full px-1.5 text-[11px] tabular-nums",
-              if(object == @object, do: "bg-base-100/20", else: "bg-base-200")
-            ]}
-          >
-            {Map.get(@counts, object, 0)}
-          </span>
-        </.link>
-      </nav>
+      <%= if is_nil(@object) do %>
+        <.form for={@object_search} id="object-search-form" phx-change="search_objects" class="mb-2">
+          <.input
+            field={@object_search[:q]}
+            type="search"
+            placeholder="Search objects"
+            phx-debounce="150"
+            autocomplete="off"
+          />
+        </.form>
 
-      <.card class="mb-4" padding="p-0">
-        <div class="flex flex-col gap-3 border-b border-base-300 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 class="text-sm font-semibold">{object_label(@objects, @object)} fields</h3>
-            <p class="text-xs text-base-content/60">
-              <span class="tabular-nums">{@field_count}</span>
-              of {CustomFields.max_active()} · shown in this order on forms
-            </p>
+        <.card padding="p-0" class="overflow-x-auto">
+          <table id="data-model-objects" class="table">
+            <thead>
+              <tr class={table_head_class()}>
+                <th>Name</th>
+                <th class="w-28">Type</th>
+                <th class="w-28 text-right">Fields</th>
+                <th class="w-28 text-right">Records</th>
+                <th class="w-8"><span class="sr-only">Open</span></th>
+              </tr>
+            </thead>
+            <tbody id="object-rows" phx-update="stream">
+              <tr
+                :for={{dom_id, row} <- @streams.object_rows}
+                id={dom_id}
+                class={[table_row_class(), "group cursor-pointer"]}
+                phx-click={JS.patch(~p"/settings/data-model?#{[object: row.object]}")}
+              >
+                <td>
+                  <.link
+                    id={"object-tab-#{row.object}"}
+                    patch={~p"/settings/data-model?#{[object: row.object]}"}
+                    class="flex items-center gap-2.5 font-medium outline-none focus-visible:underline"
+                  >
+                    <span class="flex size-7 items-center justify-center rounded-field bg-base-200 text-base-content/60">
+                      <.icon name={object_icon(row.object)} class="size-4" />
+                    </span>
+                    {row.label}
+                  </.link>
+                </td>
+                <td><.origin_badge origin={:standard} /></td>
+                <td class="text-right tabular-nums">
+                  {row.standard + row.custom}
+                  <span :if={row.custom > 0} class="text-xs text-base-content/50">
+                    ({row.custom} custom)
+                  </span>
+                </td>
+                <td class="text-right tabular-nums">{row.records}</td>
+                <td class="text-right">
+                  <.icon
+                    name="hero-chevron-right"
+                    class="size-4 text-base-content/35 transition-transform group-hover:translate-x-0.5"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p :if={@object_count == 0} class="px-4 py-6 text-center text-sm text-base-content/50">
+            No objects match.
+          </p>
+        </.card>
+        <p class="mt-3 text-xs text-base-content/50">
+          Standard objects come with QuantumBilling. Open one to add your own custom fields to it.
+        </p>
+      <% else %>
+        <.link
+          id="data-model-back"
+          patch={~p"/settings/data-model"}
+          class="mb-3 inline-flex items-center gap-1 text-sm text-base-content/60 transition-colors hover:text-base-content"
+        >
+          <.icon name="hero-chevron-left-mini" class="size-4" /> Data model
+        </.link>
+
+        <.card class="mb-4" padding="p-0">
+          <div class="flex flex-col gap-3 border-b border-base-300 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 class="flex items-center gap-2 text-sm font-semibold">
+                {object_label(@objects, @object)} · custom fields <.origin_badge origin={:custom} />
+              </h3>
+              <p class="text-xs text-base-content/60">
+                <span class="tabular-nums">{@field_count}</span>
+                of {CustomFields.max_active()} · shown in this order on forms
+              </p>
+            </div>
+
+            <button
+              id="new-field"
+              type="button"
+              phx-click="new"
+              disabled={@field_count >= CustomFields.max_active()}
+              class={[action_button_class(), "disabled:cursor-not-allowed disabled:opacity-40"]}
+            >
+              <.icon name="hero-plus" class="size-4" /> Add field
+            </button>
           </div>
 
-          <button
-            id="new-field"
-            type="button"
-            phx-click="new"
-            disabled={@field_count >= CustomFields.max_active()}
-            class={[action_button_class(), "disabled:cursor-not-allowed disabled:opacity-40"]}
-          >
-            <.icon name="hero-plus" class="size-4" /> Add field
-          </button>
-        </div>
+          <ul id="fields" phx-update="stream" class="divide-y divide-base-300">
+            <li id="fields-empty" class="hidden only:block">
+              <.empty_state
+                icon="hero-table-cells"
+                title={"No fields on #{String.downcase(object_label(@objects, @object))} yet"}
+                description="Fields you add appear on the form for every record of this type."
+              />
+            </li>
 
-        <ul id="fields" phx-update="stream" class="divide-y divide-base-300">
-          <li id="fields-empty" class="hidden only:block">
-            <.empty_state
-              icon="hero-table-cells"
-              title={"No fields on #{String.downcase(object_label(@objects, @object))} yet"}
-              description="Fields you add appear on the form for every record of this type."
-            />
-          </li>
-
-          <li
-            :for={{dom_id, field} <- @streams.fields}
-            id={dom_id}
-            class="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-base-200/50"
-          >
-            <div class="flex shrink-0 flex-col">
-              <button
-                id={"move-up-#{field.id}"}
-                type="button"
-                phx-click="move"
-                phx-value-id={field.id}
-                phx-value-direction="up"
-                disabled={field.id == @first_id}
-                aria-label={"Move #{field.label} up"}
-                class="flex size-5 items-center justify-center rounded text-base-content/40 transition-colors hover:bg-base-200 hover:text-base-content disabled:invisible"
-              >
-                <.icon name="hero-chevron-up" class="size-3.5" />
-              </button>
-              <button
-                id={"move-down-#{field.id}"}
-                type="button"
-                phx-click="move"
-                phx-value-id={field.id}
-                phx-value-direction="down"
-                disabled={field.id == @last_id}
-                aria-label={"Move #{field.label} down"}
-                class="flex size-5 items-center justify-center rounded text-base-content/40 transition-colors hover:bg-base-200 hover:text-base-content disabled:invisible"
-              >
-                <.icon name="hero-chevron-down" class="size-3.5" />
-              </button>
-            </div>
-
-            <span class="flex size-8 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/60">
-              <.icon name={type_icon(field.type)} class="size-4" />
-            </span>
-
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span class="truncate text-sm font-medium">{field.label}</span>
-                <span :if={field.required} class="text-[11px] font-medium text-error">Required</span>
-              </div>
-              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <.type_tag type={field.type} />
-                <code class="font-mono text-[11px] text-base-content/45">{field.key}</code>
-                <span
-                  :if={field.show_in_list}
-                  class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
-                >
-                  List column
-                </span>
-                <span
-                  :if={field.filterable}
-                  class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
-                >
-                  Filter
-                </span>
-                <span
-                  :if={field.show_on_invoice}
-                  class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
-                >
-                  On invoice
-                </span>
-                <span
-                  :if={not field.include_in_api}
-                  class="rounded-field bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning"
-                >
-                  Hidden from API
-                </span>
-              </div>
-              <div :if={FieldDefinition.choices(field) != []} class="mt-1.5 flex flex-wrap gap-1">
-                <.choice_badge
-                  :for={choice <- Enum.take(FieldDefinition.choices(field), 8)}
-                  choice={choice}
-                />
-                <span
-                  :if={length(FieldDefinition.choices(field)) > 8}
-                  class="text-[11px] text-base-content/45"
-                >
-                  +{length(FieldDefinition.choices(field)) - 8} more
-                </span>
-              </div>
-            </div>
-
-            <div class="flex shrink-0 gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
-              <button
-                id={"edit-field-#{field.id}"}
-                type="button"
-                phx-click="edit"
-                phx-value-id={field.id}
-                class="btn btn-xs btn-ghost"
-              >
-                Edit
-              </button>
-              <button
-                id={"archive-field-#{field.id}"}
-                type="button"
-                phx-click="archive"
-                phx-value-id={field.id}
-                data-confirm={"Archive #{field.label}? It leaves forms and lists; saved values are kept."}
-                class="btn btn-xs btn-ghost"
-              >
-                Archive
-              </button>
-            </div>
-          </li>
-        </ul>
-      </.card>
-
-      <details :if={@archived_count > 0} id="archived-fields" class="group/archived">
-        <summary class="mb-2 flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-base-content/60 transition-colors hover:text-base-content">
-          <.icon
-            name="hero-chevron-right"
-            class="size-3.5 transition-transform duration-150 group-open/archived:rotate-90"
-          /> Archived ({@archived_count})
-        </summary>
-
-        <.card padding="p-0">
-          <ul id="archived" phx-update="stream" class="divide-y divide-base-300">
             <li
-              :for={{dom_id, field} <- @streams.archived}
+              :for={{dom_id, field} <- @streams.fields}
               id={dom_id}
-              class="flex items-center gap-3 px-4 py-2.5"
+              class="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-base-200/50"
             >
-              <span class="flex size-8 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/40">
+              <div class="flex shrink-0 flex-col">
+                <button
+                  id={"move-up-#{field.id}"}
+                  type="button"
+                  phx-click="move"
+                  phx-value-id={field.id}
+                  phx-value-direction="up"
+                  disabled={field.id == @first_id}
+                  aria-label={"Move #{field.label} up"}
+                  class="flex size-5 items-center justify-center rounded text-base-content/40 transition-colors hover:bg-base-200 hover:text-base-content disabled:invisible"
+                >
+                  <.icon name="hero-chevron-up" class="size-3.5" />
+                </button>
+                <button
+                  id={"move-down-#{field.id}"}
+                  type="button"
+                  phx-click="move"
+                  phx-value-id={field.id}
+                  phx-value-direction="down"
+                  disabled={field.id == @last_id}
+                  aria-label={"Move #{field.label} down"}
+                  class="flex size-5 items-center justify-center rounded text-base-content/40 transition-colors hover:bg-base-200 hover:text-base-content disabled:invisible"
+                >
+                  <.icon name="hero-chevron-down" class="size-3.5" />
+                </button>
+              </div>
+
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/60">
                 <.icon name={type_icon(field.type)} class="size-4" />
               </span>
+
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm text-base-content/70">{field.label}</p>
-                <code class="font-mono text-[11px] text-base-content/45">{field.key}</code>
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span class="truncate text-sm font-medium">{field.label}</span>
+                  <span :if={field.required} class="text-[11px] font-medium text-error">Required</span>
+                </div>
+                <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <.type_tag type={field.type} />
+                  <code class="font-mono text-[11px] text-base-content/45">{field.key}</code>
+                  <span
+                    :if={field.show_in_list}
+                    class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
+                  >
+                    List column
+                  </span>
+                  <span
+                    :if={field.filterable}
+                    class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
+                  >
+                    Filter
+                  </span>
+                  <span
+                    :if={field.show_on_invoice}
+                    class="rounded-field bg-base-200 px-1.5 py-0.5 text-[11px] text-base-content/70"
+                  >
+                    On invoice
+                  </span>
+                  <span
+                    :if={not field.include_in_api}
+                    class="rounded-field bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning"
+                  >
+                    Hidden from API
+                  </span>
+                </div>
+                <div :if={FieldDefinition.choices(field) != []} class="mt-1.5 flex flex-wrap gap-1">
+                  <.choice_badge
+                    :for={choice <- Enum.take(FieldDefinition.choices(field), 8)}
+                    choice={choice}
+                  />
+                  <span
+                    :if={length(FieldDefinition.choices(field)) > 8}
+                    class="text-[11px] text-base-content/45"
+                  >
+                    +{length(FieldDefinition.choices(field)) - 8} more
+                  </span>
+                </div>
               </div>
-              <div class="flex shrink-0 gap-1">
+
+              <div class="flex shrink-0 gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
                 <button
-                  id={"restore-field-#{field.id}"}
+                  id={"edit-field-#{field.id}"}
                   type="button"
-                  phx-click="restore"
+                  phx-click="edit"
                   phx-value-id={field.id}
                   class="btn btn-xs btn-ghost"
                 >
-                  Restore
+                  Edit
                 </button>
                 <button
-                  id={"delete-field-#{field.id}"}
+                  id={"archive-field-#{field.id}"}
                   type="button"
-                  phx-click="delete"
+                  phx-click="archive"
                   phx-value-id={field.id}
-                  data-confirm={"Delete #{field.label} for good? This can't be undone."}
-                  class="btn btn-xs btn-ghost text-error"
+                  data-confirm={"Archive #{field.label}? It leaves forms and lists; saved values are kept."}
+                  class="btn btn-xs btn-ghost"
                 >
-                  Delete
+                  Archive
                 </button>
               </div>
             </li>
           </ul>
         </.card>
-      </details>
 
-      <.field_dialog :if={@dialog} dialog={@dialog} objects={@objects} />
+        <details :if={@archived_count > 0} id="archived-fields" class="group/archived">
+          <summary class="mb-2 flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-base-content/60 transition-colors hover:text-base-content">
+            <.icon
+              name="hero-chevron-right"
+              class="size-3.5 transition-transform duration-150 group-open/archived:rotate-90"
+            /> Archived ({@archived_count})
+          </summary>
+
+          <.card padding="p-0">
+            <ul id="archived" phx-update="stream" class="divide-y divide-base-300">
+              <li
+                :for={{dom_id, field} <- @streams.archived}
+                id={dom_id}
+                class="flex items-center gap-3 px-4 py-2.5"
+              >
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/40">
+                  <.icon name={type_icon(field.type)} class="size-4" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-base-content/70">{field.label}</p>
+                  <code class="font-mono text-[11px] text-base-content/45">{field.key}</code>
+                </div>
+                <div class="flex shrink-0 gap-1">
+                  <button
+                    id={"restore-field-#{field.id}"}
+                    type="button"
+                    phx-click="restore"
+                    phx-value-id={field.id}
+                    class="btn btn-xs btn-ghost"
+                  >
+                    Restore
+                  </button>
+                  <button
+                    id={"delete-field-#{field.id}"}
+                    type="button"
+                    phx-click="delete"
+                    phx-value-id={field.id}
+                    data-confirm={"Delete #{field.label} for good? This can't be undone."}
+                    class="btn btn-xs btn-ghost text-error"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </.card>
+        </details>
+
+        <section id="standard-fields" class="mt-6">
+          <h3 class="mb-2 text-sm font-semibold">
+            Standard fields
+            <span class="font-normal text-base-content/50">· {length(@standard_fields)}</span>
+          </h3>
+          <.card padding="p-0" class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr class={table_head_class()}>
+                  <th>Field</th>
+                  <th class="w-32">Kind</th>
+                  <th class="w-28">Origin</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  :for={field <- @standard_fields}
+                  id={"standard-field-#{field.key}"}
+                  class={table_row_class()}
+                >
+                  <td>
+                    <span class="block text-sm">{humanize(field.key)}</span>
+                    <code class="font-mono text-[11px] text-base-content/45">{field.key}</code>
+                  </td>
+                  <td class="text-base-content/70">{standard_kind(field.type)}</td>
+                  <td><.origin_badge origin={:standard} /></td>
+                </tr>
+              </tbody>
+            </table>
+          </.card>
+        </section>
+
+        <.field_dialog :if={@dialog} dialog={@dialog} objects={@objects} />
+      <% end %>
     </Layouts.app>
     """
   end
@@ -692,11 +849,16 @@ defmodule QuantumBillingWeb.SettingsLive.DataModel do
               <.toggle
                 :if={FieldDefinition.printable_object?(@definition.object)}
                 field={@form[:show_on_invoice]}
-                label="Printable on invoices"
+                label={
+                  if(@definition.object in ["quotation", "quotation_item"],
+                    do: "Printable on quotations",
+                    else: "Printable on invoices"
+                  )
+                }
                 hint={
-                  if(@definition.object == "invoice_item",
+                  if(@definition.object in ["invoice_item", "quotation_item"],
                     do: "Printed as an item-table column when a line has a value.",
-                    else: "Available to the invoice designer's custom-fields block."
+                    else: "Available to the designer's custom-fields block."
                   )
                 }
               />

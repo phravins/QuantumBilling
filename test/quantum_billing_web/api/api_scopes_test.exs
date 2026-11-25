@@ -10,7 +10,7 @@ defmodule QuantumBillingWeb.API.ScopesTest do
   alias QuantumBilling.ApiKeys.ApiKey
 
   # {method, route template, path, the scope it needs (nil = any key)}
-  defp routes(%{invoice: invoice, client: client, bill: bill, note: note}) do
+  defp routes(%{invoice: invoice, client: client, bill: bill, note: note, quotations: q}) do
     i = invoice.id
 
     [
@@ -31,7 +31,17 @@ defmodule QuantumBillingWeb.API.ScopesTest do
       {:get, "/api/v1/clients/:id", "/api/v1/clients/#{client.id}", "clients:read"},
       {:post, "/api/v1/clients", "/api/v1/clients", "clients:write"},
       {:get, "/api/v1/e-way-bills", "/api/v1/e-way-bills", "e_way_bills:read"},
-      {:get, "/api/v1/e-way-bills/:id", "/api/v1/e-way-bills/#{bill.id}", "e_way_bills:read"}
+      {:get, "/api/v1/e-way-bills/:id", "/api/v1/e-way-bills/#{bill.id}", "e_way_bills:read"},
+      {:get, "/api/v1/quotations", "/api/v1/quotations", "quotations:read"},
+      {:get, "/api/v1/quotations/:id", "/api/v1/quotations/#{q.read.id}", "quotations:read"},
+      {:post, "/api/v1/quotations", "/api/v1/quotations", "quotations:write"},
+      # One quotation per action: each answers once, so they can't share.
+      {:post, "/api/v1/quotations/:id/send", "/api/v1/quotations/#{q.send.id}/send",
+       "quotations:write"},
+      {:post, "/api/v1/quotations/:id/accept", "/api/v1/quotations/#{q.accept.id}/accept",
+       "quotations:write"},
+      {:post, "/api/v1/quotations/:id/decline", "/api/v1/quotations/#{q.decline.id}/decline",
+       "quotations:write"}
     ]
   end
 
@@ -40,7 +50,25 @@ defmodule QuantumBillingWeb.API.ScopesTest do
     invoice = invoice_fixture(%{client_id: client.id})
     {:ok, note} = QuantumBilling.CreditNotes.create_credit_note_for_invoice(invoice, %{})
 
-    %{invoice: invoice, client: client, bill: e_way_bill_fixture(invoice_fixture()), note: note}
+    quotation = fn ->
+      QuantumBilling.QuotationsFixtures.quotation_fixture([via: "test"], %{
+        "client_id" => client.id,
+        "client_email" => "billing@acme.test"
+      })
+    end
+
+    %{
+      invoice: invoice,
+      client: client,
+      bill: e_way_bill_fixture(invoice_fixture()),
+      note: note,
+      quotations: %{
+        read: quotation.(),
+        send: quotation.(),
+        accept: quotation.(),
+        decline: quotation.()
+      }
+    }
   end
 
   test "each scope opens exactly its own routes", records do
@@ -57,7 +85,7 @@ defmodule QuantumBillingWeb.API.ScopesTest do
           end
 
         if is_nil(needed) or needed == scope do
-          # 202: the e-invoice action queues; 404 never, the records exist.
+          # 202: the e-invoice and quotation-email actions queue; 404 never, the records exist.
           assert conn.status in [200, 202, 422],
                  "#{scope} should reach #{method} #{path}, got #{conn.status}"
         else

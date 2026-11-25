@@ -11,6 +11,11 @@
 </p>
 
 <p align="center">
+  <a href="https://osworks.in"><img src="docs/assets/osworks-mark.svg" alt="OSWORKS" width="40"></a><br>
+  <sub>QuantumBilling is a community driven project under <a href="https://osworks.in"><strong>OSWORKS</strong></a>.</sub>
+</p>
+
+<p align="center">
   <a href="mix.exs"><img alt="Version v0.1.0" src="https://img.shields.io/badge/version-v0.1.0-111827"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-111827"></a>
   <img alt="Elixir 1.18" src="https://img.shields.io/badge/Elixir-1.18-4B275F?logo=elixir&logoColor=white">
@@ -20,6 +25,7 @@
 </p>
 
 <p align="center">
+  <a href="#demo">Demo</a> ·
   <a href="#features">Features</a> ·
   <a href="#run-locally">Run locally</a> ·
   <a href="#documentation">Documentation</a> ·
@@ -27,6 +33,16 @@
 </p>
 
 ![QuantumBilling dashboard: invoices issued, tax liability, receivables, GST by month, invoices by status, top clients and the compliance calendar](docs/assets/screenshots/dashboard.png)
+
+## Demo
+
+An 11-minute walkthrough: creating a business, filling in company details, and billing with QuantumBilling.
+
+<p align="center">
+  <a href="docs/assets/Video/QuantumBilling.mp4?raw=true">
+    <img src="docs/assets/Video/QuantumBilling-poster.jpg" alt="Watch the QuantumBilling demo video (11 minutes)" width="720">
+  </a>
+</p>
 
 ## What is QuantumBilling?
 
@@ -273,3 +289,14 @@ The [Business guide](docs/Business.md#18-current-implementation-limits) lists ev
 ## License
 
 Released under the [MIT License](LICENSE). Copyright (c) 2026 phravins.
+
+---
+
+<p align="center">
+  <a href="https://osworks.in"><img src="docs/assets/osworks-mark.svg" alt="OSWORKS" width="56"></a>
+</p>
+
+<p align="center">
+  QuantumBilling is a community driven project under <a href="https://osworks.in"><strong>OSWORKS</strong></a>.<br>
+  <a href="https://osworks.in">osworks.in</a>
+</p>

@@ -16,7 +16,9 @@ defmodule QuantumBillingWeb.UserLive.ForgotPassword do
     ~H"""
     <Layouts.auth flash={@flash}>
       <:top_link>
-        <.link navigate={~p"/users/log-in"} class="hover:underline">Back to login</.link>
+        <.link id="auth-top-link" navigate={~p"/users/log-in"} class={top_link_class()}>
+          Back to login
+        </.link>
       </:top_link>
 
       <Layouts.auth_heading

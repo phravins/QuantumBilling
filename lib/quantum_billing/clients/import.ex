@@ -417,6 +417,7 @@ defmodule QuantumBilling.Clients.Import do
   @spec classify([[String.t()]], map, String.t(), list) :: [row]
   def classify(rows, mapping, regime, definitions) do
     existing = existing_keys()
+    currency = QuantumBilling.Settings.currency_code()
 
     {classified, _seen} =
       rows
@@ -441,7 +442,7 @@ defmodule QuantumBilling.Clients.Import do
             {%{base | errors: [repeat_message(key)]} |> Map.put(:status, :duplicate), seen}
 
           true ->
-            changeset = changeset(attrs, regime, definitions)
+            changeset = changeset(attrs, regime, definitions, currency)
 
             if changeset.valid? do
               {Map.put(base, :status, :ready), Enum.into(keys, seen)}
@@ -457,14 +458,15 @@ defmodule QuantumBilling.Clients.Import do
 
   @doc """
   The insert changeset for one row's attrs. Same rules as the client form;
-  the custom field definitions are passed in so each row costs no query.
+  the custom field definitions and the business currency are passed in so
+  each row costs no query.
   """
-  def changeset(attrs, regime, definitions) do
+  def changeset(attrs, regime, definitions, currency) do
     {custom, standard} = Map.pop(attrs, "custom_fields", %{})
 
     %Client{}
-    |> Client.changeset(standard, regime)
-    |> CustomFields.cast("client", %{"custom_fields" => custom}, definitions)
+    |> Client.changeset(standard, regime, currency)
+    |> CustomFields.cast("client", %{"custom_fields" => custom}, definitions, currency)
   end
 
   @doc "Client attrs (string keys) from one row's values."
@@ -648,7 +650,7 @@ defmodule QuantumBilling.Clients.Import do
 
   defp amount(value) do
     value
-    |> String.replace(~r/(?i)\b(rs|inr|aed|usd|gbp|eur|sar)\b\.?/u, "")
+    |> String.replace(~r/(?i)\b(rs|inr|aed|usd|gbp|eur|sar|qar|kwd|bhd|omr)\b\.?/u, "")
     |> String.replace(~r/[₹$€£,\s]/u, "")
   end
 

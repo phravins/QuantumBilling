@@ -19,6 +19,8 @@ defmodule QuantumBilling.Accounts.User do
     field :onboarded_at, :utc_datetime
     # Seeds the profile page's generated landscape; nil falls back to the id.
     field :banner_seed, :integer
+    # The installation's super admin. Never cast: only `mix qb.admin.grant` sets it.
+    field :is_admin, :boolean, default: false
 
     # The secret is encrypted at rest.
     field :totp_secret, QuantumBilling.Encrypted.Binary, redact: true

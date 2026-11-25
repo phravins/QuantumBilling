@@ -42,6 +42,7 @@ defmodule QuantumBillingWeb.Plugs.ApiAuth do
       ip = conn |> ClientIP.client_ip_tuple() |> ClientIP.to_string_ip()
       ApiKeys.touch(key, ip)
       Repo.put_business(key.business)
+      QuantumBilling.Audit.put_actor(%{api_key_id: key.id, ip_address: ip, name: key.name})
 
       conn
       |> assign(:api_key, key)

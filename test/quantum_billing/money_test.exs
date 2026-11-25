@@ -23,6 +23,44 @@ defmodule QuantumBilling.MoneyTest do
     end
   end
 
+  describe "parse/2" do
+    test "reads three decimals in KWD, BHD and OMR" do
+      assert Money.parse("12.345", "KWD") == {:ok, 12_345}
+      assert Money.parse("BHD 1,250.5", "BHD") == {:ok, 1_250_500}
+      assert Money.parse("0.001", "OMR") == {:ok, 1}
+      assert Money.parse(12, "OMR") == {:ok, 12_000}
+      assert Money.parse(Decimal.new("2.5"), "KWD") == {:ok, 2_500}
+    end
+
+    test "refuses more decimals than the currency has" do
+      assert Money.parse("12.345", "AED") == :error
+      assert Money.parse("12.3456", "KWD") == :error
+      assert Money.parse(Decimal.new("0.0005"), "BHD") == :error
+    end
+
+    test "two-decimal currencies read as before" do
+      assert Money.parse("1,250.50", "AED") == {:ok, 125_050}
+      assert Money.parse(12, "GBP") == {:ok, 1_200}
+    end
+  end
+
+  test "to_input/2 round-trips parse/2 in every currency" do
+    for code <- QuantumBilling.Currency.codes(), minor <- [0, 1, 99, 1_000, 12_345, -7] do
+      assert {:ok, ^minor} = minor |> Money.to_input(code) |> Money.parse(code)
+    end
+
+    assert Money.to_input(12_345, "KWD") == "12.345"
+    assert Money.to_input(12_345, "AED") == "123.45"
+  end
+
+  test "round_to_whole/2 rounds half-up at the currency's unit" do
+    assert Money.round_to_whole(12_499, "KWD") == {12_000, -499}
+    assert Money.round_to_whole(12_500, "KWD") == {13_000, 500}
+    assert Money.round_to_whole(-12_500, "OMR") == {-13_000, -500}
+    assert Money.round_to_whole(150, "AED") == {200, 50}
+    assert Money.round_to_rupee(150) == {200, 50}
+  end
+
   test "to_input/1 round-trips parse/1" do
     for paise <- [0, 1, 99, 100, 125_050, -7] do
       assert {:ok, ^paise} = paise |> Money.to_input() |> Money.parse()

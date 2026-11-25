@@ -51,11 +51,13 @@ defmodule QuantumBillingWeb.BusinessPickerLiveTest do
       assert get_session(conn, :business_id) == other.id
     end
 
-    test "a focus screen: no app sidebar, a progress bar and a Continue button", %{conn: conn} do
+    test "a focus screen: no app sidebar, no progress bar and a Continue button", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/businesses")
 
       assert has_element?(view, "#focus-shell")
-      assert has_element?(view, "#focus-progress")
+      refute has_element?(view, "#focus-progress")
+      assert has_element?(view, "#picker-new-business")
+      assert has_element?(view, "#picker-sign-out")
       refute has_element?(view, "#app-sidebar")
       assert has_element?(view, "#business-list[role=radiogroup]")
       # Business 1 is the one open, so it starts selected and Back is offered.

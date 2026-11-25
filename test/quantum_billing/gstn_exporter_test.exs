@@ -1,7 +1,9 @@
 defmodule QuantumBilling.GSTNExporterTest do
   use QuantumBilling.DataCase, async: true
 
+  alias QuantumBilling.Clients.Client
   alias QuantumBilling.Compliance.GSTNExporter
+  alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
 
@@ -153,8 +155,9 @@ defmodule QuantumBilling.GSTNExporterTest do
 
       assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
 
-      assert [%{"hsn_sc" => "998313"} = row] = json["hsn"]["data"]
+      assert [%{"hsn_sc" => "998313"} = row] = json["hsn"]["hsn_b2b"]
       assert row["txval"] == 10_000
+      assert json["hsn"]["hsn_b2c"] == []
     end
 
     test "puts a large inter-state consumer sale in b2cl, not b2cs" do
@@ -192,6 +195,43 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert json["b2cl"] == []
     end
 
+    # 00:30 IST on 1 December is 19:00 UTC on 30 November: the note belongs to
+    # December's return, under its own number and date.
+    test "reports a note in the month of its IST date, not its UTC save time" do
+      client = Repo.insert!(%Client{name: "Delta Retailers", email: "delta@example.com"})
+
+      invoice =
+        invoice(%{invoice_number: "INV-0042", invoice_date: ~D[2026-11-20], client_id: client.id})
+
+      Repo.insert!(%CreditNote{
+        note_number: "CN-0001",
+        note_date: ~D[2026-12-01],
+        note_type: "Credit",
+        reason: "Rate revised",
+        grand_total: 118_000,
+        invoice_id: invoice.id,
+        client_id: client.id,
+        inserted_at: ~U[2026-11-30 19:00:00Z],
+        updated_at: ~U[2026-11-30 19:00:00Z]
+      })
+
+      assert {:ok, december} = GSTNExporter.generate_gstr1_json("122026")
+
+      assert [%{"ctin" => "27CCCDE1234F1Z5", "nt" => [note]}] = december["cdnr"]
+      assert note["nt_num"] == "CN-0001"
+      assert note["nt_dt"] == "01-12-2026"
+      assert note["ntty"] == "C"
+      assert note["pos"] == "27"
+
+      # Saved with only its total: split in the invoice's own proportion,
+      # ₹50,000 + ₹9,000, so ₹1,000 + ₹180.
+      assert [%{"itm_det" => %{"rt" => 18.0, "txval" => 1_000.0} = line}] = note["itms"]
+      assert line["camt"] + line["samt"] == 180.0
+
+      assert {:ok, november} = GSTNExporter.generate_gstr1_json("112026")
+      assert november["cdnr"] == []
+    end
+
     test "is empty, not broken, for a month with nothing in it" do
       invoice(%{invoice_date: ~D[2026-03-01]})
 
@@ -201,7 +241,317 @@ defmodule QuantumBilling.GSTNExporterTest do
       assert json["b2cl"] == []
       assert json["b2cs"] == []
       assert json["cdnr"] == []
-      assert json["hsn"]["data"] == []
+      assert json["cdnur"] == []
+      assert json["hsn"] == %{"hsn_b2b" => [], "hsn_b2c" => []}
+      assert json["doc_issue"] == %{"doc_det" => []}
+    end
+
+    test "fills the tax heads on Table 12, CGST/SGST within the state" do
+      invoice =
+        invoice(%{
+          taxable_value: 1_000_000,
+          cgst_amount: 90_000,
+          sgst_amount: 90_000,
+          grand_total: 1_180_000
+        })
+
+      item(invoice, %{})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [row] = json["hsn"]["hsn_b2b"]
+      assert row["camt"] == 900.0
+      assert row["samt"] == 900.0
+      assert row["iamt"] == 0.0
+      assert row["val"] == 11_800.0
+    end
+
+    test "fills IGST on Table 12 for an inter-state consumer sale, under B2C" do
+      invoice =
+        invoice(%{
+          client_gstin: nil,
+          place_of_supply: "Karnataka (29)",
+          taxable_value: 1_000_000,
+          cgst_amount: 0,
+          sgst_amount: 0,
+          igst_amount: 180_000,
+          grand_total: 1_180_000
+        })
+
+      item(invoice, %{})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert json["hsn"]["hsn_b2b"] == []
+      assert [row] = json["hsn"]["hsn_b2c"]
+      assert row["iamt"] == 1_800.0
+      assert row["camt"] == 0.0
+      # A service code reports no quantity.
+      assert row["uqc"] == "NA"
+      assert row["qty"] == 0
+    end
+
+    test "reports the quantity of goods on Table 12" do
+      invoice = invoice(%{})
+      item(invoice, %{hsn_sac: "1001", unit: "Kg", quantity: Decimal.new("2.5"), rate: 400_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [%{"hsn_sc" => "1001", "uqc" => "KGS", "qty" => 2.5}] = json["hsn"]["hsn_b2b"]
+    end
+
+    test "adds Table 12 up to Tables 4, 5, 7 and 9B across a mixed month" do
+      registered =
+        invoice(%{
+          taxable_value: 2_000_000,
+          cgst_amount: 115_000,
+          sgst_amount: 115_000,
+          grand_total: 2_230_000
+        })
+
+      item(registered, %{hsn_sac: "1001", tax_rate: 5, position: 0})
+      item(registered, %{tax_rate: 18, position: 1})
+      note(registered, %{subtotal: 500_000, tax_total: 57_500, grand_total: 557_500})
+
+      large = big_consumer_invoice(%{})
+      item(large, %{rate: 15_000_000})
+
+      small = small_consumer_invoice()
+      item(small, %{rate: 100_000})
+      note(small, %{subtotal: 30_000, tax_total: 5_400, grand_total: 35_400})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      details =
+        for(party <- json["b2b"], inv <- party["inv"], line <- inv["itms"], do: line["itm_det"]) ++
+          for(
+            group <- json["b2cl"],
+            inv <- group["inv"],
+            line <- inv["itms"],
+            do: line["itm_det"]
+          ) ++
+          json["b2cs"]
+
+      credited =
+        for party <- json["cdnr"], nt <- party["nt"], line <- nt["itms"], do: line["itm_det"]
+
+      hsn = json["hsn"]["hsn_b2b"] ++ json["hsn"]["hsn_b2c"]
+
+      for key <- ~w(txval iamt camt samt) do
+        reported = total(details, key) - total(credited, key)
+        assert total(hsn, key) == reported, "Table 12 #{key} does not add up"
+      end
+
+      # The note on the small sale was netted into Table 7, not given a row.
+      assert [%{"txval" => 700.0}] = json["b2cs"]
+    end
+
+    test "gives a registered buyer's note its lines, adding up to the note exactly" do
+      invoice =
+        invoice(%{
+          taxable_value: 2_000_000,
+          cgst_amount: 115_000,
+          sgst_amount: 115_000,
+          grand_total: 2_230_000
+        })
+
+      item(invoice, %{hsn_sac: "1001", tax_rate: 5, position: 0})
+      item(invoice, %{tax_rate: 18, position: 1})
+
+      # A third of each: the scaled lines have paise to settle.
+      note(invoice, %{subtotal: 666_667, tax_total: 76_667, grand_total: 743_334})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [%{"nt" => [note]}] = json["cdnr"]
+      assert note["pos"] == "27"
+      assert note["rchrg"] == "N"
+      assert note["inv_typ"] == "R"
+      refute Map.has_key?(note, "inum")
+
+      lines = Enum.map(note["itms"], & &1["itm_det"])
+      assert Enum.map(lines, & &1["rt"]) == [5.0, 18.0]
+      assert total(lines, "txval") == 666_667
+      assert total(lines, "camt") + total(lines, "samt") == 76_667
+      assert total(lines, "iamt") == 0
+    end
+
+    # The issue-note form sends only the total; the stored split then defaults
+    # to the whole invoice's ₹50,000 + ₹9,000.
+    test "takes a note's lines from its total when its stored split does not add up to it" do
+      invoice = invoice(%{})
+      note(invoice, %{subtotal: 5_000_000, tax_total: 900_000, grand_total: 1_180_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [%{"nt" => [note]}] = json["cdnr"]
+      assert note["val"] == 11_800.0
+      assert [%{"itm_det" => %{"txval" => 10_000.0} = line}] = note["itms"]
+      assert line["camt"] + line["samt"] == 1_800.0
+    end
+
+    test "reports a note on a large inter-state consumer invoice in cdnur" do
+      invoice = big_consumer_invoice(%{})
+      note(invoice, %{subtotal: 1_000_000, tax_total: 180_000, grand_total: 1_180_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert json["cdnr"] == []
+      assert [entry] = json["cdnur"]
+      assert entry["typ"] == "B2CL"
+      assert entry["ntty"] == "C"
+      assert entry["pos"] == "29"
+
+      assert [%{"itm_det" => line}] = entry["itms"]
+      assert line == %{"rt" => 18.0, "txval" => 10_000.0, "iamt" => 1_800.0, "csamt" => 0}
+    end
+
+    test "uses the B2CL limit in force for the invoice's date" do
+      # ₹1.77 lakh: above the ₹1 lakh limit from August 2024, below the old ₹2.5 lakh.
+      big_consumer_invoice(%{invoice_number: "NOW", invoice_date: ~D[2026-03-10]})
+      big_consumer_invoice(%{invoice_number: "THEN", invoice_date: ~D[2024-03-10]})
+
+      assert {:ok, now} = GSTNExporter.generate_gstr1_json("032026")
+      assert [%{"inv" => [%{"inum" => "NOW"}]}] = now["b2cl"]
+      assert now["b2cs"] == []
+
+      assert {:ok, then} = GSTNExporter.generate_gstr1_json("032024")
+      assert then["b2cl"] == []
+      assert [%{"sply_ty" => "INTER", "pos" => "29"}] = then["b2cs"]
+    end
+
+    test "nets notes on small consumer sales into Table 7" do
+      credited = small_consumer_invoice()
+      item(credited, %{rate: 100_000})
+      note(credited, %{subtotal: 20_000, tax_total: 3_600, grand_total: 23_600})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+      assert [%{"txval" => 800.0, "camt" => 72.0, "samt" => 72.0}] = json["b2cs"]
+      assert json["cdnur"] == []
+
+      note(credited, %{
+        note_type: "Debit",
+        subtotal: 40_000,
+        tax_total: 7_200,
+        grand_total: 47_200
+      })
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+      assert [%{"txval" => 1_200.0, "camt" => 108.0, "samt" => 108.0}] = json["b2cs"]
+    end
+
+    test "leaves a consumer sale refunded in full out of Tables 7 and 12" do
+      refunded = small_consumer_invoice()
+      item(refunded, %{rate: 100_000})
+      note(refunded, %{subtotal: 100_000, tax_total: 18_000, grand_total: 118_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert json["b2cs"] == []
+      assert json["hsn"]["hsn_b2c"] == []
+    end
+
+    test "marks a reverse-charge invoice" do
+      invoice(%{invoice_number: "RCM-1", reverse_charge: true})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [%{"inv" => [%{"rchrg" => "Y"}]}] = json["b2b"]
+    end
+
+    test "reports the number ranges used in Table 13, cancelled and binned included" do
+      binned_at = DateTime.truncate(DateTime.utc_now(), :second)
+
+      for number <- 1..5 do
+        attrs =
+          case number do
+            3 -> %{status: "Cancelled"}
+            4 -> %{deleted_at: binned_at}
+            _issued -> %{}
+          end
+
+        invoice(Map.put(attrs, :invoice_number, "INV-000#{number}"))
+      end
+
+      noted = invoice(%{invoice_number: "INV-0006"})
+      note(noted, %{note_number: "CN-0001"})
+      note(noted, %{note_number: "CN-0002", status: "Cancelled"})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert %{"doc_det" => [invoices, credit]} = json["doc_issue"]
+
+      assert %{"doc_num" => 1, "docs" => [range]} = invoices
+
+      assert range == %{
+               "num" => 1,
+               "from" => "INV-0001",
+               "to" => "INV-0006",
+               "totnum" => 6,
+               "cancel" => 2,
+               "net_issue" => 4
+             }
+
+      assert %{"doc_num" => 5, "docs" => [%{"totnum" => 2, "cancel" => 1}]} = credit
+    end
+
+    test "starts a second Table 13 row when the series prefix changes" do
+      invoice(%{invoice_number: "A-9"})
+      invoice(%{invoice_number: "A-10"})
+      invoice(%{invoice_number: "B-1"})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert %{"doc_det" => [%{"docs" => [first, second]}]} = json["doc_issue"]
+      # By number, not by text: A-10 comes after A-9.
+      assert %{"from" => "A-9", "to" => "A-10", "totnum" => 2} = first
+      assert %{"from" => "B-1", "to" => "B-1", "totnum" => 1} = second
     end
   end
+
+  # ₹1.77 lakh, inter-state, to a buyer with no GSTIN.
+  defp big_consumer_invoice(attrs) do
+    invoice(
+      Map.merge(
+        %{
+          client_gstin: nil,
+          place_of_supply: "Karnataka (29)",
+          taxable_value: 15_000_000,
+          cgst_amount: 0,
+          sgst_amount: 0,
+          igst_amount: 2_700_000,
+          grand_total: 17_700_000
+        },
+        attrs
+      )
+    )
+  end
+
+  defp small_consumer_invoice do
+    invoice(%{
+      client_gstin: nil,
+      taxable_value: 100_000,
+      cgst_amount: 9_000,
+      sgst_amount: 9_000,
+      grand_total: 118_000
+    })
+  end
+
+  defp note(invoice, attrs) do
+    client = Repo.insert!(%Client{name: "Delta Retailers", email: "delta@example.com"})
+
+    defaults = %{
+      client_id: client.id,
+      note_number: "N-#{System.unique_integer([:positive])}",
+      note_date: ~D[2026-03-15],
+      note_type: "Credit",
+      reason: "Rate revised",
+      invoice_id: invoice.id
+    }
+
+    Repo.insert!(struct(%CreditNote{}, Map.merge(defaults, attrs)))
+  end
+
+  # Summed in paise, so float rupees compare exactly.
+  defp total(rows, key), do: rows |> Enum.map(&round((&1[key] || 0) * 100)) |> Enum.sum()
 end

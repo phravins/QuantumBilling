@@ -75,6 +75,10 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
       nil ->
         {:noreply, invoice_gone(socket)}
 
+      %{status: status} when status in ["Paid", "Credited", "Cancelled"] ->
+        # Paid, credited or cancelled since the page opened: show it as it is now.
+        {:noreply, socket |> assign(:payment_error, nil) |> reload()}
+
       %{razorpay_payment_url: url} = invoice when is_binary(url) and url != "" ->
         pay_at(socket, invoice, url)
 
@@ -164,7 +168,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
               Tax Invoice {@invoice.invoice_number}
             </h1>
             <p class="text-xs text-base-content/60 mt-0.5">
-              Issued on {@invoice.invoice_date} | Total Due:
+              Issued on {format_date(@invoice.invoice_date)} · Total Due:
               <strong class="text-emerald-600 dark:text-emerald-400">{money(
                 @invoice.grand_total,
                 @invoice.currency
@@ -190,7 +194,23 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </span>
 
             <span
-              :if={@invoice.status != "Paid" and not Payments.online_payable?(@invoice)}
+              :if={@invoice.status == "Cancelled"}
+              id="invoice-cancelled"
+              class="inline-flex items-center gap-1 rounded-field border border-base-300 px-2.5 py-1 text-xs font-semibold text-base-content/70"
+            >
+              <.icon name="hero-no-symbol" class="size-4" /> Cancelled, not payable
+            </span>
+
+            <span
+              :if={@invoice.status == "Credited"}
+              id="invoice-credited"
+              class="inline-flex items-center gap-1 rounded-field border border-base-300 px-2.5 py-1 text-xs font-semibold text-base-content/70"
+            >
+              <.icon name="hero-receipt-refund" class="size-4" /> Credited, nothing to pay
+            </span>
+
+            <span
+              :if={Payments.open_for_payment?(@invoice) and not Payments.online_payable?(@invoice)}
               id="payment-unavailable"
               class="text-xs text-base-content/60"
             >
@@ -198,7 +218,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
             </span>
 
             <button
-              :if={@invoice.status != "Paid" and Payments.online_payable?(@invoice)}
+              :if={Payments.open_for_payment?(@invoice) and Payments.online_payable?(@invoice)}
+              id="pay-now"
               type="button"
               phx-click="pay_now"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition transform hover:-translate-y-0.5"
@@ -226,7 +247,8 @@ defmodule QuantumBillingWeb.PublicInvoiceLive do
         </div>
 
         <div
-          :if={@invoice.status != "Paid" and Payments.online_payable?(@invoice)}
+          :if={Payments.open_for_payment?(@invoice) and Payments.online_payable?(@invoice)}
+          id="upi-payment"
           class="bg-base-100 p-6 rounded-2xl border border-emerald-500/30 shadow-md flex flex-col sm:flex-row items-center justify-between gap-6"
         >
           <div class="space-y-2 flex-1 text-center sm:text-left">

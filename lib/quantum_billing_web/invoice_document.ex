@@ -128,14 +128,20 @@ defmodule QuantumBillingWeb.InvoiceDocument do
     ]
 
     round? = Organization.round_to_whole_units?(organization)
+    currency = Organization.currency_code(organization)
 
     totals =
-      Tax.totals(items, %{regime: "vat", reverse_charge: false, round_to_whole_units: round?})
+      Tax.totals(items, %{
+        regime: "vat",
+        reverse_charge: false,
+        round_to_whole_units: round?,
+        currency: currency
+      })
 
     %Invoice{
       sample(nil)
       | tax_regime: "vat",
-        currency: Organization.currency_code(organization),
+        currency: currency,
         round_to_whole_units: round?,
         place_of_supply: nil,
         company_address: "Office 1204, Example Tower",

@@ -1,131 +1,11 @@
 defmodule QuantumBillingWeb.Illustrations do
   @moduledoc """
-  Ink-style illustrations for the focus screens: the picker, the success screen and onboarding.
+  Ink-style illustrations for the focus screens: onboarding and the success screen.
 
   Inline SVG built from one `person/1` figure, using `base-content` and
   `base-100` so it follows dark mode. Decorative and `aria-hidden`.
   """
   use Phoenix.Component
-
-  @doc """
-  Someone at work, for a company card; five scenes so neighbouring cards differ.
-
-  `variant` picks the scene (wraps); `tone` is a literal `fill-*` class for the backdrop.
-  """
-  attr :variant, :integer, default: 0
-  attr :tone, :string, default: "fill-base-content/10"
-  attr :class, :any, default: "h-28 w-auto"
-
-  def company(assigns) do
-    assigns = assign(assigns, :kind, rem(abs(assigns.variant), 5))
-
-    ~H"""
-    <svg viewBox="0 0 200 160" class={@class} aria-hidden="true" fill="none">
-      <path
-        d="M40 46 C52 20 104 12 140 22 C176 32 192 66 186 100 C180 134 146 152 104 150 C62 148 22 132 16 100 C12 76 28 66 40 46 Z"
-        class={@tone}
-      />
-
-      <%= case @kind do %>
-        <% 0 -> %>
-          <%!-- Office: at a laptop, a tower behind. --%>
-          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M132 150 V40 H174 V150" class="fill-base-100" />
-            <path
-              :for={y <- [52, 68, 84, 100, 116]}
-              d={"M142 #{y} h8 M158 #{y} h8"}
-              stroke-linecap="round"
-            />
-          </g>
-          <.sparkle x={30} y={40} r={8} />
-          <.person x={36} y={44} s={0.95} hair={:short} glasses shirt={:ink} />
-          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M44 116 H124 L116 154 H52 Z" class="fill-base-content" />
-            <circle cx="84" cy="134" r="5" class="fill-base-100" stroke="none" />
-          </g>
-        <% 1 -> %>
-          <%!-- Shop: behind the counter under a striped awning, waving. --%>
-          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path
-              :for={{x, i} <- Enum.with_index([24, 52, 80, 108, 136])}
-              d={"M#{x} 14 H#{x + 28} V34 C#{x + 28} 44 #{x} 44 #{x} 34 Z"}
-              class={if(rem(i, 2) == 0, do: "fill-base-content", else: "fill-base-100")}
-            />
-          </g>
-          <.person x={56} y={50} s={0.92} hair={:bun} shirt={:paper}>
-            <:arms>
-              <.arm d="M78 86 C92 82 98 66 98 48" shirt={:paper} />
-              <.hand x={98} y={42} />
-              <.wave_marks />
-            </:arms>
-          </.person>
-          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M20 124 H180 V156 H20 Z" class="fill-base-100" />
-            <path d="M28 136 H172" stroke-linecap="round" stroke-dasharray="2 9" />
-            <path d="M30 124 V108 C30 100 52 100 52 108 V124" class="fill-base-100" />
-            <path d="M36 106 C36 98 46 98 46 106" />
-          </g>
-        <% 2 -> %>
-          <%!-- Workshop: hard hat, holding up a gear, a saw-tooth roof behind. --%>
-          <path
-            d="M118 150 V70 L138 58 V70 L158 58 V70 L178 58 V150"
-            class="fill-base-100 stroke-base-content"
-            stroke-width="3"
-            stroke-linejoin="round"
-          />
-          <.person x={26} y={50} s={0.9} hair={:hat} beard shirt={:paper}>
-            <:arms>
-              <.arm d="M22 86 C14 92 18 98 28 96" shirt={:paper} />
-              <.arm d="M78 86 C86 92 82 98 72 96" shirt={:paper} />
-            </:arms>
-            <:front>
-              <.gear x={50} y={92} />
-              <.hand x={28} y={96} />
-              <.hand x={72} y={96} />
-            </:front>
-          </.person>
-          <.sparkle x={170} y={34} r={7} />
-        <% 3 -> %>
-          <%!-- Warehouse: carrying a parcel, a stack of boxes behind. --%>
-          <g class="fill-base-100 stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M130 116 H176 V152 H130 Z" />
-            <path d="M138 84 H172 V116 H138 Z" />
-            <path d="M153 116 V128 M155 84 V94" stroke-linecap="round" />
-          </g>
-          <.person x={22} y={44} s={0.95} hair={:curly} shirt={:paper}>
-            <:arms>
-              <.arm d="M22 86 C14 92 14 98 18 104" shirt={:paper} />
-              <.arm d="M78 86 C86 92 86 98 82 104" shirt={:paper} />
-            </:arms>
-            <:front>
-              <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-                <path d="M14 84 H86 V120 H14 Z" class="fill-base-100" />
-                <path d="M42 84 V98 H58 V84" class="fill-base-content" />
-                <path d="M24 112 l4 -5 4 5 M34 112 l4 -5 4 5" stroke-linecap="round" />
-              </g>
-              <.hand x={16} y={104} />
-              <.hand x={84} y={104} />
-            </:front>
-          </.person>
-        <% _ -> %>
-          <%!-- Studio: long hair, pencil raised to a drawing board. --%>
-          <g class="stroke-base-content" stroke-width="3" stroke-linejoin="round">
-            <path d="M118 30 H184 V104 H118 Z" class="fill-base-100" />
-            <path d="M126 92 L144 66 L156 80 L166 70 L178 92" stroke-linecap="round" />
-            <circle cx="166" cy="46" r="7" class="fill-base-content" />
-            <path d="M136 104 L128 152 M166 104 L174 152" stroke-linecap="round" />
-          </g>
-          <.person x={22} y={46} s={0.95} hair={:long} shirt={:ink}>
-            <:arms>
-              <.arm d="M78 86 C94 82 104 70 110 56" />
-              <.hand x={112} y={52} />
-              <.pencil x={112} y={52} angle={-35} />
-            </:arms>
-          </.person>
-      <% end %>
-    </svg>
-    """
-  end
 
   @doc "Someone waving hello beside a fresh invoice and a few coins: the first onboarding step."
   attr :class, :any, default: "h-44 w-auto"
@@ -640,29 +520,6 @@ defmodule QuantumBillingWeb.Illustrations do
       >
         ₹
       </text>
-    </g>
-    """
-  end
-
-  # A cog: eight teeth round an ink wheel with a paper hub.
-  attr :x, :any, required: true
-  attr :y, :any, required: true
-
-  defp gear(assigns) do
-    ~H"""
-    <g transform={"translate(#{@x} #{@y})"} class="stroke-base-content" stroke-width="3">
-      <rect
-        :for={angle <- [0, 45, 90, 135, 180, 225, 270, 315]}
-        x="-5"
-        y="-24"
-        width="10"
-        height="10"
-        rx="1.5"
-        transform={"rotate(#{angle})"}
-        class="fill-base-content"
-      />
-      <circle r="17" class="fill-base-content" />
-      <circle r="6.5" class="fill-base-100" />
     </g>
     """
   end

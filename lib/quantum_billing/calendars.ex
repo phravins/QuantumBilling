@@ -191,9 +191,12 @@ defmodule QuantumBilling.Calendars do
   defp obligation_items(today) do
     organization = Settings.get_organization()
     lead = organization.reminder_lead_days || 7
+    filings = Compliance.list_filings()
 
+    # A filed return leaves the list, so remove_stale deletes its event.
     [today, Compliance.shift_months(today, -12)]
-    |> Enum.flat_map(&Compliance.tracked_obligations(&1, organization))
+    |> Enum.flat_map(&Compliance.tracked_obligations(&1, organization, filings))
+    |> Enum.reject(&(&1.status == "Filed"))
     |> Enum.filter(&(Date.compare(&1.due_date, today) != :lt))
     |> Enum.map(fn obligation ->
       %{

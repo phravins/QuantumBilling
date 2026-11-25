@@ -9,7 +9,7 @@ defmodule QuantumBilling.Mail.Delivery do
   import Ecto.Changeset
 
   @statuses ~w(queued sent failed)
-  @kinds ~w(invoice payment_receipt test account e_way_bill reminder)
+  @kinds ~w(invoice payment_receipt test account e_way_bill reminder quotation)
 
   schema "email_deliveries" do
     field :to_email, :string

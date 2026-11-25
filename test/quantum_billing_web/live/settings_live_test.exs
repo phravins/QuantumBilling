@@ -48,34 +48,30 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert has_element?(view, ~s(header button[type="submit"][form="settings-form"]))
     end
 
-    # Each section is a full navigation, so the list renders unfolded.
-    test "the sections stay unfolded across the settings panels", %{conn: conn} do
-      for path <- [~p"/settings", ~p"/settings/tax", ~p"/settings/customization"] do
+    # Settings pages swap the main nav for their own menu, with a way back.
+    test "settings pages show the settings sidebar with Back", %{conn: conn} do
+      for path <- [~p"/settings", ~p"/settings/tax", ~p"/users/settings", ~p"/users/profile"] do
         {:ok, view, _html} = live(conn, path)
 
-        assert has_element?(view, "#settings-sections-toggle[checked]"),
-               "expected the settings sections open on #{path}"
+        assert has_element?(view, "#settings-back"), "expected Back on #{path}"
+        assert has_element?(view, "#settings-link-tax"), "expected the settings menu on #{path}"
+        refute has_element?(view, "#nav-invoices"), "expected no main nav on #{path}"
       end
     end
 
-    # Driven off the open section, not the nav item.
-    test "and stay folded everywhere else", %{conn: conn} do
-      for path <- [~p"/users/settings", ~p"/invoices"] do
-        {:ok, view, _html} = live(conn, path)
-
-        refute has_element?(view, "#settings-sections-toggle[checked]"),
-               "expected the settings sections folded on #{path}"
-
-        assert has_element?(view, ~s(a[href="/settings/tax"]))
-      end
-    end
-
-    test "the chevron opens them without a round trip", %{conn: conn} do
+    test "the main sidebar has no settings dropdown, only a Settings link", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/invoices")
 
-      # A label driving a checkbox: no phx-click.
-      assert has_element?(view, ~s(label[for="settings-sections-toggle"]))
-      refute has_element?(view, ~s(a[href="/settings"][phx-click]))
+      refute has_element?(view, "#settings-back")
+      refute has_element?(view, "#settings-link-tax")
+      assert has_element?(view, "#nav-settings")
+    end
+
+    test "the active settings item is marked", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/tax")
+
+      assert has_element?(view, ~s(#settings-link-tax[aria-current="page"]))
+      refute has_element?(view, ~s(#settings-link-general[aria-current="page"]))
     end
 
     # Collapsing leaves an icon rail: the buttons are client-side only, and
@@ -115,11 +111,10 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
     test "the Company Profile is read-only and shows the company's facts", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/company")
 
-      assert has_element?(view, "#company-name")
-      assert has_element?(view, "#company-facts")
+      assert has_element?(view, "#company-identity #company-name")
+      assert has_element?(view, "#company-details")
       assert has_element?(view, "#company-member-count")
-      assert has_element?(view, "#company-letterhead #company-registration")
-      assert has_element?(view, "#company-completeness [role='progressbar']")
+      assert has_element?(view, "#company-danger #company-archive[data-confirm]")
       assert has_element?(view, "#company-edit-details[href='/settings/general']")
       assert has_element?(view, "#company-edit-designs[href='/settings/customization']")
       refute has_element?(view, "#settings-form")
@@ -286,6 +281,48 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
         |> render_change()
 
       assert html =~ "GST-00042"
+    end
+
+    test "the invoice panel saves the note series and previews their numbers", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/invoice")
+
+      assert has_element?(view, "#settings-note-numbering")
+      assert view |> element("#settings-number-preview") |> render() =~ "CN-0001"
+
+      html =
+        view
+        |> form("#settings-form", %{
+          "organization" => %{
+            "credit_note_prefix" => "CR/26",
+            "credit_note_next_number" => "7",
+            "debit_note_prefix" => "DR",
+            "debit_note_next_number" => "3"
+          }
+        })
+        |> render_change()
+
+      assert html =~ "CR/26-0007"
+      assert html =~ "DR-0003"
+
+      view |> form("#settings-form") |> render_submit()
+
+      organization = Settings.get_organization()
+      assert organization.credit_note_prefix == "CR/26"
+      assert organization.credit_note_next_number == 7
+      assert organization.debit_note_prefix == "DR"
+      assert organization.debit_note_next_number == 3
+    end
+
+    test "the invoice panel refuses numbers longer than GST allows", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/invoice")
+
+      html =
+        view
+        |> form("#settings-form", %{"organization" => %{"invoice_prefix" => "QUANTUMBILLS"}})
+        |> render_submit()
+
+      assert html =~ "longer than 16 characters"
+      assert Settings.get_organization().invoice_prefix == "INV"
     end
 
     test "the rate select offers only the statutory slabs", %{conn: conn} do
@@ -500,6 +537,33 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
       org = Settings.get_organization()
       assert org.razorpay_key_id == "rzp_test_999"
+    end
+
+    test "saves this business's Razorpay webhook secret without showing it again", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/integrations")
+
+      assert has_element?(view, "#razorpay-webhook-secret-status", "server-wide secret")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{"razorpay_webhook_secret" => "whsec_only_this_firm"}
+      })
+      |> render_submit()
+
+      assert Settings.get_organization().razorpay_webhook_secret == "whsec_only_this_firm"
+      assert has_element?(view, "#razorpay-webhook-secret-status", "Secret set")
+      refute render(view) =~ "whsec_only_this_firm"
+
+      # A blank field on the next save leaves the stored secret alone.
+      view
+      |> form("#settings-form", %{
+        "organization" => %{"razorpay_webhook_secret" => "", "razorpay_key_id" => "rzp_test_1"}
+      })
+      |> render_submit()
+
+      assert Settings.get_organization().razorpay_webhook_secret == "whsec_only_this_firm"
     end
 
     test "secret keys have a show/hide button", %{conn: conn} do
@@ -939,6 +1003,16 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert rules.allowed_ips == "192.168.1.0/24"
       assert rules.session_timeout_minutes == 30
       assert Settings.get_organization().audit_retention_days == 90
+    end
+
+    test "turns on one device at a time for the installation", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/security")
+
+      view
+      |> form("#settings-form", %{"organization" => %{"single_session" => "true"}})
+      |> render_submit()
+
+      assert QuantumBilling.InstallationSettings.get().single_session
     end
   end
 

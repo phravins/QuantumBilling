@@ -23,6 +23,7 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
     {:ok, view, html} = live(conn, ~p"/pay/#{invoice.public_token}")
     assert html =~ "INV-9910"
     assert html =~ "Zeta Logistics"
+    assert html =~ "Issued on 01 Mar 2026"
     assert html =~ "Pay Now via UPI / Card"
 
     # Clicking pay_now triggers redirect or payment link creation
@@ -94,5 +95,51 @@ defmodule QuantumBillingWeb.PublicInvoiceLiveTest do
     assert has_element?(view, "#payment-unavailable", "Online payment not available for AED")
     refute has_element?(view, ~s(button[phx-click="pay_now"]))
     assert render(view) =~ "AED 1,050"
+  end
+
+  test "a cancelled invoice says so and offers no way to pay", %{conn: conn} do
+    invoice =
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-9911",
+        invoice_date: ~D[2026-03-01],
+        place_of_supply: "Maharashtra",
+        company_state: "Maharashtra",
+        client_name: "Zeta Logistics",
+        public_token: "tok_test_public_9911",
+        grand_total: 75000,
+        status: "Cancelled",
+        razorpay_payment_link_id: "plink_old",
+        razorpay_payment_url: "https://rzp.io/i/old"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pay/#{invoice.public_token}")
+
+    assert has_element?(view, "#invoice-cancelled")
+    refute has_element?(view, "#pay-now")
+    refute has_element?(view, "#upi-payment")
+    refute has_element?(view, ~s(button[phx-click="pay_now"]))
+  end
+
+  test "an invoice cancelled while the page was open is not sent to pay", %{conn: conn} do
+    invoice =
+      Repo.insert!(%Invoice{
+        invoice_number: "INV-9912",
+        invoice_date: ~D[2026-03-01],
+        place_of_supply: "Maharashtra",
+        company_state: "Maharashtra",
+        client_name: "Zeta Logistics",
+        public_token: "tok_test_public_9912",
+        grand_total: 75000,
+        status: "Draft",
+        razorpay_payment_url: "https://rzp.io/i/open"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pay/#{invoice.public_token}")
+    Repo.update!(Ecto.Changeset.change(invoice, status: "Cancelled"))
+
+    render_click(element(view, "#pay-now"))
+
+    assert has_element?(view, "#invoice-cancelled")
+    refute has_element?(view, "#pay-now")
   end
 end

@@ -170,5 +170,12 @@ defmodule QuantumBilling.Workers.EInvoiceWorkerTest do
 
       assert {:ok, :already_registered} = Invoices.queue_einvoice(invoice)
     end
+
+    test "a credited invoice is still registered, and stays Credited" do
+      invoice = invoice(%{status: "Credited"})
+
+      assert {:ok, :queued} = Invoices.queue_einvoice(invoice)
+      assert Repo.get!(Invoice, invoice.id).status == "Credited"
+    end
   end
 end

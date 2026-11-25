@@ -113,6 +113,35 @@ defmodule QuantumBilling.Workers.EmailWorkerTest do
       assert reloaded.last_error =~ "no longer exists"
     end
 
+    test "sends a quotation with its PDF and the client's link" do
+      quotation = QuantumBilling.QuotationsFixtures.quotation_fixture(via: "test")
+      {:ok, delivery} = Mail.record_queued(%{to_email: "buyer@example.com", kind: "quotation"})
+
+      assert :ok =
+               perform_job(%{"delivery_id" => delivery.id, "quotation_id" => quotation.id}, 1)
+
+      assert_email_sent(fn email ->
+        assert email.to == [{"", "buyer@example.com"}]
+        assert email.subject =~ quotation.number
+        assert email.text_body =~ quotation.public_token
+        assert [%{filename: "Quotation-" <> _}] = email.attachments
+      end)
+
+      assert Mail.get_delivery(delivery.id).status == "sent"
+    end
+
+    test "discards a job whose quotation went to the Bin" do
+      quotation = QuantumBilling.QuotationsFixtures.quotation_fixture(via: "test")
+      {:ok, _} = QuantumBilling.Quotations.delete_quotation([via: "test"], quotation)
+      {:ok, delivery} = Mail.record_queued(%{to_email: "buyer@example.com", kind: "quotation"})
+
+      assert :discard =
+               perform_job(%{"delivery_id" => delivery.id, "quotation_id" => quotation.id}, 1)
+
+      assert_no_email_sent()
+      assert Mail.get_delivery(delivery.id).last_error =~ "no longer exists"
+    end
+
     test "a job with nothing to render is discarded" do
       {:ok, delivery} = Mail.record_queued(%{to_email: "client@example.com"})
 

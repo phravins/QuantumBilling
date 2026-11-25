@@ -105,7 +105,7 @@ defmodule QuantumBillingWeb.UserSessionController do
       true ->
         conn
         |> put_flash(:info, info)
-        |> UserAuth.log_in_user(user, user_params)
+        |> UserAuth.log_in_or_hold(user, user_params)
     end
   end
 
@@ -181,6 +181,33 @@ defmodule QuantumBillingWeb.UserSessionController do
     conn
     |> put_session(:user_return_to, ~p"/users/settings")
     |> create(params, "Password updated successfully!")
+  end
+
+  @doc """
+  Signs in a browser that waited at /users/session-conflict, once the device
+  already signed in allowed it. Posted by that page on its own.
+  """
+  def finish_conflict(conn, _params) do
+    with %{"token" => token} = pending <- UserAuth.pending_sign_in(conn),
+         {:ok, user} <- Accounts.consume_approved_sign_in_request(token) do
+      conn
+      |> put_flash(:info, "Welcome back!")
+      |> UserAuth.complete_held_sign_in(user, pending)
+    else
+      # Not allowed (yet): the waiting page shows why, or sends it to log in.
+      _not_approved -> redirect(conn, to: ~p"/users/session-conflict")
+    end
+  end
+
+  @doc "Gives up a held sign-in: withdraws the request and goes back to log in."
+  def cancel_conflict(conn, _params) do
+    if pending = UserAuth.pending_sign_in(conn) do
+      Accounts.cancel_sign_in_request(pending["token"])
+    end
+
+    conn
+    |> UserAuth.clear_pending_sign_in()
+    |> redirect(to: ~p"/users/log-in")
   end
 
   def delete(conn, _params) do

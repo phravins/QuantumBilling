@@ -18,7 +18,9 @@ defmodule QuantumBillingWeb.UserLive.Registration do
     ~H"""
     <Layouts.auth flash={@flash}>
       <:top_link>
-        <.link navigate={~p"/users/log-in"} class="hover:underline">Login</.link>
+        <.link id="auth-top-link" navigate={~p"/users/log-in"} class={top_link_class()}>
+          Login
+        </.link>
       </:top_link>
 
       <Layouts.auth_heading
@@ -37,21 +39,28 @@ defmodule QuantumBillingWeb.UserLive.Registration do
         }
       />
 
-      <div :if={not @open?} class="grid gap-4 text-sm text-base-content/70">
+      <div
+        :if={not @open?}
+        id="registration-closed"
+        class="grid gap-5 text-center text-sm text-base-content/70"
+      >
         <p>
           Accounts here share one set of books, so they are handed out rather than
-          claimed. Ask an owner to invite you — they can do it from
-          <span class="font-medium">Settings &rsaquo; Team</span>
-          — and you will get a
-          link by email.
+          claimed. Ask an owner to invite you from
+          <span class="font-medium text-base-content">Settings &rsaquo; Team</span>
+          and you will get a link by email.
         </p>
 
-        <p>
-          Already have an account? <.link
+        <div class="grid justify-items-center gap-2">
+          <p>Already have an account?</p>
+          <.link
+            id="registration-sign-in"
             navigate={~p"/users/log-in"}
-            class="font-medium hover:underline"
-          >Log in</.link>.
-        </p>
+            class={primary_button_class()}
+          >
+            Sign in
+          </.link>
+        </div>
       </div>
 
       <div :if={@open?} class="grid gap-6">

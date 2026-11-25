@@ -292,6 +292,36 @@ defmodule QuantumBilling.AccountsTest do
       assert Accounts.count_owners(business) == 1
     end
 
+    test "concurrent owner removals leave at least one owner" do
+      business = Businesses.default!()
+      owner1 = owner_fixture()
+      owner2 = user_fixture()
+      {:ok, _} = Accounts.set_role(business, owner2, "owner")
+      assert Accounts.count_owners(business) == 2
+
+      test_pid = self()
+
+      task1 =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Accounts.remove_member(business, owner1)
+        end)
+
+      task2 =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Accounts.remove_member(business, owner2)
+        end)
+
+      res1 = Task.await(task1)
+      res2 = Task.await(task2)
+
+      results = [res1, res2]
+      assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+      assert Enum.count(results, &match?({:error, :last_owner}, &1)) == 1
+      assert Accounts.count_owners(business) == 1
+    end
+
     test "an invitation to an existing account adds the membership at once" do
       business = Businesses.default!()
       owner = owner_fixture()

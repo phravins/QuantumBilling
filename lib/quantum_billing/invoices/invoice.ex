@@ -46,6 +46,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     "E-Invoice Generated",
     "E-Invoice Failed",
     "Paid",
+    # Credit notes have brought it to nothing owed.
+    "Credited",
     "Cancelled"
   ]
 
@@ -134,6 +136,8 @@ defmodule QuantumBilling.Invoices.Invoice do
 
     belongs_to :template, QuantumBilling.Templates.InvoiceTemplate
     belongs_to :client, QuantumBilling.Clients.Client
+    # The quotation this invoice was converted from. Set only by Invoices.create_invoice/2.
+    belongs_to :quotation, QuantumBilling.Quotations.Quotation
     has_many :items, InvoiceItem, on_replace: :delete, preload_order: [asc: :position]
 
     timestamps(type: :utc_datetime)
@@ -153,7 +157,7 @@ defmodule QuantumBilling.Invoices.Invoice do
   # passed as `trusted`, never read from params.
   @trusted ~w(invoice_number company_name company_address company_gstin company_state
               status template_id layout_xml tax_regime prices_include_tax
-              round_to_whole_units company_tax_number)a
+              round_to_whole_units company_tax_number quotation_id)a
 
   @doc """
   Builds an invoice changeset, including its line items.
@@ -165,8 +169,10 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> cast(attrs, @castable)
     |> change(Map.take(trusted, @trusted))
     |> default_currency(attrs, trusted)
+    |> freeze_currency("invoice")
     |> ensure_public_token()
     |> validate_inclusion(:tax_regime, Tax.regime_codes())
+    |> validate_currency_regime()
     |> cast_items(attrs)
     |> validate_required([:invoice_date, :client_name])
     |> validate_inclusion(:invoice_type, @invoice_types)
@@ -184,6 +190,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     |> unique_constraint(:invoice_number,
       message: "has already been used — check the numbering series in Settings"
     )
+    # Backstop for converting a quotation twice at once.
+    |> unique_constraint(:quotation_id, message: "this quotation has already been converted")
   end
 
   # A new invoice bills in the business currency unless one was given.
@@ -217,11 +225,38 @@ defmodule QuantumBilling.Invoices.Invoice do
         do: {:vat, TaxRates.rates_by_id()},
         else: :gst
 
-    &InvoiceItem.changeset(&1, &2, definitions, tax)
+    currency = get_field(changeset, :currency)
+
+    &InvoiceItem.changeset(&1, &2, definitions, tax, currency)
+  end
+
+  # A saved document keeps its currency: every amount on it is in that
+  # currency's minor units. Nothing in the app changes it; this stops a
+  # crafted form or restore from doing so.
+  @doc false
+  def freeze_currency(changeset, noun) do
+    if changeset.data.id && changed?(changeset, :currency) do
+      changeset
+      |> delete_change(:currency)
+      |> add_error(:currency, "can't be changed after the #{noun} is saved")
+    else
+      changeset
+    end
+  end
+
+  # Three-decimal currencies are VAT-only (see QuantumBilling.Currency).
+  @doc false
+  def validate_currency_regime(changeset) do
+    currency = get_field(changeset, :currency)
+
+    if QuantumBilling.Currency.vat_only?(currency) and get_field(changeset, :tax_regime) != "vat",
+      do: add_error(changeset, :currency, "#{currency} needs the VAT tax regime"),
+      else: changeset
   end
 
   # India GST needs a state for the place of supply; VAT does not use one.
-  defp validate_place_of_supply(changeset) do
+  @doc false
+  def validate_place_of_supply(changeset) do
     if vat?(changeset) do
       changeset
     else
@@ -232,7 +267,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  defp validate_client_tax_number(changeset) do
+  @doc false
+  def validate_client_tax_number(changeset) do
     changeset
     |> update_change(:client_tax_number, &Tax.normalize_tax_number/1)
     |> validate_length(:client_tax_number, max: 30)
@@ -300,7 +336,8 @@ defmodule QuantumBilling.Invoices.Invoice do
     end
   end
 
-  defp validate_has_items(changeset) do
+  @doc false
+  def validate_has_items(changeset) do
     case get_field(changeset, :items) do
       [] -> add_error(changeset, :items, "add at least one item")
       nil -> add_error(changeset, :items, "add at least one item")
@@ -334,7 +371,8 @@ defmodule QuantumBilling.Invoices.Invoice do
       intra_state?: intra_state?(changeset),
       reverse_charge: get_field(changeset, :reverse_charge) == true,
       prices_include_tax: get_field(changeset, :prices_include_tax) == true,
-      round_to_whole_units: get_field(changeset, :round_to_whole_units) != false
+      round_to_whole_units: get_field(changeset, :round_to_whole_units) != false,
+      currency: get_field(changeset, :currency)
     }
   end
 

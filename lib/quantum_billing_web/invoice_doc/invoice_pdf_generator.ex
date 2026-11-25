@@ -18,11 +18,14 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   @doc """
   A standalone HTML string of the invoice, with stylesheet and logo inlined.
 
-  Option: `:print_button` (default `true`), off for anything printed or attached.
+  Options: `:print_button` (default `true`), off for anything printed or
+  attached; `:adapt`, a function applied to the parsed layout (a quotation
+  passes `InvoiceDoc.QuotationLayout.adapt/1`).
   """
   def generate_html(%Invoice{} = invoice, opts \\ []) do
     invoice = ensure_associations_loaded(invoice)
     {doc, accent, logo} = Templates.document_for(invoice)
+    doc = Keyword.get(opts, :adapt, & &1).(doc)
 
     assigns = %{
       doc: doc,
@@ -102,11 +105,14 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
   Prints the invoice to a PDF binary: `{:ok, pdf}` or `{:error, reason}`.
 
   On `{:error, :no_renderer}` callers fall back to the HTML document.
+  `:adapt` is passed to `generate_html/2`; the rest go to `InvoiceDoc.PDF`.
   """
   def generate_pdf(%Invoice{} = invoice, opts \\ []) do
+    {html_opts, pdf_opts} = Keyword.split(opts, [:adapt])
+
     invoice
-    |> generate_html(print_button: false)
-    |> PDF.render(opts)
+    |> generate_html([print_button: false] ++ html_opts)
+    |> PDF.render(pdf_opts)
   end
 
   def render("document.html", assigns) do

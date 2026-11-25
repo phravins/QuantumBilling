@@ -8,7 +8,9 @@ defmodule QuantumBillingWeb.UserLive.Login do
     ~H"""
     <Layouts.auth flash={@flash}>
       <:top_link>
-        <.link navigate={~p"/users/register"} class="hover:underline">Sign up</.link>
+        <.link id="auth-top-link" navigate={~p"/users/register"} class={top_link_class()}>
+          Sign up
+        </.link>
       </:top_link>
 
       <Layouts.auth_heading
@@ -59,8 +61,9 @@ defmodule QuantumBillingWeb.UserLive.Login do
               class="size-4 rounded border-base-300 text-base-content focus:outline-none focus:border-(--qb-field-focus)"
             />
             <.link
+              id="forgot-password"
               navigate={~p"/users/forgot-password"}
-              class="text-sm text-base-content/60 underline underline-offset-4 hover:text-base-content"
+              class="inline-flex h-8 shrink-0 items-center rounded-field border border-base-300 bg-base-100 px-3 text-xs font-medium text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-base-content"
             >
               Forgot password?
             </.link>

@@ -80,6 +80,61 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
     end
   end
 
+  describe "cancel_payment_link/1" do
+    setup do
+      System.put_env("RAZORPAY_KEY_ID", "rzp_test_key")
+      System.put_env("RAZORPAY_KEY_SECRET", "rzp_test_secret")
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_ID") end)
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_SECRET") end)
+
+      previous = Req.default_options()
+      Req.default_options(plug: {Req.Test, __MODULE__})
+      on_exit(fn -> Req.default_options(previous) end)
+
+      :ok
+    end
+
+    test "posts to the link's cancel endpoint with the API key" do
+      test_pid = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        send(test_pid, {:request, conn.method, conn.request_path, conn.req_headers})
+        Req.Test.json(conn, %{"id" => "plink_123", "status" => "cancelled"})
+      end)
+
+      assert :ok = RazorpayClient.cancel_payment_link("plink_123")
+
+      assert_receive {:request, "POST", "/v1/payment_links/plink_123/cancel", headers}
+
+      assert {"authorization", "Basic " <> _credentials} =
+               List.keyfind(headers, "authorization", 0)
+    end
+
+    test "a link Razorpay will not cancel is reported as refused" do
+      Req.Test.stub(__MODULE__, fn conn ->
+        conn
+        |> Plug.Conn.put_status(400)
+        |> Req.Test.json(%{"error" => %{"description" => "Payment link is already paid"}})
+      end)
+
+      assert {:error, {:refused, "Payment link is already paid"}} =
+               RazorpayClient.cancel_payment_link("plink_paid")
+    end
+
+    test "a server error may pass, so it is not a refusal" do
+      Req.Test.stub(__MODULE__, &Plug.Conn.send_resp(&1, 503, ""))
+
+      assert {:error, message} = RazorpayClient.cancel_payment_link("plink_123")
+      assert message =~ "503"
+    end
+
+    test "a simulated link is cancelled without calling Razorpay" do
+      Req.Test.stub(__MODULE__, fn _conn -> flunk("no request expected") end)
+
+      assert :ok = RazorpayClient.cancel_payment_link("plink_sandbox_abc")
+    end
+  end
+
   describe "credentials/0" do
     test "prefers the encrypted settings over the environment" do
       System.put_env("RAZORPAY_KEY_ID", "rzp_from_env")

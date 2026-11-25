@@ -397,6 +397,7 @@ defmodule QuantumBillingWeb.DashboardLive do
       %{label: "Draft", value: status_counts["Draft"] || 0, tone: :medium},
       # :positive, not :soft, which is the failure red.
       %{label: "Paid", value: status_counts["Paid"] || 0, tone: :positive},
+      %{label: "Credited", value: status_counts["Credited"] || 0, tone: :muted},
       %{label: "Cancelled", value: status_counts["Cancelled"] || 0, tone: :faint}
     ]
     |> Enum.reject(&(&1.value == 0))

@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.UserLive.Profile do
 
   alias QuantumBilling.Accounts
   alias QuantumBilling.Audit
+  alias QuantumBilling.Audit.Catalog
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
@@ -56,6 +57,8 @@ defmodule QuantumBillingWeb.UserLive.Profile do
     <Layouts.app
       flash={@flash}
       current_scope={@current_scope}
+      sidebar={:settings}
+      active_sub={:profile}
       active_nav={@active_nav}
       notifications={@notifications}
       unread_count={@unread_count}
@@ -258,12 +261,19 @@ defmodule QuantumBillingWeb.UserLive.Profile do
                 class="flex items-center gap-3 rounded-field px-2 py-2 transition-colors hover:bg-base-200/60"
               >
                 <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-base-200 text-base-content/60">
-                  <.icon name={activity_icon(log.resource_type)} class="size-4" />
+                  <.icon name={Catalog.icon(log.action)} class="size-4" />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium">{humanize(log.action)}</span>
+                  <span class="block truncate text-sm font-medium">{Catalog.label(log.action)}</span>
                   <span class="block truncate text-xs text-base-content/50">
-                    {resource_label(log.resource_type)}<span :if={present?(log.resource_id)}> · {log.resource_id}</span>
+                    <.link
+                      :if={activity_path(log)}
+                      navigate={activity_path(log)}
+                      class="hover:text-base-content hover:underline"
+                    >
+                      {activity_subject(log)}
+                    </.link>
+                    <span :if={!activity_path(log)}>{activity_subject(log)}</span>
                   </span>
                 </span>
                 <time class="shrink-0 text-xs text-base-content/45" title={to_string(log.inserted_at)}>
@@ -335,22 +345,21 @@ defmodule QuantumBillingWeb.UserLive.Profile do
   defp role_label(%{role: _staff}), do: "Staff"
   defp role_label(nil), do: nil
 
-  defp activity_icon("Invoice"), do: "hero-document-text"
-  defp activity_icon("EWayBill"), do: "hero-truck"
-  defp activity_icon("Client"), do: "hero-user-group"
-  defp activity_icon("InvoiceTemplate"), do: "hero-swatch"
-  defp activity_icon("RecurringProfile"), do: "hero-arrow-path"
-  defp activity_icon(_type), do: "hero-bolt"
+  # The record's name when the entry stored one, else its category and id.
+  defp activity_subject(%{details: %{"label" => label}}) when is_binary(label) and label != "",
+    do: label
 
-  defp resource_label("EWayBill"), do: "E-way bill"
-  defp resource_label("InvoiceTemplate"), do: "Invoice template"
-  defp resource_label("RecurringProfile"), do: "Recurring profile"
-  defp resource_label(type), do: humanize(type)
+  defp activity_subject(log) do
+    [Catalog.category(log.action), log.resource_id]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" · ")
+  end
 
-  defp humanize(nil), do: ""
-
-  defp humanize(value) do
-    value |> to_string() |> String.replace("_", " ") |> String.capitalize()
+  # A binned or deleted record has no page to open.
+  defp activity_path(%{action: action} = log) do
+    unless Catalog.removal?(action) do
+      Catalog.record_path(log.resource_type, log.resource_id, log.details || %{})
+    end
   end
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""

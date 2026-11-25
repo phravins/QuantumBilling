@@ -200,7 +200,7 @@ defmodule QuantumBilling.InvoicesPageTest do
       assert Invoices.totals().outstanding == 1_250_000
     end
 
-    test "ignores notes against invoices that are no longer owed" do
+    test "a credit on one client's paid invoice does not reduce what others owe" do
       paid =
         insert_invoice(%{
           client_id: billed_client().id,
@@ -217,27 +217,54 @@ defmodule QuantumBilling.InvoicesPageTest do
           "grand_total" => Decimal.new("10000")
         })
 
-      # Crediting a settled invoice is a refund, not a reduction in
-      # receivables, and must not eat into what other customers still owe.
+      # The credit is the paid client's to use, and must not eat into what
+      # other customers still owe.
       assert Invoices.totals().outstanding == 300_000
       assert owed.grand_total == 300_000
     end
 
     test "never reports a negative receivable" do
-      invoice =
+      client = billed_client()
+
+      paid =
         insert_invoice(%{
-          client_id: billed_client().id,
+          client_id: client.id,
           invoice_number: "INV-OVER",
-          grand_total: 500_000
+          grand_total: 1_000_000,
+          status: "Paid"
         })
 
+      insert_invoice(%{client_id: client.id, invoice_number: "INV-SMALL", grand_total: 200_000})
+
       {:ok, _note} =
-        CreditNotes.create_credit_note_for_invoice(invoice, %{
+        CreditNotes.create_credit_note_for_invoice(paid, %{
           "note_type" => "Credit",
           "grand_total" => Decimal.new("9000")
         })
 
       assert Invoices.totals().outstanding == 0
+    end
+
+    test "nets a credit on a paid invoice against what the same client owes" do
+      client = billed_client()
+
+      paid =
+        insert_invoice(%{
+          client_id: client.id,
+          invoice_number: "INV-RETURN",
+          grand_total: 1_000_000,
+          status: "Paid"
+        })
+
+      insert_invoice(%{client_id: client.id, invoice_number: "INV-NEXT", grand_total: 600_000})
+
+      {:ok, _note} =
+        CreditNotes.create_credit_note_for_invoice(paid, %{
+          "note_type" => "Credit",
+          "grand_total" => Decimal.new("2500")
+        })
+
+      assert Invoices.totals().outstanding == 350_000
     end
 
     test "ignores a cancelled note" do

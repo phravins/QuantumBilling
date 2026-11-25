@@ -21,7 +21,7 @@ defmodule QuantumBillingWeb.SettingsLive.DataModelTest do
     setup :register_and_log_in_owner
 
     test "adds a text field", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model?object=client")
       assert has_element?(view, "#fields-empty")
 
       view |> element("#new-field") |> render_click()
@@ -67,7 +67,7 @@ defmodule QuantumBillingWeb.SettingsLive.DataModelTest do
     end
 
     test "shows errors and keeps the dialog open", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model?object=client")
       view |> element("#new-field") |> render_click()
 
       view
@@ -87,7 +87,7 @@ defmodule QuantumBillingWeb.SettingsLive.DataModelTest do
       {:ok, b} =
         CustomFields.create_definition(scope, "client", %{"label" => "B", "type" => "text"})
 
-      {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model?object=client")
 
       view |> element("#edit-field-#{a.id}") |> render_click()
 
@@ -118,17 +118,40 @@ defmodule QuantumBillingWeb.SettingsLive.DataModelTest do
 
       {:ok, _archived} = CustomFields.archive_definition(scope, field)
 
-      {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model?object=client")
       view |> element("#delete-field-#{field.id}") |> render_click()
 
       assert CustomFields.get_definition(field.id) == nil
       refute has_element?(view, "#archived-field-#{field.id}")
     end
 
-    test "switches tabs by record type", %{conn: conn} do
+    test "lists the standard objects and opens one", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+
+      assert has_element?(view, "#object-rows #object-client")
+      assert has_element?(view, "#object-rows #object-e_way_bill")
+
       view |> element("#object-tab-e_way_bill") |> render_click()
       assert_patch(view, ~p"/settings/data-model?object=e_way_bill")
+      assert has_element?(view, "#data-model-back")
+      assert has_element?(view, "#standard-fields #standard-field-vehicle_number")
+    end
+
+    test "search narrows the objects", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model")
+
+      view |> form("#object-search-form", objects: %{q: "credit"}) |> render_change()
+
+      assert has_element?(view, "#object-credit_note")
+      refute has_element?(view, "#object-client")
+    end
+
+    test "shows the built-in fields as read-only Standard rows", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/data-model?object=client")
+
+      assert has_element?(view, "#standard-field-name")
+      refute has_element?(view, "#standard-field-custom_fields")
+      refute has_element?(view, "#standard-field-id")
     end
   end
 

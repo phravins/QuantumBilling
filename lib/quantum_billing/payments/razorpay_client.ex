@@ -59,6 +59,58 @@ defmodule QuantumBilling.Payments.RazorpayClient do
     end
   end
 
+  @doc """
+  Cancels a payment link so it can no longer be paid.
+
+  `:ok`; `{:error, {:refused, description}}` when Razorpay will not cancel it
+  (already paid, expired or cancelled), which retrying will not change; or
+  `{:error, message}` for anything that may pass.
+  """
+  def cancel_payment_link("plink_sandbox_" <> _simulated), do: :ok
+
+  def cancel_payment_link(link_id) when is_binary(link_id) and link_id != "" do
+    case credentials() do
+      {key_id, key_secret} when is_binary(key_id) and is_binary(key_secret) ->
+        cancel_request(link_id, key_id, key_secret)
+
+      _missing ->
+        {:error, "Razorpay is not configured, so the payment link could not be cancelled."}
+    end
+  end
+
+  defp cancel_request(link_id, key_id, key_secret) do
+    case Req.post("#{@endpoint}/#{URI.encode_www_form(link_id)}/cancel",
+           auth: {:basic, "#{key_id}:#{key_secret}"},
+           receive_timeout: @receive_timeout,
+           retry: false
+         ) do
+      {:ok, %{status: status}} when status in 200..299 ->
+        :ok
+
+      {:ok, %{status: 401}} ->
+        {:error, "Razorpay rejected the API key. Check the key id and secret in Settings."}
+
+      {:ok, %{status: 429}} ->
+        {:error, "Razorpay is rate limiting requests."}
+
+      {:ok, %{status: status, body: body}} when status in 400..499 ->
+        {:error, {:refused, error_description(body) || "HTTP #{status}"}}
+
+      {:ok, %{status: status}} ->
+        {:error, "Razorpay returned HTTP #{status}."}
+
+      {:error, exception} ->
+        Logger.warning("[Razorpay] #{Exception.message(exception)}")
+        {:error, "Could not reach Razorpay: #{Exception.message(exception)}"}
+    end
+  end
+
+  defp error_description(%{"error" => %{"description" => description}})
+       when is_binary(description),
+       do: description
+
+  defp error_description(_body), do: nil
+
   defp payload(%Invoice{} = invoice) do
     %{
       # Razorpay counts in paise, as the invoice does.

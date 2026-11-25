@@ -5,6 +5,7 @@ defmodule QuantumBillingWeb.BinLiveTest do
   """
   use QuantumBillingWeb.ConnCase, async: false
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias QuantumBilling.Audit
@@ -15,6 +16,9 @@ defmodule QuantumBillingWeb.BinLiveTest do
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Quotations
+  alias QuantumBilling.Quotations.Quotation
+  alias QuantumBilling.Quotations.QuotationItem
   alias QuantumBilling.Recurring
   alias QuantumBilling.Repo
   alias QuantumBilling.Templates
@@ -159,8 +163,8 @@ defmodule QuantumBillingWeb.BinLiveTest do
     {:ok, view, _html} = live(conn, ~p"/bin")
 
     assert has_element?(view, ~s|nav a[href="/bin"]|, "Bin")
-    assert has_element?(view, ~s|nav li:has(a[href="/bin"]) + li a[href="/settings"]|)
-    refute has_element?(view, ~s|nav li:has(a[href="/settings"]) + li a[href="/bin"]|)
+    assert has_element?(view, ~s|nav li:has(a[href="/bin"]) + li a[href="/settings/company"]|)
+    refute has_element?(view, ~s|nav li:has(a[href="/settings/company"]) + li a[href="/bin"]|)
   end
 
   describe "staff" do
@@ -605,7 +609,7 @@ defmodule QuantumBillingWeb.BinLiveTest do
         CreditNotes.create_credit_note_for_invoice(invoice, %{
           "note_type" => "Credit",
           "reason" => "Returned",
-          "grand_total" => Decimal.new("18000.00")
+          "grand_total" => Decimal.new("180.00")
         })
 
       {:ok, client} = Clients.delete_client(client)
@@ -793,6 +797,70 @@ defmodule QuantumBillingWeb.BinLiveTest do
 
       assert QuantumBillingWeb.BinLive.relative_deleted(at.(~D[2026-09-01]), today) ==
                "Deleted on 01 Sep 2026"
+    end
+  end
+
+  describe "quotations in the Bin" do
+    defp binned_quotation(scope) do
+      quotation = QuantumBilling.QuotationsFixtures.quotation_fixture(scope)
+      {:ok, binned} = Quotations.delete_quotation(scope, quotation)
+      binned
+    end
+
+    test "are listed with the two actions and counted on their own chip",
+         %{conn: conn, scope: scope} do
+      quotation = binned_quotation(scope)
+      invoice = binned_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+
+      assert has_element?(view, "#bin-quotation-#{quotation.id}", quotation.number)
+      assert has_element?(view, "#bin-restore-quotation-#{quotation.id}")
+      assert has_element?(view, "#bin-purge-quotation-#{quotation.id}[data-confirm]")
+      assert has_element?(view, "#bin-count-quotation", "1")
+
+      view |> element("#bin-filter-quotation") |> render_click()
+
+      assert has_element?(view, "#bin-quotation-#{quotation.id}")
+      refute has_element?(view, "#bin-invoice-#{invoice.id}")
+    end
+
+    test "restore puts the quotation back on the list", %{conn: conn, scope: scope, user: user} do
+      quotation = binned_quotation(scope)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+      view |> element("#bin-restore-quotation-#{quotation.id}") |> render_click()
+
+      refute has_element?(view, "#bin-quotation-#{quotation.id}")
+      assert has_element?(view, "#flash-info", "restored")
+      assert Quotations.get_quotation(quotation.id)
+
+      assert Enum.any?(Audit.list_audit_logs(), fn log ->
+               log.action == "restore_quotation" and log.user_id == user.id
+             end)
+    end
+
+    test "delete permanently removes the quotation and its items", %{conn: conn, scope: scope} do
+      quotation = binned_quotation(scope)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+      view |> element("#bin-purge-quotation-#{quotation.id}") |> render_click()
+
+      refute has_element?(view, "#bin-quotation-#{quotation.id}")
+      assert has_element?(view, "#flash-info", "permanently deleted")
+      refute Repo.get(Quotation, quotation.id)
+      refute Repo.exists?(from i in QuotationItem, where: i.quotation_id == ^quotation.id)
+    end
+
+    test "a quotation that is not in the Bin cannot be purged through the page",
+         %{conn: conn, scope: scope} do
+      quotation = QuantumBilling.QuotationsFixtures.quotation_fixture(scope)
+
+      {:ok, view, _html} = live(conn, ~p"/bin")
+      render_click(view, "purge", %{"type" => "quotation", "id" => to_string(quotation.id)})
+
+      assert has_element?(view, "#flash-error", "no longer in the Bin")
+      assert Quotations.get_quotation(quotation.id)
     end
   end
 end

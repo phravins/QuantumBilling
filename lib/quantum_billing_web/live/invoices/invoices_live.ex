@@ -20,6 +20,7 @@ defmodule QuantumBillingWeb.InvoicesLive do
     "Pending E-Invoice",
     "Draft",
     "E-Invoice Failed",
+    "Credited",
     "Cancelled"
   ]
 

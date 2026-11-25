@@ -3,12 +3,10 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   Choose which business to work in (a focus screen, no sidebar).
 
   Continue posts to `BusinessController.switch/2`, then `BusinessReadyLive`.
-  Cards show the business logo inlined (`/uploads` serves only the current
-  business's), or an illustration. Owners can rename, archive and restore here.
+  Rows show the business logo inlined (`/uploads` serves only the current
+  business's), or its initials. Owners can rename, archive and restore here.
   """
   use QuantumBillingWeb, :live_view
-
-  import QuantumBillingWeb.Illustrations, only: [company: 1]
 
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.Business
@@ -16,8 +14,8 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   alias QuantumBilling.Settings
   alias QuantumBilling.Uploads
 
-  # A logo bigger than this is not worth carrying in the page for a card; the
-  # card shows its illustration instead.
+  # A logo bigger than this is not worth carrying in the page for a row; the
+  # row shows initials instead.
   @logo_limit 600_000
 
   @impl true
@@ -27,7 +25,7 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
 
     {:ok,
      socket
-     |> assign(:page_title, "Select your company")
+     |> assign(:page_title, "Choose a business")
      |> assign(:entries, entries)
      |> assign(:logos, logos(entries))
      |> assign(:selected_id, initial_selection(socket.assigns.current_scope, entries))
@@ -163,16 +161,11 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.focus flash={@flash} current_scope={@current_scope} step={1} steps={2}>
-      <div id="business-picker" class="flex w-full max-w-5xl flex-col">
-        <header class="qb-rise mb-8 text-center sm:mb-10">
-          <p id="picker-welcome" class="text-sm font-medium text-base-content/55">
-            {welcome(@current_scope.user)}
-          </p>
-          <h1 class="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">
-            Select your company
-          </h1>
-          <p id="picker-count" class="mt-2 text-sm text-base-content/60">
+    <Layouts.focus flash={@flash} current_scope={@current_scope}>
+      <div id="business-picker" class="flex w-full max-w-md flex-col">
+        <header class="qb-rise mb-6 text-center">
+          <h1 class="text-xl font-semibold tracking-tight">Choose a business</h1>
+          <p id="picker-count" class="mt-1 text-sm text-base-content/60">
             {count_line(length(@entries))}
           </p>
         </header>
@@ -180,12 +173,14 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
         <div
           :if={@entries == [] and not @can_create?}
           id="no-businesses"
-          class="mx-auto flex max-w-md flex-col items-center rounded-xl border border-dashed border-base-300 bg-base-100 p-8 text-center"
+          class="flex flex-col items-center rounded-box border border-base-300 bg-base-100 px-6 py-8 text-center"
         >
-          <.company variant={4} class="h-32 w-auto" />
-          <p class="mt-4 text-base font-semibold">You are not part of any business yet</p>
+          <span class="flex size-10 items-center justify-center rounded-full bg-base-200 text-base-content/60">
+            <.icon name="hero-building-office-2" class="size-5" />
+          </span>
+          <p class="mt-3 text-sm font-semibold">You are not part of any business yet</p>
           <p class="mt-1 text-sm text-base-content/60">
-            Ask an owner to add you to their business. You will see it here as soon as they do.
+            Ask an owner to add you. It shows up here as soon as they do.
           </p>
         </div>
 
@@ -193,38 +188,28 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
           :if={@entries != [] or @can_create?}
           id="business-list"
           role="radiogroup"
-          aria-label="Your companies"
-          class={[
-            "grid grid-cols-1 gap-5 sm:grid-cols-2",
-            card_count(@entries, @can_create?) >= 3 && "lg:grid-cols-3",
-            card_count(@entries, @can_create?) == 1 && "mx-auto w-full max-w-xs sm:grid-cols-1"
-          ]}
+          aria-label="Your businesses"
+          class="divide-y divide-base-300 overflow-hidden rounded-box border border-base-300 bg-base-100"
         >
-          <li
-            :for={{{business, membership}, index} <- Enum.with_index(@entries)}
-            id={"business-#{business.id}"}
-            class="qb-rise flex flex-col"
-            style={"animation-delay: #{min(index, 8) * 40}ms"}
-          >
+          <li :for={{business, membership} <- @entries} id={"business-#{business.id}"}>
             <%= if @renaming_id == business.id do %>
               <.form
                 for={@rename_form}
                 id={"rename-business-#{business.id}"}
                 phx-change="validate_rename"
                 phx-submit="save_rename"
-                class="flex min-h-72 flex-1 flex-col rounded-xl border border-base-300 bg-base-100 p-5"
+                class="flex flex-col gap-1 bg-base-200/40 p-4"
               >
-                <p class="mb-3 text-sm font-semibold">Rename company</p>
                 <.input
                   field={@rename_form[:name]}
                   type="text"
-                  label="Name"
+                  label="Rename business"
                   phx-mounted={JS.focus()}
                 />
                 <p class="-mt-1 text-xs text-base-content/55">
                   Payment links keep working: they use <span class="font-mono">{business.slug}</span>, which does not change.
                 </p>
-                <div class="mt-auto flex justify-end gap-2 pt-3">
+                <div class="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
                     id={"cancel-rename-#{business.id}"}
@@ -244,119 +229,94 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
                 </div>
               </.form>
             <% else %>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={to_string(@selected_id == business.id)}
-                id={"choose-business-#{business.id}"}
-                phx-click="select"
-                phx-value-id={business.id}
-                class={[
-                  "group relative flex flex-1 flex-col overflow-hidden rounded-xl border bg-base-100 text-left",
-                  "shadow-sm outline-none transition-all duration-200 motion-reduce:transition-none",
-                  "hover:shadow-md",
-                  "focus-visible:ring-2 focus-visible:ring-base-content focus-visible:ring-offset-2 focus-visible:ring-offset-base-100",
-                  if(@selected_id == business.id,
-                    do: "border-base-content ring-1 ring-base-content",
-                    else: "border-base-300 hover:border-base-content/30"
-                  )
-                ]}
-              >
-                <span class={[
-                  "absolute right-3.5 top-3.5 z-10 flex size-7 items-center justify-center rounded-full transition-all duration-200",
-                  if(@selected_id == business.id,
-                    do: "scale-100 bg-base-content text-base-100",
-                    else: "scale-90 border-2 border-base-content/15 bg-base-100 text-base-content/25"
-                  )
-                ]}>
-                  <.icon name="hero-check-mini" class="size-4.5" />
-                </span>
-
-                <span class={[
-                  "flex h-44 items-center justify-center",
-                  scene_tone(business.id)
-                ]}>
-                  <%= if logo = @logos[business.id] do %>
-                    <span class="flex size-28 items-center justify-center rounded-2xl bg-base-100 p-3 shadow-sm ring-1 ring-base-content/5">
+              <div class={[
+                "group flex items-center transition-colors",
+                if(@selected_id == business.id, do: "bg-base-200/70", else: "hover:bg-base-200/40")
+              ]}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={to_string(@selected_id == business.id)}
+                  id={"choose-business-#{business.id}"}
+                  phx-click="select"
+                  phx-value-id={business.id}
+                  class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-base-content"
+                >
+                  <span class="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field border border-base-300 bg-base-100">
+                    <%= if logo = @logos[business.id] do %>
                       <img
                         src={logo}
-                        alt={"#{business.name} logo"}
+                        alt=""
                         id={"business-logo-#{business.id}"}
-                        class="max-h-full max-w-full object-contain"
+                        class="max-h-full max-w-full object-contain p-1"
                       />
-                    </span>
-                  <% else %>
-                    <.company
-                      variant={business.id}
-                      tone={building_tone(business.id)}
-                      class="h-36 w-auto transition-transform duration-300 group-hover:scale-[1.04] motion-reduce:transition-none"
-                    />
-                  <% end %>
-                </span>
-
-                <span class="flex items-center justify-between gap-3 border-t border-base-content/5 px-5 py-4">
-                  <span class="min-w-0">
-                    <span class="block truncate text-base font-semibold tracking-tight">
-                      {business.name}
-                    </span>
-                    <span class="mt-0.5 flex items-center gap-1.5 text-xs text-base-content/55">
+                    <% else %>
+                      <span class="text-xs font-semibold text-base-content/70">
+                        {initials(business.name)}
+                      </span>
+                    <% end %>
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-medium">{business.name}</span>
+                    <span class="flex items-center gap-1.5 text-xs text-base-content/55">
                       <span>{if membership.role == "owner", do: "Owner", else: "Staff"}</span>
                       <span :if={current?(@current_scope, business)} aria-hidden="true">·</span>
-                      <span
-                        :if={current?(@current_scope, business)}
-                        class="font-medium text-base-content"
-                      >
+                      <span :if={current?(@current_scope, business)} class="text-base-content">
                         Open now
                       </span>
                     </span>
                   </span>
-                </span>
-              </button>
+                  <span class={[
+                    "flex size-5 shrink-0 items-center justify-center rounded-full transition-colors",
+                    if(@selected_id == business.id,
+                      do: "bg-base-content text-base-100",
+                      else: "border border-base-content/20 text-transparent"
+                    )
+                  ]}>
+                    <.icon name="hero-check-mini" class="size-3.5" />
+                  </span>
+                </button>
 
-              <div
-                :if={membership.role == "owner"}
-                class="mt-1.5 flex items-center justify-center gap-1"
-              >
-                <button
-                  type="button"
-                  id={"rename-#{business.id}"}
-                  phx-click="rename"
-                  phx-value-id={business.id}
-                  class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-base-content/55 transition-colors hover:bg-base-content/5 hover:text-base-content"
-                >
-                  <.icon name="hero-pencil-square" class="size-3.5" /> Rename
-                </button>
-                <button
-                  :if={business.id != 1}
-                  type="button"
-                  id={"archive-#{business.id}"}
-                  phx-click="archive"
-                  phx-value-id={business.id}
-                  data-confirm={"Archive #{business.name}? It leaves this list and stops its scheduled jobs. Its records are kept, and you can restore it."}
-                  class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-base-content/55 transition-colors hover:bg-error/10 hover:text-error"
-                >
-                  <.icon name="hero-archive-box" class="size-3.5" /> Archive
-                </button>
+                <div :if={membership.role == "owner"} class="flex shrink-0 items-center pr-2">
+                  <button
+                    type="button"
+                    id={"rename-#{business.id}"}
+                    phx-click="rename"
+                    phx-value-id={business.id}
+                    title="Rename"
+                    aria-label={"Rename #{business.name}"}
+                    class="rounded-field p-1.5 text-base-content/45 transition-colors hover:bg-base-content/5 hover:text-base-content"
+                  >
+                    <.icon name="hero-pencil-square" class="size-4" />
+                  </button>
+                  <button
+                    :if={business.id != 1}
+                    type="button"
+                    id={"archive-#{business.id}"}
+                    phx-click="archive"
+                    phx-value-id={business.id}
+                    title="Archive"
+                    aria-label={"Archive #{business.name}"}
+                    data-confirm={"Archive #{business.name}? It leaves this list and stops its scheduled jobs. Its records are kept, and you can restore it."}
+                    class="rounded-field p-1.5 text-base-content/45 transition-colors hover:bg-error/10 hover:text-error"
+                  >
+                    <.icon name="hero-archive-box" class="size-4" />
+                  </button>
+                </div>
               </div>
             <% end %>
           </li>
 
-          <li :if={@can_create?} class="qb-rise flex flex-col">
+          <li :if={@can_create?}>
             <.link
               navigate={~p"/businesses/new"}
               id="picker-new-business"
-              class={[
-                "group flex min-h-[15.5rem] flex-1 flex-col items-center justify-center gap-3 rounded-xl p-5",
-                "border border-dashed border-base-300 bg-base-100 text-base-content/60 outline-none",
-                "transition-colors duration-200 hover:border-base-content/40 hover:bg-base-200/60 hover:text-base-content",
-                "focus-visible:border-base-content/40 focus-visible:bg-base-200/60"
-              ]}
+              class="flex items-center gap-3 px-4 py-3 text-sm text-base-content/70 transition-colors hover:bg-base-200/40 hover:text-base-content focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-base-content"
             >
-              <span class="flex size-14 items-center justify-center rounded-2xl bg-base-100 shadow-sm ring-1 ring-base-content/5 transition-transform duration-200 group-hover:scale-105">
-                <.icon name="hero-plus" class="size-6" />
+              <span class="flex size-9 shrink-0 items-center justify-center rounded-field border border-dashed border-base-content/25">
+                <.icon name="hero-plus" class="size-4" />
               </span>
-              <span class="text-sm font-semibold">New company</span>
-              <span class="text-xs text-base-content/50">A separate set of books</span>
+              Create a business
             </.link>
           </li>
         </ul>
@@ -364,11 +324,11 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
         <details
           :if={@archived != []}
           id="archived-businesses"
-          class="group/archived mx-auto mt-10 w-full max-w-2xl rounded-2xl border border-base-content/10 bg-base-100/70"
+          class="group/archived mt-4 overflow-hidden rounded-box border border-base-300 bg-base-100"
         >
           <summary
             id="archived-toggle"
-            class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-5 py-3 text-sm font-medium text-base-content/70 transition-colors hover:bg-base-100 [&::-webkit-details-marker]:hidden"
+            class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-sm text-base-content/60 transition-colors hover:text-base-content [&::-webkit-details-marker]:hidden"
           >
             <span class="inline-flex items-center gap-2">
               <.icon name="hero-archive-box" class="size-4" /> Archived ({length(@archived)})
@@ -378,16 +338,14 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
               class="size-4 transition-transform duration-200 group-open/archived:rotate-180"
             />
           </summary>
-          <ul class="divide-y divide-base-content/5 border-t border-base-content/5">
+          <ul class="divide-y divide-base-300 border-t border-base-300">
             <li
               :for={business <- @archived}
               id={"archived-business-#{business.id}"}
-              class="flex items-center gap-3 px-5 py-3"
+              class="flex items-center gap-3 px-4 py-2.5"
             >
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium text-base-content/70">
-                  {business.name}
-                </span>
+                <span class="block truncate text-sm text-base-content/70">{business.name}</span>
                 <span class="text-xs text-base-content/45">
                   Archived {Calendar.strftime(business.archived_at, "%d %b %Y")}
                 </span>
@@ -405,6 +363,15 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
             </li>
           </ul>
         </details>
+
+        <.link
+          href={~p"/users/log-out"}
+          method="delete"
+          id="picker-sign-out"
+          class="mx-auto mt-6 inline-flex items-center gap-1.5 text-sm text-base-content/55 transition-colors hover:text-base-content"
+        >
+          <.icon name="hero-arrow-right-start-on-rectangle" class="size-4" /> Sign out
+        </.link>
       </div>
 
       <:footer :if={@entries != []}>
@@ -433,33 +400,15 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   defp current?(%{business: %{id: id}}, %{id: id}), do: true
   defp current?(_scope, _business), do: false
 
-  defp welcome(%{full_name: name}) when is_binary(name) and name != "",
-    do: "Welcome back, #{name}"
+  defp count_line(0), do: "Create your first business to get started."
+  defp count_line(1), do: "Pick it and continue."
+  defp count_line(_count), do: "Pick the one to work in."
 
-  defp welcome(%{username: name}) when is_binary(name) and name != "", do: "Welcome back, #{name}"
-  defp welcome(_user), do: "Welcome back"
-
-  defp count_line(0), do: "Create your first company to get started."
-  defp count_line(1), do: "You have 1 company. Continue to open it."
-  defp count_line(count), do: "You have #{count} companies. Pick one to work in."
-
-  defp card_count(entries, can_create?), do: length(entries) + if(can_create?, do: 1, else: 0)
-
-  # Literal classes so Tailwind emits them; picked by id so a card keeps its shade.
-  @scene_tones {
-    "bg-base-200/60",
-    "bg-base-200/40",
-    "bg-base-200/80"
-  }
-
-  # The grey shape behind each card's drawing.
-  @building_tones {
-    "fill-base-content/10",
-    "fill-base-content/15",
-    "fill-base-content/[0.07]",
-    "fill-base-300"
-  }
-
-  defp scene_tone(id), do: elem(@scene_tones, rem(id, tuple_size(@scene_tones)))
-  defp building_tone(id), do: elem(@building_tones, rem(id, tuple_size(@building_tones)))
+  defp initials(name) do
+    name
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.take(2)
+    |> Enum.map_join(&String.first/1)
+    |> String.upcase()
+  end
 end

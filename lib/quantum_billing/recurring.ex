@@ -109,15 +109,34 @@ defmodule QuantumBilling.Recurring do
     %RecurringProfile{}
     |> RecurringProfile.changeset(attrs)
     |> Repo.insert()
+    |> Audit.record(:recurring_profile_created, "RecurringProfile", &audit_opts/1)
   end
 
   @doc """
-  Updates a recurring profile.
+  Updates a recurring profile. Pausing and resuming are logged as such; a
+  save that changes nothing is not logged.
   """
   def update_profile(%RecurringProfile{} = profile, attrs) do
-    profile
-    |> RecurringProfile.changeset(attrs)
+    changeset = RecurringProfile.changeset(profile, attrs)
+    changes = Audit.changes(changeset, summarize: [:items_json])
+
+    action =
+      case changes do
+        %{"status" => %{"to" => "Paused"}} when map_size(changes) == 1 ->
+          :recurring_profile_paused
+
+        %{"status" => %{"to" => "Active"}} when map_size(changes) == 1 ->
+          :recurring_profile_resumed
+
+        _other ->
+          :recurring_profile_updated
+      end
+
+    changeset
     |> Repo.update()
+    |> Audit.record(action, "RecurringProfile", fn updated ->
+      if changes == %{}, do: :skip, else: [changes: changes] ++ audit_opts(updated)
+    end)
   end
 
   @doc """
@@ -152,15 +171,20 @@ defmodule QuantumBilling.Recurring do
   end
 
   defp audited({:ok, profile} = result, action, opts) do
-    Audit.log_event(action, "RecurringProfile", profile.id,
-      user_id: Keyword.get(opts, :user_id),
-      details: %{title: profile.title, frequency: profile.frequency}
+    Audit.log_event(
+      action,
+      "RecurringProfile",
+      profile.id,
+      [user_id: Keyword.get(opts, :user_id)] ++ audit_opts(profile)
     )
 
     result
   end
 
   defp audited({:error, _changeset} = result, _action, _opts), do: result
+
+  defp audit_opts(%RecurringProfile{} = profile),
+    do: [label: profile.title, details: %{title: profile.title, frequency: profile.frequency}]
 
   @doc "Profiles due to bill on `date`. Profiles of binned clients are skipped."
   def due_profiles(date \\ Date.utc_today()) do
@@ -304,7 +328,8 @@ defmodule QuantumBilling.Recurring do
     CustomFields.carry_over(
       values,
       CustomFields.active_definitions("recurring_profile"),
-      CustomFields.active_definitions("invoice")
+      CustomFields.active_definitions("invoice"),
+      QuantumBilling.Settings.currency_code()
     )
   end
 

@@ -151,6 +151,85 @@ defmodule QuantumBilling.SettingsTest do
       assert {:ok, _} = save(%{"invoice_prefix" => "INV-24/25"}, :invoice)
     end
 
+    # Rule 46(b): at most 16 characters, so GSTR-1 and the IRP accept the number.
+    test "rejects a prefix and padding that make numbers over 16 characters" do
+      assert {:error, changeset} = save(%{"invoice_prefix" => "QUANTUMBILLS"}, :invoice)
+      assert %{invoice_prefix: [message]} = errors_on(changeset)
+      assert message =~ "QUANTUMBILLS-0001"
+
+      assert {:error, changeset} =
+               save(%{"invoice_prefix" => "INV/2026", "invoice_number_padding" => 8}, :invoice)
+
+      assert %{invoice_prefix: [_]} = errors_on(changeset)
+    end
+
+    test "accepts exactly 16 characters" do
+      assert {:ok, organization} =
+               save(%{"invoice_prefix" => "QUANTUMBILL", "invoice_number_padding" => 4}, :invoice)
+
+      assert Settings.next_invoice_number(organization) == "QUANTUMBILL-0001"
+    end
+
+    test "counts a next number wider than the padding" do
+      assert {:error, changeset} =
+               save(
+                 %{"invoice_prefix" => "QUANTUMBILL", "invoice_next_number" => 10_000},
+                 :invoice
+               )
+
+      assert %{invoice_prefix: [_]} = errors_on(changeset)
+    end
+
+    test "rejects a prefix starting with -, / or 0" do
+      for prefix <- ["-INV", "/INV", "0INV"] do
+        assert {:error, changeset} = save(%{"invoice_prefix" => prefix}, :invoice)
+        assert %{invoice_prefix: [_]} = errors_on(changeset)
+      end
+    end
+
+    test "saves the credit and debit note series" do
+      assert {:ok, organization} =
+               save(
+                 %{
+                   "credit_note_prefix" => "CR",
+                   "credit_note_next_number" => 12,
+                   "debit_note_prefix" => "DR/26",
+                   "debit_note_next_number" => 3
+                 },
+                 :invoice
+               )
+
+      assert Settings.next_note_number(organization, "Credit") == "CR-0012"
+      assert Settings.next_note_number(organization, "Debit") == "DR/26-0003"
+    end
+
+    test "saves the quotation series and holds it to the same rules" do
+      assert {:ok, organization} =
+               save(%{"quotation_prefix" => "EST/26", "quotation_next_number" => 7}, :invoice)
+
+      assert Settings.next_quotation_number(organization) == "EST/26-0007"
+
+      assert {:error, changeset} =
+               save(%{"quotation_prefix" => "0QT", "quotation_next_number" => 0}, :invoice)
+
+      assert %{quotation_prefix: [_], quotation_next_number: [_]} = errors_on(changeset)
+    end
+
+    test "holds note series to the same rules" do
+      assert {:error, changeset} =
+               save(
+                 %{
+                   "credit_note_prefix" => "CREDITNOTES1",
+                   "debit_note_prefix" => "0DN",
+                   "debit_note_next_number" => 0
+                 },
+                 :invoice
+               )
+
+      assert %{credit_note_prefix: [_], debit_note_prefix: [_], debit_note_next_number: [_]} =
+               errors_on(changeset)
+    end
+
     test "saves bank details, normalising the IFSC and account number" do
       assert {:ok, organization} =
                save(
@@ -198,6 +277,8 @@ defmodule QuantumBilling.SettingsTest do
 
     test "copes with the unsaved defaults" do
       assert Settings.next_invoice_number(%Organization{}) == "INV-0001"
+      assert Settings.next_note_number(%Organization{}, "Credit") == "CN-0001"
+      assert Settings.next_note_number(%Organization{}, "Debit") == "DN-0001"
     end
   end
 

@@ -20,6 +20,11 @@ defmodule QuantumBilling.Accounts.UserToken do
     field :context, :string
     field :sent_to, :string
     field :authenticated_at, :utc_datetime
+    # Session tokens only: the browser that holds it, and when it was last used.
+    field :device_id, :string
+    field :user_agent, :string
+    field :ip_address, :string
+    field :last_seen_at, :utc_datetime
     belongs_to :user, QuantumBilling.Accounts.User
 
     timestamps(type: :utc_datetime, updated_at: false)
@@ -30,11 +35,25 @@ defmodule QuantumBilling.Accounts.UserToken do
 
   Tokens are kept in the database so individual sessions can be expired.
   """
-  def build_session_token(user) do
+  def build_session_token(user, meta \\ %{}) do
     token = :crypto.strong_rand_bytes(@rand_size)
     dt = user.authenticated_at || DateTime.utc_now(:second)
-    {token, %UserToken{token: token, context: "session", user_id: user.id, authenticated_at: dt}}
+
+    {token,
+     %UserToken{
+       token: token,
+       context: "session",
+       user_id: user.id,
+       authenticated_at: dt,
+       device_id: meta[:device_id],
+       user_agent: meta[:user_agent] && String.slice(meta[:user_agent], 0, 255),
+       ip_address: meta[:ip_address],
+       last_seen_at: DateTime.utc_now(:second)
+     }}
   end
+
+  @doc "How long a session token stays valid, in days."
+  def session_validity_in_days, do: @session_validity_in_days
 
   @doc """
   Checks a session token and returns a query for `{user, token_inserted_at}`.

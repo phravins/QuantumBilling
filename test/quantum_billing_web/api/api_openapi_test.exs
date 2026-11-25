@@ -46,7 +46,8 @@ defmodule QuantumBillingWeb.API.OpenAPITest do
           {"Invoice", V1.InvoiceJSON.fields(), ~w(items payment_url)},
           {"Client", V1.ClientJSON.fields(), []},
           {"EWayBill", V1.EWayBillJSON.fields(), []},
-          {"CreditNote", V1.CreditNoteJSON.fields(), []}
+          {"CreditNote", V1.CreditNoteJSON.fields(), []},
+          {"Quotation", V1.QuotationJSON.fields(), ~w(items public_url)}
         ] do
       documented = spec |> properties(schema) |> Map.keys() |> Enum.sort()
       actual = (Enum.map(fields, &to_string/1) ++ optional) |> Enum.sort()
@@ -61,6 +62,14 @@ defmodule QuantumBillingWeb.API.OpenAPITest do
 
     assert Enum.sort(documented) ==
              V1.InvoiceJSON.item_fields() |> Enum.map(&to_string/1) |> Enum.sort()
+  end
+
+  test "a quotation line documents exactly the serializer's item fields", %{spec: spec} do
+    documented =
+      spec |> properties("Quotation") |> get_in(["items", "items", "properties"]) |> Map.keys()
+
+    assert Enum.sort(documented) ==
+             V1.QuotationJSON.item_fields() |> Enum.map(&to_string/1) |> Enum.sort()
   end
 
   test "every operation names a scope that exists, and only /me needs none", %{spec: spec} do

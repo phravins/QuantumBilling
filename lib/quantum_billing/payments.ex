@@ -8,8 +8,41 @@ defmodule QuantumBilling.Payments do
   alias QuantumBilling.Audit
   alias QuantumBilling.Notifications
   alias QuantumBilling.Repo
+  alias QuantumBilling.Settings
+  alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Webhooks
   alias QuantumBillingWeb.Format
+
+  import Ecto.Query, only: [from: 2]
+
+  # A customer who bears the gateway fee pays a little over the total (about
+  # 2-3.5% with GST). Anything beyond this is not that, so it is not applied.
+  @overpayment_tolerance_percent 5
+
+  @doc """
+  The secret that verifies Razorpay webhooks delivered to `business`'s URL:
+  `{:ok, secret}`, or `{:error, :not_configured}`.
+
+  Each business's own, so knowing one firm's secret signs nothing for another.
+  Only business 1, the one the legacy unslugged URL reaches, falls back to the
+  server-wide `RAZORPAY_WEBHOOK_SECRET` while it has none of its own.
+  """
+  def webhook_secret(%{id: business_id} = business) do
+    organization = Repo.with_business(business, &Settings.get_organization/0)
+
+    cond do
+      Organization.razorpay_webhook_secret_set?(organization) ->
+        {:ok, organization.razorpay_webhook_secret}
+
+      business_id == 1 and present?(System.get_env("RAZORPAY_WEBHOOK_SECRET")) ->
+        {:ok, System.get_env("RAZORPAY_WEBHOOK_SECRET")}
+
+      true ->
+        {:error, :not_configured}
+    end
+  end
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
   @doc """
   `url` if it is safe to link a customer to (`https://`, a host, no credentials), else `nil`.
@@ -29,6 +62,10 @@ defmodule QuantumBilling.Payments do
 
   def safe_payment_url(_url), do: nil
 
+  @doc "Whether the invoice can still be paid at all: not once it is paid, credited or cancelled."
+  def open_for_payment?(%Invoice{status: status}),
+    do: status not in ["Paid", "Credited", "Cancelled"]
+
   @doc "Whether Razorpay and UPI can collect this invoice: they take INR only."
   def online_payable?(%Invoice{currency: currency}), do: currency in [nil, "INR"]
 
@@ -38,11 +75,17 @@ defmodule QuantumBilling.Payments do
 
   @doc """
   Generates a dynamic payment link and UPI QR payload for an invoice.
+
+  Refused with `:already_paid`, `:credited`, `:cancelled` or `:unsupported_currency`.
   """
   def generate_payment_link(%Invoice{} = invoice) do
-    if online_payable?(invoice),
-      do: create_payment_link(invoice),
-      else: {:error, :unsupported_currency}
+    cond do
+      invoice.status == "Paid" -> {:error, :already_paid}
+      invoice.status == "Credited" -> {:error, :credited}
+      invoice.status == "Cancelled" -> {:error, :cancelled}
+      not online_payable?(invoice) -> {:error, :unsupported_currency}
+      true -> create_payment_link(invoice)
+    end
   end
 
   defp create_payment_link(invoice) do
@@ -131,15 +174,25 @@ defmodule QuantumBilling.Payments do
     end
   end
 
+  # Its link may still be paid; the money has to go back, not into the books.
+  defp verify_payment(%Invoice{status: "Cancelled"} = invoice, received, payment_id),
+    do: reject_payment(invoice, :invoice_cancelled, received, payment_id)
+
+  # Credit notes already cover it; a payment now is owed back to the client.
+  defp verify_payment(%Invoice{status: "Credited"} = invoice, received, payment_id),
+    do: reject_payment(invoice, :invoice_credited, received, payment_id)
+
   # An already-paid invoice is left to reconcile_payment/2, which ignores repeats.
   defp verify_payment(%Invoice{status: "Paid"}, _received, _payment_id), do: :ok
 
   defp verify_payment(%Invoice{} = invoice, received, payment_id) do
     expected_amount = invoice.grand_total || 0
     expected_currency = invoice.currency || "INR"
+    ceiling = expected_amount + div(expected_amount * @overpayment_tolerance_percent, 100)
 
     cond do
-      not is_integer(received.amount) or received.amount < expected_amount ->
+      not is_integer(received.amount) or received.amount < expected_amount or
+          received.amount > ceiling ->
         reject_payment(invoice, :amount_mismatch, received, payment_id)
 
       received.currency != expected_currency ->
@@ -168,16 +221,33 @@ defmodule QuantumBilling.Payments do
       }
     )
 
+    {title, body} = rejection_message(invoice, reason, payment_id || "unknown")
+
     Notifications.notify(%{
       kind: "payment",
       severity: "error",
-      title: "Payment for #{invoice.invoice_number} did not match the invoice",
-      body: "Not marked paid (#{reason}). Review payment #{payment_id || "unknown"} in Razorpay.",
+      title: title,
+      body: body,
       path: "/invoices/#{invoice.id}",
       dedupe_key: "payment_rejected:#{payment_id || "invoice-#{invoice.id}"}"
     })
 
     {:error, reason}
+  end
+
+  defp rejection_message(invoice, :invoice_cancelled, payment_id) do
+    {"Payment received for cancelled #{invoice.invoice_number}",
+     "Not applied, as the invoice is cancelled. Refund payment #{payment_id} in Razorpay."}
+  end
+
+  defp rejection_message(invoice, :invoice_credited, payment_id) do
+    {"Payment received for credited #{invoice.invoice_number}",
+     "Not applied, as credit notes already cover the invoice. Refund payment #{payment_id} in Razorpay."}
+  end
+
+  defp rejection_message(invoice, reason, payment_id) do
+    {"Payment for #{invoice.invoice_number} did not match the invoice",
+     "Not marked paid (#{reason}). Review payment #{payment_id} in Razorpay."}
   end
 
   @doc """
@@ -226,12 +296,13 @@ defmodule QuantumBilling.Payments do
   Records a payment made outside the gateway against `invoice`.
 
   `amount` is paise and must cover the invoice (no partial payments). `reference`
-  is stored with an `ext:` prefix. Refused for paid or cancelled invoices.
+  is stored with an `ext:` prefix. Refused for paid, credited or cancelled invoices.
   """
   def record_payment(%Invoice{} = invoice, reference, amount, audit_opts \\ [])
       when is_binary(reference) and is_integer(amount) do
     cond do
       invoice.status == "Paid" -> {:error, :already_paid}
+      invoice.status == "Credited" -> {:error, :credited}
       invoice.status == "Cancelled" -> {:error, :cancelled}
       amount < (invoice.grand_total || 0) -> {:error, :partial_payment}
       true -> reconcile_payment(invoice, "ext:" <> reference, audit_opts)
@@ -239,21 +310,27 @@ defmodule QuantumBilling.Payments do
   end
 
   @doc """
-  Marks an invoice paid and sends the receipt, notification and webhook. Already-paid invoices return `{:ok, invoice}` untouched.
+  Marks an invoice paid and sends the receipt, notification and webhook.
+
+  Already-paid invoices return `{:ok, invoice}` untouched; cancelled ones are
+  refused with `:invoice_cancelled`.
   """
   def reconcile_payment(invoice, payment_id, audit_opts \\ [])
 
   def reconcile_payment(%Invoice{status: "Paid"} = invoice, _payment_id, _audit_opts),
     do: {:ok, invoice}
 
-  def reconcile_payment(%Invoice{} = invoice, payment_id, audit_opts) do
-    changeset =
-      Ecto.Changeset.change(invoice, %{
-        status: "Paid",
-        razorpay_payment_id: payment_id
-      })
+  def reconcile_payment(%Invoice{status: "Cancelled"}, _payment_id, _audit_opts),
+    do: {:error, :invoice_cancelled}
 
-    case Repo.update(changeset) do
+  def reconcile_payment(%Invoice{status: "Credited"}, _payment_id, _audit_opts),
+    do: {:error, :invoice_credited}
+
+  def reconcile_payment(%Invoice{} = invoice, payment_id, audit_opts) do
+    case mark_paid(invoice, payment_id) do
+      {:ok, {:already_paid, current}} ->
+        {:ok, current}
+
       {:ok, updated} ->
         Audit.log_event(
           :payment_received,
@@ -263,8 +340,9 @@ defmodule QuantumBilling.Payments do
             [
               details: %{
                 payment_id: payment_id,
-                # Whole rupees, as older entries in the log hold.
-                amount: div(updated.grand_total || 0, 100)
+                # Whole units, as older entries in the log hold.
+                amount:
+                  div(updated.grand_total || 0, QuantumBilling.Currency.unit(updated.currency))
               }
             ]
         )
@@ -291,16 +369,45 @@ defmodule QuantumBilling.Payments do
         Webhooks.publish("invoice.paid", updated.id, %{
           invoice_number: updated.invoice_number,
           invoice_id: updated.id,
-          # Whole rupees, as integrations have always received it.
-          amount: div(updated.grand_total, 100),
+          # Whole units (rupees, dinars), as integrations have always received it.
+          amount: div(updated.grand_total, QuantumBilling.Currency.unit(updated.currency)),
           payment_id: payment_id,
           client_name: updated.client_name
         })
 
         {:ok, updated}
 
-      {:error, cs} ->
-        {:error, cs}
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  # The row is locked and its status read again, so an invoice cancelled since
+  # `invoice` was loaded is not marked paid. cancel_invoice/3 takes the same lock.
+  defp mark_paid(%Invoice{id: id} = invoice, payment_id) do
+    Repo.transaction(fn ->
+      case Repo.one(from(i in Invoice, where: i.id == ^id, lock: "FOR UPDATE", select: i.status)) do
+        nil ->
+          Repo.rollback(:invoice_not_found)
+
+        "Paid" ->
+          {:already_paid, Repo.get!(Invoice, id)}
+
+        "Cancelled" ->
+          Repo.rollback(:invoice_cancelled)
+
+        "Credited" ->
+          Repo.rollback(:invoice_credited)
+
+        _payable ->
+          invoice
+          |> Ecto.Changeset.change(%{status: "Paid", razorpay_payment_id: payment_id})
+          |> Repo.update()
+          |> case do
+            {:ok, updated} -> updated
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
   end
 end

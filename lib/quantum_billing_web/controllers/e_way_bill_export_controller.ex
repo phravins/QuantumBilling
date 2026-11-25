@@ -45,7 +45,7 @@ defmodule QuantumBillingWeb.EWayBillExportController do
     rows =
       Enum.map(
         rows,
-        &(csv_row(&1) ++ CustomFieldComponents.export_cells(definitions, &1.custom_fields))
+        &(csv_row(&1) ++ CustomFieldComponents.export_cells(definitions, &1.custom_fields, "INR"))
       )
 
     send_download(conn, {:binary, to_csv(headers, rows)}, filename: "e-way-bills.csv")

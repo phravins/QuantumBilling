@@ -143,8 +143,7 @@ defmodule QuantumBilling.ClientBinTest do
 
       {:ok, _binned} = Clients.delete_client(client, user_id: user.id)
 
-      assert [log] = Audit.list_audit_logs()
-      assert log.action == "bin_client"
+      assert [log] = Enum.filter(Audit.list_audit_logs(), &(&1.action == "bin_client"))
       assert log.resource_type == "Client"
       assert log.resource_id == to_string(client.id)
       assert log.user_id == user.id
@@ -165,7 +164,7 @@ defmodule QuantumBilling.ClientBinTest do
 
       assert {:ok, again} = Clients.delete_client(gone)
       assert again.deleted_at == gone.deleted_at
-      assert length(Audit.list_audit_logs()) == 1
+      assert [_once] = Enum.filter(Audit.list_audit_logs(), &(&1.action == "bin_client"))
     end
   end
 
@@ -282,7 +281,7 @@ defmodule QuantumBilling.ClientBinTest do
         CreditNotes.create_credit_note_for_invoice(invoice, %{
           "note_type" => "Credit",
           "reason" => "Returned",
-          "grand_total" => Decimal.new("18000.00")
+          "grand_total" => Decimal.new("180.00")
         })
 
       gone = binned(client)

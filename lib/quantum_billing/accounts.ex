@@ -8,7 +8,7 @@ defmodule QuantumBilling.Accounts do
   alias QuantumBilling.Events
   alias QuantumBilling.Repo
 
-  alias QuantumBilling.Accounts.{Invitation, User, UserToken, UserNotifier}
+  alias QuantumBilling.Accounts.{Invitation, SignInRequest, User, UserToken, UserNotifier}
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.{Business, Membership}
 
@@ -22,6 +22,16 @@ defmodule QuantumBilling.Accounts do
       when is_binary(email) and is_binary(password) do
     user = Repo.get_by(User, email: email)
     if User.valid_password?(user, password), do: user
+  end
+
+  @doc """
+  Makes `user` a super admin of the installation, or stops them being one.
+  Only `mix qb.admin.grant` calls this; no page does.
+  """
+  def set_admin(%User{} = user, admin?) when is_boolean(admin?) do
+    user
+    |> Ecto.Changeset.change(is_admin: admin?)
+    |> Repo.update()
   end
 
   @doc "Gets a user by id. Raises if missing."
@@ -193,21 +203,39 @@ defmodule QuantumBilling.Accounts do
 
   @doc "Gives `user` the role `role` in `business`. Refuses to demote the last owner."
   def set_role(%Business{} = business, %User{} = user, role) when is_binary(role) do
-    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
-      nil ->
-        {:error, :not_a_member}
+    Repo.transaction(fn ->
+      # Lock owner memberships for update to serialize concurrent owner changes
+      _owners =
+        Repo.all(
+          from m in Membership,
+            where: m.business_id == ^business.id and m.role == "owner",
+            lock: "FOR UPDATE"
+        )
 
-      %Membership{role: ^role} = membership ->
-        {:ok, membership}
+      case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+        nil ->
+          Repo.rollback(:not_a_member)
 
-      %Membership{role: "owner"} = membership ->
-        if count_owners(business) <= 1,
-          do: {:error, :last_owner},
-          else: change_role(membership, role)
+        %Membership{role: ^role} = membership ->
+          membership
 
-      membership ->
-        change_role(membership, role)
-    end
+        %Membership{role: "owner"} = membership ->
+          if count_owners(business) <= 1 do
+            Repo.rollback(:last_owner)
+          else
+            case change_role(membership, role) do
+              {:ok, updated} -> updated
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end
+
+        membership ->
+          case change_role(membership, role) do
+            {:ok, updated} -> updated
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
   end
 
   defp change_role(membership, role) do
@@ -218,18 +246,36 @@ defmodule QuantumBilling.Accounts do
 
   @doc "Removes `user` from `business`. Refuses to remove the last owner."
   def remove_member(%Business{} = business, %User{} = user) do
-    case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
-      nil ->
-        {:error, :not_a_member}
+    Repo.transaction(fn ->
+      # Lock owner memberships for update to serialize concurrent owner removals
+      _owners =
+        Repo.all(
+          from m in Membership,
+            where: m.business_id == ^business.id and m.role == "owner",
+            lock: "FOR UPDATE"
+        )
 
-      %Membership{role: "owner"} = membership ->
-        if count_owners(business) <= 1,
-          do: {:error, :last_owner},
-          else: Repo.delete(membership)
+      case Repo.get_by(Membership, user_id: user.id, business_id: business.id) do
+        nil ->
+          Repo.rollback(:not_a_member)
 
-      membership ->
-        Repo.delete(membership)
-    end
+        %Membership{role: "owner"} = membership ->
+          if count_owners(business) <= 1 do
+            Repo.rollback(:last_owner)
+          else
+            case Repo.delete(membership) do
+              {:ok, deleted} -> deleted
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end
+
+        membership ->
+          case Repo.delete(membership) do
+            {:ok, deleted} -> deleted
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
   end
 
   @doc "`business`'s pending and recent invitations, newest first."
@@ -446,11 +492,251 @@ defmodule QuantumBilling.Accounts do
   @doc """
   Generates a session token.
   """
-  def generate_user_session_token(user) do
-    {token, user_token} = UserToken.build_session_token(user)
+  def generate_user_session_token(user, meta \\ %{}) do
+    {token, user_token} = UserToken.build_session_token(user, meta)
     Repo.insert!(user_token)
     token
   end
+
+  ## One device at a time
+
+  # How long a device has to answer a sign-in request, and then how long the
+  # waiting browser has to finish signing in once it is allowed.
+  @sign_in_request_ttl_seconds 120
+
+  @doc """
+  Whether `user` has a session on a browser other than `device_id` that was
+  used in the last `minutes`.
+  """
+  def active_session_elsewhere?(%User{id: user_id}, device_id, minutes)
+      when is_binary(device_id) and is_integer(minutes) do
+    since = DateTime.add(DateTime.utc_now(:second), -minutes * 60, :second)
+
+    Repo.exists?(
+      from t in valid_sessions_query(user_id),
+        where: t.last_seen_at > ^since,
+        where: is_nil(t.device_id) or t.device_id != ^device_id
+    )
+  end
+
+  @doc """
+  Ends `user`'s sessions, except those on `except_device_id`, and returns them
+  for `UserAuth.disconnect_sessions/1`.
+
+  They are kept as `"session_replaced"`, which no longer signs anyone in, so
+  the browser that held one can be told why it was signed out.
+  """
+  def replace_sessions(%User{id: user_id}, except_device_id \\ nil) do
+    query = from t in UserToken, where: t.user_id == ^user_id and t.context == "session"
+
+    query =
+      if except_device_id,
+        do: where(query, [t], is_nil(t.device_id) or t.device_id != ^except_device_id),
+        else: query
+
+    {_count, tokens} =
+      Repo.update_all(select(query, [t], %{token: t.token}), set: [context: "session_replaced"])
+
+    tokens
+  end
+
+  @doc "Whether `token` was a session ended by `replace_sessions/2`."
+  def session_replaced?(token) when is_binary(token) do
+    Repo.exists?(
+      from t in UserToken,
+        where: t.token == ^token and t.context == "session_replaced",
+        where: t.inserted_at > ago(^UserToken.session_validity_in_days(), "day")
+    )
+  end
+
+  def session_replaced?(_token), do: false
+
+  @doc "Marks a session as just used. Writes at most once a minute per session."
+  def touch_session(token) when is_binary(token) do
+    now = DateTime.utc_now(:second)
+    cutoff = DateTime.add(now, -60, :second)
+
+    Repo.update_all(
+      from(t in UserToken,
+        where: t.token == ^token and t.context == "session",
+        where: is_nil(t.last_seen_at) or t.last_seen_at < ^cutoff
+      ),
+      set: [last_seen_at: now]
+    )
+
+    :ok
+  end
+
+  def touch_session(_token), do: :ok
+
+  @doc """
+  Deletes `user`'s sessions on `device_id` (older, reissued tokens included)
+  and returns them for `UserAuth.disconnect_sessions/1`.
+  """
+  def delete_device_sessions(%User{id: user_id}, device_id) when is_binary(device_id) do
+    {_count, tokens} =
+      Repo.delete_all(
+        from t in UserToken,
+          where: t.user_id == ^user_id and t.context == "session" and t.device_id == ^device_id,
+          select: %{token: t.token}
+      )
+
+    tokens
+  end
+
+  defp valid_sessions_query(user_id) do
+    from t in UserToken,
+      where: t.user_id == ^user_id and t.context == "session",
+      where: t.inserted_at > ago(^UserToken.session_validity_in_days(), "day")
+  end
+
+  @doc """
+  Asks `user`'s signed-in device to allow a sign-in from another browser.
+
+  Cancels any request still pending, and returns `{:ok, token}`: the token
+  the waiting browser keeps in its session. Only its hash is stored.
+  """
+  def create_sign_in_request(%User{id: user_id} = user, meta) do
+    encoded = :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
+    now = DateTime.utc_now(:second)
+
+    {:ok, {request, cancelled}} =
+      Repo.transact(fn ->
+        {_count, cancelled} =
+          Repo.update_all(
+            from(r in SignInRequest,
+              where: r.user_id == ^user_id and r.status == "pending",
+              select: r
+            ),
+            set: [status: "cancelled", updated_at: now]
+          )
+
+        Repo.delete_all(
+          from r in SignInRequest,
+            where: r.user_id == ^user_id and r.updated_at < ^DateTime.add(now, -86_400, :second)
+        )
+
+        request =
+          Repo.insert!(%SignInRequest{
+            user_id: user.id,
+            token: hash_request_token(encoded),
+            device_id: meta[:device_id],
+            user_agent: meta[:user_agent] && String.slice(meta[:user_agent], 0, 255),
+            ip_address: meta[:ip_address],
+            expires_at: DateTime.add(now, @sign_in_request_ttl_seconds, :second)
+          })
+
+        {:ok, {request, cancelled}}
+      end)
+
+    Enum.each(cancelled, &broadcast_request_closed/1)
+    Events.broadcast(Events.user_topic(user_id), {:sign_in_request, request})
+
+    {:ok, encoded}
+  end
+
+  @doc "The request a waiting browser holds `token` for, or `nil`."
+  def get_sign_in_request(token) when is_binary(token) do
+    Repo.get_by(SignInRequest, token: hash_request_token(token))
+  end
+
+  def get_sign_in_request(_token), do: nil
+
+  @doc "The PubSub topic a waiting browser hears its answer on."
+  def sign_in_request_topic(token) when is_binary(token),
+    do: request_topic(hash_request_token(token))
+
+  @doc "`user`'s newest request still waiting for an answer, or `nil`."
+  def pending_sign_in_request(%User{id: user_id}) do
+    now = DateTime.utc_now(:second)
+
+    Repo.one(
+      from r in SignInRequest,
+        where: r.user_id == ^user_id and r.status == "pending" and r.expires_at > ^now,
+        order_by: [desc: r.id],
+        limit: 1
+    )
+  end
+
+  @doc """
+  Answers one of `user`'s pending requests: `:approve` lets the waiting browser
+  in, `:deny` refuses it. The first answer wins; later ones get `{:error, :closed}`.
+  """
+  def answer_sign_in_request(%User{id: user_id}, request_id, answer)
+      when is_integer(request_id) and answer in [:approve, :deny] do
+    now = DateTime.utc_now(:second)
+
+    {status, expires_at} =
+      case answer do
+        # From now: the waiting browser still has to post back.
+        :approve -> {"approved", DateTime.add(now, @sign_in_request_ttl_seconds, :second)}
+        :deny -> {"denied", now}
+      end
+
+    query =
+      from r in SignInRequest,
+        where: r.id == ^request_id and r.user_id == ^user_id,
+        where: r.status == "pending" and r.expires_at > ^now,
+        select: r
+
+    case Repo.update_all(query, set: [status: status, expires_at: expires_at, updated_at: now]) do
+      {1, [request]} ->
+        broadcast_request_closed(request)
+        {:ok, request}
+
+      {0, _none} ->
+        {:error, :closed}
+    end
+  end
+
+  @doc "Withdraws a pending request, from the browser that made it."
+  def cancel_sign_in_request(token) do
+    with %SignInRequest{id: id} <- get_sign_in_request(token),
+         {1, [request]} <-
+           Repo.update_all(
+             from(r in SignInRequest, where: r.id == ^id and r.status == "pending", select: r),
+             set: [status: "cancelled", updated_at: DateTime.utc_now(:second)]
+           ) do
+      broadcast_request_closed(request)
+    end
+
+    :ok
+  end
+
+  @doc """
+  Uses up an approved request: `{:ok, user}` once, while it is still live.
+  Otherwise `{:error, status}`, with `"expired"` or `"missing"` when it is.
+  """
+  def consume_approved_sign_in_request(token) do
+    now = DateTime.utc_now(:second)
+
+    case get_sign_in_request(token) do
+      nil ->
+        {:error, "missing"}
+
+      %SignInRequest{status: "approved", id: id, user_id: user_id} ->
+        case Repo.delete_all(from r in SignInRequest, where: r.id == ^id and r.expires_at > ^now) do
+          {1, _} -> {:ok, Repo.get!(User, user_id)}
+          {0, _} -> {:error, "expired"}
+        end
+
+      %SignInRequest{status: "pending"} = request ->
+        if SignInRequest.live?(request), do: {:error, "pending"}, else: {:error, "expired"}
+
+      %SignInRequest{status: status} ->
+        {:error, status}
+    end
+  end
+
+  # Tells the waiting browser, and the user's other tabs, that it is settled.
+  defp broadcast_request_closed(%SignInRequest{} = request) do
+    Events.broadcast(request_topic(request.token), {:sign_in_request_answered, request.status})
+    Events.broadcast(Events.user_topic(request.user_id), {:sign_in_request_closed, request.id})
+  end
+
+  defp request_topic(hash), do: "sign_in_request:" <> Base.url_encode64(hash, padding: false)
+
+  defp hash_request_token(token), do: :crypto.hash(:sha256, token)
 
   @doc "Every session token `user` holds, as `%{token: binary}` maps for disconnecting them."
   def list_user_session_tokens(%User{id: user_id}) do

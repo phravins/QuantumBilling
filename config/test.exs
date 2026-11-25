@@ -31,6 +31,10 @@ config :quantum_billing, :tenant_migration_lock, false
 # Calendar requests go to a stub instead of Google or a CalDAV server.
 config :quantum_billing, :calendar_req_options, plug: {Req.Test, QuantumBilling.Calendars}
 
+# GitHub requests go to a stub, and nothing is cached between tests.
+config :quantum_billing, :github_req_options, plug: {Req.Test, QuantumBilling.GitHub}
+config :quantum_billing, :github_cache, false
+
 # In memory, so async tests sharing a key don't block; Postgres is tested separately.
 config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
 

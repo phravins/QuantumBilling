@@ -254,6 +254,12 @@ a.btn:focus-visible {
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* "One device at a time" prompt: rises in, so it is noticed on any page. */
+@keyframes sign-in-request-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* Drawn by a sweeping clip: dash animations break with non-scaling strokes. */
 .qb-chart-sweep {
   transform-box: fill-box;
@@ -367,6 +373,32 @@ html {
 
 .qb-field-error {
   animation: qb-error-in 0.15s ease-out both;
+}
+
+/* OSWORKS mark: a light sheen sweeps across it and the bars glow softly. Still with reduced motion. */
+@keyframes qb-osworks-sheen {
+  0%, 55% { transform: translateX(0); }
+  100% { transform: translateX(150px); }
+}
+
+@keyframes qb-osworks-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 rgb(235 90 18 / 0)); }
+  50% { filter: drop-shadow(0 0 3px rgb(235 90 18 / 0.7)); }
+}
+
+.qb-osworks-sheen {
+  animation: qb-osworks-sheen 3.5s ease-in-out infinite;
+}
+
+.qb-osworks-bars {
+  animation: qb-osworks-glow 3.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-osworks-sheen,
+  .qb-osworks-bars {
+    animation: none;
+  }
 }
 
 /* Focus-screen illustrations: a self-drawing check and confetti. Skipped with reduced motion. */

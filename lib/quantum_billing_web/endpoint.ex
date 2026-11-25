@@ -13,9 +13,11 @@ defmodule QuantumBillingWeb.Endpoint do
     secure: Application.compile_env(:quantum_billing, :secure_session_cookie, false)
   ]
 
+  # The peer address and forwarding headers let the audit trail record where
+  # a LiveView action came from (see `ClientIP.from_connect_info/2`).
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: [:peer_data, :x_headers, session: @session_options]],
+    longpoll: [connect_info: [:peer_data, :x_headers, session: @session_options]]
 
   plug Plug.Static,
     at: "/",
@@ -66,14 +68,18 @@ defmodule QuantumBillingWeb.Endpoint do
   def log_level(%Plug.Conn{path_info: ["users", "settings", "confirm-email", _token]}), do: false
   def log_level(%Plug.Conn{}), do: :info
 
-  # Keep-alive connections reuse one process, so clear the business per request
-  # and restore the previous one afterwards (tests rely on that).
+  # Keep-alive connections reuse one process, so clear the business and the
+  # audit actor per request and restore the previous ones afterwards (tests
+  # rely on that).
   defp forget_business(conn, _opts) do
     previous = QuantumBilling.Repo.business()
+    previous_actor = QuantumBilling.Audit.actor()
     QuantumBilling.Repo.put_business(nil)
+    QuantumBilling.Audit.clear_actor()
 
     register_before_send(conn, fn conn ->
       QuantumBilling.Repo.put_business(previous)
+      QuantumBilling.Audit.put_actor(previous_actor)
       conn
     end)
   end

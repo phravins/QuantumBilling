@@ -22,6 +22,8 @@ defmodule QuantumBilling.CustomFields do
     {"client", "Clients", "clients"},
     {"invoice", "Invoices", "invoices"},
     {"invoice_item", "Invoice items", "invoice_items"},
+    {"quotation", "Quotations", "quotations"},
+    {"quotation_item", "Quotation items", "quotation_items"},
     {"credit_note", "Credit notes", "credit_notes"},
     {"e_way_bill", "E-way bills", "e_way_bills"},
     {"recurring_profile", "Recurring profiles", "recurring_profiles"}
@@ -34,6 +36,75 @@ defmodule QuantumBilling.CustomFields do
   def objects, do: Enum.map(@objects, fn {object, label, _table} -> {object, label} end)
 
   def max_active, do: @max_active
+
+  # The schema behind each object, for its built-in fields and record count.
+  @schemas %{
+    "client" => QuantumBilling.Clients.Client,
+    "invoice" => QuantumBilling.Invoices.Invoice,
+    "invoice_item" => QuantumBilling.Invoices.InvoiceItem,
+    "quotation" => QuantumBilling.Quotations.Quotation,
+    "quotation_item" => QuantumBilling.Quotations.QuotationItem,
+    "credit_note" => QuantumBilling.CreditNotes.CreditNote,
+    "e_way_bill" => QuantumBilling.EWayBills.EWayBill,
+    "recurring_profile" => QuantumBilling.Recurring.RecurringProfile
+  }
+
+  # Amounts parsed in the record's currency, so stored as plain integers
+  # rather than the INR-only `Paise` type; still shown as amounts.
+  @amount_fields %{
+    "client" => [:credit_limit, :opening_balance],
+    "invoice_item" => [:rate],
+    "quotation_item" => [:rate],
+    "credit_note" => [:subtotal, :tax_total, :grand_total]
+  }
+
+  # Bookkeeping columns, not fields anyone fills in.
+  @internal_fields [:id, :custom_fields, :inserted_at, :updated_at, :deleted_at]
+
+  @doc """
+  The fields QuantumBilling gives `object`, read from its schema, as maps with
+  `:key` and `:type` (`:text`, `:number`, `:money`, `:date`, `:boolean`,
+  `:link` or `:other`). They cannot be changed.
+  """
+  def standard_fields(object) do
+    schema = Map.fetch!(@schemas, object)
+
+    amounts = Map.get(@amount_fields, object, [])
+
+    for field <- schema.__schema__(:fields), field not in @internal_fields do
+      type = if field in amounts, do: :money, else: schema.__schema__(:type, field)
+      %{key: Atom.to_string(field), type: standard_type(field, type)}
+    end
+  end
+
+  defp standard_type(field, type) do
+    name = Atom.to_string(field)
+
+    cond do
+      String.ends_with?(name, "_id") -> :link
+      type in [:string, :binary] -> :text
+      type in [:integer, :decimal, :float] -> :number
+      type in [:date, :utc_datetime, :naive_datetime, :utc_datetime_usec] -> :date
+      type == :boolean -> :boolean
+      type == :money or (is_atom(type) and String.ends_with?(inspect(type), "Paise")) -> :money
+      true -> :other
+    end
+  end
+
+  @doc """
+  How many records of each object the current business has, as
+  `%{object => count}`. Records in the bin are left out.
+  """
+  def record_counts do
+    Map.new(@schemas, fn {object, schema} ->
+      query =
+        if :deleted_at in schema.__schema__(:fields),
+          do: from(r in schema, where: is_nil(r.deleted_at)),
+          else: from(r in schema)
+
+      {object, Repo.aggregate(query, :count)}
+    end)
+  end
 
   @doc """
   The object's fields in position order.
@@ -302,15 +373,20 @@ defmodule QuantumBilling.CustomFields do
 
   `definitions` saves a query when the caller already has them.
 
+  Money is read in `currency`: by default the record's own `currency` field
+  when it has one (invoices, quotations), else the business currency. Items
+  pass their document's.
+
   Records the app writes itself (recurring invoices) set the atom key
   `custom_fields_system: true`, which skips `required`: a field added later
   must not stop the job. Browser and API params have string keys, so they
   can't set it.
   """
-  def cast(%Ecto.Changeset{} = changeset, object, attrs, definitions \\ nil) do
+  def cast(%Ecto.Changeset{} = changeset, object, attrs, definitions \\ nil, currency \\ nil) do
     case fetch_values(attrs) do
       {:ok, submitted} when is_map(submitted) ->
         definitions = definitions || active_definitions(object)
+        currency = money_currency(definitions, changeset, currency)
         current = get_field(changeset, :custom_fields) || %{}
         submitted = Map.new(submitted, fn {key, value} -> {to_string(key), value} end)
         system? = Map.get(attrs, :custom_fields_system) == true
@@ -318,7 +394,7 @@ defmodule QuantumBilling.CustomFields do
         {values, changeset} =
           Enum.reduce(definitions, {current, changeset}, fn definition, {values, changeset} ->
             definition = if system?, do: %{definition | required: false}, else: definition
-            cast_one(definition, submitted, values, changeset)
+            cast_one(definition, submitted, values, changeset, currency)
           end)
 
         if values == current, do: changeset, else: put_change(changeset, :custom_fields, values)
@@ -331,7 +407,23 @@ defmodule QuantumBilling.CustomFields do
     end
   end
 
-  defp cast_one(definition, submitted, values, changeset) do
+  # Looked up once, and only when a money field is there to read.
+  defp money_currency(definitions, changeset, nil) do
+    cond do
+      not Enum.any?(definitions, &(&1.type == "money")) ->
+        nil
+
+      Map.has_key?(changeset.data, :currency) and get_field(changeset, :currency) ->
+        get_field(changeset, :currency)
+
+      true ->
+        QuantumBilling.Settings.currency_code()
+    end
+  end
+
+  defp money_currency(_definitions, _changeset, currency), do: currency
+
+  defp cast_one(definition, submitted, values, changeset, currency) do
     key = definition.key
 
     case Map.fetch(submitted, key) do
@@ -346,7 +438,7 @@ defmodule QuantumBilling.CustomFields do
         end
 
       {:ok, raw} ->
-        case FieldDefinition.cast_value(definition, raw) do
+        case FieldDefinition.cast_value(definition, raw, currency) do
           {:ok, value} ->
             {Map.put(values, key, value), changeset}
 
@@ -379,33 +471,34 @@ defmodule QuantumBilling.CustomFields do
 
   @doc """
   `values` of `from` fields, re-keyed for the `to` fields that share a key and
-  type, in the input form `cast/4` takes. Choices are matched by label, and
-  values with no match are left out.
+  type, in the input form `cast/5` takes. Choices are matched by label, and
+  values with no match are left out. Money is written out in `currency`, the
+  currency both records share.
   """
-  def carry_over(values, from_definitions, to_definitions) when is_map(values) do
+  def carry_over(values, from_definitions, to_definitions, currency) when is_map(values) do
     to_by_key = Map.new(to_definitions, &{&1.key, &1})
 
     for from <- from_definitions,
         Map.has_key?(values, from.key),
         %FieldDefinition{type: type} = to <- [Map.get(to_by_key, from.key)],
         type == from.type,
-        value = carry_value(from, to, Map.fetch!(values, from.key)),
+        value = carry_value(from, to, Map.fetch!(values, from.key), currency),
         value not in [nil, []],
         into: %{},
         do: {to.key, value}
   end
 
-  def carry_over(_values, _from, _to), do: %{}
+  def carry_over(_values, _from, _to, _currency), do: %{}
 
-  defp carry_value(%{type: "money"}, _to, paise) when is_integer(paise),
-    do: QuantumBilling.Money.to_input(paise)
+  defp carry_value(%{type: "money"}, _to, minor, currency) when is_integer(minor),
+    do: QuantumBilling.Money.to_input(minor, currency)
 
-  defp carry_value(%{type: "select"} = from, to, id), do: same_choice(from, to, id)
+  defp carry_value(%{type: "select"} = from, to, id, _currency), do: same_choice(from, to, id)
 
-  defp carry_value(%{type: "multi_select"} = from, to, ids) when is_list(ids),
+  defp carry_value(%{type: "multi_select"} = from, to, ids, _currency) when is_list(ids),
     do: ids |> Enum.map(&same_choice(from, to, &1)) |> Enum.reject(&is_nil/1)
 
-  defp carry_value(_from, _to, value), do: value
+  defp carry_value(_from, _to, value, _currency), do: value
 
   defp same_choice(from, to, id) do
     with %{"label" => label} <- FieldDefinition.choice(from, id),

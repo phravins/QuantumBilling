@@ -33,6 +33,13 @@ defmodule QuantumBilling.InvoiceNotifier do
            %{"delivery_id" => delivery.id, "invoice_id" => invoice.id, "kind" => kind}
            |> EmailWorker.new()
            |> Oban.insert() do
+      if kind == "invoice" do
+        QuantumBilling.Audit.log_event(:invoice_emailed, "Invoice", invoice.id,
+          label: invoice.invoice_number,
+          details: %{invoice_number: invoice.invoice_number, to: recipient}
+        )
+      end
+
       {:ok, delivery}
     else
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
@@ -150,7 +157,10 @@ defmodule QuantumBilling.InvoiceNotifier do
        do: "Rs. " <> Format.figure(total)
 
   defp plain_amount(%Invoice{currency: currency, grand_total: total}),
-    do: currency <> " " <> Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping)
+    do:
+      currency <>
+        " " <>
+        Format.figure(total, 0, QuantumBilling.Currency.get(currency).grouping, currency)
 
   defp irn_row(%Invoice{irn: nil}), do: ""
 

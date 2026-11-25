@@ -113,6 +113,87 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     end
   end
 
+  # A return is marked filed from its detail panel; type and period come from
+  # the open panel, never from the form.
+  describe "marking a return filed" do
+    setup %{conn: conn} do
+      {:ok, _organization} = register_gstin()
+
+      # The earliest return this year: Overdue on most days, Pending in the
+      # first days of April. Either way Undo must put back what was there.
+      return =
+        Date.utc_today()
+        |> Compliance.tracked_obligations(%{gstin: @gstin})
+        |> Enum.min_by(& &1.due_date, Date)
+
+      {:ok, view, _html} = live(conn, ~p"/compliance")
+
+      view
+      |> element("#view-obligation-#{return.type}-#{return.due_date}")
+      |> render_click()
+
+      %{view: view, return: return}
+    end
+
+    defp status_text(view) do
+      view |> element("#obligation-detail-status") |> render()
+    end
+
+    test "the panel offers it for a return that is not filed", %{view: view, return: return} do
+      assert status_text(view) =~ return.status
+      assert has_element?(view, "#mark-filed-button")
+      refute has_element?(view, "#undo-filed-button")
+    end
+
+    test "saving marks it Filed, and Undo puts the old status back", ctx do
+      %{view: view, return: return} = ctx
+
+      view |> element("#mark-filed-button") |> render_click()
+      assert has_element?(view, "#filing-form")
+
+      view
+      |> form("#filing-form",
+        filing: %{
+          filed_on: Date.to_iso8601(Date.utc_today()),
+          arn: "aa27 0424 1234 567"
+        }
+      )
+      |> render_submit()
+
+      refute has_element?(view, "#filing-form")
+      assert status_text(view) =~ "Filed"
+      assert view |> element("#obligation-detail-arn") |> render() =~ "AA270424123456"
+      assert has_element?(view, "#undo-filed-button")
+
+      view |> element("#undo-filed-button") |> render_click()
+
+      assert status_text(view) =~ return.status
+      refute status_text(view) =~ "Filed"
+      assert has_element?(view, "#mark-filed-button")
+    end
+
+    test "a date after today is shown as an error and nothing is saved", %{view: view} do
+      view |> element("#mark-filed-button") |> render_click()
+
+      view
+      |> form("#filing-form", filing: %{filed_on: Date.to_iso8601(Date.add(Date.utc_today(), 3))})
+      |> render_submit()
+
+      assert has_element?(view, "#filing-form")
+      assert render(view) =~ "can&#39;t be in the future"
+      assert Compliance.list_filings() == %{}
+    end
+
+    test "cancel closes the form without saving", %{view: view} do
+      view |> element("#mark-filed-button") |> render_click()
+      view |> element("#filing-cancel") |> render_click()
+
+      refute has_element?(view, "#filing-form")
+      assert has_element?(view, "#mark-filed-button")
+      assert Compliance.list_filings() == %{}
+    end
+  end
+
   describe "clicking a day" do
     setup %{conn: conn} do
       {:ok, _organization} = register_gstin()

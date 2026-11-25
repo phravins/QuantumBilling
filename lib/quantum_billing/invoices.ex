@@ -113,15 +113,27 @@ defmodule QuantumBilling.Invoices do
   @doc """
   Counts and totals across every invoice: `%{count:, revenue:, tax:, outstanding:, paid_count:}`.
 
-  `outstanding` is net of credit and debit notes.
+  `outstanding` is what clients owe, net of credit and debit notes: the sum of
+  `outstanding_by_client/1`, plus unpaid invoices without a client. A client's
+  spare credit lowers only their own balance, never another client's.
   """
   def totals do
-    invoices = invoice_totals()
-    adjustments = note_adjustments()
+    %{invoice_totals() | outstanding: client_balances() + unbilled_outstanding()}
+  end
 
-    outstanding = max(invoices.outstanding - adjustments.credits + adjustments.debits, 0)
+  defp client_balances do
+    from(o in subquery(outstanding_by_client()),
+      select: type(coalesce(sum(o.outstanding), 0), :integer)
+    )
+    |> Repo.one()
+  end
 
-    %{invoices | outstanding: outstanding}
+  # Notes need a client, so an invoice without one is owed in full.
+  defp unbilled_outstanding do
+    Invoice.kept()
+    |> where([i], is_nil(i.client_id) and i.status not in ["Paid", "Credited", "Cancelled"])
+    |> select([i], type(coalesce(sum(i.grand_total), 0), :integer))
+    |> Repo.one()
   end
 
   defp invoice_totals do
@@ -146,7 +158,7 @@ defmodule QuantumBilling.Invoices do
           coalesce(
             sum(
               fragment(
-                "CASE WHEN ? IN ('Paid', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
+                "CASE WHEN ? IN ('Paid', 'Credited', 'Cancelled') THEN 0 ELSE COALESCE(?, 0) END",
                 i.status,
                 i.grand_total
               )
@@ -164,73 +176,54 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
-  # Notes against invoices still owed; a paid or cancelled invoice has nothing left to reduce.
-  defp note_adjustments do
-    totals =
-      CreditNote
-      |> join(:inner, [n], i in Invoice, on: i.id == n.invoice_id)
-      |> where([n], n.status != "Cancelled")
-      |> where([_n, i], i.status not in ["Paid", "Cancelled"])
-      |> where([_n, i], is_nil(i.deleted_at))
-      |> select([n], %{
-        credits:
-          type(coalesce(sum(n.grand_total) |> filter(n.note_type == "Credit"), 0), :integer),
-        debits: type(coalesce(sum(n.grand_total) |> filter(n.note_type != "Credit"), 0), :integer)
-      })
-      |> Repo.one()
-
-    case totals do
-      nil -> %{credits: 0, debits: 0}
-      totals -> totals
-    end
-  end
-
   @doc """
   What each client still owes, as a query of `%{client_id:, outstanding:}`.
+
+  Their unpaid invoices, less their credit notes and plus their debit notes,
+  never below zero. Notes on paid invoices count too: crediting a paid invoice
+  leaves the client credit to set against what else they owe. A credited
+  invoice's total and its notes cancel out. Cancelled notes, and anything on a
+  cancelled or binned invoice, do not count.
 
   Pass `client_ids` to limit the query to those clients.
   """
   def outstanding_by_client(client_ids \\ nil) do
+    invoices =
+      from i in Invoice.kept(),
+        where: not is_nil(i.client_id) and i.status not in ["Paid", "Cancelled"],
+        select: %{client_id: i.client_id, amount: i.grand_total}
+
     notes =
       from n in CreditNote,
-        where: n.status != "Cancelled",
-        group_by: n.invoice_id,
+        join: i in Invoice,
+        on: i.id == n.invoice_id,
+        where: n.status != "Cancelled" and i.status != "Cancelled" and is_nil(i.deleted_at),
         select: %{
-          invoice_id: n.invoice_id,
-          net:
-            sum(
-              fragment(
-                "CASE WHEN ? = 'Credit' THEN -? ELSE ? END",
-                n.note_type,
-                n.grand_total,
-                n.grand_total
-              )
+          client_id: n.client_id,
+          amount:
+            fragment(
+              "CASE WHEN ? = 'Credit' THEN -? ELSE ? END",
+              n.note_type,
+              n.grand_total,
+              n.grand_total
             )
         }
 
-    query =
-      from i in Invoice.kept(),
-        left_join: n in subquery(notes),
-        on: n.invoice_id == i.id,
-        where: not is_nil(i.client_id) and i.status not in ["Paid", "Cancelled"],
-        group_by: i.client_id,
-        select: %{
-          client_id: i.client_id,
-          outstanding:
-            type(
-              fragment(
-                "GREATEST(SUM(COALESCE(?, 0) + COALESCE(?, 0)), 0)",
-                i.grand_total,
-                n.net
-              ),
-              :integer
-            )
-        }
+    {invoices, notes} =
+      case client_ids do
+        nil ->
+          {invoices, notes}
 
-    case client_ids do
-      nil -> query
-      ids -> where(query, [i], i.client_id in ^ids)
-    end
+        ids ->
+          {where(invoices, [i], i.client_id in ^ids), where(notes, [n], n.client_id in ^ids)}
+      end
+
+    from e in subquery(union_all(invoices, ^notes)),
+      group_by: e.client_id,
+      select: %{
+        client_id: e.client_id,
+        outstanding: type(fragment("GREATEST(SUM(COALESCE(?, 0)), 0)", e.amount), :integer)
+      }
   end
 
   @doc "Totals for the invoices dated within `month`."
@@ -507,8 +500,16 @@ defmodule QuantumBilling.Invoices do
 
   defp present(_value), do: nil
 
-  @doc "Creates an invoice with the next number in the series."
-  def create_invoice(attrs) do
+  @doc """
+  Creates an invoice with the next number in the series.
+
+  With `quotation_id:` the invoice is the conversion of that quotation: the
+  quotation row is locked, must be Accepted and not yet converted, and the
+  invoice is linked to it. Otherwise `{:error, :quotation_not_convertible}`.
+  `user_id:` is recorded on the conversion's audit row.
+  """
+  def create_invoice(attrs, opts \\ []) do
+    quotation_id = Keyword.get(opts, :quotation_id)
     # Outside the transaction: creating the row inside it deadlocks concurrent callers.
     organization = Settings.ensure_organization() || %Organization{}
 
@@ -523,7 +524,10 @@ defmodule QuantumBilling.Invoices do
         organization -> {:ok, organization}
       end
     end)
-    |> Multi.insert(:invoice, fn %{organization: locked} ->
+    |> Multi.run(:quotation, fn repo, _changes ->
+      lock_convertible_quotation(repo, quotation_id)
+    end)
+    |> Multi.insert(:invoice, fn %{organization: locked, quotation: quotation} ->
       trusted =
         %{}
         |> with_number(locked)
@@ -531,6 +535,7 @@ defmodule QuantumBilling.Invoices do
         |> with_layout_snapshot(template, organization)
         |> Map.put(:default_currency, Organization.currency_code(locked))
         |> Map.merge(Organization.invoice_tax_snapshot(locked))
+        |> with_quotation(quotation)
 
       Invoice.changeset(%Invoice{}, attrs, trusted)
     end)
@@ -544,15 +549,25 @@ defmodule QuantumBilling.Invoices do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{invoice: invoice}} ->
+      {:ok, %{invoice: invoice, quotation: quotation}} ->
         broadcast_change(invoice, :invoice_changed)
+
+        Audit.log_event(
+          :invoice_created,
+          "Invoice",
+          invoice.id,
+          [user_id: Keyword.get(opts, :user_id)] ++ audit_opts(invoice)
+        )
+
+        audit_conversion(quotation, invoice, Keyword.get(opts, :user_id))
 
         Webhooks.publish("invoice.created", invoice.id, %{
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name,
-          # Whole rupees, as integrations have always received it.
-          grand_total: div(invoice.grand_total || 0, 100),
+          # Whole units (rupees, dinars), as integrations have always received it.
+          grand_total:
+            div(invoice.grand_total || 0, QuantumBilling.Currency.unit(invoice.currency)),
           invoice_date: to_string(invoice.invoice_date)
         })
 
@@ -578,6 +593,41 @@ defmodule QuantumBilling.Invoices do
     end
   end
 
+  defp lock_convertible_quotation(_repo, nil), do: {:ok, nil}
+
+  # Locked so two saves cannot both convert it; the unique index is the backstop.
+  defp lock_convertible_quotation(repo, quotation_id) do
+    quotation =
+      repo.one(
+        from q in QuantumBilling.Quotations.Quotation,
+          where: q.id == ^quotation_id and is_nil(q.deleted_at),
+          lock: "FOR UPDATE"
+      )
+
+    # Binned invoices count: the unique index covers them too.
+    converted? = repo.exists?(from i in Invoice, where: i.quotation_id == ^quotation_id)
+
+    case quotation do
+      %{status: "Accepted"} when not converted? -> {:ok, quotation}
+      _other -> {:error, :quotation_not_convertible}
+    end
+  end
+
+  defp with_quotation(trusted, nil), do: trusted
+  defp with_quotation(trusted, quotation), do: Map.put(trusted, :quotation_id, quotation.id)
+
+  defp audit_conversion(nil, _invoice, _user_id), do: :ok
+
+  defp audit_conversion(quotation, invoice, user_id) do
+    Audit.log_event(:convert_quotation, "Quotation", quotation.id,
+      user_id: user_id,
+      details: %{quotation_number: quotation.number, invoice_number: invoice.invoice_number}
+    )
+
+    Webhooks.publish("quotation.converted", quotation.id)
+    :ok
+  end
+
   @doc """
   Updates an invoice in place.
 
@@ -585,19 +635,52 @@ defmodule QuantumBilling.Invoices do
   only while the invoice is a draft.
   """
   def update_invoice(%Invoice{} = invoice, attrs) do
-    invoice
-    |> Repo.preload(:items)
-    |> Invoice.changeset(drop_layout_unless_draft(attrs, invoice), refresh_layout(attrs, invoice))
+    changeset =
+      invoice
+      |> Repo.preload(:items)
+      |> Invoice.changeset(
+        drop_layout_unless_draft(attrs, invoice),
+        refresh_layout(attrs, invoice)
+      )
+
+    changeset
     |> Repo.update()
     |> case do
       {:ok, invoice} ->
         broadcast_change(invoice, :invoice_changed)
         Webhooks.publish("invoice.updated", invoice.id)
+        audit_update(changeset, invoice)
         {:ok, Repo.preload(invoice, :items, force: true)}
 
       {:error, changeset} ->
         {:error, changeset}
     end
+  end
+
+  # The template's layout refreshes on every draft save, so alone it is not an edit.
+  defp audit_update(changeset, invoice) do
+    changes = Audit.changes(changeset, summarize: [:layout_xml, :tax_breakdown])
+
+    if Map.drop(changes, ["layout_xml", "tax_breakdown"]) != %{} do
+      Audit.log_event(
+        :invoice_updated,
+        "Invoice",
+        invoice.id,
+        [changes: changes] ++ audit_opts(invoice)
+      )
+    end
+  end
+
+  @doc "`Audit.log_event/4` options naming an invoice: its number, client and total."
+  def audit_opts(%Invoice{} = invoice) do
+    [
+      label: invoice.invoice_number,
+      details: %{
+        invoice_number: invoice.invoice_number,
+        client_name: invoice.client_name,
+        total: Format.money(invoice.grand_total, invoice.currency)
+      }
+    ]
   end
 
   @doc """
@@ -622,11 +705,12 @@ defmodule QuantumBilling.Invoices do
       {:ok, _job} ->
         # Not via update_invoice/2: a status stamp must not re-take the layout snapshot.
         invoice
-        |> Ecto.Changeset.change(%{status: "Pending E-Invoice"})
+        |> Ecto.Changeset.change(%{status: einvoice_status(invoice, "Pending E-Invoice")})
         |> Repo.update()
         |> case do
           {:ok, updated} ->
             broadcast_change(updated, :invoice_changed)
+            Audit.log_event(:e_invoice_requested, "Invoice", updated.id, audit_opts(updated))
             {:ok, :queued}
 
           {:error, changeset} ->
@@ -651,8 +735,9 @@ defmodule QuantumBilling.Invoices do
       submit_einvoice(invoice)
     else
       {:error, problems} when is_list(problems) ->
-        mark_einvoice_failed(invoice)
-        {:error, Enum.join(problems, " ")}
+        reason = Enum.join(problems, " ")
+        mark_einvoice_failed(invoice, reason)
+        {:error, reason}
     end
   end
 
@@ -675,13 +760,19 @@ defmodule QuantumBilling.Invoices do
           signed_qr_code: qr,
           signed_invoice: jwt,
           irn_mode: mode,
-          status: "E-Invoice Generated"
+          status: einvoice_status(invoice, "E-Invoice Generated")
         })
         |> Repo.update()
         |> case do
           {:ok, invoice} ->
             broadcast_change(invoice, :invoice_changed)
             Webhooks.publish("invoice.e_invoice_generated", invoice.id)
+
+            Audit.log_event(:e_invoice_generated, "Invoice", invoice.id,
+              label: invoice.invoice_number,
+              details: Map.put(audit_details(invoice), :irn, irn)
+            )
+
             {:ok, Repo.preload(invoice, :items, force: true)}
 
           {:error, changeset} ->
@@ -689,24 +780,44 @@ defmodule QuantumBilling.Invoices do
         end
 
       {:error, reason} ->
-        mark_einvoice_failed(invoice)
+        mark_einvoice_failed(invoice, reason)
         {:error, reason}
     end
   end
 
+  # A credited invoice is still a supply to register, but stays "Credited":
+  # status also says whether anything is owed.
+  defp einvoice_status(%Invoice{status: "Credited"}, _stamp), do: "Credited"
+  defp einvoice_status(_invoice, stamp), do: stamp
+
   # Status is not a form field, so it is set directly.
-  defp mark_einvoice_failed(invoice) do
-    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: "E-Invoice Failed")) do
+  defp mark_einvoice_failed(invoice, reason) do
+    status = einvoice_status(invoice, "E-Invoice Failed")
+
+    with {:ok, failed} <- Repo.update(Ecto.Changeset.change(invoice, status: status)) do
       broadcast_change(failed, :invoice_changed)
       Webhooks.publish("invoice.e_invoice_failed", failed.id)
+
+      Audit.log_event(:e_invoice_failed, "Invoice", failed.id,
+        label: failed.invoice_number,
+        details:
+          Map.put(audit_details(failed), :reason, QuantumBilling.ErrorMessages.text(reason))
+      )
     end
   end
+
+  defp audit_details(invoice), do: audit_opts(invoice)[:details]
 
   @doc """
   Cancels an invoice. It keeps its number and leaves GSTR-1.
 
-  Refused with `:already_cancelled`, `:paid` (needs a credit note),
+  Refused with `:already_cancelled`, `:paid` (needs a credit note), `:credited`
+  (its credit notes already reverse it),
   `:irn_registered` or `:live_e_way_bill`. `opts` carries audit fields.
+
+  A Razorpay payment link is cancelled in the background
+  (`QuantumBilling.Workers.PaymentLinkCancelWorker`), so an outage there does
+  not hold up the cancellation.
   """
   def cancel_invoice(%Invoice{} = invoice, reason, opts \\ []) when is_binary(reason) do
     cond do
@@ -716,6 +827,9 @@ defmodule QuantumBilling.Invoices do
       invoice.status == "Paid" ->
         {:error, :paid}
 
+      invoice.status == "Credited" ->
+        {:error, :credited}
+
       is_binary(invoice.irn) and not Invoice.demo_irn?(invoice) ->
         {:error, :irn_registered}
 
@@ -723,13 +837,14 @@ defmodule QuantumBilling.Invoices do
         {:error, :live_e_way_bill}
 
       true ->
-        with {:ok, cancelled} <-
-               invoice |> Ecto.Changeset.change(status: "Cancelled") |> Repo.update() do
+        with {:ok, cancelled} <- mark_cancelled(invoice) do
           QuantumBilling.Audit.log_event(
             :invoice_cancelled,
             "Invoice",
             cancelled.id,
-            Keyword.put(opts, :details, %{
+            opts
+            |> Keyword.put(:label, cancelled.invoice_number)
+            |> Keyword.put(:details, %{
               "reason" => reason,
               "number" => cancelled.invoice_number
             })
@@ -741,6 +856,38 @@ defmodule QuantumBilling.Invoices do
         end
     end
   end
+
+  # Locked and re-read, as Payments.reconcile_payment/3 does, so a payment that
+  # lands at the same moment cannot be overwritten by the cancel, or the reverse.
+  defp mark_cancelled(%Invoice{id: id} = invoice) do
+    Repo.transaction(fn ->
+      case Repo.one(from(i in Invoice, where: i.id == ^id, lock: "FOR UPDATE", select: i.status)) do
+        "Paid" -> Repo.rollback(:paid)
+        "Credited" -> Repo.rollback(:credited)
+        "Cancelled" -> Repo.rollback(:already_cancelled)
+        _open -> cancel_and_queue_link(invoice)
+      end
+    end)
+  end
+
+  defp cancel_and_queue_link(invoice) do
+    with {:ok, cancelled} <-
+           invoice |> Ecto.Changeset.change(status: "Cancelled") |> Repo.update(),
+         {:ok, _job} <- queue_payment_link_cancel(cancelled) do
+      cancelled
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp queue_payment_link_cancel(%Invoice{razorpay_payment_link_id: link_id} = invoice)
+       when is_binary(link_id) and link_id != "" do
+    %{"invoice_id" => invoice.id}
+    |> QuantumBilling.Workers.PaymentLinkCancelWorker.new()
+    |> Oban.insert()
+  end
+
+  defp queue_payment_link_cancel(_invoice), do: {:ok, :no_link}
 
   @doc """
   Moves an invoice to the Bin. Nothing is removed and the number is not reused.
@@ -778,11 +925,12 @@ defmodule QuantumBilling.Invoices do
   defp announce({:ok, invoice} = result, action, opts) do
     Audit.log_event(action, "Invoice", invoice.id,
       user_id: Keyword.get(opts, :user_id),
+      label: invoice.invoice_number,
       details: %{
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name,
-        # Whole rupees, as older entries in the log hold.
-        grand_total: div(invoice.grand_total || 0, 100)
+        # Whole units, as older entries in the log hold.
+        grand_total: div(invoice.grand_total || 0, QuantumBilling.Currency.unit(invoice.currency))
       }
     )
 
@@ -811,12 +959,16 @@ defmodule QuantumBilling.Invoices do
     }
   end
 
-  defp resolve_template(attrs) do
+  @doc "The design a new document is issued under: the chosen one, else the default."
+  def resolve_template(attrs) do
     case template_id_from(attrs) do
       nil -> Templates.default_template()
       id -> Templates.get_template(id) || Templates.default_template()
     end
   end
+
+  @doc "The template id and frozen layout a new document records for `template`."
+  def layout_snapshot(template), do: with_layout_snapshot(%{}, template, nil)
 
   defp with_layout_snapshot(trusted, %{id: id, layout_xml: xml}, _organization) do
     Map.merge(trusted, %{template_id: id, layout_xml: xml})

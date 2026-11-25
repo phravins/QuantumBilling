@@ -179,6 +179,75 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     end
   end
 
+  describe "the credit-note modal" do
+    # A note is raised to the invoice's client.
+    defp billed_invoice do
+      client =
+        QuantumBilling.Repo.insert!(%QuantumBilling.Clients.Client{
+          name: "V2V Technologies",
+          email: "billing@v2v.in"
+        })
+
+      create_invoice()
+      |> Ecto.Changeset.change(client_id: client.id)
+      |> QuantumBilling.Repo.update!()
+    end
+
+    test "shows what can still be credited", %{conn: conn} do
+      invoice = billed_invoice()
+
+      {:ok, _} =
+        QuantumBilling.CreditNotes.create_credit_note_for_invoice(invoice, %{
+          "grand_total" => Decimal.new("800")
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+      render_click(view, "toggle_cn_modal", %{})
+
+      assert has_element?(view, "#cn-allowance", "70000.00")
+      assert has_element?(view, ~s(#credit-note-form input[name="grand_total"][value="70000.00"]))
+    end
+
+    test "refuses a credit over the limit, and says why", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+      render_click(view, "toggle_cn_modal", %{})
+
+      html =
+        view
+        |> form("#credit-note-form", %{
+          "note_type" => "Credit",
+          "reason" => "Goods returned",
+          "grand_total" => "70800.01"
+        })
+        |> render_submit()
+
+      assert html =~ "left to credit on this invoice"
+      assert QuantumBilling.CreditNotes.list_credit_notes() == []
+    end
+
+    test "says a fully credited invoice takes only a debit note", %{conn: conn} do
+      invoice = billed_invoice()
+      {:ok, _} = QuantumBilling.CreditNotes.create_credit_note_for_invoice(invoice, %{})
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+      render_click(view, "toggle_cn_modal", %{})
+
+      assert has_element?(view, "#cn-allowance", "Only a debit note")
+      assert has_element?(view, "#invoice-actions-status", "Credited")
+    end
+
+    test "is not offered on a cancelled invoice", %{conn: conn} do
+      invoice = create_invoice()
+      {:ok, _} = Invoices.cancel_invoice(invoice, "Duplicate")
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      refute has_element?(view, "#drawer-credit-note")
+    end
+  end
+
   describe "tax presentation" do
     test "an intra-state invoice shows CGST and SGST, not IGST", %{conn: conn} do
       invoice = create_invoice()

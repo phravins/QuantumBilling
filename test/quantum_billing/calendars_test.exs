@@ -280,6 +280,42 @@ defmodule QuantumBilling.CalendarsTest do
       assert items == Enum.uniq_by(items, & &1.key)
       assert Enum.all?(items, &is_integer(&1.alarm_days))
     end
+
+    test "a return marked filed leaves the calendar", %{scope: scope} do
+      today = Date.utc_today()
+
+      Repo.with_business(scope.business, fn ->
+        {:ok, _organization} =
+          Settings.update_section(
+            Settings.get_organization(),
+            %{"gstin" => "27AABCA1234A1Z5", "company_name" => "Northwind"},
+            :general
+          )
+      end)
+
+      key = fn obligation -> "gst:#{obligation.type}:#{Date.to_iso8601(obligation.due_date)}" end
+
+      keys = fn ->
+        Repo.with_business(scope.business, fn -> Calendars.items(today) end) |> Enum.map(& &1.key)
+      end
+
+      # The first return still to come, filed early.
+      next =
+        today
+        |> Compliance.obligations(%{})
+        |> Enum.find(&(&1.type == "GSTR-3B" and Date.compare(&1.due_date, today) != :lt))
+
+      assert key.(next) in keys.()
+
+      {:ok, _filing} =
+        Compliance.mark_filed(scope, next.type, next.period_key, %{"filed_on" => today})
+
+      refute key.(next) in keys.()
+
+      {:ok, _filing} = Compliance.undo_filed(scope, next.type, next.period_key)
+
+      assert key.(next) in keys.()
+    end
   end
 
   describe "feed" do

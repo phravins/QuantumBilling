@@ -464,6 +464,31 @@ defmodule QuantumBilling.WebhooksOutgoingTest do
       assert published_types() == ["client.created", "invoice.created", "invoice.updated"]
     end
 
+    test "quotations: created, updated, sent, accepted, declined, converted", %{owner: owner} do
+      scope = %{QuantumBilling.Accounts.Scope.for_user(owner) | business: Repo.business()}
+      quotations = QuantumBilling.Quotations
+
+      first = QuantumBilling.QuotationsFixtures.quotation_fixture(scope)
+      {:ok, first} = quotations.update_quotation(scope, first, %{"remarks" => "edited"})
+      {:ok, first} = quotations.mark_sent(scope, first)
+      {:ok, accepted} = quotations.accept(scope, first)
+
+      {:ok, _invoice} =
+        accepted
+        |> quotations.invoice_params()
+        |> Map.put("invoice_date", Date.to_iso8601(quotations.today()))
+        |> QuantumBilling.Invoices.create_invoice(quotation_id: accepted.id)
+
+      second = QuantumBilling.QuotationsFixtures.quotation_fixture(scope)
+      {:ok, _declined} = quotations.decline(scope, second)
+
+      quotation_types = Enum.filter(published_types(), &String.starts_with?(&1, "quotation."))
+
+      assert quotation_types == ~w(quotation.created quotation.updated quotation.sent
+                                   quotation.accepted quotation.converted quotation.created
+                                   quotation.declined)
+    end
+
     test "every promised event type has a publisher" do
       # Grep-level check: each type in the catalogue is published somewhere in
       # lib, so Settings never offers an event that is never sent.

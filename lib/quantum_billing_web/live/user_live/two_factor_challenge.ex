@@ -73,7 +73,8 @@ defmodule QuantumBillingWeb.UserLive.TwoFactorChallenge do
             required
             autofocus
             class={[input_class(), "text-center tracking-widest uppercase"]}
-          /> <button type="submit" class={primary_button_class()}>Verify</button>
+          />
+          <button type="submit" phx-disable-with="Verifying…" class={primary_button_class()}>Verify</button>
         </.form>
 
         <button

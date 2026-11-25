@@ -8,6 +8,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
   alias QuantumBilling.Webhooks
 
   @secret "whsec_for_tests"
+  @other_secret "whsec_firm_two_only"
 
   setup do
     previous = System.get_env("RAZORPAY_WEBHOOK_SECRET")
@@ -57,9 +58,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
   defp post_signed(conn, body, opts \\ []) do
     signature =
-      Keyword.get_lazy(opts, :signature, fn ->
-        :hmac |> :crypto.mac(:sha256, @secret, body) |> Base.encode16(case: :lower)
-      end)
+      Keyword.get_lazy(opts, :signature, fn -> sign(body, Keyword.get(opts, :secret, @secret)) end)
 
     conn
     |> put_req_header("content-type", "application/json")
@@ -71,6 +70,24 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
       end
     end)
     |> post(Keyword.get(opts, :path, ~p"/api/webhooks/razorpay"), body)
+  end
+
+  defp sign(body, secret),
+    do: :hmac |> :crypto.mac(:sha256, secret, body) |> Base.encode16(case: :lower)
+
+  defp flush_emails do
+    receive do
+      {:email, _email} -> flush_emails()
+    after
+      0 -> :ok
+    end
+  end
+
+  # Stores `secret` as the current business's own Razorpay webhook secret.
+  defp put_webhook_secret(secret) do
+    QuantumBilling.Settings.ensure_organization()
+    |> Ecto.Changeset.change(razorpay_webhook_secret: secret)
+    |> Repo.update!()
   end
 
   test "a signed delivery reconciles the invoice", %{conn: conn} do
@@ -121,6 +138,23 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
     assert Repo.get(Invoice, invoice.id).status == "Draft"
   end
 
+  test "once the first business sets its own secret, the server-wide one stops working", %{
+    conn: conn
+  } do
+    put_webhook_secret("whsec_first_business")
+    invoice = invoice_fixture("INV-7006")
+    body = Jason.encode!(payload(invoice.invoice_number))
+
+    assert conn |> post_signed(body, event_id: "evt_7006a") |> json_response(401)
+    assert Repo.get(Invoice, invoice.id).status == "Draft"
+
+    conn =
+      post_signed(build_conn(), body, event_id: "evt_7006b", secret: "whsec_first_business")
+
+    assert json_response(conn, 200)["status"] == "success"
+    assert Repo.get(Invoice, invoice.id).status == "Paid"
+  end
+
   test "a redelivered event is acknowledged but not processed twice", %{conn: conn} do
     invoice = invoice_fixture("INV-7005")
     body = Jason.encode!(payload(invoice.invoice_number))
@@ -167,6 +201,17 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
 
     assert json_response(conn, 200)["status"] == "success"
     assert Repo.get(Invoice, invoice.id).status == "Paid"
+  end
+
+  test "a payment through the old link of a cancelled invoice is refused", %{conn: conn} do
+    invoice = invoice_fixture("INV-7011")
+    {:ok, _cancelled} = QuantumBilling.Invoices.cancel_invoice(invoice, "Duplicate order")
+    body = Jason.encode!(payload(invoice.invoice_number))
+
+    conn = post_signed(conn, body, event_id: "evt_7011")
+
+    assert json_response(conn, 422)["reason"] == "invoice_cancelled"
+    assert Repo.get(Invoice, invoice.id).status == "Cancelled"
   end
 
   test "an under-payment is refused and the invoice stays unpaid", %{conn: conn} do
@@ -221,7 +266,86 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
           %{"name" => "Firm Two"}
         )
 
+      Repo.with_business(other, fn -> put_webhook_secret(@other_secret) end)
+
       %{other: other}
+    end
+
+    # The forgery from the report: a business that knows another secret signs
+    # a huge "payment" for a guessable invoice number at someone else's URL.
+    defp forged_capture(number) do
+      Jason.encode!(%{
+        "event" => "payment.captured",
+        "payload" => %{
+          "payment" => %{
+            "entity" => %{
+              "id" => "pay_fake",
+              "amount" => 999_999_999,
+              "currency" => "INR",
+              "notes" => %{"invoice_number" => number}
+            }
+          }
+        }
+      })
+    end
+
+    test "another business's URL refuses the server-wide secret", %{conn: conn, other: other} do
+      import Swoosh.TestAssertions
+
+      victim =
+        Repo.with_business(other, fn ->
+          invoice_fixture("INV-0001")
+          |> Ecto.Changeset.change(client_email: "b@b.test")
+          |> Repo.update!()
+        end)
+
+      # The owner's sign-up mail from setup; only mail from the delivery counts.
+      flush_emails()
+
+      conn =
+        post_signed(conn, forged_capture("INV-0001"),
+          event_id: "evt_forged_env",
+          path: ~p"/api/webhooks/razorpay/#{other.slug}"
+        )
+
+      assert json_response(conn, 401)
+      assert Repo.with_business(other, fn -> Repo.get(Invoice, victim.id).status end) == "Draft"
+      assert_no_email_sent()
+    end
+
+    test "another business's URL refuses the first business's own secret", %{
+      conn: conn,
+      other: other
+    } do
+      put_webhook_secret("whsec_first_business")
+      victim = Repo.with_business(other, fn -> invoice_fixture("INV-0001") end)
+
+      conn =
+        post_signed(conn, forged_capture("INV-0001"),
+          secret: "whsec_first_business",
+          path: ~p"/api/webhooks/razorpay/#{other.slug}"
+        )
+
+      assert json_response(conn, 401)
+      assert Repo.with_business(other, fn -> Repo.get(Invoice, victim.id).status end) == "Draft"
+    end
+
+    test "a business with no secret of its own refuses everything", %{conn: conn} do
+      {:ok, bare} =
+        QuantumBilling.Businesses.create(
+          QuantumBilling.AccountsFixtures.owner_fixture(),
+          %{"name" => "Firm Three"}
+        )
+
+      invoice = Repo.with_business(bare, fn -> invoice_fixture("INV-7104") end)
+
+      conn =
+        post_signed(conn, Jason.encode!(payload("INV-7104")),
+          path: ~p"/api/webhooks/razorpay/#{bare.slug}"
+        )
+
+      assert json_response(conn, 503)
+      assert Repo.with_business(bare, fn -> Repo.get(Invoice, invoice.id).status end) == "Draft"
     end
 
     test "the slugged URL reconciles the invoice in the business it names", %{
@@ -235,6 +359,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
       conn =
         post_signed(conn, body,
           event_id: "evt_7101",
+          secret: @other_secret,
           path: ~p"/api/webhooks/razorpay/#{other.slug}"
         )
 
@@ -253,6 +378,7 @@ defmodule QuantumBillingWeb.PaymentWebhookControllerTest do
       conn =
         post_signed(build_conn(), body,
           event_id: "evt_7102",
+          secret: @other_secret,
           path: ~p"/api/webhooks/razorpay/#{other.slug}"
         )
 

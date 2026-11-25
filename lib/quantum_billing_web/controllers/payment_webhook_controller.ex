@@ -2,8 +2,10 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
   @moduledoc """
   Receives Razorpay payment webhooks. Public, and it marks invoices paid, so:
 
-    * a valid `x-razorpay-signature` over the raw body is required; with no
-      `RAZORPAY_WEBHOOK_SECRET` set, everything is refused
+    * a valid `x-razorpay-signature` over the raw body is required, made with
+      the secret of the business the URL names (`Payments.webhook_secret/1`),
+      so one business cannot sign deliveries for another; with no secret set,
+      everything is refused
     * each event id is claimed first, so redeliveries are handled once
     * requests are rate limited by source
     * only what reconciliation needs is stored, encrypted
@@ -31,9 +33,10 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     with :ok <- check_rate_limit(conn),
          %{} = business <- Businesses.from_link(slug),
          {:ok, raw_body} <- raw_body(conn),
-         :ok <- verify_signature(conn, raw_body) do
+         :ok <- verify_signature(conn, raw_body, business) do
       # The endpoint clears this again before the next request on the connection.
       Repo.put_business(business)
+      QuantumBilling.Audit.put_actor(%{via: "razorpay"})
       process(conn, params)
     else
       nil ->
@@ -45,10 +48,11 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
         |> put_status(:too_many_requests)
         |> json(%{status: "error", message: "Too many requests"})
 
-      {:error, :not_configured} ->
+      {:error, :not_configured, business} ->
         Logger.error(
-          "[PaymentWebhook] rejected: RAZORPAY_WEBHOOK_SECRET is not set, so no delivery " <>
-            "can be verified. Set it to the secret configured in the Razorpay dashboard."
+          "[PaymentWebhook] rejected a delivery for #{business.slug}: it has no Razorpay " <>
+            "webhook secret, so none can be verified. Set one in Settings → Integrations, " <>
+            "the same as in the Razorpay dashboard."
         )
 
         conn
@@ -117,20 +121,23 @@ defmodule QuantumBillingWeb.PaymentWebhookController do
     end
   end
 
-  defp verify_signature(conn, raw_body) do
-    secret = System.get_env("RAZORPAY_WEBHOOK_SECRET")
+  defp verify_signature(conn, raw_body, business) do
     signature = List.first(get_req_header(conn, "x-razorpay-signature")) || ""
 
-    cond do
-      is_nil(secret) or secret == "" ->
-        {:error, :not_configured}
+    case Payments.webhook_secret(business) do
+      {:error, :not_configured} ->
+        {:error, :not_configured, business}
 
-      RazorpayClient.verify_webhook_signature(raw_body, signature, secret) ->
-        :ok
+      {:ok, secret} ->
+        if RazorpayClient.verify_webhook_signature(raw_body, signature, secret) do
+          :ok
+        else
+          Logger.warning(
+            "[PaymentWebhook] rejected a delivery for #{business.slug} with an invalid signature"
+          )
 
-      true ->
-        Logger.warning("[PaymentWebhook] rejected a delivery with an invalid signature")
-        {:error, :invalid_signature}
+          {:error, :invalid_signature}
+        end
     end
   end
 

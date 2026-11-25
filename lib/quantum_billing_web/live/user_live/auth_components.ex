@@ -27,6 +27,14 @@ defmodule QuantumBillingWeb.UserLive.AuthComponents do
   @doc "Shared class list for outlined auth buttons."
   def outline_button_class, do: @outline_button_class
 
+  @doc "Class list for the cross-link button in the top-right corner of the auth screens."
+  def top_link_class do
+    "inline-flex h-8 items-center justify-center rounded-field border border-base-300 " <>
+      "bg-base-100 px-3 text-sm font-medium text-base-content transition-colors " <>
+      "hover:bg-base-200 focus-visible:outline-2 focus-visible:outline-offset-2 " <>
+      "focus-visible:outline-base-content"
+  end
+
   @doc """
   Renders the legal footnote shown under the sign-up form.
   """

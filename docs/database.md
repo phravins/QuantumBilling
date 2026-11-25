@@ -10,14 +10,14 @@ One PostgreSQL database holds shared account data in `public` and separate busin
 
 | Location | Tables | Ownership |
 | --- | --- | --- |
-| `public` | `users`, `users_tokens` | An account and its sign-in state are shared across businesses. |
+| `public` | `users`, `users_tokens`, `sign_in_requests` | An account and its sign-in state are shared across businesses. |
 | `public` | `businesses`, `memberships`, `invitations` | Defines each business and who may access it. Roles belong to a membership. |
 | `public` | `installation_settings` | Sign-in policy for the whole installation. |
 | `public` | `api_keys`, `api_idempotency_keys` | External API keys (each names its business) and replayable write responses. Shared because a request finds its key before it knows its business. |
 | `public` | `rate_limits` | Rate-limit counters shared by every server (UNLOGGED). |
 | `public` | `oban_jobs`, `oban_peers` | Shared background-job storage and leader coordination. |
 | `public` | `schema_migrations` | Ecto's record of shared/public migrations. |
-| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `design_assets`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events`, `webhook_endpoints`, `webhook_deliveries`, `compliance_tasks`, `calendar_connections`, `calendar_event_links` | The selected business's operational data. |
+| Each `biz_N` | `organization_settings`, `clients`, `invoices`, `invoice_items`, `credit_notes`, `e_way_bills`, `e_way_bill_part_b_updates`, `recurring_profiles`, `invoice_templates`, `design_assets`, `notifications`, `email_deliveries`, `audit_logs`, `webhook_events`, `webhook_endpoints`, `webhook_deliveries`, `compliance_tasks`, `compliance_filings`, `calendar_connections`, `calendar_event_links` | The selected business's operational data. |
 | Each `biz_N` | `schema_migrations` | Ecto's record of tenant migrations for that schema. |
 
 Business tables do not carry a `business_id` column. Their schema establishes ownership. Consequently, invoice ID `42` in `biz_1` and invoice ID `42` in `biz_2` are different invoices. Invoice numbers, GSTIN uniqueness, public invoice tokens, and webhook event uniqueness are enforced within each business schema.
@@ -53,7 +53,7 @@ Raw `Repo.query!/2` SQL is not rewritten by `prepare_query/3`; raw SQL must qual
 | `/api/webhooks/razorpay/:slug` | Resolves the active business by slug and selects it before claiming the event and reconciling an invoice. |
 | Legacy `/api/webhooks/razorpay` | Selects business ID 1 for existing provider configurations. |
 
-The slug selects the data namespace; it is not a credential. Public invoice access still requires the bearer token, and incoming Razorpay events still require a valid signature over the raw request body. Callback signature verification currently uses the installation environment's `RAZORPAY_WEBHOOK_SECRET`, rather than a separate per-business incoming-webhook secret column. `organization_settings.webhook_secret` is the business's **outgoing** webhook signing secret. Named public links exclude archived businesses; the legacy no-slug resolver calls the default-business lookup directly.
+The slug selects the data namespace; it is not a credential. Public invoice access still requires the bearer token, and incoming Razorpay events still require a valid signature over the raw request body. Callback signatures are verified with that business's `organization_settings.razorpay_webhook_secret` (business 1 alone falls back to the installation's `RAZORPAY_WEBHOOK_SECRET` while it has none). `organization_settings.webhook_secret` is the business's **outgoing** webhook signing secret. Named public links exclude archived businesses; the legacy no-slug resolver calls the default-business lookup directly.
 
 The endpoint clears any previous process business before dispatching each HTTP request and restores the prior state before sending its response. Public LiveViews retain their explicitly selected business for payment events and PubSub updates.
 
@@ -122,10 +122,27 @@ Unique B-tree indexes cover `email` and `username`. The historical `users.role` 
 | `context` | `varchar(255)` | Required | Token purpose, such as `session`, confirmation, login, or password reset. |
 | `sent_to` | `varchar(255)` | Nullable | Email address the token was issued to. |
 | `authenticated_at` | timestamp | Nullable | Original authentication time. |
+| `device_id` | `varchar(255)` | Nullable | Session tokens only: the browser's `_quantum_billing_device` cookie value, so reissued tokens from one browser are known as one device. |
+| `user_agent`, `ip_address` | `varchar(255)` | Nullable | Session tokens only: where the session was started. |
+| `last_seen_at` | timestamp | Nullable | Session tokens only: last use, written at most once a minute. |
 
-There is an index on `user_id` and a unique index on `(context, token)`. This table has `inserted_at` only. Session tokens are stored as generated random bytes; email tokens are stored as SHA-256 hashes. Do not describe every row as a hashed token.
+There is an index on `user_id`, one on `(user_id, context)`, and a unique index on `(context, token)`. This table has `inserted_at` only. Session tokens are stored as generated random bytes; email tokens are stored as SHA-256 hashes. Do not describe every row as a hashed token.
 
 Expiry is enforced by application queries, not by a PostgreSQL TTL: session 14 days, magic link 15 minutes, confirmation/change-email 7 days, and password reset 4 hours. The installation idle timeout is a separate policy.
+
+Under "One device at a time", a session ended so the account could sign in elsewhere is moved to the context `session_replaced`. It no longer signs anyone in; it is kept only so that browser can be told why it was signed out.
+
+### `sign_in_requests`
+
+| Columns | SQL type | Required/default | Meaning |
+| --- | --- | --- | --- |
+| `user_id` | `bigint` FK → `public.users.id` | Required | Deleting the user cascades to their requests. |
+| `token` | `bytea` | Required; unique | SHA-256 of the random token held in the waiting browser's session. |
+| `device_id`, `user_agent`, `ip_address` | `varchar(255)` | Nullable | The waiting browser, shown to the signed-in device. |
+| `status` | `varchar(255)` | Required; `pending` | `pending`, `approved`, `denied`, or `cancelled`. |
+| `expires_at` | timestamp | Required | Two minutes to answer; once approved, two minutes to finish signing in. |
+
+Only used under "One device at a time". An index covers `(user_id, status)`. An allowed request is deleted when used; rows untouched for a day are deleted when the user's next request is made.
 
 ### `businesses`
 
@@ -169,6 +186,7 @@ Indexes cover `token` (unique), `email`, and `business_id`. The partial unique i
 | `allowed_ips` | `varchar(255)` | Nullable | Installation-wide IP allowlist. |
 | `session_timeout_minutes` | `integer` | Required; `60` | Idle timeout policy. |
 | `enforce_2fa` | `boolean` | Required; `false` | Installation-wide mandatory 2FA policy. |
+| `single_session` | `boolean` | Required; `false` | "One device at a time": a new sign-in must be allowed from the device already signed in. |
 | `singleton` | `boolean` | Required; `true` | Identifies the single policy row. |
 
 A unique index on `singleton` plus `CHECK (singleton)` allows at most one row, and `installation_settings_timeout_positive` requires a positive timeout. An empty table is permitted; the context returns in-memory defaults until settings are saved. Sign-in policy is shared because it applies before a user chooses a business.
@@ -194,7 +212,7 @@ One row per `(api_key_id, key)` (unique): the request's SHA-256, then the respon
 
 `key` (`bytea` primary key: SHA-256 of the limiter key, which holds IPs and emails), `count`, `reset_at`. UNLOGGED: counters are worthless after a crash and rewritten constantly. Expired rows are swept every minute.
 
-Sources: [account schema](../lib/quantum_billing/accounts/user.ex), [token schema and expiry rules](../lib/quantum_billing/accounts/user_token.ex), [invitation schema](../lib/quantum_billing/accounts/invitation.ex), [installation settings](../lib/quantum_billing/installation_settings.ex), [authentication migrations](../priv/repo/migrations/20260725171317_create_users_auth_tables.exs), [business-schema migration](../priv/repo/migrations/20261015115410_move_business_tables_into_their_own_schema.exs).
+Sources: [account schema](../lib/quantum_billing/accounts/user.ex), [token schema and expiry rules](../lib/quantum_billing/accounts/user_token.ex), [invitation schema](../lib/quantum_billing/accounts/invitation.ex), [installation settings](../lib/quantum_billing/installation_settings.ex), [sign-in request schema](../lib/quantum_billing/accounts/sign_in_request.ex), [one-device migration](../priv/repo/migrations/20261120071133_add_single_session_sign_in.exs), [authentication migrations](../priv/repo/migrations/20260725171317_create_users_auth_tables.exs), [business-schema migration](../priv/repo/migrations/20261015115410_move_business_tables_into_their_own_schema.exs).
 
 ## 4. Operational tables in each `biz_N`
 
@@ -214,7 +232,12 @@ Application-managed business configuration. A unique index on `singleton` is use
 | `date_format` | `varchar(255)` | Required; `DD MMM YYYY` |
 | `invoice_prefix` | `varchar(255)` | Required; `INV` |
 | `invoice_next_number` | `integer` | Required; `1` |
-| `invoice_number_padding` | `integer` | Required; `4` |
+| `invoice_number_padding` | `integer` | Required; `4`. Credit and debit notes use it too |
+| `credit_note_prefix`, `debit_note_prefix` | `varchar(255)` | Required; `CN`, `DN` |
+| `credit_note_next_number`, `debit_note_next_number` | `integer` | Required; `1` |
+| `quotation_prefix` | `varchar(255)` | Required; `QT`. Quotations use the invoice padding too |
+| `quotation_next_number` | `integer` | Required; `1` |
+| `quotation_validity_days` | `integer` | Required; `30`. 1 to 365 (`organization_settings_quotation_validity_valid`). The new-quotation form's default Valid Until |
 | `invoice_due_days` | `integer` | Required; `30` |
 | `invoice_terms` | `text` | Nullable |
 | `ewb_transport_mode` | `varchar(255)` | Required; `Road` |
@@ -237,13 +260,13 @@ Application-managed business configuration. A unique index on `singleton` is use
 | `smtp_ssl` | `boolean` | Nullable; `false` |
 | `smtp_password` | `bytea` | Nullable; encrypted |
 | `razorpay_key_id`, `irp_username`, `irp_client_id`, `webhook_url` | `varchar(255)` | Nullable |
-| `razorpay_key_secret`, `irp_password`, `webhook_secret` | `bytea` | Nullable; encrypted |
+| `razorpay_key_secret`, `razorpay_webhook_secret`, `irp_password`, `webhook_secret` | `bytea` | Nullable; encrypted |
 | `upi_vpa`, `upi_payee_name` | `varchar(255)` | Nullable |
 | `bank_account_name`, `bank_name`, `bank_account_number`, `bank_ifsc`, `bank_branch` | `varchar(255)` | Nullable; printed by an invoice design's Payment details block. The changeset strips spaces from the account number and upper-cases and checks the IFSC format. |
 | `audit_retention_days` | `integer` | Nullable; `90` |
 | `singleton` | `boolean` | Required; `true`; unique |
 
-`organization_settings_numbering_valid` requires `invoice_next_number > 0` and padding between 0 and 11. `organization_settings_security_valid` requires `audit_retention_days` to be null or positive. The sign-in rules (`allowed_ips`, `session_timeout_minutes`, `enforce_2fa`) are not business columns: the schema-transfer migration copied business 1's values to `public.installation_settings`, and the tenant migration `20261015121215_drop_installation_rules_from_business_settings` removed them from every business schema. `Organization` keeps them as virtual fields; `Settings.with_installation_rules/1` fills them in for the Security form, and saving that section writes them to `InstallationSettings` in the same transaction as the business's audit retention. The browser security plug reads that shared table. Audit retention remains specific to each business.
+`organization_settings_numbering_valid` requires `invoice_next_number`, `credit_note_next_number`, `debit_note_next_number` and `quotation_next_number` to be greater than 0, and padding between 0 and 11. The 16-character GST limit on a whole number is checked by the settings changeset, not in SQL. `organization_settings_security_valid` requires `audit_retention_days` to be null or positive. The sign-in rules (`allowed_ips`, `session_timeout_minutes`, `enforce_2fa`) are not business columns: the schema-transfer migration copied business 1's values to `public.installation_settings`, and the tenant migration `20261015121215_drop_installation_rules_from_business_settings` removed them from every business schema. `Organization` keeps them as virtual fields; `Settings.with_installation_rules/1` fills them in for the Security form, and saving that section writes them to `InstallationSettings` in the same transaction as the business's audit retention. The browser security plug reads that shared table. Audit retention remains specific to each business.
 
 Database and Ecto defaults are not interchangeable: for example, the organization Ecto schema stores a human-readable currency label such as `AED (د.إ) - UAE Dirham` while the SQL default is `INR`; `Currency.code_from_label/1` reads the code back. Normal writes pass through the application's settings changesets.
 
@@ -322,6 +345,7 @@ A saved invoice contains both relationships and snapshots. Editing a customer's 
 | `razorpay_payment_link_id`, `razorpay_payment_url`, `razorpay_payment_id` | `varchar(255)` | Nullable; payment references |
 | `public_token` | `varchar(255)` | Nullable in SQL; unique |
 | `deleted_at` | timestamp | Nullable; Bin marker |
+| `quotation_id` | `bigint` FK → same-schema `quotations.id` | Nullable; unique; delete sets `NULL`. The quotation this invoice was converted from. Set only by the conversion, never from params |
 
 Application statuses are Draft, Pending E-Invoice, E-Invoice Generated, E-Invoice Failed, Paid, and Cancelled. Application invoice types are Tax Invoice, Bill of Supply, Export Invoice, Credit Note, and Debit Note. The separate `credit_notes` table holds adjustment-note records; it is not merely an alias for the invoice type field.
 
@@ -333,7 +357,7 @@ The changeset generates `public_token` from 24 cryptographically random bytes wi
 
 Indexes:
 
-- Unique B-tree indexes: `invoice_number`, `public_token`, and non-null `irn` (`invoices_irn_unique`).
+- Unique B-tree indexes: `invoice_number`, `public_token`, `quotation_id` (so a quotation converts only once; NULLs never clash), and non-null `irn` (`invoices_irn_unique`).
 - B-tree lookups: `client_id`, `template_id`, `invoice_date`, `inserted_at`, `status`, `(status, invoice_date)`, `client_name`, `client_gstin`, `irn`, `razorpay_payment_link_id`, `razorpay_payment_id`.
 - GIN trigram search: `invoice_number`, `client_name`, `client_gstin`.
 - GIN `jsonb_path_ops`: `custom_fields` (`invoices_custom_fields_index`), for the list filters.
@@ -362,11 +386,58 @@ Source: [invoice schema](../lib/quantum_billing/invoices/invoice.ex), [numbering
 
 Source: [invoice item schema](../lib/quantum_billing/invoices/invoice_item.ex).
 
+### `quotations`
+
+Estimates sent before invoicing. A quotation carries the same client and company snapshots, tax context and totals as an invoice, so its lines are calculated by the invoice code, but it is never read by a report, return export or dashboard figure.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `number` | `varchar(255)` | Required; unique. From the business's quotation series |
+| `quotation_date`, `valid_until` | `date` | Required |
+| `status` | `varchar(255)` | Required; `Draft`. Draft, Sent, Accepted or Declined |
+| `place_of_supply` | `varchar(255)` | Nullable in SQL; the changeset requires it under GST |
+| `currency` | `varchar(255)` | Required; `INR` |
+| `client_id` | `bigint` FK → same-schema `clients.id` | Nullable; delete sets `NULL` |
+| `client_name` | `varchar(255)` | Required; snapshotted |
+| `client_gstin`, `client_pan`, `client_email`, `client_state`, `client_city`, `client_pincode`, `client_tax_number` | `varchar(255)` | Nullable; snapshotted |
+| `client_billing_address` | `text` | Nullable; snapshotted |
+| `company_name`, `company_gstin`, `company_state`, `company_tax_number` | `varchar(255)` | Nullable; snapshotted at creation |
+| `company_address` | `text` | Nullable; snapshotted at creation |
+| `tax_regime` | `varchar(255)` | Required; `gst` |
+| `reverse_charge`, `prices_include_tax` | `boolean` | Required; `false` |
+| `round_to_whole_units` | `boolean` | Required; `true` |
+| `total_items` | `integer` | Required; `0` |
+| `total_quantity` | `numeric(15,3)` | Required; `0` |
+| `taxable_value`, `cgst_amount`, `sgst_amount`, `igst_amount`, `cess_amount`, `vat_amount`, `round_off`, `grand_total` | `bigint` minor units | Required; `0` |
+| `tax_breakdown` | `jsonb` | Required; `[]`. As on `invoices` |
+| `remarks`, `terms` | `text` | Nullable |
+| `template_id` | `bigint` FK → same-schema `invoice_templates.id` | Nullable; delete sets `NULL` |
+| `layout_xml` | `text` | Nullable; layout snapshot, as on `invoices` |
+| `user_id` | `bigint` FK → `public.users.id` | Nullable; delete sets `NULL`. Who created it |
+| `custom_fields` | `jsonb` | Required; `{}`. Values of the business's `quotation` fields |
+| `public_token` | `varchar(255)` | Nullable; unique. The client link's bearer secret, set on insert. Rows from before the column get one when a link is first made |
+| `deleted_at` | `timestamp` | Nullable. Set when the quotation is in the Bin |
+
+`quotations_valid_until_after_date` requires `valid_until >= quotation_date`. Indexes cover unique `number`, unique `public_token`, `status`, `valid_until`, `quotation_date`, `client_id` and `deleted_at`.
+
+**Expired** is not a stored status. A Draft or Sent row whose `valid_until` is before the business's local date reads as Expired, so a list filters it with `status IN ('Draft','Sent') AND valid_until < today`. No job updates the rows. Status changes lock the row `FOR UPDATE` and check the stored status before writing. Number allocation locks the organization row, as invoice numbering does, and advances `quotation_next_number` in the same transaction.
+
+A quotation is converted when an invoice's `quotation_id` points to it. Conversion locks the quotation row, requires Accepted with no invoice yet, and inserts the invoice in the same transaction; the unique index on `invoices.quotation_id` is the backstop. A converted quotation stays Accepted.
+
+Lists, lookups, the API and the client link read only rows with `deleted_at IS NULL`; the Bin reads the rest. A converted quotation is never binned.
+
+Source: [quotation schema](../lib/quantum_billing/quotations/quotation.ex), [quotation context](../lib/quantum_billing/quotations.ex), [migration](../priv/repo/tenant_migrations/20261120110049_create_quotations.exs), [extras migration](../priv/repo/tenant_migrations/20261120112937_add_quotation_extras.exs).
+
+### `quotation_items`
+
+The same columns as [`invoice_items`](#invoice_items), with `quotation_id` (`bigint` FK → same-schema `quotations.id`, required, delete cascades) in place of `invoice_id`, and the same `quantity > 0`, `rate >= 0` and `amount >= 0` checks. Lines are validated and totalled by the invoice item code. `custom_fields` holds the values of the business's `quotation_item` fields.
+
 ### `credit_notes`
 
 | Columns | SQL type | Required/default |
 | --- | --- | --- |
 | `note_number` | `varchar(255)` | Required; unique |
+| `note_date` | `date` | Required. The business's local date when raised |
 | `note_type` | `varchar(255)` | Required; `Credit` |
 | `invoice_id` | `bigint` FK → same-schema `invoices.id` | Required; delete cascades |
 | `client_id` | `bigint` FK → same-schema `clients.id` | Required; delete restricts |
@@ -377,7 +448,9 @@ Source: [invoice item schema](../lib/quantum_billing/invoices/invoice_item.ex).
 | `tax_breakdown` | `jsonb` | Required; `[]`. VAT only, as on `invoices` |
 | `custom_fields` | `jsonb` | Required; `{}` |
 
-Indexes cover unique `note_number`, `invoice_id`, and `client_id`. Application types are Credit/Debit and statuses are Issued/Cancelled/Applied. The changeset requires a non-negative grand total; no corresponding money or status check exists in the baseline SQL. The context generates a `CN-` or `DN-` number tied to the invoice number plus a runtime unique suffix, rather than consuming the invoice sequence.
+Indexes cover unique `note_number`, `note_date`, `invoice_id`, and `client_id`. Application types are Credit/Debit and statuses are Issued/Cancelled/Applied. The changeset requires a non-negative grand total; no corresponding money or status check exists in the baseline SQL.
+
+The context allocates `note_number` from the business's own series: it locks the organization row `FOR UPDATE`, which is the same lock and order invoices take, then inserts the note and advances `credit_note_next_number` or `debit_note_next_number` in one transaction. It sets `note_date` from the business's timezone in that transaction. Neither field is cast from params, and the changeset refuses a number over 16 characters or outside letters, digits, `-` and `/`. The tenant migration `20261120101430_add_note_series_and_note_date` filled `note_date` for existing notes from `inserted_at` converted to IST, and left their numbers unchanged. GSTR-1 filters and dates notes by `note_date`.
 
 Source: [credit-note schema](../lib/quantum_billing/credit_notes/credit_note.ex), [credit-note context](../lib/quantum_billing/credit_notes.ex).
 
@@ -634,6 +707,24 @@ Tasks and reminders added by hand on the Compliance page. GST obligations are ca
 
 Source: [task schema](../lib/quantum_billing/compliance/task.ex), [compliance context](../lib/quantum_billing/compliance.ex).
 
+### `compliance_filings`
+
+GST returns marked as filed on the Compliance page. Obligations are not stored, so a filing names its obligation by `type` and `period_key`. A return with a row here shows as Filed; deleting the row (Undo) puts it back to Pending or Overdue.
+
+| Columns | SQL type | Required/default |
+| --- | --- | --- |
+| `type` | `varchar(255)` | Required; the return, such as `GSTR-1`, `GSTR-3B`, `CMP-08`, `GSTR-9` |
+| `period_key` | `varchar(255)` | Required; the obligation's period as `MMYYYY`: the month for a monthly return, the last month of the quarter for CMP-08, March of the financial year for an annual return |
+| `filed_on` | `date` | Required; not after the business's today, not before 2017-07-01 (checked in the changeset) |
+| `arn` | `varchar(255)` | Nullable; 15 capital letters or digits when present, stored without spaces |
+| `note` | `text` | Nullable; up to 500 characters |
+| `user_id` | `bigint` FK to `public.users` | Nullable; who marked it, set to null when the user is deleted |
+| `inserted_at`, `updated_at` | `timestamp(0)` | Required |
+
+`(type, period_key)` is unique, so a return is marked once. `type`, `period_key` and `user_id` are set in code, and `mark_filed/4` refuses a pair the calendar does not generate for this financial year or the last. Marking and undoing write `mark_compliance_filed` and `undo_compliance_filed` audit rows.
+
+Source: [filing schema](../lib/quantum_billing/compliance/filing.ex), [compliance context](../lib/quantum_billing/compliance.ex).
+
 ### `calendar_connections`
 
 One row per provider (`google`, `caldav`, `feed`), enforced by a unique index on `provider`.
@@ -680,6 +771,9 @@ erDiagram
     CLIENTS o|--o{ RECURRING_PROFILES : schedules
     INVOICE_TEMPLATES o|--o{ INVOICES : designs
     INVOICES ||--o{ INVOICE_ITEMS : contains
+    CLIENTS o|--o{ QUOTATIONS : quotes
+    QUOTATIONS ||--o{ QUOTATION_ITEMS : contains
+    QUOTATIONS o|--o| INVOICES : converts_to
     TAX_RATES o|--o{ INVOICE_ITEMS : rates
     INVOICES ||--o{ CREDIT_NOTES : adjusts
     INVOICES ||--o{ E_WAY_BILLS : transports
@@ -693,10 +787,11 @@ Unprefixed operational entities in the diagram are in one selected `biz_N`. Edge
 | --- | --- |
 | Delete `public.users` | Cascades user tokens/memberships; nulls invitation inviter and business audit user references. |
 | Delete `public.businesses` | Cascades memberships/invitations. It does **not** automatically drop the PostgreSQL schema or its books. |
-| Delete a client | Nulls invoice and recurring-profile client references; is restricted when credit notes still reference it. |
+| Delete a client | Nulls invoice, quotation and recurring-profile client references; is restricted when credit notes still reference it. |
 | Delete an invoice | Cascades line items, credit notes, and e-way bills; nulls email-delivery invoice references. |
+| Delete a quotation | Sets `deleted_at` (the Bin). Purging from the Bin deletes the row and cascades its lines. The application refuses to bin a converted quotation, so `invoices.quotation_id` never points at a purged one. |
 | Delete an e-way bill | Cascades its Part-B updates. |
-| Delete an invoice template | Nulls invoice template references. |
+| Delete an invoice template | Nulls invoice and quotation template references. |
 | Delete a tax rate | Nulls `invoice_items.tax_rate_id`; the line keeps its snapshot of the rate. Rates are archived in normal use. |
 | Delete a field definition | Allowed by the application only when no record holds a value for it; nothing else changes. |
 
@@ -803,9 +898,9 @@ Sources: [schema-transfer migration](../priv/repo/migrations/20261015115410_move
 
 ## 9. Backup boundaries
 
-The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.2` stores money in minor units and can upgrade the supported older `2.0`, `2.1`, `3.0` and `3.1` files on restore. Files older than `3.2` were written before VAT, so restore treats every record in them as GST: `tax_regime` `gst`, `vat_amount` 0, an empty `tax_breakdown`, no reverse charge, rounding on, and client `country` `IN`. Files without custom fields restore with `custom_fields` `{}`.
+The application's JSON export is a business-data export, not a full PostgreSQL backup. Format version `3.3` stores money in minor units and can upgrade the supported older `2.0`, `2.1`, `3.0`, `3.1` and `3.2` files on restore; a file older than `3.3` has no quotations and restores with none. Files older than `3.2` were written before VAT, so restore treats every record in them as GST: `tax_regime` `gst`, `vat_amount` 0, an empty `tax_breakdown`, no reverse charge, rounding on, and client `country` `IN`. Files without custom fields restore with `custom_fields` `{}`.
 
-The export includes selected organization settings (with the tax regime, VAT number and country, inclusive pricing and rounding) plus, in restore order, field definitions, tax rates, clients, templates, design-asset records, invoices, invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, and audit logs. Every record type that has `custom_fields` exports it. Restore drops a field definition whose object, key or type is not valid. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo and design-image bytes are not embedded; a path reference alone is not an asset backup. Restore drops `design_assets` rows whose path or kind is malformed. A restored row makes that business the owner of the path, which is the same trust a restore already gives `doc_logo_path`; paths are unguessable content hashes, so only someone who already has the file name can claim it this way.
+The export includes selected organization settings (with the tax regime, VAT number and country, inclusive pricing and rounding) plus, in restore order, field definitions, tax rates, clients, templates, design-asset records, quotations (without `user_id`, which points at `public.users`; with `public_token` and `deleted_at`, so links and Bin state survive), quotation items, invoices (with `quotation_id`), invoice items, e-way bills, Part-B updates, recurring profiles, credit notes, compliance tasks, compliance filings (without `user_id`, as tasks leave out their author), and audit logs. A file written before filings existed restores with none. Every record type that has `custom_fields` exports it. Restore drops a field definition whose object, key or type is not valid. It retains deleted/archived markers. It omits protected credentials, calendar connections and their event links, users, sessions, TOTP enrolments, memberships, business definitions, installation settings, Oban jobs/peers, notifications, email delivery history, and incoming webhook events. Uploaded logo and design-image bytes are not embedded; a path reference alone is not an asset backup. Restore drops `design_assets` rows whose path or kind is malformed. A restored row makes that business the owner of the path, which is the same trust a restore already gives `doc_logo_path`; paths are unguessable content hashes, so only someone who already has the file name can claim it this way.
 
 Export streams explicit field maps inside one transaction. Restore replaces the listed business tables in one transaction, inserts parents before children in batches, and resynchronizes primary-key sequences. A failure rolls back the transaction. Omitted credentials must be configured separately; the file is not a copy of the application's encryption-key environment.
 

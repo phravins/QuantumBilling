@@ -335,7 +335,8 @@ defmodule QuantumBillingWeb.DashboardComponents do
   def money_axis_label(minor, currency \\ "INR") do
     symbol = QuantumBillingWeb.Format.currency_symbol(currency)
     symbol = if QuantumBilling.Currency.letter_symbol?(currency), do: symbol <> " ", else: symbol
-    symbol <> axis_label(minor / 100, QuantumBilling.Currency.get(currency).grouping)
+    major = minor / QuantumBilling.Currency.unit(currency)
+    symbol <> axis_label(major, QuantumBilling.Currency.get(currency).grouping)
   end
 
   defp axis_label(major, :indian) when major >= 10_000_000, do: short(major / 10_000_000) <> "Cr"
@@ -382,7 +383,7 @@ defmodule QuantumBillingWeb.DashboardComponents do
   @doc """
   Renders an SVG donut chart with a centred total and a legend, from
   `%{label:, value:, tone:}` maps. `tone` is `:strong`, `:medium`, `:positive`,
-  `:soft` or `:faint`; `palette` is `:mono` (default) or `:color`.
+  `:soft`, `:muted` or `:faint`; `palette` is `:mono` (default) or `:color`.
   """
   attr :segments, :list, required: true
   attr :total, :integer, required: true
@@ -439,22 +440,26 @@ defmodule QuantumBillingWeb.DashboardComponents do
   defp stroke_class(:mono, :medium), do: "stroke-base-content/60"
   defp stroke_class(:mono, :positive), do: "stroke-base-content/45"
   defp stroke_class(:mono, :soft), do: "stroke-base-content/35"
+  defp stroke_class(:mono, :muted), do: "stroke-base-content/25"
   defp stroke_class(:mono, :faint), do: "stroke-base-content/15"
   defp stroke_class(:color, :strong), do: "stroke-blue-500"
   defp stroke_class(:color, :medium), do: "stroke-amber-500"
   defp stroke_class(:color, :positive), do: "stroke-emerald-500"
   defp stroke_class(:color, :soft), do: "stroke-rose-500"
+  defp stroke_class(:color, :muted), do: "stroke-violet-500"
   defp stroke_class(:color, :faint), do: "stroke-base-content/20"
 
   defp dot_class(:mono, :strong), do: "bg-base-content"
   defp dot_class(:mono, :medium), do: "bg-base-content/60"
   defp dot_class(:mono, :positive), do: "bg-base-content/45"
   defp dot_class(:mono, :soft), do: "bg-base-content/35"
+  defp dot_class(:mono, :muted), do: "bg-base-content/25"
   defp dot_class(:mono, :faint), do: "bg-base-content/15"
   defp dot_class(:color, :strong), do: "bg-blue-500"
   defp dot_class(:color, :medium), do: "bg-amber-500"
   defp dot_class(:color, :positive), do: "bg-emerald-500"
   defp dot_class(:color, :soft), do: "bg-rose-500"
+  defp dot_class(:color, :muted), do: "bg-violet-500"
   defp dot_class(:color, :faint), do: "bg-base-content/20"
 
   defp donut_geometry(segments) do

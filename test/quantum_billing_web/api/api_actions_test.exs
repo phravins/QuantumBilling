@@ -188,6 +188,9 @@ defmodule QuantumBillingWeb.API.ActionsTest do
 
       assert %{"data" => data} = json_response(conn, 201)
       assert data["type"] == "credit"
+      # The business's own series, and the note's date where the business is.
+      assert data["number"] == "CN-0001"
+      assert data["date"] == Date.to_iso8601(QuantumBilling.Compliance.local_date())
 
       assert data["amounts"] == %{
                "subtotal" => 10_000,
@@ -210,7 +213,8 @@ defmodule QuantumBillingWeb.API.ActionsTest do
 
     test "the serializer's fields are exactly the documented ones" do
       assert QuantumBillingWeb.API.V1.CreditNoteJSON.fields() ==
-               ~w(id number type reason status amounts invoice client_id created_at updated_at)a
+               ~w(id number date type reason status currency currency_exponent amounts invoice
+                  client_id created_at updated_at)a
     end
 
     test "refuse a bad type and fields the API does not take" do

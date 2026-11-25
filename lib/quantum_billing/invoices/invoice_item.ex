@@ -6,8 +6,10 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
   picks a `tax_rate_id` and snapshots that rate's basis points, category and
   name, so editing the rate later never changes the invoice.
 
-  `rate` is typed in rupees and held in paise; `amount` is computed in paise.
-  `quantity` allows three decimal places.
+  `rate` is typed in major units of the invoice's currency and held in minor
+  units (paise, fils, ...); `amount` is computed in the same minor units. The
+  currency sets how many decimals a rate may have: two, or three for KWD, BHD
+  and OMR. `quantity` allows three decimal places.
   """
   use Ecto.Schema
 
@@ -15,7 +17,6 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
 
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Money
-  alias QuantumBilling.Money.Paise
   alias QuantumBilling.Settings.Organization
 
   @units ["Nos", "Kg", "Ltr", "Mtr", "Box", "Set", "Pcs", "Hrs"]
@@ -25,7 +26,8 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
     field :hsn_sac, :string
     field :quantity, :decimal, default: Decimal.new(1)
     field :unit, :string, default: "Nos"
-    field :rate, Paise, default: 0
+    # Minor units of the invoice's currency; parsed by Money.cast_amount/4.
+    field :rate, :integer, default: 0
     field :tax_rate, :integer, default: 18
     # VAT snapshot of the chosen rate.
     belongs_to :tax_rate_ref, QuantumBilling.TaxRates.TaxRate, foreign_key: :tax_rate_id
@@ -43,33 +45,36 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
     timestamps(type: :utc_datetime)
   end
 
-  @castable ~w(description hsn_sac quantity unit rate tax_rate position)a
+  @castable ~w(description hsn_sac quantity unit tax_rate position)a
 
   @doc """
-  `definitions` are the item fields, loaded once per invoice by the caller.
-  `tax` is `:gst`, or `{:vat, rates_by_id}` for a VAT invoice.
+  `definitions` are the item fields, loaded once per invoice by the caller
+  (nil loads them). `tax` is `:gst`, or `{:vat, rates_by_id}` for a VAT
+  invoice. `currency` is the invoice's ISO code: it reads `rate` and money
+  custom fields.
   """
-  def changeset(item, attrs, definitions \\ nil, tax \\ :gst)
+  def changeset(item, attrs, definitions, tax, currency)
 
-  def changeset(item, attrs, definitions, {:vat, rates}) do
+  def changeset(item, attrs, definitions, {:vat, rates}, currency) do
     item
     |> cast(attrs, @castable -- [:tax_rate])
     |> cast(attrs, [:tax_rate_id])
-    |> common(attrs, definitions)
+    |> common(attrs, definitions, currency)
     |> snapshot_rate(rates)
   end
 
-  def changeset(item, attrs, definitions, :gst) do
+  def changeset(item, attrs, definitions, :gst, currency) do
     item
     |> cast(attrs, @castable)
     |> validate_inclusion(:tax_rate, Organization.gst_rates(),
       message: "must be one of the GST slabs: #{Enum.join(Organization.gst_rates(), ", ")}"
     )
-    |> common(attrs, definitions)
+    |> common(attrs, definitions, currency)
   end
 
-  defp common(changeset, attrs, definitions) do
+  defp common(changeset, attrs, definitions, currency) do
     changeset
+    |> Money.cast_amount(attrs, :rate, currency)
     |> validate_required([:description])
     |> validate_length(:description, max: 500)
     |> validate_length(:hsn_sac, max: 20)
@@ -77,7 +82,7 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
     |> validate_quantity_places()
     |> validate_number(:rate, greater_than_or_equal_to: 0)
     |> validate_inclusion(:unit, @units)
-    |> CustomFields.cast("invoice_item", attrs, definitions)
+    |> CustomFields.cast("invoice_item", attrs, definitions, currency)
     |> put_amount()
   end
 
@@ -148,19 +153,20 @@ defmodule QuantumBilling.Invoices.InvoiceItem do
   end
 
   @doc """
-  The line's amount before tax, in paise.
+  The line's amount before tax, in paise. Takes any line with the item fields
+  (an invoice item or a quotation item).
   """
-  def amount(%__MODULE__{quantity: quantity, rate: rate}), do: Money.line_amount(quantity, rate)
+  def amount(%{quantity: quantity, rate: rate}), do: Money.line_amount(quantity, rate)
 
   def amount(_item), do: 0
 
   @doc """
   The tax due on this line, at its own rate, in paise.
   """
-  def tax(%__MODULE__{tax_rate_bp: rate_bp} = item) when is_integer(rate_bp),
+  def tax(%{tax_rate_bp: rate_bp} = item) when is_integer(rate_bp),
     do: Money.tax_bp(amount(item), QuantumBilling.Tax.effective_bp(item))
 
-  def tax(%__MODULE__{tax_rate: tax_rate} = item) when is_integer(tax_rate) do
+  def tax(%{tax_rate: tax_rate} = item) when is_integer(tax_rate) do
     Money.tax(amount(item), tax_rate)
   end
 

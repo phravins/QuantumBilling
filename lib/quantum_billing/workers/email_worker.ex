@@ -3,7 +3,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
   Sends one queued message and records each attempt in the delivery ledger.
 
   Five attempts with exponential backoff (about 15 minutes). Permanent
-  failures (bad address, missing invoice) return `:discard` instead of retrying.
+  failures (bad address, missing invoice or quotation) return `:discard` instead of retrying.
   """
   use QuantumBilling.Worker, queue: :mailers, max_attempts: 5
 
@@ -16,6 +16,8 @@ defmodule QuantumBilling.Workers.EmailWorker do
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Mail
+  alias QuantumBilling.QuotationNotifier
+  alias QuantumBilling.Quotations
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
 
@@ -99,6 +101,17 @@ defmodule QuantumBilling.Workers.EmailWorker do
             invoice
           )
         end
+    end
+  end
+
+  # A quotation binned before the queue got to it is not sent.
+  defp build(delivery, %{"quotation_id" => quotation_id}) when not is_nil(quotation_id) do
+    case Quotations.get_quotation(quotation_id) do
+      nil ->
+        {:error, :permanent, "quotation #{quotation_id} no longer exists"}
+
+      quotation ->
+        QuotationNotifier.build_email(delivery.to_email, quotation)
     end
   end
 

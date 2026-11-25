@@ -1,6 +1,7 @@
 defmodule QuantumBillingWeb.Plugs.EnforceSecurityPoliciesTest do
   use QuantumBillingWeb.ConnCase, async: false
 
+  import Ecto.Query
   import QuantumBilling.AccountsFixtures
 
   alias QuantumBilling.Settings
@@ -163,6 +164,27 @@ defmodule QuantumBillingWeb.Plugs.EnforceSecurityPoliciesTest do
 
       assert conn.halted
       assert redirected_to(conn) == "/users/log-in"
+    end
+
+    test "marks the session in use, for one device at a time", %{conn: conn} do
+      user = user_fixture()
+      conn = log_in_user(conn, user)
+      token = get_session(conn, :user_token)
+      long_ago = DateTime.add(DateTime.utc_now(:second), -3600, :second)
+
+      QuantumBilling.Repo.update_all(
+        where(QuantumBilling.Accounts.UserToken, token: ^token),
+        set: [last_seen_at: long_ago]
+      )
+
+      conn
+      |> QuantumBillingWeb.UserAuth.fetch_current_scope_for_user([])
+      |> EnforceSecurityPolicies.call([])
+
+      %{last_seen_at: seen} =
+        QuantumBilling.Repo.get_by(QuantumBilling.Accounts.UserToken, token: token)
+
+      assert DateTime.compare(seen, long_ago) == :gt
     end
   end
 end

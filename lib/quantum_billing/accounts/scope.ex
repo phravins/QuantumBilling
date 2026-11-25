@@ -29,6 +29,12 @@ defmodule QuantumBilling.Accounts.Scope do
   def owner?(%__MODULE__{membership: membership}), do: Membership.owner?(membership)
   def owner?(_scope), do: false
 
+  @doc """
+  Whether the caller is a super admin of the whole installation. `false` when signed out.
+  """
+  def admin?(%__MODULE__{user: %User{is_admin: true}}), do: true
+  def admin?(_scope), do: false
+
   @doc "The scope with the business's tax regime (`\"gst\"` or `\"vat\"`) recorded."
   def put_tax_regime(%__MODULE__{} = scope, regime) when regime in ["gst", "vat"],
     do: %{scope | tax_regime: regime}

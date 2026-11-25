@@ -5,7 +5,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   """
   use QuantumBillingWeb, :controller
 
-  alias QuantumBilling.{Audit, Clients, Invoices, Payments}
+  alias QuantumBilling.{Clients, Invoices, Payments}
   alias QuantumBilling.Settings.Organization
   alias QuantumBillingWeb.API.{ActionParams, Error, Idempotency, InvoiceParams, Pagination}
   alias QuantumBillingWeb.API.V1.InvoiceJSON
@@ -48,18 +48,14 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
   defp create_invoice(conn) do
     key = conn.assigns.api_key
 
-    regime = QuantumBilling.Settings.get_organization() |> Organization.tax_regime()
+    organization = QuantumBilling.Settings.get_organization()
+    regime = Organization.tax_regime(organization)
+    currency = Organization.currency_code(organization)
 
-    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params, regime),
+    with {:ok, client_id, attrs} <- InvoiceParams.cast(conn.body_params, regime, currency),
          {:client, %Clients.Client{} = client} <- {:client, Clients.get_client(client_id)},
          {:ok, invoice} <-
            attrs |> Map.merge(Invoices.client_snapshot(client)) |> Invoices.create_invoice() do
-      Audit.log_event(:invoice_created, "Invoice", invoice.id,
-        api_key_id: key.id,
-        ip_address: conn.assigns.api_client_ip,
-        details: %{"invoice_number" => invoice.invoice_number, "via" => "api"}
-      )
-
       {201, InvoiceJSON.show(%{invoice: invoice, api_key: key})}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -101,6 +97,9 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
         {:error, :cancelled} ->
           conflict(:cancelled, "A cancelled invoice cannot be paid.")
 
+        {:error, :credited} ->
+          conflict(:credited, "Credit notes already cover this invoice; nothing is owed.")
+
         {:error, :partial_payment} ->
           validation_failed(%{
             "amount" => [
@@ -141,6 +140,12 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
         {:error, :paid} ->
           conflict(:paid, "A paid invoice cannot be cancelled; raise a credit note instead.")
 
+        {:error, :credited} ->
+          conflict(
+            :credited,
+            "Credit notes already reverse this invoice; it cannot be cancelled."
+          )
+
         {:error, :irn_registered} ->
           conflict(:irn_registered, "This invoice has a live IRN. Cancel it on the IRP first.")
 
@@ -165,7 +170,6 @@ defmodule QuantumBillingWeb.API.V1.InvoiceController do
            :ok <- ActionParams.empty(conn.body_params),
            :ok <- registrable(invoice),
            {:ok, outcome} <- Invoices.queue_einvoice(invoice) do
-        Audit.log_event(:e_invoice_requested, "Invoice", invoice.id, audit_opts(conn))
         status = if outcome == :queued, do: 202, else: 200
         {status, %{data: %{status: to_string(outcome), invoice_id: invoice.id}}}
       else

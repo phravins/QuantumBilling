@@ -26,7 +26,7 @@ defmodule QuantumBilling.ApiKeys.ApiKey do
   # e-invoice registration are separate scopes from read and write.
   @scopes ~w(invoices:read invoices:write invoices:payment_links invoices:payments
              invoices:e_invoice clients:read clients:write e_way_bills:read
-             credit_notes:read credit_notes:write)
+             credit_notes:read credit_notes:write quotations:read quotations:write)
 
   @schema_prefix "public"
   schema "api_keys" do

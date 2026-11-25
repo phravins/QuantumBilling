@@ -1,9 +1,10 @@
 defmodule QuantumBillingWeb.BinLive do
   @moduledoc """
-  The Bin: deleted invoices, clients, e-way bills, recurring profiles and designs.
+  The Bin: deleted invoices, quotations, clients, e-way bills, recurring
+  profiles and designs.
 
   Each row offers Restore and Delete permanently (the only hard delete in the
-  app). Rows from five contexts are flattened by `entry/1`, and the stream is
+  app). Rows from six contexts are flattened by `entry/1`, and the stream is
   reset on every change so the filter counts stay right. Designs used by
   invoices and clients with credit notes can't be purged. A restore is refused
   when its GSTIN or invoice slot has been taken.
@@ -19,6 +20,8 @@ defmodule QuantumBillingWeb.BinLive do
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
+  alias QuantumBilling.Quotations
+  alias QuantumBilling.Quotations.Quotation
   alias QuantumBilling.Recurring
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Templates
@@ -27,6 +30,7 @@ defmodule QuantumBillingWeb.BinLive do
   @filters [
     {"all", "All", "hero-squares-2x2"},
     {"invoice", "Invoices", "hero-document-text"},
+    {"quotation", "Quotations", "hero-clipboard-document-list"},
     {"client", "Clients", "hero-user-group"},
     {"e_way_bill", "E-Way Bills", "hero-truck"},
     {"recurring", "Recurring", "hero-arrow-path"},
@@ -36,6 +40,7 @@ defmodule QuantumBillingWeb.BinLive do
   # The tile colour behind each kind's icon.
   @tones %{
     "invoice" => "bg-info/12 text-info",
+    "quotation" => "bg-violet-500/12 text-violet-600 dark:text-violet-300",
     "client" => "bg-success/12 text-success",
     "e_way_bill" => "bg-warning/15 text-warning",
     "recurring" => "bg-violet-500/12 text-violet-600 dark:text-violet-300",
@@ -119,6 +124,7 @@ defmodule QuantumBillingWeb.BinLive do
 
   # Binned records only.
   defp fetch("invoice", id), do: Invoices.get_deleted_invoice(id)
+  defp fetch("quotation", id), do: Quotations.get_deleted_quotation(id)
   defp fetch("client", id), do: Clients.get_deleted_client(id)
   defp fetch("e_way_bill", id), do: EWayBills.get_deleted_e_way_bill(id)
   defp fetch("recurring", id), do: Recurring.get_deleted_profile(id)
@@ -140,6 +146,13 @@ defmodule QuantumBillingWeb.BinLive do
     case Invoices.restore_invoice(invoice, opts) do
       {:ok, invoice} -> {:ok, "Invoice #{invoice.invoice_number} restored."}
       {:error, _reason} -> {:error, "That invoice could not be restored."}
+    end
+  end
+
+  defp restore(%Quotation{} = quotation, opts) do
+    case Quotations.restore_quotation(opts, quotation) do
+      {:ok, quotation} -> {:ok, "Quotation #{quotation.number} restored."}
+      {:error, _reason} -> {:error, "That quotation could not be restored."}
     end
   end
 
@@ -198,6 +211,13 @@ defmodule QuantumBillingWeb.BinLive do
     case Invoices.purge_invoice(invoice, opts) do
       {:ok, invoice} -> {:ok, "Invoice #{invoice.invoice_number} permanently deleted."}
       {:error, _reason} -> {:error, "That invoice could not be deleted."}
+    end
+  end
+
+  defp purge(%Quotation{} = quotation, opts) do
+    case Quotations.purge_quotation(opts, quotation) do
+      {:ok, quotation} -> {:ok, "Quotation #{quotation.number} permanently deleted."}
+      {:error, _reason} -> {:error, "That quotation could not be deleted."}
     end
   end
 
@@ -270,6 +290,7 @@ defmodule QuantumBillingWeb.BinLive do
   defp counts do
     counts = %{
       "invoice" => Invoices.count_deleted_invoices(),
+      "quotation" => Quotations.count_deleted_quotations(),
       "client" => Clients.count_deleted_clients(),
       "e_way_bill" => EWayBills.count_deleted_e_way_bills(),
       "recurring" => Recurring.count_deleted_profiles(),
@@ -281,6 +302,9 @@ defmodule QuantumBillingWeb.BinLive do
 
   defp entries("invoice", limit),
     do: Enum.map(Invoices.list_deleted_invoices(limit: limit), &entry/1)
+
+  defp entries("quotation", limit),
+    do: Enum.map(Quotations.list_deleted_quotations(limit: limit), &entry/1)
 
   defp entries("e_way_bill", limit),
     do: Enum.map(EWayBills.list_deleted_e_way_bills(limit: limit), &entry/1)
@@ -317,6 +341,25 @@ defmodule QuantumBillingWeb.BinLive do
       purge_confirm:
         "Permanently delete #{invoice.invoice_number}? Its line items, e-way bills and " <>
           "credit notes go with it. This cannot be undone, and the number is not reused."
+    }
+  end
+
+  defp entry(%Quotation{} = quotation) do
+    %{
+      id: "quotation-#{quotation.id}",
+      type: "quotation",
+      record_id: quotation.id,
+      kind: "Quotation",
+      icon: "hero-clipboard-document-list",
+      title: quotation.number,
+      subtitle: quotation.client_name,
+      details:
+        "#{format_date(quotation.quotation_date)} · #{money(quotation.grand_total || 0, quotation.currency)} · #{quotation.status}",
+      deleted_at: quotation.deleted_at,
+      locked: nil,
+      purge_confirm:
+        "Permanently delete #{quotation.number}? Its line items go with it, and its client " <>
+          "link stops working. This cannot be undone, and the number is not reused."
     }
   end
 
@@ -427,7 +470,7 @@ defmodule QuantumBillingWeb.BinLive do
       <.header>
         Bin
         <:subtitle>
-          Deleted invoices, clients, e-way bills, recurring profiles and invoice designs. Restore them, or delete them for good.
+          Deleted invoices, quotations, clients, e-way bills, recurring profiles and invoice designs. Restore them, or delete them for good.
         </:subtitle>
       </.header>
 
@@ -497,7 +540,7 @@ defmodule QuantumBillingWeb.BinLive do
           description={
             if(@filter == "all",
               do:
-                "Invoices, clients, e-way bills, recurring profiles and designs you delete are kept here until you delete them permanently.",
+                "Invoices, quotations, clients, e-way bills, recurring profiles and designs you delete are kept here until you delete them permanently.",
               else: "Choose All to see everything that has been deleted."
             )
           }

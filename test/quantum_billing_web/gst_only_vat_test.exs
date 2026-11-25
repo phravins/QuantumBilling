@@ -37,6 +37,9 @@ defmodule QuantumBillingWeb.GSTOnlyVATTest do
       {:ok, view, _html} = live(conn, ~p"/dashboard")
 
       for path <- @gst_links, do: assert(sidebar_link?(view, path), path)
+
+      # The settings menu shows on settings pages only.
+      {:ok, view, _html} = live(conn, ~p"/settings")
       assert has_element?(view, "#settings-link-e_way_bill")
 
       invoice = invoice_fixture()
@@ -62,6 +65,8 @@ defmodule QuantumBillingWeb.GSTOnlyVATTest do
 
       for path <- @gst_links, do: refute(sidebar_link?(view, path), path)
       assert sidebar_link?(view, "/compliance")
+
+      {:ok, view, _html} = live(conn, ~p"/settings")
       refute has_element?(view, "#settings-link-e_way_bill")
       assert has_element?(view, "#settings-link-tax")
     end
@@ -164,7 +169,7 @@ defmodule QuantumBillingWeb.GSTOnlyVATTest do
 
   test "switching to VAT in Settings drops the GST links at once", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/settings/tax")
-    assert sidebar_link?(view, "/e-way-bills")
+    assert has_element?(view, "#settings-link-e_way_bill")
 
     view
     |> form("#settings-form", %{"organization" => %{"tax_regime" => "vat"}})
@@ -172,8 +177,10 @@ defmodule QuantumBillingWeb.GSTOnlyVATTest do
 
     view |> form("#settings-form", %{"organization" => @uae}) |> render_submit()
 
+    refute has_element?(view, "#settings-link-e_way_bill")
+
+    {:ok, view, _html} = live(conn, ~p"/dashboard")
     refute sidebar_link?(view, "/e-way-bills")
     refute sidebar_link?(view, "/hsn-finder")
-    refute has_element?(view, "#settings-link-e_way_bill")
   end
 end

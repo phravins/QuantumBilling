@@ -83,7 +83,7 @@ Settings are divided into independently saved sections. A change in one section 
 | Notifications | Invoice-created, e-way-bill-generated, and filing-reminder preferences, plus the reminder lead window. |
 | SMTP | Mail host, port, credentials, SSL setting, sender address/name, test delivery, and recent delivery results. |
 | Integrations | Calendar connections (Google Calendar, CalDAV, private feed), UPI details, Razorpay keys, IRP-related settings, and an outbound webhook URL/secret. |
-| Security | Allowed IP addresses/CIDRs, idle session timeout, mandatory two-factor preference, and audit retention. |
+| Security | Allowed IP addresses/CIDRs, idle session timeout, mandatory two-factor preference, one device at a time, and audit retention. |
 | Preferences | Language and list page-size preferences. These settings should not be read as a promise that every screen is translated or consumes every preference. |
 | Backup & Restore | JSON business data export and restore. |
 | Data model | Owners only, at `/settings/data-model`: the business's own fields on clients, invoices, invoice lines, credit notes, e-way bills, and recurring profiles. See [Custom fields](#custom-fields). |
@@ -92,13 +92,15 @@ Some preferences are stored ahead of complete operational support. In particular
 
 SMTP passwords, Razorpay secrets, IRP passwords, and webhook secrets saved through Settings use encrypted database fields. Secret inputs are write-only: saved values are not sent back to the browser, and submitting a blank secret preserves the stored value. Environment-supplied credentials and deployment encryption keys are described in [Configuration](configuration.md).
 
-IP allowlists, idle timeout, and mandatory two-factor enforcement read installation-level security settings because they must apply before choosing a business. They protect the shared sign-in, rather than changing independently as a person switches firms. The Security form loads these shared rules and saves them transactionally with the business's security settings. An owner changing these rules affects everyone on the installation. Audit retention remains a business setting.
+IP allowlists, idle timeout, mandatory two-factor enforcement, and one device at a time read installation-level security settings because they must apply before choosing a business. They protect the shared sign-in, rather than changing independently as a person switches firms. The Security form loads these shared rules and saves them transactionally with the business's security settings. An owner changing these rules affects everyone on the installation. Audit retention remains a business setting.
+
+**One device at a time** (off by default) lets an account be signed in on only one device. When someone signs in on a second device while the first is in use, the second device is not let in: it waits, with only a Sign out button. The first device gets a prompt on whatever page it has open, naming the browser and IP address. *Sign out here* signs the first device out and lets the second in; *Continue* keeps the first device and refuses the second. The check runs only after the password and any two-factor code are accepted. A device counts as in use only while it is inside the idle timeout, so an abandoned device never blocks anyone; an unanswered request closes after two minutes; and resetting the password signs out every device, which is the way back in if the first device is lost. Turning the rule on signs nobody out; it applies from each person's next sign-in.
 
 ### Tax regime: India GST or VAT
 
 Each business charges either **India GST** (the default, and the behaviour described throughout this guide) or **VAT**, for businesses in the UAE and other Gulf states, the UK, and the EU. An owner picks the regime in Settings → Tax.
 
-Choosing VAT asks for the business's VAT country and VAT number (a UAE TRN is 15 digits, a UK number is `GB` and 9 or 12 digits, an EU number starts with its country code). The first save adds that country's usual rates, for example Standard 5%, Zero-rated, Exempt, and Reverse charge for the UAE, or 20%, 5%, zero-rated and exempt for the UK. After that the owner adds, edits, archives, restores, and picks the default rate in the rates table. A rate has a name, a category (standard, reduced, zero-rated, exempt, reverse charge, or out of scope), a percentage with up to two decimals, and an optional note. Zero-rated, exempt, reverse-charge and out-of-scope rates always charge 0%. Every change to a rate, including the presets added on the first save, is written to the audit trail.
+Choosing VAT asks for the business's VAT country and VAT number (a UAE TRN is 15 digits, a UK number is `GB` and 9 or 12 digits, an EU number starts with its country code). The first save adds that country's usual rates, for example Standard 5%, Zero-rated, Exempt, and Reverse charge for the UAE, or 20%, 5%, zero-rated and exempt for the UK. For European Union member states, starter rates are managed in a dedicated data module (`QuantumBilling.Tax.EURates`) with verified provenance traceable to the European Commission Taxes in Europe Database (TEDB), covering standard, reduced, and super-reduced rates across all member states along with shared EU zero-rated, exempt, and intra-EU reverse charge rules. After that the owner adds, edits, archives, restores, and picks the default rate in the rates table. A rate has a name, a category (standard, reduced, zero-rated, exempt, reverse charge, or out of scope), a percentage with up to two decimals, and an optional note. Zero-rated, exempt, reverse-charge and out-of-scope rates always charge 0%. Every change to a rate, including the presets added on the first save, is written to the audit trail.
 
 Two VAT settings change the arithmetic:
 
@@ -109,7 +111,9 @@ Every invoice keeps the regime, rounding, and inclusive-pricing settings it was 
 
 Under VAT, the India GST features are hidden from the menus and refused if reached directly: IRP e-invoice registration and the e-invoice XML, e-way bills and their settings, the GSTR-1 export, the HSN finder, and the GST filing calendar. The compliance page stays, with the business's own tasks. A GST business sees no change.
 
-The business currency (Settings → General) can be INR, AED, SAR, QAR, GBP, EUR, or USD. New invoices take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
+The business currency (Settings → General) can be INR, AED, SAR, QAR, KWD, BHD, OMR, GBP, EUR, or USD. New invoices and quotations take that currency, and amounts and the amount in words print in it, for example "Dirhams … and Fils … Only". INR uses Indian digit grouping (1,50,000); the others use Western grouping (150,000).
+
+KWD, BHD and OMR have three decimals (1 dinar or rial = 1000 fils or baisa), so their amounts print as 12.345 and their forms accept three decimal places. They need the VAT tax regime: a GST business can't pick them, and the regime can't be switched to GST while the business bills in one. A saved invoice or quotation keeps its currency. Once the business has clients, documents or a default amount on a money custom field, its currency can only change to one with the same number of decimals, because client balances, credit limits, money custom fields and their defaults are stored in the business currency and would otherwise be misread by a factor of ten.
 
 ### Custom fields
 
@@ -144,7 +148,7 @@ Registered, composition, and SEZ client types require a GSTIN. The application c
 
 For a VAT business the client form asks for the client's country and VAT number instead, and checks the number's format for that country; the GSTIN, PAN and state checks are skipped. The form also shows any custom fields defined for clients.
 
-The directory's outstanding figures derive from invoices still owed, adjusted by non-cancelled credit and debit notes, and floored at zero. Credit limits, opening balances, and client status are stored client attributes; they are not a full credit-control or account-ledger engine. A saved credit limit does not establish an enforced approval workflow for new invoices.
+The directory's outstanding figures are, per client, the invoices still owed plus non-cancelled debit notes, less non-cancelled credit notes, floored at zero. A credit note on a paid invoice counts too, so it reduces what the same client owes on other invoices. Credit limits, opening balances, and client status are stored client attributes; they are not a full credit-control or account-ledger engine. A saved credit limit does not establish an enforced approval workflow for new invoices.
 
 Changing a client later does not automatically rewrite the customer details copied onto an existing invoice.
 
@@ -154,7 +158,7 @@ Changing a client later does not automatically rewrite the customer details copi
 
 The invoice editor at `/invoices/new` accepts the client, document date, due date/payment terms, place of supply, invoice type, line items, remarks, terms, and design. Invoice types offered by the model are Tax Invoice, Bill of Supply, Export Invoice, Credit Note, and Debit Note. Offering a document type does not imply that every downstream integration accepts it.
 
-Each item contains a description, optional HSN/SAC code, quantity, unit, rate, GST percentage, and display order. Supported units are Nos, Kg, Ltr, Mtr, Box, Set, Pcs, and Hrs. Quantities must be positive and can have up to three decimal places. A rate can contain two decimal places and must be non-negative. The line GST choices currently come from the compiled list `0`, `5`, `18`, and `40`.
+Each item contains a description, optional HSN/SAC code, quantity, unit, rate, GST percentage, and display order. Supported units are Nos, Kg, Ltr, Mtr, Box, Set, Pcs, and Hrs. Quantities must be positive and can have up to three decimal places. A rate can have as many decimal places as the invoice currency (two, or three for KWD, BHD and OMR) and must be non-negative. The line GST choices currently come from the compiled list `0`, `5`, `18`, and `40`.
 
 At least one item, the invoice date, the place of supply, and the client name are required. A due date cannot precede the invoice date. Payment term presets include Due on Receipt and Net 7/15/30/45/60 Days, with a Custom option.
 
@@ -164,13 +168,15 @@ On a VAT invoice each line picks one of the business's active VAT rates instead 
 
 Saving an invoice consumes the next configured number and advances the counter in the same database transaction. The settings row is locked during allocation, and an invoice-number unique constraint provides a second check. A Draft consumes a number too. Moving a document to the Bin or deleting it permanently does not give the number back.
 
+GST (Rule 46(b) of the CGST Rules) limits a document number to 16 characters: letters, digits, `-` and `/`. Settings → Invoice checks each series' prefix, padding and next number against that limit and refuses to save a combination that would produce a longer number. A prefix must start with a letter or a digit from 1 to 9. The panel previews the next invoice, credit-note, debit-note and quotation numbers as you type.
+
 The document stores copies of customer and issuing-company details alongside the client relationship. The company snapshot is populated at creation, so subsequent company setting changes do not automatically replace the issuer block on saved invoices.
 
 The selected design's layout XML is also copied to the invoice. A Draft can refresh that layout snapshot when edited; a document beyond Draft keeps its saved layout. Template accent color and the organization logo are read live, so a historical document can still change its branding when those values change.
 
 ### Calculation rules
 
-Money is held as integer minor units of the invoice currency (paise for INR, fils for AED, pence for GBP), while the forms accept whole units with up to two decimals. A GST invoice is calculated in these steps:
+Money is held as integer minor units of the invoice currency (paise for INR, fils for AED and KWD, pence for GBP), while the forms accept whole units with up to the currency's decimals: two, or three for KWD, BHD and OMR. A GST invoice is calculated in these steps:
 
 1. Calculate each line as quantity × rate and round half-up to the nearest paisa.
 2. Calculate each line's GST at its own percentage, again rounding half-up to a paisa.
@@ -197,7 +203,7 @@ Exchange rate, export type, and LUT fields exist in the model too. Each invoice 
 
 ### Status and document actions
 
-Stored invoice statuses are Draft, Pending E-Invoice, E-Invoice Generated, E-Invoice Failed, Paid, and Cancelled.
+Stored invoice statuses are Draft, Pending E-Invoice, E-Invoice Generated, E-Invoice Failed, Paid, Credited, and Cancelled. Credited is set by credit notes, not chosen; see [Credit and debit adjustments](#11-credit-and-debit-adjustments).
 
 ```mermaid
 flowchart LR
@@ -207,11 +213,42 @@ flowchart LR
   F -->|Retry registration| P
   D -->|Verified payment| V[Paid]
   G -->|Verified payment| V
+  D -->|Credit notes reach the total| C[Credited]
+  G -->|Credit notes reach the total| C
+  C -->|Debit note| D
 ```
 
 This diagram shows the main implemented actions, not an enforced accounting state machine. Statuses are fields used by forms, jobs, filters, and integrations; the application does not provide a separate finalization or posting ledger. Review an issued document's changes and cancellations as operational decisions rather than assuming every status transition is blocked automatically.
 
 The invoice detail page supports previewing the document, editing it, viewing/downloading PDF, sending it by email, opening a public client link, requesting an e-invoice, creating an e-way bill, generating a payment link, and raising a credit/debit adjustment.
+
+### Quotations
+
+A quotation (estimate) at `/quotations` uses the invoice form's client picker, lines, HSN/SAC and tax calculation. GST or VAT, intra- or inter-state, and inclusive pricing and rounding all follow the calculation rules above, so a quotation and the invoice made from it show the same totals. In place of payment terms it has a **Valid Until** date, which cannot fall before the quotation date. The new-quotation form fills it in from **Quotations Valid For (days)** in Settings → Invoice: 30 by default, from 1 to 365. The setting only sets the form's default; existing quotations keep their dates. Owners can add custom fields to quotations and quotation lines in Settings → Data model; they appear on the form, under Details on the quotation page, and in the API, as they do for invoices.
+
+Quotations take their own consecutive series, `QT-0001`, `QT-0002`…, allocated like invoice numbers under the same settings-row lock. The prefix and next number are set in Settings → Invoice, sharing the invoice padding and the 16-character limit. Taking a quotation number never touches the invoice series.
+
+```mermaid
+flowchart LR
+  D[Draft] -->|Mark as sent| S[Sent]
+  D -->|Accepted| A[Accepted]
+  S -->|Accepted| A
+  D -->|Declined| X[Declined]
+  S -->|Declined| X
+  A -->|Convert to invoice| I[Invoice linked]
+```
+
+Statuses are stored as Draft, Sent, Accepted and Declined, and only these buttons change them; a form or API post cannot set a status. **Expired** is not stored. A Draft or Sent quotation shows as Expired once the business's local date passes Valid Until. An expired quotation can be declined but not sent or accepted; editing it to a later Valid Until brings it back. Only Draft and Sent quotations can be edited. Each status change is written to the audit log.
+
+**Convert to Invoice** appears on an Accepted quotation that has no invoice yet. It opens the new-invoice form filled with the quotation's client, place of supply, currency, design, lines, remarks and terms, dated today and with the usual payment terms. The user can review and change it before saving. Saving takes the next invoice number, uses the business's tax settings at that moment, and links the invoice to the quotation. The quotation then shows "Converted to INV-…", and the invoice shows "From quotation QT-…". A quotation converts only once: the save locks the quotation row and checks it again, and a unique index on `invoices.quotation_id` stops two saves at the same moment.
+
+The quotation prints with the business's invoice design, titled "Quotation", with "Quotation Date" and "Valid Until" in place of the invoice dates. A quotation cannot be paid, so the print has no payment block (UPI QR or bank details), no payment terms, no status watermark and no invoice custom fields.
+
+**Sending to the client.** Every quotation has a client link, `/q/:slug/:token`, shown under **Client link** on the quotation page with a copy button. A quotation saved before links existed gets one from **Make a client link**. **Email to client** sends the quotation, with its PDF attached and the link, to the client's email or another single address. Delivery is queued and retried like invoice email, and appears in the email ledger. Emailing a Draft marks it Sent. An expired quotation can't be emailed until its Valid Until is extended.
+
+The client opens the link without an account. The page shows the quotation and offers **Accept quotation**, **Decline** and **Download PDF** (`/q/:slug/:token/pdf`) while it is Draft or Sent and not expired. The client's answer is applied by the same rules as the buttons in the app, is written to the audit log with no user, and notifies through webhooks. Once answered or expired, the page says so and shows no buttons. Treat the link like an invoice link: anyone who has it can read and answer the quotation. A quotation in the Bin, an unknown token, or an unknown business slug opens nothing.
+
+Quotations are not supplies. They appear in no tax figure: not the dashboard, the reports, the GSTR-1 export, the e-way bill prompts or receivables. Only the invoice made from a quotation counts. Deleting a quotation moves it to the Bin, which stops its client link working; it can be restored from there, or deleted permanently by an owner, together with its lines. A converted quotation can't be deleted: it is kept with its invoice.
 
 ## 7. Customer delivery and payment
 
@@ -233,7 +270,7 @@ Razorpay payment links request the full invoice amount with partial payments dis
 
 Direct UPI QR codes use the configured business UPI VPA, payee name, invoice reference, and amount. Without a configured VPA, a payment QR is not drawn. A scanned QR by itself does not mark the invoice paid; the application needs a verified provider webhook or an explicit reconciliation operation.
 
-The Razorpay webhook checks a signature over the raw request body, applies source rate limits, deduplicates provider events, and checks invoice currency/amount before marking an invoice Paid. Payment-link events also check the link identifier where one was issued. The amount check accepts payment at least as large as the invoice total; it does not maintain a partial-payment balance or allocate an overpayment account. Configure a business callback at `/api/webhooks/razorpay/:slug`; the legacy `/api/webhooks/razorpay` path resolves business 1. This selects that business's webhook ledger and invoice numbering independently of browser sessions. Signature verification uses the deployment's `RAZORPAY_WEBHOOK_SECRET`.
+The Razorpay webhook checks a signature over the raw request body, applies source rate limits, deduplicates provider events, and checks invoice currency/amount before marking an invoice Paid. Payment-link events also check the link identifier where one was issued. The amount check accepts a payment from the invoice total up to 5% over it, which covers a gateway fee the customer pays; anything outside that is rejected, audited and raised to the owner. It does not maintain a partial-payment balance or allocate an overpayment account. Configure a business callback at `/api/webhooks/razorpay/:slug`; the legacy `/api/webhooks/razorpay` path resolves business 1. This selects that business's webhook ledger and invoice numbering independently of browser sessions. Signature verification uses that business's own Razorpay webhook secret from Settings → Integrations, so one business cannot sign deliveries for another; business 1 alone falls back to the deployment's `RAZORPAY_WEBHOOK_SECRET` while it has none.
 
 Successful reconciliation saves the payment reference, updates open screens, records an audit event, produces a notification, queues a receipt when a client email exists, and emits the configured `invoice.paid` webhook. Repeated reconciliation of an already Paid invoice does not send another receipt. Payments for binned invoices are still looked up so received money is not discarded merely because the document left the active list.
 
@@ -283,15 +320,25 @@ Dates advance by calendar months, clamping to the last valid day of the target m
 
 ## 11. Credit and debit adjustments
 
-An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, client, source invoice, and Issued/Cancelled/Applied status. Default amounts are copied from the invoice; the user can enter an adjustment amount.
+An invoice can have a separately stored Credit or Debit note with a reason, amount components, note number, note date, client, source invoice, and Issued/Cancelled/Applied status.
+
+A note cannot be raised on a Cancelled invoice or one in the Bin. A credit note can be at most what is left to credit on its invoice: the invoice total, plus its debit notes, less the credit notes already raised on it. Cancelled notes do not count. A debit note has no such limit. The invoice's row is locked while a note is raised, so two notes raised at once cannot together credit more than the invoice. The note form shows how much can still be credited and fills it in as the amount.
+
+An amount left out defaults to what can still be credited, or for a debit note, to the invoice total. A taxable value or tax left out is taken from the total in the invoice's own proportion, so the three always add up.
+
+When credit notes leave nothing to credit on an invoice that is not Paid, the invoice becomes **Credited**. A Credited invoice owes nothing: it cannot be paid, given a payment link, or cancelled, since its notes already reverse it, and a late Razorpay payment for it is flagged for refund. It can still be e-invoiced, and keeps the Credited status. A debit note on a Credited invoice makes it owed again, as E-Invoice Generated if it has an IRN, or Draft otherwise. A fully credited Paid invoice stays Paid, and the credit is the client's to use.
+
+Credit and debit notes each run their own consecutive series, as Rule 53 of the CGST Rules requires: `CN-0001`, `CN-0002`… and `DN-0001`, `DN-0002`…. The prefix and next number of each are set in Settings → Invoice, and they share the invoice padding. A note's number is allocated the same way an invoice's is, with the settings row locked, so notes raised at the same moment never share or skip a number. The number cannot be typed in or sent through the API. If a stored prefix would produce a number longer than 16 characters, the note is refused rather than issued, and the counter does not move.
+
+The note date is the day the note is raised in the business's timezone (IST for an Indian business), so a note raised at 00:30 IST on the 1st is dated the 1st. The GSTR-1 export reports notes by this date, as `nt_dt`, and in this date's month.
 
 A note on a VAT invoice keeps that invoice's regime, and its VAT is split across the invoice's rates in the same proportions.
 
-A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Paid or cancelled invoices are excluded from the open-receivable adjustment calculation. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
+A non-cancelled Credit note reduces outstanding receivables, while a Debit note increases them. Notes on paid invoices reduce the same client's balance, but no client's balance goes below zero, so one client's credit never reduces what another owes. Notes on cancelled invoices are left out. These notes do not execute a Razorpay refund, move money, or create a general-ledger posting. The separate note records are also distinct from choosing Credit Note or Debit Note as an invoice document type.
 
 ## 12. Dashboard, exports, and return data
 
-The dashboard reads saved invoices to present invoice counts, billed values, open receivables, a six-month tax trend, status distribution, a tax summary by tax type and the top clients by invoice value for the current year, and the compliance calendar. There is no separate Reports page; the dashboard replaced it. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables use invoice statuses and note adjustments rather than a payment installment ledger.
+The dashboard reads saved invoices to present invoice counts, billed values, open receivables, a six-month tax trend, status distribution, a tax summary by tax type and the top clients by invoice value for the current year, and the compliance calendar. There is no separate Reports page; the dashboard replaced it. Headline values should be interpreted according to their queries: billed value is not the same as cash collected, and a Draft is already a saved numbered document. Monthly tax queries exclude Cancelled invoices; active-list totals also exclude the Bin. Open receivables are the sum of the client balances, plus unpaid invoices with no client, rather than a payment installment ledger.
 
 The dashboard's Export menu downloads the current year as a GST tax summary or a sales register CSV. Both come from `/reports/export`, which also accepts date range, report type, invoice status, client name, and GSTIN parameters; the same filtered query drives the dashboard's tax summary and top clients. Large CSV exports stream rows rather than loading the entire report into a browser process.
 
@@ -307,7 +354,16 @@ When any invoice in the period charged VAT, the dashboard adds VAT to its tax tr
 
 General report sums combine taxable value and tax, rather than necessarily matching rounded grand totals. Client filtering uses the stored client name; separate clients with the same name can be combined in that view. Choose a status explicitly when the business question needs to exclude Drafts or Cancelled documents.
 
-GSTR-1 export is not available to a VAT business, and there is no VAT return export. It generates a JSON file for a selected `MMYYYY` period, grouping B2B, B2CL, B2CS, registered-counterparty notes, and HSN data. It excludes Cancelled and binned invoices, but includes Draft invoices because they already hold a number. It uses compiled classification thresholds and includes an HSN fallback for missing codes. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
+GSTR-1 export is not available to a VAT business, and there is no VAT return export. It generates a JSON file for a selected `MMYYYY` period with these tables:
+
+- **Table 4 (B2B):** invoices to registered buyers, by GSTIN, with the reverse-charge flag taken from the invoice.
+- **Table 5 (B2CL):** inter-state invoices to unregistered buyers above ₹1,00,000, or above ₹2,50,000 for invoices dated before 1 August 2024.
+- **Table 7 (B2CS):** all other consumer sales, by place of supply, rate and supply type.
+- **Table 9B:** credit and debit notes, by note date. Notes on Table 4 invoices go in CDNR, and notes on Table 5 invoices go in CDNUR. Notes on Table 7 sales have no row of their own; they are netted into Table 7.
+- **Table 12 (HSN):** by HSN/SAC code and rate, reported separately for B2B and B2C, with IGST, CGST and SGST. It is net of notes, and services (SAC codes starting 99) report no quantity.
+- **Table 13:** the document number ranges used in the month, by series. Cancelled and binned invoices are counted as cancelled.
+
+A note stores only its totals, so its rates and HSN codes are taken from its invoice and scaled to the note's taxable value and tax. Every table is built from the same line amounts, so Table 12 adds up to Tables 4, 5, 7 and 9B. Cess is always zero. The export leaves Cancelled and binned invoices out of the supplies, but includes Draft invoices because they already hold a number. A line with no HSN/SAC code is reported under 998311. Review the file with the responsible accountant before submission. Downloading it neither submits a return nor records a filing acknowledgement.
 
 ## 13. Compliance calendar and HSN/SAC reference
 
@@ -315,9 +371,11 @@ The compliance page generates a calendar from code-defined rules for GSTR-1, GST
 
 The tracked set depends on organization registration settings: a VAT business tracks no GST returns, even with a GSTIN left in its settings; no GSTIN yields an empty tracked set; composition settings select the quarterly composition row instead of monthly regular returns; annual rows are also generated. The dashboard currently uses the broader calendar function, so it can display obligations different from the registration-filtered page/reminder set.
 
-There is no persisted filing table or filing-status integration, so obligations become Pending or Overdue from dates alone and never Filed. A return already filed externally can still appear overdue here. Reminders are calendar prompts, not proof that a return is unfiled.
+A return is Pending until its due date and Overdue after it, until someone marks it filed. Owners and staff do this from the return's detail panel with **Mark as filed**: they enter the date it was filed (today or earlier, not before July 2017), and optionally the 15-character ARN from the GST portal and a note. The return then shows Filed with that date, counts as filed in the summary and the Filed filter, stops raising reminders, and drops out of synced calendars. **Undo** in the same panel puts it back to Pending or Overdue, and its reminders and calendar event return. Both actions are recorded in the audit trail with who did them, the return, the period, the date and the ARN.
 
-Owners and staff can add their own tasks and reminders to the page. These are stored, can be edited, completed and deleted, and post one notification when their reminder falls due, whatever the filing-reminder setting says. Calculated GST obligations stay read-only.
+Marking a return filed is a record kept in this application, not a check against the GST portal: nothing is fetched from or sent to GSTN, and the app does not verify the ARN. Filings are allowed for this financial year's and last year's returns. Overdue notifications sent before a return was marked stay in the inbox.
+
+Owners and staff can add their own tasks and reminders to the page. These are stored, can be edited, completed and deleted, and post one notification when their reminder falls due, whatever the filing-reminder setting says. Calculated GST obligations cannot be edited or deleted; marking them filed is the only change they take.
 
 Owners can send tasks and deadlines to Google Calendar or a CalDAV server, or publish a private feed URL that any calendar app can subscribe to. This is one way: changes made in the calendar do not come back, and disconnecting leaves events already sent in place. The feed URL works without signing in, so treat it like a password and regenerate it if it leaks.
 
@@ -347,11 +405,11 @@ Outbound `invoice.created` and `invoice.paid` events are queued for delivery to 
 
 ## 16. Bin, restoration, and backup
 
-The Bin at `/bin` brings together deleted invoices, clients, e-way bills, recurring profiles, and archived invoice designs. A normal delete leaves the underlying row available for restoration. Active lists, lookups, reports, and public invoice lookup exclude binned invoices.
+The Bin at `/bin` brings together deleted invoices, quotations, clients, e-way bills, recurring profiles, and archived invoice designs. A normal delete leaves the underlying row available for restoration. Active lists, lookups, reports, and public invoice lookup exclude binned invoices.
 
 Restoration can fail when a business identity was reused: another client may now hold the same GSTIN, or an invoice may have acquired another live e-way bill. Permanent deletion is only offered for records already in the Bin. Purging an invoice cascades its related invoice items, notes, and e-way bills; referenced templates and clients linked to credit notes have additional restrictions.
 
-Backup export writes versioned JSON (version 3.2) containing organization data with the tax regime, custom field definitions, VAT rates, clients, templates, invoices/items, e-way bills/Part-B history, recurring profiles, notes, and audit entries, with each record's custom field values. It retains Bin state and stored document values. Older backup files still restore; their records come back as GST with no custom field values. Restore replaces those business records in a transaction and resynchronizes identifiers; it is a replacement operation, not a merge or import of a few customers.
+Backup export writes versioned JSON (version 3.3) containing organization data with the tax regime and quotation validity, custom field definitions, VAT rates, clients, templates, quotations/items, invoices/items (with the quotation each was converted from), e-way bills/Part-B history, recurring profiles, notes, compliance tasks, returns marked filed, and audit entries, with each record's custom field values. It retains Bin state and stored document values. Older backup files still restore; their records come back as GST with no custom field values, and a file from before 3.3 restores with no quotations. A restored quotation keeps its number, Bin state and client link, so a link already emailed keeps working. Restore replaces those business records in a transaction and resynchronizes identifiers; it is a replacement operation, not a merge or import of a few customers.
 
 Credential values are omitted from the backup file. Accounts, authentication sessions, and two-factor enrollment are not exported/restored. Notifications, mail/webhook ledgers, Oban jobs, and logo file bytes are also outside the business JSON. Preserve the deployment database and upload storage separately when a complete installation recovery is required. Reconfigure credentials and verify logo availability after moving data to a new environment.
 
@@ -367,7 +425,7 @@ The backup download route requires an owner. The current restore handler is on t
 6. Generate required transport documents and registration requests, then verify the real portal outcome independently when using live operations.
 7. Review payment events, outstanding balances, and any rejected-payment notifications.
 8. Review recurring profiles before their due dates, check generated Drafts, and investigate failed background jobs or mail.
-9. Export reviewed report/return data for accounting work; maintain filing proof outside this application while filing records remain unimplemented.
+9. Export reviewed report/return data for accounting work, mark each return filed once it is filed on the GST portal, and keep the portal's acknowledgement as filing proof.
 10. Keep tested database/upload backups in addition to business JSON exports and use the Bin before permanent deletion.
 
 ## 18. Current implementation limits
@@ -376,11 +434,14 @@ The main boundaries to account for during acceptance testing are:
 
 - Business schemas, membership-based roles, authenticated business selection/switching, team screens, business-scoped PubSub, public slug routes, payment callbacks, business-aware background jobs and sweeps, and installation security settings are implemented. Deleting a business (as opposed to archiving it) is not.
 - Demo IRNs and e-way bills are generated locally and are not filed. They are labelled as demo wherever they appear; Settings → Integrations shows the current mode of each portal.
-- Compliance dates and HSN rates are static application rules, filing records are absent, and exports are files rather than submission workflows.
+- Compliance dates and HSN rates are static application rules, returns are marked filed by hand rather than read from the GST portal, and exports are files rather than submission workflows.
 - Cess/TDS, complete multi-currency/export accounting, purchase ITC, bank reconciliation, inventory, and a general ledger are not implemented as complete business systems.
-- VAT covers invoicing, rates, credit notes and reports. There is no VAT return filing or e-invoicing for any VAT country, no currency conversion, and no three-decimal currencies (KWD, BHD, OMR).
+- VAT covers invoicing, rates, credit notes and reports. There is no VAT return filing or e-invoicing for any VAT country, and no currency conversion. KWD, BHD and OMR work only under VAT, so a business in Kuwait, which has no VAT, can't be set up yet, and there are no three-decimal GST export invoices.
 - Custom fields extend the six existing record types. There are no custom record types, no field that links to another record, and no custom fields in webhook payloads or on credit notes and e-way bills in the API.
+- Quotations can't be converted, edited or deleted through the API; it lists, reads, creates, emails, accepts and declines them. Their client links have no expiry of their own beyond Valid Until.
 - Recurring profiles substitute a fixed default line for absent/invalid items; profiles need explicit review before use with real customers.
+- Credit and debit notes raised before the note series existed keep their original numbers, such as `CN-INV-0001-5762`. These are often longer than 16 characters, so the GST portal rejects them, and they are left unchanged because they are part of the record already issued. Their note date was set from when they were saved, converted to IST. A business that reported such notes should correct them with its accountant, in the next GSTR-1 or by amendment.
+- A business whose stored invoice prefix already makes numbers longer than 16 characters can keep raising invoices, but must shorten the prefix or padding before Settings → Invoice will save again. Credit and debit notes are refused until their series fits.
 - Receivables track whole invoice Paid/unpaid state plus notes, rather than partial payments, refunds, settlement fees, or allocation of overpayments.
 - Role restrictions are not field-level permissions; backup restoration requires the access check called out above.
 - Business JSON is a selective data backup and does not contain the whole deployed installation.
@@ -396,11 +457,12 @@ These limits come from the current source, including places where module comment
 | Organization settings | [settings.ex](../lib/quantum_billing/settings.ex), [organization.ex](../lib/quantum_billing/settings/organization.ex), [installation_settings.ex](../lib/quantum_billing/installation_settings.ex) |
 | Clients | [clients.ex](../lib/quantum_billing/clients.ex), [client.ex](../lib/quantum_billing/clients/client.ex) |
 | Invoice creation and money | [invoices.ex](../lib/quantum_billing/invoices.ex), [invoice.ex](../lib/quantum_billing/invoices/invoice.ex), [invoice_item.ex](../lib/quantum_billing/invoices/invoice_item.ex), [money.ex](../lib/quantum_billing/money.ex), [currency.ex](../lib/quantum_billing/currency.ex) |
-| Tax regimes and VAT | [tax.ex](../lib/quantum_billing/tax.ex), [gst.ex](../lib/quantum_billing/tax/gst.ex), [vat.ex](../lib/quantum_billing/tax/vat.ex), [tax_rates.ex](../lib/quantum_billing/tax_rates.ex), [gst_only.ex](../lib/quantum_billing_web/gst_only.ex) |
+| Quotations | [quotations.ex](../lib/quantum_billing/quotations.ex), [quotation.ex](../lib/quantum_billing/quotations/quotation.ex), [quotation_item.ex](../lib/quantum_billing/quotations/quotation_item.ex), [quotation_layout.ex](../lib/quantum_billing_web/invoice_doc/quotation_layout.ex), [quotations live views](../lib/quantum_billing_web/live/quotations/), [document_form_components.ex](../lib/quantum_billing_web/components/document_form_components.ex) |
+| Tax regimes and VAT | [tax.ex](../lib/quantum_billing/tax.ex), [eu_rates.ex](../lib/quantum_billing/tax/eu_rates.ex), [gst.ex](../lib/quantum_billing/tax/gst.ex), [vat.ex](../lib/quantum_billing/tax/vat.ex), [tax_rates.ex](../lib/quantum_billing/tax_rates.ex), [gst_only.ex](../lib/quantum_billing_web/gst_only.ex) |
 | Custom fields | [custom_fields.ex](../lib/quantum_billing/custom_fields.ex), [field_definition.ex](../lib/quantum_billing/custom_fields/field_definition.ex), [custom_field_components.ex](../lib/quantum_billing_web/components/custom_field_components.ex), [data_model_live.ex](../lib/quantum_billing_web/live/settings/data_model_live.ex) |
 | Registration and e-way bills | [e_invoice.ex](../lib/quantum_billing/e_invoice.ex), [irp_client.ex](../lib/quantum_billing/e_invoice/irp_client.ex), [e_way_bills.ex](../lib/quantum_billing/e_way_bills.ex), [nic_client.ex](../lib/quantum_billing/e_way_bills/nic_client.ex) |
 | Payment and delivery | [payments.ex](../lib/quantum_billing/payments.ex), [razorpay_client.ex](../lib/quantum_billing/payments/razorpay_client.ex), [mail.ex](../lib/quantum_billing/mail.ex), [payment_webhook_controller.ex](../lib/quantum_billing_web/controllers/payment_webhook_controller.ex) |
 | Recurring and adjustments | [recurring.ex](../lib/quantum_billing/recurring.ex), [credit_notes.ex](../lib/quantum_billing/credit_notes.ex) |
-| Reporting and compliance | [reports.ex](../lib/quantum_billing/reports.ex), [compliance.ex](../lib/quantum_billing/compliance.ex), [gstn_exporter.ex](../lib/quantum_billing/compliance/gstn_exporter.ex), [hsn_finder.ex](../lib/quantum_billing/hsn_finder.ex) |
+| Reporting and compliance | [reports.ex](../lib/quantum_billing/reports.ex), [compliance.ex](../lib/quantum_billing/compliance.ex), [filing.ex](../lib/quantum_billing/compliance/filing.ex), [gstn_exporter.ex](../lib/quantum_billing/compliance/gstn_exporter.ex), [hsn_finder.ex](../lib/quantum_billing/hsn_finder.ex) |
 | Designs and recovery | [templates.ex](../lib/quantum_billing/templates.ex), [bin_live.ex](../lib/quantum_billing_web/live/bin/bin_live.ex), [backup.ex](../lib/quantum_billing/backup.ex) |
 | Notifications and retention | [notifications.ex](../lib/quantum_billing/notifications.ex), [events.ex](../lib/quantum_billing/events.ex), [audit_prune_worker.ex](../lib/quantum_billing/workers/audit_prune_worker.ex) |

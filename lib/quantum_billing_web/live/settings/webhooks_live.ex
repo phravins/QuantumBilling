@@ -19,7 +19,13 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
     "client.updated" => "A client is edited",
     "e_way_bill.generated" => "An e-way bill is generated",
     "e_way_bill.cancelled" => "An e-way bill is cancelled",
-    "credit_note.created" => "A credit or debit note is raised"
+    "credit_note.created" => "A credit or debit note is raised",
+    "quotation.created" => "A quotation is created",
+    "quotation.updated" => "A quotation is edited",
+    "quotation.sent" => "A quotation is marked sent, or emailed as a draft",
+    "quotation.accepted" => "A quotation is accepted",
+    "quotation.declined" => "A quotation is declined",
+    "quotation.converted" => "A quotation is converted into an invoice"
   }
 
   def mount(_params, _session, socket) do
@@ -174,6 +180,7 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
       flash={@flash}
       current_scope={@current_scope}
       active_nav={@active_nav}
+      sidebar={:settings}
       active_sub={:webhooks}
     >
       <.header>
@@ -293,7 +300,12 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
           </fieldset>
 
           <div class="mt-4 flex justify-end">
-            <button id="create-webhook" type="submit" class={action_button_class()}>
+            <button
+              id="create-webhook"
+              type="submit"
+              phx-disable-with="Adding…"
+              class={action_button_class()}
+            >
               <.icon name="hero-plus" class="size-4" /> Add endpoint
             </button>
           </div>

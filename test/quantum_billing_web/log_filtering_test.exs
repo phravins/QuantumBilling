@@ -13,7 +13,8 @@ defmodule QuantumBillingWeb.LogFilteringTest do
       "organization" => %{
         "smtp_password" => "smtp-pass",
         "webhook_secret" => "whsec",
-        "razorpay_key_secret" => "rzp-secret"
+        "razorpay_key_secret" => "rzp-secret",
+        "razorpay_webhook_secret" => "rzp-webhook-secret"
       },
       "api_key" => "qb_live_x",
       "authorization" => "Bearer qb_live_x"
@@ -28,6 +29,7 @@ defmodule QuantumBillingWeb.LogFilteringTest do
     assert filtered["organization"]["smtp_password"] == @filtered
     assert filtered["organization"]["webhook_secret"] == @filtered
     assert filtered["organization"]["razorpay_key_secret"] == @filtered
+    assert filtered["organization"]["razorpay_webhook_secret"] == @filtered
     assert filtered["api_key"] == @filtered
     assert filtered["authorization"] == @filtered
   end

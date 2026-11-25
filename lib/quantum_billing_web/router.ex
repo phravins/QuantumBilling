@@ -58,20 +58,29 @@ defmodule QuantumBillingWeb.Router do
       # `/pay/:token` is the legacy link, for the first business.
       live "/p/:slug/:token", PublicInvoiceLive, :show
       live "/pay/:token", PublicInvoiceLive, :show
+      live "/q/:slug/:token", PublicQuotationLive, :show
     end
 
     # Outside the live_session, which takes only live routes.
     get "/p/:slug/:token/pdf", InvoicePdfController, :public
     get "/pay/:token/pdf", InvoicePdfController, :public
+    get "/q/:slug/:token/pdf", QuotationPdfController, :public
   end
 
   # Owner-only: account administration and the full export.
   scope "/", QuantumBillingWeb do
-    pipe_through [:browser, :require_authenticated_user, :require_business, :require_owner]
+    pipe_through [
+      :browser,
+      :require_authenticated_user,
+      :require_business,
+      :check_maintenance,
+      :require_owner
+    ]
 
     live_session :owner,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :check_maintenance},
         {QuantumBillingWeb.UserAuth, :require_onboarded},
         {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.UserAuth, :require_owner},
@@ -109,6 +118,8 @@ defmodule QuantumBillingWeb.Router do
     get "/reports/gstr1/export", GSTR1ExportController, :export_gstr1
     get "/invoices/:id/pdf", InvoicePdfController, :show
     get "/invoices/:id/pdf/download", InvoicePdfController, :download
+    get "/quotations/:id/pdf", QuotationPdfController, :show
+    get "/quotations/:id/download", QuotationPdfController, :download
     get "/e-way-bills/export", EWayBillExportController, :export
     get "/e-way-bills/:id/print", EWayBillPdfController, :show
     get "/e-way-bills/:id/print/download", EWayBillPdfController, :download
@@ -125,12 +136,13 @@ defmodule QuantumBillingWeb.Router do
 
   # Before "/settings/:section", which would otherwise match "/settings/team".
   scope "/", QuantumBillingWeb do
-    pipe_through [:browser, :require_authenticated_user, :require_business]
+    pipe_through [:browser, :require_authenticated_user, :require_business, :check_maintenance]
 
     # NotificationsHook must run after :require_business: the feed is the business's.
     live_session :app,
       on_mount: [
         {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :check_maintenance},
         {QuantumBillingWeb.UserAuth, :require_onboarded},
         {QuantumBillingWeb.UserAuth, :require_business},
         {QuantumBillingWeb.NotificationsHook, :default}
@@ -144,6 +156,11 @@ defmodule QuantumBillingWeb.Router do
       # Before "/invoices/:id", or "new" and "<id>/edit" would both match it.
       live "/invoices/:id/edit", InvoiceNewLive, :edit
       live "/invoices/:id", InvoiceShowLive, :show
+      live "/quotations", QuotationsLive, :index
+      live "/quotations/new", QuotationNewLive, :new
+      # Before "/quotations/:id", as for invoices.
+      live "/quotations/:id/edit", QuotationNewLive, :edit
+      live "/quotations/:id", QuotationShowLive, :show
       live "/clients", ClientsLive, :index
       live "/clients/new", ClientNewLive, :new
       live "/clients/import", ClientImportLive, :new
@@ -156,10 +173,36 @@ defmodule QuantumBillingWeb.Router do
       live "/compliance", ComplianceLive, :index
       live "/recurring", RecurringLive, :index
       live "/bin", BinLive, :index
+      # Every member may see it; the settings menu needs the business.
+      live "/community", CommunityLive, :index
       live "/settings", SettingsLive, :index
       live "/settings/:section", SettingsLive, :section
       live "/invoice-templates/:id", InvoiceTemplateDesignLive, :design
     end
+  end
+
+  # The super admin's pages span every business, so no :require_business; anyone
+  # else gets a 404. Must stay above the catch-all.
+  scope "/admin", QuantumBillingWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_admin]
+
+    live_session :admin,
+      on_mount: [
+        {QuantumBillingWeb.UserAuth, :require_authenticated},
+        {QuantumBillingWeb.UserAuth, :require_admin}
+      ] do
+      live "/", AdminLive, :general
+      live "/config", AdminLive, :config
+      live "/health", AdminLive, :health
+      live "/layout", AdminLive, :layout
+    end
+  end
+
+  # Where maintenance mode sends everyone but super admins; no sign-in needed.
+  scope "/", QuantumBillingWeb do
+    pipe_through :browser
+
+    get "/maintenance", MaintenanceController, :show
   end
 
   # On :api, not :browser: a probe needs no session. Must stay above the catch-all.
@@ -187,6 +230,12 @@ defmodule QuantumBillingWeb.Router do
     post "/invoices/:id/cancel", InvoiceController, :cancel
     post "/invoices/:id/e-invoice", InvoiceController, :register_e_invoice
     post "/invoices/:invoice_id/credit-notes", CreditNoteController, :create
+    get "/quotations", QuotationController, :index
+    post "/quotations", QuotationController, :create
+    get "/quotations/:id", QuotationController, :show
+    post "/quotations/:id/send", QuotationController, :send_email
+    post "/quotations/:id/accept", QuotationController, :accept
+    post "/quotations/:id/decline", QuotationController, :decline
     get "/credit-notes", CreditNoteController, :index
     get "/credit-notes/:id", CreditNoteController, :show
     get "/clients", ClientController, :index
@@ -254,11 +303,16 @@ defmodule QuantumBillingWeb.Router do
       live "/users/reset-password/:token", UserLive.ResetPassword, :edit
       # Requires a pending sign-in in the session.
       live "/users/two-factor", UserLive.TwoFactorChallenge, :new
+      # Requires a sign-in held for the device already signed in to allow.
+      live "/users/session-conflict", UserLive.SessionConflict, :new
     end
 
     get "/users/confirm/:token", UserConfirmationController, :confirm
     post "/users/log-in", UserSessionController, :create
     post "/users/two-factor", UserSessionController, :verify_two_factor
+    # Controller actions: only an HTTP response can write or clear the session.
+    post "/users/session-conflict", UserSessionController, :finish_conflict
+    delete "/users/session-conflict", UserSessionController, :cancel_conflict
     delete "/users/log-out", UserSessionController, :delete
   end
 

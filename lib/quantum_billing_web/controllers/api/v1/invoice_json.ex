@@ -11,6 +11,9 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
   its VAT in `amounts.vat`, one `tax_breakdown` row per rate, and on each line
   the rate it snapshotted (`tax_rate_bp`, `tax_category`, `tax_name`); a GST
   invoice has the CGST/SGST/IGST split and each line's slab in `tax_rate`.
+
+  Amounts are integer minor units of `currency`: `currency_exponent` is the
+  number of decimal places, 2 for most currencies and 3 for KWD, BHD and OMR.
   """
 
   use QuantumBillingWeb, :verified_routes
@@ -20,7 +23,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
   alias QuantumBilling.Invoices.Invoice
 
   @fields ~w(id number type status invoice_date due_date payment_terms place_of_supply
-             currency tax_regime reverse_charge tax_breakdown client amounts e_invoice
+             currency currency_exponent tax_regime reverse_charge tax_breakdown client amounts e_invoice
              remarks terms custom_fields created_at updated_at)a
 
   @item_fields ~w(position description hsn_sac quantity unit rate tax_rate tax_rate_id
@@ -55,6 +58,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
       payment_terms: invoice.payment_terms,
       place_of_supply: invoice.place_of_supply,
       currency: invoice.currency,
+      currency_exponent: QuantumBilling.Currency.exponent(invoice.currency),
       tax_regime: invoice.tax_regime,
       reverse_charge: invoice.reverse_charge,
       tax_breakdown: Enum.map(invoice.tax_breakdown || [], &breakdown_row/1),
@@ -65,8 +69,8 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
         tax_number: invoice.client_tax_number,
         state: invoice.client_state
       },
-      # Paise, as stored: integers, so no client has to guess at float rounding
-      # on a tax figure. 118000 is ₹1,180.00.
+      # Minor units, as stored: integers, so no client has to guess at float
+      # rounding on a tax figure. 118000 is ₹1,180.00; in KWD, 1180000 is 1,180.000.
       amounts: %{
         taxable_value: invoice.taxable_value,
         cgst: invoice.cgst_amount,
@@ -129,7 +133,7 @@ defmodule QuantumBillingWeb.API.V1.InvoiceJSON do
         # JSON float would round them.
         quantity: item.quantity,
         unit: item.unit,
-        # Paise, like every amount.
+        # Minor units, like every amount.
         rate: item.rate,
         tax_rate: item.tax_rate,
         # VAT lines: the rate chosen and what it was when saved (750 = 7.5%).

@@ -54,20 +54,26 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   The printable custom fields for `invoice`. Archived fields are included so
   an issued invoice keeps printing its values. Nothing is read unless the
   layout has a custom-fields block or an item holds a value.
+
+  A quotation rendered as a document (`invoice_type` "Quotation") prints the
+  quotation's own fields.
   """
   def custom(%Invoice{} = invoice, %Document{} = document) do
     items = if is_list(invoice.items), do: invoice.items, else: []
+    {object, item_object} = custom_objects(invoice)
 
     %{
-      invoice:
-        if(Document.has_type?(document, :custom_fields), do: printable("invoice"), else: []),
+      invoice: if(Document.has_type?(document, :custom_fields), do: printable(object), else: []),
       items:
         if(Enum.any?(items, &(&1.custom_fields not in [nil, %{}])),
-          do: printable("invoice_item"),
+          do: printable(item_object),
           else: []
         )
     }
   end
+
+  defp custom_objects(%Invoice{invoice_type: "Quotation"}), do: {"quotation", "quotation_item"}
+  defp custom_objects(%Invoice{}), do: {"invoice", "invoice_item"}
 
   defp printable(object) do
     object

@@ -311,7 +311,7 @@ defmodule QuantumBillingWeb.RouteSweepTest do
 
       body = conn |> get(~p"/settings/backup/download") |> response(200)
 
-      assert %{"version" => "3.2", "invoices" => [_ | _]} = Jason.decode!(body)
+      assert %{"version" => "3.3", "invoices" => [_ | _]} = Jason.decode!(body)
     end
   end
 

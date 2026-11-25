@@ -3,8 +3,8 @@ defmodule QuantumBilling.Workers.ComplianceReminderWorker do
   Puts GST filing deadlines in the notification feed before they pass.
 
   Each obligation is announced once, via a `dedupe_key` of obligation and due
-  date; overdue ones are marked `error`. Filings aren't recorded yet, so a
-  return already filed is still reminded about. Hand-added tasks are always
+  date; overdue ones are marked `error`. A return marked filed on the
+  Compliance page is not reminded about. Hand-added tasks are always
   reminded, with their own lead time; timed ones go to `TaskReminderWorker`.
   """
   use QuantumBilling.Worker, sweep: true, queue: :maintenance, max_attempts: 3

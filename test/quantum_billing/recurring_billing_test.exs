@@ -264,6 +264,7 @@ defmodule QuantumBilling.RecurringBillingTest do
                "bin_recurring_profile",
                "bin_recurring_profile",
                "purge_recurring_profile",
+               "recurring_profile_created",
                "restore_recurring_profile"
              ]
     end

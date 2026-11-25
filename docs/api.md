@@ -43,6 +43,8 @@ where.
 | `clients:read` | `GET /clients`, `GET /clients/:id` — including contact details |
 | `clients:write` | `POST /clients` |
 | `e_way_bills:read` | `GET /e-way-bills`, `GET /e-way-bills/:id` |
+| `quotations:read` | `GET /quotations`, `GET /quotations/:id` |
+| `quotations:write` | `POST /quotations`, `POST /quotations/:id/send`, `/accept` and `/decline`; adds `public_url` (the client's link) to quotations. Whoever holds that link can accept the quotation |
 
 `GET /me` works with any key.
 
@@ -87,7 +89,7 @@ validation errors. Error responses never repeat the values you sent.
 | 404 | `not_found` | No such record — or one that is in the Bin; the two look identical |
 | 400 | `invalid_parameters` (`cursor`) | A cursor this API did not issue |
 | 409 | `idempotency_in_progress` | The first request with this key has not finished |
-| 409 | `already_paid`, `cancelled`, `already_cancelled`, `paid`, `irn_registered`, `live_e_way_bill` | The action conflicts with the invoice's state; see the action below |
+| 409 | `already_paid`, `cancelled`, `already_cancelled`, `paid`, `credited`, `irn_registered`, `live_e_way_bill` | The action conflicts with the invoice's state; see the action below |
 | 409 | `gst_only` | An India GST feature (IRP e-invoice) asked of a VAT business or a VAT invoice |
 | 422 | `validation_failed` | The body was rejected; see `fields` |
 | 422 | `idempotency_mismatch` | The key was already used for a different request |
@@ -169,8 +171,8 @@ is GST-only and is refused with `409 gst_only` under VAT.
 
 ## Custom fields
 
-Owners add their own fields at Settings › Data model. Clients, invoices, invoice lines
-and e-way bills carry them in a `custom_fields` object, keyed by each field's
+Owners add their own fields at Settings › Data model. Clients, invoices, invoice lines,
+quotations, quotation lines and e-way bills carry them in a `custom_fields` object, keyed by each field's
 `key` (fixed when the field is created). Only fields marked **Included in the
 API** appear in responses or are accepted in writes; any other key is refused
 by name (`"is not accepted by the API"`). Keys you leave out are left empty
@@ -182,7 +184,7 @@ from the object; sending `null`, `""` or `[]` is the same as leaving it out.
 |---|---|
 | `text`, `long_text`, `email`, `phone`, `url` | String (up to 500 characters; 5,000 for `long_text`) |
 | `number` | Decimal string, e.g. `"12.5"` |
-| `money` | Integer minor units, like every amount (`125050` is 1,250.50) |
+| `money` | Integer minor units of the record's currency, like every amount (`125050` is 1,250.50; in KWD, BHD or OMR it is 125.050) |
 | `date` | `"YYYY-MM-DD"` |
 | `boolean` | `true` / `false` |
 | `select` | The choice's id |
@@ -225,9 +227,12 @@ The calling key's `name`, `prefix`, `scopes`, `expires_at` and `created_at`.
 
 **Every amount is an integer number of minor units of the invoice's
 `currency`** — paise for INR (₹1 = 100 paise), fils for AED, pence for GBP — in
-responses and in requests alike. `11800` above is ₹118.00. Integers, so nothing
-is lost to floating-point rounding on a tax figure. The API never converts
-between currencies.
+responses and in requests alike. `11800` above is ₹118.00. KWD, BHD and OMR
+have three decimals, so 1 dinar or rial is 1000 fils or baisa and `11800` is
+11.800. Every invoice, quotation, credit note and client carries `currency_exponent`,
+the number of decimal places (2, or 3 for those three), so a client never has
+to know the table. Integers, so nothing is lost to floating-point rounding on a
+tax figure. The API never converts between currencies.
 
 A VAT invoice has no CGST/SGST/IGST split. Its VAT is in `amounts.vat`, with
 one `tax_breakdown` row per rate (`rate_bp` is basis points: 500 = 5%), and the
@@ -248,7 +253,7 @@ client's VAT number in `client.tax_number`:
 `GET /invoices/:id` adds `items` (`position`, `description`, `hsn_sac`,
 `quantity`, `unit`, `rate`, `tax_rate`, `tax_rate_id`, `tax_rate_bp`,
 `tax_category`, `tax_name`, `amount`, `custom_fields`). `quantity` is a decimal
-sent as a string (`"2.5"`); `rate` and `amount` are minor units. A GST line has
+sent as a string (`"2.5"`); `rate` and `amount` are minor units of the invoice's currency. A GST line has
 its slab in `tax_rate`. A VAT line has `tax_rate` 0 and keeps the rate's name,
 category and basis points as they were when it was saved, so editing the rate
 later doesn't change it. `payment_url` is added only
@@ -288,8 +293,8 @@ line a `tax_rate_id` (or none, for the default rate):
 
 Required: `client_id`, `invoice_date`, 1–200 `items` each with a
 `description`, and, for a GST business, `place_of_supply`. `rate` is minor
-units of the business currency (`500000` is ₹5,000.00) and must be a whole
-number; `quantity` may be a number or a decimal string. A VAT rate that is
+units of the business currency (`500000` is ₹5,000.00, or 500.000 in a KWD
+business) and must be a whole number; `quantity` may be a number or a decimal string. A VAT rate that is
 archived or unknown is refused as `{"items": [{"tax_rate_id": ["…"]}]}`. See
 [Tax regimes](#tax-regimes) and [Custom fields](#custom-fields). The invoice
 is created as a **Draft**, in the business currency.
@@ -305,7 +310,11 @@ shows it.
 `id`, `type`, `name`, `display_name`, `legal_name`, `gstin`, `pan`,
 `tax_number`, `country`, `business_type`, `category`, `email`, `phone`,
 `billing_address`, `shipping_address` (each `{line1, line2, city, state, pin}`),
-`payment_terms_days`, `status`, `custom_fields`, `created_at`, `updated_at`.
+`payment_terms_days`, `status`, `currency`, `currency_exponent`,
+`custom_fields`, `created_at`, `updated_at`.
+
+`currency` is the business currency and `currency_exponent` its decimal places:
+a money custom field is minor units of that currency.
 
 `tax_number` is the client's VAT number and `country` its ISO-2 country code
 (`IN` by default), used by VAT businesses in place of `gstin` and `pan`.
@@ -339,11 +348,11 @@ accounting system has matched, for example. Needs `invoices:payments`.
 {"reference": "NEFT-HDFC-0042", "amount": 1180000}
 ```
 
-`amount` is paise and must cover the invoice's `grand_total`; partial payments
+`amount` is minor units of the invoice's currency and must cover the invoice's `grand_total`; partial payments
 are refused (422) rather than recorded as paid in full. The invoice becomes
 **Paid**, the customer gets a receipt, and `invoice.paid` is sent to webhooks,
-exactly as for a gateway payment. 409 `already_paid` or `cancelled` if it can't
-be paid. Returns the invoice.
+exactly as for a gateway payment. 409 `already_paid`, `cancelled` or `credited`
+(credit notes cover the whole invoice) if it can't be paid. Returns the invoice.
 
 ### `POST /api/v1/invoices/:id/cancel`
 
@@ -355,6 +364,7 @@ The invoice keeps its number and leaves GSTR-1. Refused with 409 when
 cancelling here would not be the whole story:
 
 - `paid` — raise a credit note instead;
+- `credited` — its credit notes already reverse it;
 - `irn_registered` — a live IRN must be cancelled on the IRP first;
 - `live_e_way_bill` — cancel the e-way bill first;
 - `already_cancelled`.
@@ -380,12 +390,80 @@ or `demo` (made by the sandbox, never filed with the government). Needs
 ```
 
 `type` is `credit` or `debit`; amounts are minor units of the invoice's
-currency, and any left out default to the invoice's own. A note follows its
+currency, which the note returns as `currency` and `currency_exponent`. A `grand_total` left out defaults to what can still be credited (for
+a debit note, the invoice's total), and a `subtotal` or `tax_total` left out is
+taken from the total in the invoice's own proportion. A credit note can be at
+most what is left to credit: the invoice's total plus its debit notes, less its
+credit notes. More is refused with 422 on `grand_total`, and a note on a
+cancelled invoice with 422 on `invoice_id`. A credit note that leaves nothing
+to credit on an unpaid invoice makes its status `Credited`; a debit note on it
+makes it owed again. A note follows its
 invoice's tax regime; on a VAT invoice `tax_total` is VAT, spread across the
-invoice's rates in proportion. A note reads back as `id`, `number`, `type`, `reason`,
+invoice's rates in proportion. A note reads back as `id`, `number`, `date`, `type`, `reason`,
 `status`, `amounts` (`subtotal`, `tax_total`, `grand_total`), `invoice`
 (`{id, number}`), `client_id`, `created_at`, `updated_at`. Notes on an invoice
 in the Bin are hidden.
+
+`number` comes from the business's credit-note (`CN-0001`…) or debit-note
+(`DN-0001`…) series, set in Settings → Invoice: at most 16 letters, digits, `-`
+and `/`. The API does not accept a number. Notes raised before these series
+existed keep their older, longer numbers. `date` (`YYYY-MM-DD`) is the day the note was raised
+in the business's timezone; GSTR-1 reports the note in that date's month. A
+request is refused with `422` if the business's series would produce a number
+over 16 characters.
+
+### `GET /api/v1/quotations` · `GET /api/v1/quotations/:id`
+
+```json
+{
+  "id": 9, "number": "QT-0009", "status": "Sent",
+  "quotation_date": "2026-11-20", "valid_until": "2026-12-20",
+  "place_of_supply": "Maharashtra (27)", "currency": "INR",
+  "tax_regime": "gst", "reverse_charge": false, "tax_breakdown": [],
+  "client": {"id": 7, "name": "Northwind Traders", "gstin": "27…", "tax_number": null,
+             "state": "Maharashtra (27)"},
+  "amounts": {"taxable_value": 10000, "cgst": 900, "sgst": 900, "igst": 0, "cess": 0,
+              "vat": 0, "round_off": 0, "grand_total": 11800},
+  "invoice_id": null, "remarks": null, "terms": null, "custom_fields": {},
+  "public_url": "https://…/q/acme/…",
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+`status` is Draft, Sent, Accepted or Declined, or **Expired** for a Draft or
+Sent quotation whose `valid_until` has passed in the business's timezone.
+`?status=` filters by any of the five; the list pages like invoices. `invoice_id`
+is the invoice the quotation was converted into. A single quotation also has
+`items`, shaped like invoice lines. `public_url` appears only for a key with
+`quotations:write`.
+
+### `POST /api/v1/quotations`
+
+The body is the invoice body's client, lines and tax fields, with
+`quotation_date` and `valid_until` in place of the invoice dates:
+`client_id` (required), `quotation_date` (default today), `valid_until`
+(default the business's **Quotations Valid For** setting after the quotation
+date), `place_of_supply`, `remarks`, `terms`, `items` and `custom_fields`.
+Invoice-only fields such as `due_date` are refused by name. The quotation is
+created as a Draft with the next `QT-` number. Answers `201`.
+
+### `POST /api/v1/quotations/:id/send`
+
+```json
+{"to": "buyer@example.com"}
+```
+
+Emails the quotation, PDF attached, with the client's link. `to` is one email
+address and defaults to the client email on the quotation. Answers `202` once
+the email is queued; a Draft becomes Sent. An expired quotation is refused with
+`409` `expired`.
+
+### `POST /api/v1/quotations/:id/accept` · `POST /api/v1/quotations/:id/decline`
+
+Empty body. A Draft or Sent quotation becomes Accepted or Declined. Any other
+status, or accepting an expired quotation, is refused with `409`
+`invalid_transition`. Converting into an invoice, editing and deleting are done
+in the application.
 
 ## OpenAPI
 
@@ -395,7 +473,7 @@ serializers.
 
 ## The Bin
 
-Records in the Bin — and e-way bills whose invoice is in the Bin — are absent
+Records in the Bin (invoices, quotations, clients) — and e-way bills whose invoice is in the Bin — are absent
 from lists and return `404` by id, exactly as if they did not exist. Restoring
 one from the Bin makes it visible again.
 

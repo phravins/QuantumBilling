@@ -11,11 +11,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     only: [any_values?: 2, custom_details: 1, custom_inputs: 1]
 
   alias QuantumBilling.Accounts.Scope
+  alias QuantumBilling.CreditNotes
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.CustomFields
   alias QuantumBilling.EInvoice.IRPClient
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
+  alias QuantumBilling.ErrorMessages
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
@@ -52,6 +54,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:active_nav, :invoices)
          |> assign(:invoice, invoice)
          |> assign(:payment_reminders, payment_reminder_history(invoice))
+         |> assign(
+           :quotation,
+           invoice.quotation_id && QuantumBilling.Quotations.get_quotation(invoice.quotation_id)
+         )
          # Archived too: an issued invoice keeps the values it was issued with.
          |> assign(
            :custom_definitions,
@@ -65,6 +71,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:gst_tools?, gst_tools?(socket.assigns.current_scope, invoice))
          |> assign(:ewb_defaults, Settings.get_organization())
          |> assign(:show_qr_modal, false)
+         |> assign(:cn_creditable, 0)
          |> assign(:cn_definitions, CustomFields.active_definitions("credit_note"))
          |> assign_cn_form(CreditNote.changeset(%CreditNote{}, %{}))}
     end
@@ -95,7 +102,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         {:noreply, put_flash(socket, :error, Tax.gst_only_message(:e_invoice))}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not queue the E-Invoice: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not queue the E-Invoice: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -120,7 +128,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not queue the email: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not queue the email: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -202,7 +211,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
          |> assign(:show_ewb_modal, false)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to generate E-Way Bill: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not generate the e-way bill: #{ErrorMessages.text(reason)}"
+         )}
     end
   end
 
@@ -222,9 +236,23 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
            QuantumBilling.Payments.unavailable_message(socket.assigns.invoice)
          )}
 
+      {:error, :cancelled} ->
+        {:noreply, put_flash(socket, :error, "A cancelled invoice cannot be paid online.")}
+
+      {:error, :credited} ->
+        {:noreply,
+         put_flash(socket, :error, "Credit notes already cover this invoice; nothing is owed.")}
+
+      {:error, :already_paid} ->
+        {:noreply, put_flash(socket, :error, "This invoice is already paid.")}
+
       {:error, reason} ->
         {:noreply,
-         put_flash(socket, :error, "Failed to generate Payment Link: #{inspect(reason)}")}
+         put_flash(
+           socket,
+           :error,
+           "Could not create the payment link: #{ErrorMessages.text(reason)}"
+         )}
     end
   end
 
@@ -239,7 +267,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           params
       end
 
-    case QuantumBilling.CreditNotes.create_credit_note_for_invoice(socket.assigns.invoice, params) do
+    case CreditNotes.create_credit_note_for_invoice(socket.assigns.invoice, params) do
       {:ok, cn} ->
         {:noreply,
          socket
@@ -250,11 +278,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Please fix the highlighted fields before issuing the note.")
+         |> put_flash(:error, cn_error_message(changeset))
+         |> assign_creditable()
          |> assign_cn_form(changeset)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to issue Credit Note: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not issue the note: #{ErrorMessages.text(reason)}")}
     end
   end
 
@@ -267,7 +297,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
   end
 
   def handle_event("toggle_cn_modal", _params, socket) do
-    {:noreply, assign(socket, :show_cn_modal, !Map.get(socket.assigns, :show_cn_modal, false))}
+    show? = !Map.get(socket.assigns, :show_cn_modal, false)
+    socket = assign(socket, :show_cn_modal, show?)
+
+    {:noreply, if(show?, do: assign_creditable(socket), else: socket)}
   end
 
   def handle_info({:invoice_changed, %{id: id}}, socket) do
@@ -339,7 +372,18 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       <.header>
         {@invoice.invoice_number}
-        <:subtitle>{@invoice.invoice_type}</:subtitle>
+        <:subtitle>
+          {@invoice.invoice_type}
+          <.link
+            :if={@quotation}
+            id="invoice-quotation-link"
+            navigate={~p"/quotations/#{@quotation}"}
+            class="ml-2 inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-500/20 dark:text-violet-300"
+          >
+            <.icon name="hero-clipboard-document-list" class="size-3.5" />
+            From quotation {@quotation.number}
+          </.link>
+        </:subtitle>
 
         <:actions>
           <button
@@ -366,11 +410,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 <span class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
                   <.icon name="hero-check-badge" class="size-3.5" /> E-Invoice Verified (IRP)
                 </span>
-                <.portal_mode_badge id="irn-mode-badge" mode="live" />
+                 <.portal_mode_badge id="irn-mode-badge" mode="live" />
                 <span class="text-xs text-base-content/60">
                   Ack No: <strong class="text-base-content">{@invoice.ack_number}</strong>
                 </span>
               </div>
+
               <p class="font-mono text-xs text-emerald-400 break-all">
                 IRN: {@invoice.irn}
               </p>
@@ -386,8 +431,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             </button>
           </div>
         </div>
-
-        <%!-- A demo IRN looks exactly like a real one; this panel must not. --%>
+         <%!-- A demo IRN looks exactly like a real one; this panel must not. --%>
         <div
           :if={Invoice.demo_irn?(@invoice)}
           id="demo-irn-panel"
@@ -399,12 +443,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 <span class="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
                   <.icon name="hero-beaker" class="size-3.5" /> Demo IRN – not registered with the IRP
                 </span>
-                <.portal_mode_badge id="irn-mode-badge" mode="demo" />
+                 <.portal_mode_badge id="irn-mode-badge" mode="demo" />
               </div>
+
               <p class="text-xs text-base-content/70">
                 Generated locally in demo mode. This invoice has not been reported to the
                 government; configure live IRP access to register it.
               </p>
+
               <p class="font-mono text-xs text-base-content/50 break-all">
                 Demo IRN: {@invoice.irn}
               </p>
@@ -429,12 +475,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <div class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 rounded-md bg-cyan-600 px-2 py-0.5 text-xs font-bold text-white">
-                  <.icon name="hero-truck" class="size-3.5" />
-                  {if EWayBill.demo?(@e_way_bill),
+                  <.icon name="hero-truck" class="size-3.5" /> {if EWayBill.demo?(@e_way_bill),
                     do: "Demo E-Way Bill",
                     else: "E-Way Bill Generated"}
                 </span>
-                <.portal_mode_badge id="ewb-mode-badge" mode={@e_way_bill.portal_mode} />
+                 <.portal_mode_badge id="ewb-mode-badge" mode={@e_way_bill.portal_mode} />
                 <span class="text-xs text-base-content/60">
                   Vehicle:
                   <strong class="text-base-content">{@e_way_bill.vehicle_number || "—"}</strong>
@@ -444,6 +489,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                   </strong>
                 </span>
               </div>
+
               <p class="font-mono text-xs text-cyan-400 break-all">
                 EWB No: {@e_way_bill.ewb_number}
               </p>
@@ -469,7 +515,8 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
 
         <div
-          :if={@invoice.razorpay_payment_url}
+          :if={@invoice.razorpay_payment_url && @invoice.status != "Cancelled"}
+          id="payment-link"
           class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         >
           <div class="space-y-1">
@@ -477,10 +524,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <span class="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">
                 <.icon name="hero-qr-code" class="size-3.5" /> UPI & Card Payment Active
               </span>
+
               <span :if={@invoice.status == "Paid"} class="badge badge-success text-xs">
                 Payment Received ({# {@invoice.razorpay_payment_id}})
               </span>
             </div>
+
             <p
               :if={QuantumBilling.Payments.safe_payment_url(@invoice.razorpay_payment_url)}
               class="text-xs text-base-content/70"
@@ -504,6 +553,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         class="mb-3"
       >
         <h2 class="mb-3 text-sm font-semibold tracking-tight">Details</h2>
+
         <.custom_details
           id="invoice-custom-values"
           definitions={@custom_definitions}
@@ -517,10 +567,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="text-sm font-semibold">Payment reminders</h2>
+
             <p class="text-xs text-base-content/60">
               Send a manual reminder and review reminders queued for this invoice.
             </p>
           </div>
+
           <button
             :if={@invoice.status not in ["Draft", "Paid", "Cancelled"]}
             type="button"
@@ -531,9 +583,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <.icon name="hero-envelope" class="size-4" /> Send reminder
           </button>
         </div>
+
         <div :if={@payment_reminders == []} class="mt-3 text-xs text-base-content/60">
           No payment reminders have been queued.
         </div>
+
         <ul :if={@payment_reminders != []} class="mt-3 divide-y divide-base-200">
           <li
             :for={reminder <- @payment_reminders}
@@ -544,6 +598,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 do: "Manual reminder",
                 else: "Scheduled reminder (#{reminder.step} days)"}
             </span>
+
             <time class="text-xs text-base-content/60">
               {Calendar.strftime(reminder.sent_at, "%d %b %Y, %I:%M %p")}
             </time>
@@ -566,9 +621,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           />
         </div>
       </div>
-
-      <.actions_drawer invoice={@invoice} e_way_bill={@e_way_bill} gst_tools={@gst_tools?} />
-
+       <.actions_drawer invoice={@invoice} e_way_bill={@e_way_bill} gst_tools={@gst_tools?} />
       <div
         :if={@show_qr_modal}
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -577,6 +630,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <div>
               <h3 class="text-base font-bold">QR Codes & Payments</h3>
+
               <p class="text-xs text-base-content/60">
                 Invoice {@invoice.invoice_number} &bull; Total Due:
                 <strong class="text-emerald-600 dark:text-emerald-400">{money(
@@ -585,6 +639,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 )}</strong>
               </p>
             </div>
+
             <button
               type="button"
               phx-click="toggle_qr_modal"
@@ -598,6 +653,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/70">
               Instant UPI Payment QR
             </h4>
+
             <.upi_qr
               invoice={@invoice}
               size_class="w-48 h-48"
@@ -614,11 +670,13 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Government E-Invoice Verified QR
               </h4>
-              <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
+               <span class="badge badge-emerald text-2xs font-mono">IRN Verified</span>
             </div>
+
             <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-emerald-500/20 shadow-sm">
               {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
             </div>
+
             <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
               {@invoice.signed_qr_code}
             </div>
@@ -633,14 +691,17 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <h4 class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                 Demo QR – not verifiable
               </h4>
-              <.portal_mode_badge mode="demo" compact />
+               <.portal_mode_badge mode="demo" compact />
             </div>
+
             <p class="text-2xs text-base-content/70">
               Simulated in demo mode. Government apps will not verify this code.
             </p>
+
             <div class="w-36 h-36 mx-auto bg-white p-2 rounded-lg border border-amber-500/30 shadow-sm">
               {raw(QRCode.generate_svg(@invoice.signed_qr_code))}
             </div>
+
             <div class="p-2 bg-base-100 rounded text-2xs font-mono break-all max-h-24 overflow-y-auto text-base-content/70 border border-base-200">
               {@invoice.signed_qr_code}
             </div>
@@ -663,6 +724,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">Generate Government E-Way Bill</h3>
+
             <button
               type="button"
               phx-click="toggle_ewb_modal"
@@ -671,6 +733,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
+
           <%!-- No sample vehicle or distance prefilled: these go straight to the NIC portal. Transporter and mode come from saved defaults. --%>
           <form phx-submit="generate_ewb" class="space-y-3">
             <div>
@@ -685,6 +748,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 required
               />
             </div>
+
             <div>
               <label class="block text-xs font-semibold mb-1">Vehicle Number</label>
               <input
@@ -695,6 +759,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 required
               />
             </div>
+
             <div>
               <label class="block text-xs font-semibold mb-1">Transporter ID (GSTIN)</label>
               <input
@@ -705,6 +770,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 class="input input-bordered w-full text-xs uppercase"
               />
             </div>
+
             <div>
               <label class="block text-xs font-semibold mb-1">Mode of Transport</label>
               <select name="mode_of_transport" class="select select-bordered w-full text-xs">
@@ -717,9 +783,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 </option>
               </select>
             </div>
+
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
               <button type="button" phx-click="toggle_ewb_modal" class="btn btn-sm btn-ghost">Cancel</button>
-              <button type="submit" class="btn btn-sm btn-primary">Generate EWB</button>
+              <button type="submit" phx-disable-with="Generating…" class="btn btn-sm btn-primary">Generate EWB</button>
             </div>
           </form>
         </div>
@@ -732,6 +799,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
           <div class="flex items-center justify-between border-b border-base-200 pb-3">
             <h3 class="text-base font-bold">Issue Credit / Debit Note</h3>
+
             <button
               type="button"
               phx-click="toggle_cn_modal"
@@ -740,14 +808,42 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
               <.icon name="hero-x-mark" class="size-5" />
             </button>
           </div>
+
+          <p
+            id="cn-allowance"
+            class={[
+              "flex items-start gap-2 rounded-xl px-3 py-2 text-xs",
+              if(@cn_creditable > 0,
+                do: "bg-info/10 text-info",
+                else: "bg-base-200 text-base-content/70"
+              )
+            ]}
+          >
+            <.icon name="hero-information-circle" class="size-4 shrink-0" />
+            <span :if={@cn_creditable > 0}>
+              Up to
+              <strong>{currency_symbol(@invoice.currency)}{money_input(
+                @cn_creditable,
+                @invoice.currency
+              )}</strong>
+              can still be credited on this invoice.
+            </span>
+
+            <span :if={@cn_creditable == 0}>
+              Fully credited. Only a debit note can be issued.
+            </span>
+          </p>
+
           <form id="credit-note-form" phx-submit="issue_credit_note" class="space-y-3">
             <div>
               <label class="block text-xs font-semibold mb-1">Note Type</label>
               <select name="note_type" class="select select-bordered w-full text-xs">
-                <option value="Credit">Credit Note (CN)</option>
-                <option value="Debit">Debit Note (DN)</option>
+                <option value="Credit" selected={@cn_creditable > 0}>Credit Note (CN)</option>
+
+                <option value="Debit" selected={@cn_creditable == 0}>Debit Note (DN)</option>
               </select>
             </div>
+
             <div>
               <label class="block text-xs font-semibold mb-1">Reason for Issue</label>
               <input
@@ -758,6 +854,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 required
               />
             </div>
+
             <div>
               <label class="block text-xs font-semibold mb-1">Grand Total Amount ({currency_symbol(
                 @invoice.currency
@@ -766,12 +863,18 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
                 type="number"
                 name="grand_total"
                 min="0"
-                step="0.01"
-                value={money_input(@invoice.grand_total)}
+                step={QuantumBilling.Currency.step(@invoice.currency)}
+                value={
+                  money_input(
+                    if(@cn_creditable > 0, do: @cn_creditable, else: @invoice.grand_total),
+                    @invoice.currency
+                  )
+                }
                 class="input input-bordered w-full text-xs"
                 required
               />
             </div>
+
             <.custom_inputs
               :if={@cn_definitions != []}
               form={@cn_form}
@@ -780,7 +883,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             />
             <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
               <button type="button" phx-click="toggle_cn_modal" class="btn btn-sm btn-ghost">Cancel</button>
-              <button type="submit" class="btn btn-sm btn-warning">Issue Note</button>
+              <button type="submit" phx-disable-with="Issuing…" class="btn btn-sm btn-warning">Issue Note</button>
             </div>
           </form>
         </div>
@@ -791,6 +894,41 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
   # IRN and e-way bills are India GST: off for a VAT business or a VAT invoice.
   defp gst_tools?(scope, invoice), do: not Scope.vat?(scope) and invoice.tax_regime != "vat"
+
+  # Read when the modal opens, so it counts notes issued since the page loaded.
+  defp assign_creditable(socket),
+    do: assign(socket, :cn_creditable, CreditNotes.creditable(socket.assigns.invoice))
+
+  # The modal's plain inputs show no field errors, so the flash names the problem.
+  defp cn_error_message(changeset) do
+    errors = changeset.errors
+
+    cond do
+      # The number comes from Settings, not the form.
+      Keyword.has_key?(errors, :note_number) ->
+        "The note number would break GST's 16-character limit. Shorten the note prefix or padding in Settings → Invoice."
+
+      Keyword.has_key?(errors, :invoice_id) ->
+        "This invoice #{error_text(changeset, :invoice_id)}."
+
+      Keyword.has_key?(errors, :grand_total) ->
+        "The amount #{error_text(changeset, :grand_total)}."
+
+      true ->
+        "Please fix the highlighted fields before issuing the note."
+    end
+  end
+
+  defp error_text(changeset, field) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, opts} ->
+      Enum.reduce(opts, message, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Map.fetch!(field)
+    |> List.first()
+  end
 
   defp assign_cn_form(socket, changeset),
     do: assign(socket, :cn_form, to_form(changeset, as: "credit_note", id: "cn-form"))
@@ -809,7 +947,6 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       phx-click={hide_drawer()}
       aria-hidden="true"
     />
-
     <aside
       id="invoice-actions-drawer"
       class="fixed inset-y-0 right-0 z-50 hidden w-full max-w-sm flex-col border-l border-base-300 bg-base-100 shadow-2xl"
@@ -824,9 +961,11 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <p class="text-xs font-medium uppercase tracking-wide text-base-content/45">
             Invoice actions
           </p>
+
           <h2 id="invoice-actions-title" class="truncate text-base font-semibold tracking-tight">
             {@invoice.invoice_number}
           </h2>
+
           <div id="invoice-actions-status" class="mt-1.5">
             <.status_badge status={@invoice.status} />
           </div>
@@ -872,7 +1011,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <h3 class={drawer_group_class()}>Payments</h3>
 
           <.drawer_item
-            :if={!@invoice.razorpay_payment_url and QuantumBilling.Payments.online_payable?(@invoice)}
+            :if={
+              !@invoice.razorpay_payment_url and QuantumBilling.Payments.open_for_payment?(@invoice) and
+                QuantumBilling.Payments.online_payable?(@invoice)
+            }
             id="drawer-payment-link"
             icon="hero-qr-code"
             label="Razorpay / UPI Link"
@@ -880,6 +1022,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             phx-click={JS.push("generate_payment_link") |> hide_drawer()}
           />
           <.drawer_item
+            :if={@invoice.status != "Cancelled"}
             id="drawer-credit-note"
             icon="hero-document-duplicate"
             label="Issue Credit/Debit Note"
@@ -962,10 +1105,12 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     <span class="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 text-base-content/70 transition-colors group-hover:bg-base-300 group-hover:text-base-content">
       <.icon name={@icon} class="size-4" />
     </span>
+
     <span class="min-w-0 flex-1">
       <span class="block truncate text-sm font-medium">{@label}</span>
       <span :if={@hint} class="block truncate text-xs text-base-content/50">{@hint}</span>
     </span>
+
     <.icon
       name={@trailing}
       class="size-4 shrink-0 text-base-content/30 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-base-content/60"
