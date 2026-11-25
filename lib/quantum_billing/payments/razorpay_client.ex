@@ -13,7 +13,7 @@ defmodule QuantumBilling.Payments.RazorpayClient do
   alias QuantumBilling.Settings
 
   @endpoint "https://api.razorpay.com/v1/payment_links"
-  @receive_timeout 10_000
+  @receive_timeout 5_000
 
   @doc """
   Creates a payment link for an invoice: `{:ok, %{link_id:, short_url:}}` or `{:error, message}`.
@@ -47,6 +47,13 @@ defmodule QuantumBilling.Payments.RazorpayClient do
       {:ok, %{status: 401}} ->
         {:error, "Razorpay rejected the API key. Check the key id and secret in Settings."}
 
+      {:ok, %{body: %{"error" => error} = body}} when is_map(error) ->
+        if duplicate_reference_error?(error) do
+          {:error, {:duplicate_reference, error_description(body) || "Duplicate reference ID"}}
+        else
+          {:error, "Razorpay refused the request: #{error_description(body)}"}
+        end
+
       {:ok, %{body: %{"error" => %{"description" => description}}}} ->
         {:error, "Razorpay refused the request: #{description}"}
 
@@ -58,6 +65,95 @@ defmodule QuantumBilling.Payments.RazorpayClient do
         {:error, "Could not reach Razorpay: #{Exception.message(exception)}"}
     end
   end
+
+  @doc """
+  Fetches an existing payment link by its reference_id: `{:ok, %{link_id:, short_url:}}` or `{:error, reason}`.
+  """
+  def fetch_payment_link_by_reference(reference_id)
+      when is_binary(reference_id) and reference_id != "" do
+    case credentials() do
+      {key_id, key_secret} when is_binary(key_id) and is_binary(key_secret) ->
+        case Req.get(@endpoint,
+               params: [reference_id: reference_id],
+               auth: {:basic, "#{key_id}:#{key_secret}"},
+               receive_timeout: @receive_timeout,
+               retry: false
+             ) do
+          {:ok, %{status: status, body: %{"payment_links" => links}}}
+          when status in 200..299 and is_list(links) ->
+            case active_or_first_link(links) do
+              %{"id" => link_id, "short_url" => short_url}
+              when is_binary(link_id) and is_binary(short_url) ->
+                {:ok, %{link_id: link_id, short_url: short_url}}
+
+              _ ->
+                {:error, :payment_link_not_found}
+            end
+
+          {:ok, %{status: 401}} ->
+            {:error, "Razorpay rejected the API key. Check the key id and secret in Settings."}
+
+          {:ok, %{body: %{"error" => %{"description" => description}}}} ->
+            {:error, "Razorpay refused the request: #{description}"}
+
+          {:ok, %{status: status}} ->
+            {:error, "Razorpay returned HTTP #{status}."}
+
+          {:error, exception} ->
+            Logger.warning("[Razorpay] #{Exception.message(exception)}")
+            {:error, "Could not reach Razorpay: #{Exception.message(exception)}"}
+        end
+
+      _missing ->
+        if sandbox?() do
+          {:ok,
+           %{
+             link_id: "plink_sandbox_#{reference_id}",
+             short_url: "https://rzp.io/i/sandbox-#{reference_id}"
+           }}
+        else
+          {:error,
+           "Razorpay is not configured — add the key id and secret in Settings › Integrations."}
+        end
+    end
+  end
+
+  defp active_or_first_link(links) do
+    Enum.find(links, fn link ->
+      is_map(link) and link["status"] in ["created", "partially_paid"]
+    end) || List.first(links)
+  end
+
+  @doc "Checks if a Razorpay error map indicates a duplicate reference_id."
+  def duplicate_reference_error?(%{"code" => "BAD_REQUEST_ERROR"} = error) do
+    field = error["field"]
+    description = error["description"] |> to_string() |> String.downcase()
+
+    field == "reference_id" or
+      (String.contains?(description, ["reference id", "reference_id"]) and
+         String.contains?(description, ["already", "exist", "duplicate"]))
+  end
+
+  def duplicate_reference_error?(error) when is_map(error) do
+    field = error["field"]
+    description = error["description"] |> to_string() |> String.downcase()
+
+    field == "reference_id" or
+      (String.contains?(description, ["reference id", "reference_id"]) and
+         String.contains?(description, ["already", "exist", "duplicate"]))
+  end
+
+  def duplicate_reference_error?(_), do: false
+
+  @doc "Checks if an error message string mentions duplicate reference_id."
+  def duplicate_reference_message?(message) when is_binary(message) do
+    down = String.downcase(message)
+
+    String.contains?(down, ["reference id", "reference_id"]) and
+      String.contains?(down, ["already", "exist", "duplicate"])
+  end
+
+  def duplicate_reference_message?(_), do: false
 
   @doc """
   Cancels a payment link so it can no longer be paid.
