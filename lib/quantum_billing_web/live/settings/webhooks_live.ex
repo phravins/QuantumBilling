@@ -195,6 +195,8 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
             id="refresh-webhooks"
             type="button"
             phx-click="refresh"
+            aria-label="Refresh webhooks"
+            title="Refresh webhooks"
             class={secondary_button_class()}
           >
             <.icon name="hero-arrow-path" class="size-4" /> Refresh

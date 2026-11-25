@@ -204,8 +204,24 @@ a.btn,
               background-color 0.15s ease,
               color 0.15s ease,
               border-color 0.15s ease,
-              opacity 0.15s ease;
+              opacity 0.15s ease,
+              transform 0.12s ease;
   user-select: none;
+}
+
+/* Subtle press feedback on interactive buttons */
+button:active:not(:disabled),
+[role="button"]:active:not([aria-disabled="true"]),
+.btn:active:not(.btn-disabled) {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled),
+  [role="button"]:active:not([aria-disabled="true"]),
+  .btn:active:not(.btn-disabled) {
+    transform: none;
+  }
 }
 
 /* Checkboxes, radios and their labels: text stays selectable. */
@@ -236,6 +252,28 @@ a.btn:focus-visible {
   opacity: 0.75;
   pointer-events: none;
   cursor: wait;
+}
+
+/* Micro-interaction: spin refresh, sync, and retry icons during in-flight LiveView events */
+.phx-click-loading [class*="hero-arrow-path"],
+.phx-submit-loading [class*="hero-arrow-path"],
+.phx-click-loading .icon-spin-on-load,
+.phx-submit-loading .icon-spin-on-load {
+  animation: qb-spin 0.75s linear infinite;
+}
+
+@keyframes qb-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phx-click-loading [class*="hero-arrow-path"],
+  .phx-submit-loading [class*="hero-arrow-path"],
+  .phx-click-loading .icon-spin-on-load,
+  .phx-submit-loading .icon-spin-on-load {
+    animation: none;
+  }
 }
 
 /* Trend chart entrance: the line draws left to right, then the fill rises. */
