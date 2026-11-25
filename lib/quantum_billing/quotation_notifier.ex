@@ -44,17 +44,55 @@ defmodule QuantumBilling.QuotationNotifier do
     {from_name, from_email} = Mail.sender(organization, quotation.company_name)
     link = public_url(quotation)
 
-    email =
-      new()
-      |> to(recipient)
-      |> from({from_name, from_email})
-      |> subject(subject_for(quotation, from_name))
-      |> html_body(html_content(quotation, from_name, link))
-      |> text_body(text_content(quotation, from_name, link))
-      |> attachment(document_attachment(quotation))
-      |> Mail.reply_to(organization)
+    with {:ok, attachment} <- document_attachment(quotation) do
+      email =
+        new()
+        |> to(recipient)
+        |> from({from_name, from_email})
+        |> subject(subject_for(quotation, from_name))
+        |> html_body(html_content(quotation, from_name, link))
+        |> text_body(text_content(quotation, from_name, link))
+        |> attachment(attachment)
+        |> Mail.reply_to(organization)
 
-    {:ok, email}
+      {:ok, email}
+    end
+  end
+
+  defp document_attachment(%Quotation{} = quotation) do
+    document = Quotations.as_document(quotation)
+    name = "Quotation-#{quotation.number}"
+
+    case InvoicePdfGenerator.generate_pdf(document,
+           adapt: &QuotationLayout.adapt/1,
+           wait: 30_000
+         ) do
+      {:ok, pdf} ->
+        {:ok,
+         Swoosh.Attachment.new({:data, pdf},
+           filename: "#{name}.pdf",
+           content_type: "application/pdf"
+         )}
+
+      {:error, :no_renderer} ->
+        Logger.warning(
+          "[QuotationNotifier] #{quotation.number}: no PDF renderer, attaching HTML instead"
+        )
+
+        {:ok,
+         Swoosh.Attachment.new(
+           {:data,
+            InvoicePdfGenerator.generate_html(document,
+              print_button: false,
+              adapt: &QuotationLayout.adapt/1
+            )},
+           filename: "#{name}.html",
+           content_type: "text/html"
+         )}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc "The subject line, used by both the ledger and the mail."
@@ -66,34 +104,6 @@ defmodule QuantumBilling.QuotationNotifier do
     do: QuantumBillingWeb.Endpoint.url() <> QuantumBillingWeb.PublicQuotationLive.path(token)
 
   def public_url(_quotation), do: nil
-
-  defp document_attachment(%Quotation{} = quotation) do
-    document = Quotations.as_document(quotation)
-    name = "Quotation-#{quotation.number}"
-
-    case InvoicePdfGenerator.generate_pdf(document, adapt: &QuotationLayout.adapt/1) do
-      {:ok, pdf} ->
-        Swoosh.Attachment.new({:data, pdf},
-          filename: "#{name}.pdf",
-          content_type: "application/pdf"
-        )
-
-      {:error, reason} ->
-        Logger.warning(
-          "[QuotationNotifier] #{quotation.number}: no PDF (#{inspect(reason)}), attaching HTML instead"
-        )
-
-        Swoosh.Attachment.new(
-          {:data,
-           InvoicePdfGenerator.generate_html(document,
-             print_button: false,
-             adapt: &QuotationLayout.adapt/1
-           )},
-          filename: "#{name}.html",
-          content_type: "text/html"
-        )
-    end
-  end
 
   defp sender_name(%Quotation{} = quotation) do
     {name, _email} = Mail.sender(Settings.get_organization(), quotation.company_name)
