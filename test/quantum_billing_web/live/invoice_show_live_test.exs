@@ -63,6 +63,32 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
     invoice
   end
 
+  describe "payment link copying" do
+    test "shows a copy button when the invoice has a payment link", %{conn: conn} do
+      invoice = create_invoice()
+
+      invoice =
+        QuantumBilling.Repo.update!(
+          Ecto.Changeset.change(invoice,
+            razorpay_payment_url: "https://rzp.io/i/AbC123xyz"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#copy-payment-link")
+      assert has_element?(view, "#payment-link-url", "https://rzp.io/i/AbC123xyz")
+    end
+
+    test "does not show a copy button when the invoice has no payment link", %{conn: conn} do
+      invoice = create_invoice()
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      refute has_element?(view, "#copy-payment-link")
+    end
+  end
+
   describe "the document" do
     test "renders the invoice's real figures", %{conn: conn} do
       invoice = create_invoice()

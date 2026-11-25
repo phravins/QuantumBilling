@@ -456,11 +456,23 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             >
               Payment URL:
               <a
+                id="payment-link-url"
                 href={QuantumBilling.Payments.safe_payment_url(@invoice.razorpay_payment_url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-blue-400 underline font-mono"
               >{@invoice.razorpay_payment_url}</a>
+              <button
+                id="copy-payment-link"
+                type="button"
+                phx-hook=".CopyPaymentLink"
+                data-target="payment-link-url"
+                aria-label="Copy payment link"
+                class="ml-2 inline-flex items-center gap-1 rounded-field border border-base-300 px-2 py-1 text-xs font-medium text-base-content hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <.icon name="hero-clipboard-document" class="size-4" />
+                <span data-label aria-live="polite">Copy</span>
+              </button>
             </p>
           </div>
         </div>
@@ -745,6 +757,35 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
         </div>
       </div>
     </Layouts.app>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".CopyPaymentLink">
+      export default {
+        mounted() {
+          this.handleCopy = async () => {
+            const source = document.getElementById(this.el.dataset.target)
+            const label = this.el.querySelector("[data-label]")
+
+            if (!source || !label || !navigator.clipboard || !navigator.clipboard.writeText) return
+
+            try {
+              await navigator.clipboard.writeText(source.textContent.trim())
+              label.textContent = "Copied"
+              clearTimeout(this.copyTimeout)
+              this.copyTimeout = setTimeout(() => {
+                label.textContent = "Copy"
+              }, 2000)
+            } catch (_error) {
+              // Keep the payment URL available for manual selection.
+            }
+          }
+
+          this.el.addEventListener("click", this.handleCopy)
+        },
+        destroyed() {
+          this.el.removeEventListener("click", this.handleCopy)
+          clearTimeout(this.copyTimeout)
+        }
+      }
+    </script>
     """
   end
 
