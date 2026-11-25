@@ -137,6 +137,7 @@ defmodule QuantumBilling.Audit do
     schema = changeset.data.__struct__
     redacted = redact_fields(schema)
     summarize = Keyword.get(opts, :summarize, [])
+    masked = Keyword.get(opts, :masked, [:bank_account_number])
     skipped = @skipped_fields ++ Keyword.get(opts, :skip, [])
 
     Enum.reduce(changeset.changes, %{}, fn {field, new}, acc ->
@@ -146,12 +147,28 @@ defmodule QuantumBilling.Audit do
         field in skipped -> acc
         field in redacted -> Map.put(acc, to_string(field), %{"redacted" => true})
         field in summarize -> Map.put(acc, to_string(field), %{"changed" => true})
+        field in masked ->
+          Map.put(acc, to_string(field), %{"from" => mask_value(old), "to" => mask_value(new)})
         nested?(new) -> put_nested(acc, field, new)
         plain(old) == plain(new) -> acc
         true -> Map.put(acc, to_string(field), %{"from" => plain(old), "to" => plain(new)})
       end
     end)
   end
+
+  defp mask_value(nil), do: nil
+  defp mask_value(""), do: ""
+  defp mask_value(str) when is_binary(str) do
+    trimmed = String.trim(str)
+    len = String.length(trimmed)
+
+    if len > 4 do
+      "••••" <> String.slice(trimmed, -4..-1)
+    else
+      "••••"
+    end
+  end
+  defp mask_value(other), do: other
 
   defp redact_fields(schema) do
     if function_exported?(schema, :__schema__, 1), do: schema.__schema__(:redact_fields), else: []

@@ -325,6 +325,56 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       assert Settings.get_organization().invoice_prefix == "INV"
     end
 
+    test "bank details are read-only to staff and cannot be modified by staff", %{conn: conn} do
+      {:ok, _} =
+        Settings.update_section(Settings.get_organization(), %{
+          "bank_name" => "Original Bank",
+          "bank_account_number" => "111122223333",
+          "bank_ifsc" => "HDFC0001234"
+        }, :invoice)
+
+      staff = QuantumBilling.AccountsFixtures.user_fixture()
+      conn = log_in_user(conn, staff)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/invoice")
+
+      assert has_element?(view, ~s(input[name="organization[bank_account_number]"][readonly]))
+      assert has_element?(view, ~s(input[name="organization[bank_name]"][readonly]))
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "bank_name" => "Hacked Bank",
+          "bank_account_number" => "999988887777"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.bank_name == "Original Bank"
+      assert org.bank_account_number == "111122223333"
+    end
+
+    test "owner modifying bank details updates settings", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/invoice")
+      refute has_element?(view, ~s(input[name="organization[bank_account_number]"][readonly]))
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{
+          "bank_name" => "State Bank",
+          "bank_account_number" => "123456789012",
+          "bank_ifsc" => "SBIN0001234"
+        }
+      })
+      |> render_submit()
+
+      org = Settings.get_organization()
+      assert org.bank_name == "State Bank"
+      assert org.bank_account_number == "123456789012"
+      assert org.bank_ifsc == "SBIN0001234"
+    end
+
     test "the rate select offers only the statutory slabs", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/tax")
 

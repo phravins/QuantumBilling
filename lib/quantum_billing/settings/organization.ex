@@ -203,9 +203,14 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_inclusion(:timezone, @timezones)
   end
 
-  def changeset(organization, attrs, :invoice) do
+  def changeset(organization, attrs, :invoice), do: changeset(organization, attrs, :invoice, [])
+
+  @doc "The changeset for one Settings section with options, e.g. owner: false to restrict bank fields."
+  def changeset(organization, attrs, :invoice, opts) do
+    allowed = if Keyword.get(opts, :owner, true), do: @invoice ++ @bank, else: @invoice
+
     organization
-    |> cast(attrs, @invoice ++ @bank)
+    |> cast(attrs, allowed)
     |> trim(@bank)
     |> update_change(:bank_ifsc, &String.upcase/1)
     |> validate_format(:bank_ifsc, ~r/^[A-Z]{4}0[A-Z0-9]{6}$/,
@@ -300,6 +305,8 @@ defmodule QuantumBilling.Settings.Organization do
     |> validate_number(:audit_retention_days, greater_than: 0, less_than_or_equal_to: 3_650)
     |> validate_allowed_ips()
   end
+
+  def changeset(organization, attrs, section, _opts), do: changeset(organization, attrs, section)
 
   # Credentials for other systems: never rendered back into the settings page.
   @write_only ~w(smtp_password razorpay_key_secret razorpay_webhook_secret irp_password

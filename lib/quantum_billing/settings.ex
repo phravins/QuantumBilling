@@ -50,9 +50,11 @@ defmodule QuantumBilling.Settings do
   @doc """
   Builds a changeset for one section of the settings.
   """
-  def change_organization(%Organization{} = organization, attrs, section) do
-    organization |> Organization.changeset(attrs, section) |> guard_decimal_places()
+  def change_organization(%Organization{} = organization, attrs, section, opts \\ []) do
+    organization |> Organization.changeset(attrs, section, opts) |> guard_decimal_places()
   end
+
+  @payee_fields ~w(bank_account_name bank_name bank_account_number bank_ifsc bank_branch upi_vpa upi_payee_name)a
 
   @doc """
   Saves one section, inserting the row the first time: `{:ok, org}` or `{:error, changeset}`.
@@ -61,16 +63,39 @@ defmodule QuantumBilling.Settings do
   `audit: false` for the defaults a new business is seeded with.
   """
   def update_section(%Organization{} = organization, attrs, section, opts \\ []) do
-    changeset = change_organization(organization, attrs, section)
+    owner? =
+      case Keyword.fetch(opts, :owner) do
+        {:ok, val} -> val
+        :error ->
+          case Keyword.get(opts, :scope) do
+            %{role: role} -> role == "owner"
+            _ -> true
+          end
+      end
+
+    opts_with_owner = Keyword.put_new(opts, :owner, owner?)
+    changeset = change_organization(organization, attrs, section, opts_with_owner)
     result = save(changeset, section)
 
     # Broadcast from the saving window, which has already re-rendered.
     with {:ok, saved} <- result do
       Events.broadcast_from(Events.settings_topic(), {:settings_updated, saved})
       if Keyword.get(opts, :audit, true), do: audit_section(changeset, section)
+      maybe_alert_payee_changes(changeset, saved, opts)
     end
 
     result
+  end
+
+  defp maybe_alert_payee_changes(changeset, _saved, opts) do
+    if Enum.any?(@payee_fields, &Map.has_key?(changeset.changes, &1)) do
+      business = Keyword.get(opts, :business) || (opts[:scope] && opts[:scope].business) || Repo.business()
+      actor = Keyword.get(opts, :actor) || (opts[:scope] && opts[:scope].user) || Audit.actor()
+
+      if business && actor do
+        QuantumBilling.SecurityAlerts.admin_event(business, actor, "changed the payment details printed on invoices")
+      end
+    end
   end
 
   # Client amounts, money custom fields and their defaults are minor units of

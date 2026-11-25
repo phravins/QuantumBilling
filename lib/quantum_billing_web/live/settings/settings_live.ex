@@ -348,7 +348,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     # Against the stored secrets, so a saved password counts as present.
     changeset =
       socket.assigns.organization
-      |> Settings.change_organization(params, socket.assigns.section)
+      |> Settings.change_organization(params, socket.assigns.section, scope: socket.assigns.current_scope)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :form, settings_form(changeset))}
@@ -358,7 +358,7 @@ defmodule QuantumBillingWeb.SettingsLive do
     {params, socket} = put_uploaded_logo(params, socket)
     params = restrict_params(params, socket)
 
-    case Settings.update_section(socket.assigns.organization, params, socket.assigns.section) do
+    case Settings.update_section(socket.assigns.organization, params, socket.assigns.section, scope: socket.assigns.current_scope) do
       {:ok, organization} ->
         {:noreply,
          socket
@@ -627,9 +627,15 @@ defmodule QuantumBillingWeb.SettingsLive do
 
   # The tax system and VAT identity decide every invoice's tax: owners only.
   @owner_tax_fields ~w(tax_regime vat_number vat_country prices_include_tax round_to_whole_units)
+  # Bank details decide who gets paid: owners only.
+  @owner_bank_fields ~w(bank_account_name bank_name bank_account_number bank_ifsc bank_branch)
 
   defp restrict_params(params, %{assigns: %{section: :tax, current_scope: scope}}) do
     if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_tax_fields)
+  end
+
+  defp restrict_params(params, %{assigns: %{section: :invoice, current_scope: scope}}) do
+    if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_bank_fields)
   end
 
   defp restrict_params(params, _socket), do: params
@@ -1517,16 +1523,18 @@ defmodule QuantumBillingWeb.SettingsLive do
             field={f[:bank_account_name]}
             label="Account Name"
             placeholder="Acme Traders Pvt Ltd"
+            readonly={not @owner?}
           />
-          <.field field={f[:bank_name]} label="Bank" placeholder="HDFC Bank" />
+          <.field field={f[:bank_name]} label="Bank" placeholder="HDFC Bank" readonly={not @owner?} />
           <.field
             field={f[:bank_account_number]}
             label="Account Number"
             inputmode="numeric"
             autocomplete="off"
+            readonly={not @owner?}
           />
-          <.field field={f[:bank_ifsc]} label="IFSC" placeholder="HDFC0001234" />
-          <.field field={f[:bank_branch]} label="Branch" placeholder="MG Road, Bengaluru" />
+          <.field field={f[:bank_ifsc]} label="IFSC" placeholder="HDFC0001234" readonly={not @owner?} />
+          <.field field={f[:bank_branch]} label="Branch" placeholder="MG Road, Bengaluru" readonly={not @owner?} />
         </div>
       </section>
     </.form>
