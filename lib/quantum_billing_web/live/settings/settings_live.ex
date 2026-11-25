@@ -1654,15 +1654,10 @@ defmodule QuantumBillingWeb.SettingsLive do
       <% else %>
         <div class="mt-4 space-y-3">
           <.toggle
-            field={f[:cess_enabled]}
-            label="Enable cess"
-            hint="Adds a cess column to invoices and the tax summary."
-          />
-          <.toggle
             field={f[:composition_scheme]}
             label="Registered under the composition scheme"
             hint="Files CMP-08 quarterly instead of GSTR-1 and GSTR-3B monthly."
-          /> <.toggle field={f[:tds_enabled]} label="Deduct TDS on applicable invoices" />
+          />
         </div>
       <% end %>
     </.form>

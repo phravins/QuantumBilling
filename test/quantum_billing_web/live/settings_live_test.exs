@@ -342,6 +342,19 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
 
       assert Settings.get_organization().default_gst_rate == 28
     end
+
+    test "tax switches only offer implemented options and hide unimplemented cess and tds", %{conn: conn} do
+      {:ok, view, html} = live(conn, ~p"/settings/tax")
+
+      # Composition scheme switch is functional and kept
+      assert has_element?(view, "#settings-form_composition_scheme")
+
+      # Cess and TDS switches are hidden so users do not rely on unhandled toggles
+      refute has_element?(view, "#settings-form_cess_enabled")
+      refute has_element?(view, "#settings-form_tds_enabled")
+      refute html =~ "Enable cess"
+      refute html =~ "Deduct TDS on applicable invoices"
+    end
   end
 
   describe "smtp delivery log" do
