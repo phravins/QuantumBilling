@@ -423,11 +423,10 @@ defmodule QuantumBillingWeb.ComplianceLive do
         />
       </div>
 
-      <%!-- flex-1 so the two columns run to the bottom of the page instead of
-           stopping short of it; the calendar card takes up the slack on the right. --%>
-      <div class="mt-3 grid grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-3">
+      <%!-- Grid items-start so short task lists end right after the rows without a large blank area. --%>
+      <div class="mt-3 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
         <.card class="flex flex-col lg:col-span-2">
-          <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-sm font-semibold tracking-tight">Compliance Tasks</h2>
 
             <div class="dropdown dropdown-end">
@@ -492,29 +491,28 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 else: "Try another category or status."
             }
           />
-          <%!-- Scrolls inside an absolutely positioned flex-1 shell, so the rows fill the card's leftover height without growing it. --%>
-          <div :if={@rows != []} class="relative min-h-[26rem] flex-1">
-            <div class="absolute inset-0 overflow-y-auto overflow-x-auto">
-              <table class="w-full">
-                <thead class="sticky top-0 z-10 bg-base-100">
-                  <tr class={[
-                    table_head_class(),
-                    "[&>th]:sticky [&>th]:top-0 [&>th]:bg-base-100",
-                    "[&>th]:border-b [&>th]:border-base-300"
-                  ]}>
-                    <th class="pr-4 text-left">Compliance Type</th>
+          <%!-- Table wrapper with max height scroll rather than forcing a 26rem empty min-height --%>
+          <div :if={@rows != []} class="mt-4 max-h-[32rem] overflow-y-auto overflow-x-auto">
+            <table class="w-full">
+              <thead class="sticky top-0 z-10 bg-base-100">
+                <tr class={[
+                  table_head_class(),
+                  "[&>th]:sticky [&>th]:top-0 [&>th]:bg-base-100",
+                  "[&>th]:border-b [&>th]:border-base-300"
+                ]}>
+                  <th class="w-2/5 min-w-[14rem] pr-4 text-left">Compliance Type</th>
 
-                    <th class="pr-4 text-left">Period</th>
+                  <th class="w-[8rem] whitespace-nowrap pr-4 text-left">Period</th>
 
-                    <th class="pr-4 text-left">Due Date</th>
+                  <th class="w-[8rem] whitespace-nowrap pr-4 text-left">Due Date</th>
 
-                    <th class="pr-4 text-left">Status</th>
+                  <th class="w-[7rem] pr-4 text-left">Status</th>
 
-                    <th class="pr-4 text-left">Filed / Done</th>
+                  <th class="w-[8rem] whitespace-nowrap pr-4 text-left">Filed / Done</th>
 
-                    <th class="text-left">Actions</th>
-                  </tr>
-                </thead>
+                  <th class="w-[7rem] text-right">Actions</th>
+                </tr>
+              </thead>
 
                 <tbody>
                   <tr
@@ -535,14 +533,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           :if={row[:task] && row.task.private}
                           id={"task-private-#{row.task.id}"}
                           title="Only you can see this"
-                          class="shrink-0 text-base-content/45"
+                          class="inline-flex shrink-0 items-center gap-1 rounded-full border border-base-300 bg-base-200 px-1.5 text-2xs font-medium text-base-content/60"
                         >
-                          <.icon name="hero-lock-closed" class="size-3.5" />
-                          <span class="sr-only">Only you can see this</span>
+                          <.icon name="hero-lock-closed" class="size-3" />
+                          <span>Private</span>
                         </span>
                       </p>
 
-                      <p class="flex flex-wrap items-center gap-x-1.5 text-xs text-base-content/60">
+                      <p class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-base-content/60">
                         <span>{row.subtitle}</span>
                         <%= if row[:task] do %>
                           <span
@@ -598,8 +596,8 @@ defmodule QuantumBillingWeb.ComplianceLive do
 
                     <td class="py-2.5 pr-4 text-base-content/60">{format_date(row.filed_on)}</td>
 
-                    <td class="py-2.5">
-                      <div :if={row[:task]} class="flex gap-1">
+                    <td class="py-2.5 text-right">
+                      <div :if={row[:task]} class="flex justify-end gap-1">
                         <button
                           :if={row.status != "Done"}
                           id={"task-complete-#{row.task.id}"}
@@ -607,6 +605,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           phx-click="complete_task"
                           phx-value-id={row.task.id}
                           class={row_action_class()}
+                          title={"Mark #{row.type} done"}
                           aria-label={"Mark #{row.type} done"}
                         >
                           <.icon name="hero-check" class="size-4" />
@@ -618,6 +617,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           phx-click="reopen_task"
                           phx-value-id={row.task.id}
                           class={row_action_class()}
+                          title={"Reopen #{row.type}"}
                           aria-label={"Reopen #{row.type}"}
                         >
                           <.icon name="hero-arrow-uturn-left" class="size-4" />
@@ -628,6 +628,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           phx-click="edit_task"
                           phx-value-id={row.task.id}
                           class={row_action_class()}
+                          title={"Edit #{row.type}"}
                           aria-label={"Edit #{row.type}"}
                         >
                           <.icon name="hero-pencil-square" class="size-4" />
@@ -639,13 +640,14 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           phx-value-id={row.task.id}
                           data-confirm={"Delete #{row.type}?"}
                           class={row_action_class()}
+                          title={"Delete #{row.type}"}
                           aria-label={"Delete #{row.type}"}
                         >
                           <.icon name="hero-trash" class="size-4" />
                         </button>
                       </div>
 
-                      <div :if={!row[:task]} class="flex gap-1">
+                      <div :if={!row[:task]} class="flex justify-end gap-1">
                         <button
                           id={"view-#{row_id(row)}"}
                           type="button"
@@ -653,6 +655,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           phx-value-due={row.due_date}
                           phx-value-type={row.type}
                           class={row_action_class()}
+                          title={"View #{row.type} details"}
                           aria-label={"View #{row.type} details"}
                         >
                           <.icon name="hero-eye" class="size-4" />
@@ -663,6 +666,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
                           :if={row.type == "GSTR-1"}
                           href={~p"/reports/gstr1/export?#{[period: row.period_key]}"}
                           class={row_action_class()}
+                          title={"Download #{row.type} JSON for #{row.period_label}"}
                           aria-label={"Download #{row.type} JSON for #{row.period_label}"}
                         >
                           <.icon name="hero-arrow-down-tray" class="size-4" />
@@ -673,7 +677,6 @@ defmodule QuantumBillingWeb.ComplianceLive do
                 </tbody>
               </table>
             </div>
-          </div>
 
           <p :if={@rows != []} class="mt-4 text-sm text-base-content/60">
             Showing 1 to {length(@rows)} of {length(@rows)} entries
