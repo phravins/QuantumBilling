@@ -209,6 +209,30 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       assert html =~ "Account created"
       assert QuantumBilling.Accounts.get_user_by_email(attrs.email)
     end
+
+    test "does not leak SMTP details in flash when confirmation email delivery fails", %{conn: conn} do
+      QuantumBilling.Settings.ensure_organization()
+
+      # Configure an unconnectable port to force delivery failure
+      QuantumBilling.Repo.update_all(QuantumBilling.Settings.Organization,
+        set: [smtp_host: "127.0.0.1", smtp_port: 1, smtp_username: nil, smtp_password: nil]
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+      attrs = valid_registration_attributes()
+
+      {:ok, _lv, html} =
+        lv
+        |> form("#registration_form", user: attrs)
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/users/log-in")
+
+      assert html =~ "Your account was created, but we couldn't send your confirmation email"
+      refute html =~ "127.0.0.1"
+      refute html =~ "Settings > SMTP"
+      refute html =~ "Forgot password?"
+      assert QuantumBilling.Accounts.get_user_by_email(attrs.email)
+    end
   end
 
   describe "registration navigation" do

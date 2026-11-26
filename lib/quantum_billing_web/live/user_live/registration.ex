@@ -8,6 +8,8 @@ defmodule QuantumBillingWeb.UserLive.Registration do
   """
   use QuantumBillingWeb, :live_view
 
+  require Logger
+
   import QuantumBillingWeb.UserLive.AuthComponents
 
   alias QuantumBilling.Accounts
@@ -176,13 +178,13 @@ defmodule QuantumBillingWeb.UserLive.Registration do
              |> push_navigate(to: ~p"/users/log-in")}
 
           {:error, reason} ->
+            Logger.warning("Confirmation email delivery failed: #{inspect(reason)}")
+
             {:noreply,
              socket
              |> put_flash(
                :error,
-               "Your account was created, but the confirmation email could not be " <>
-                 "sent (#{reason}). Ask an administrator to check Settings > SMTP, " <>
-                 "then use “Forgot password?” to get a fresh link."
+               "Your account was created, but we couldn't send your confirmation email. Please try again later."
              )
              |> push_navigate(to: ~p"/users/log-in")}
         end
