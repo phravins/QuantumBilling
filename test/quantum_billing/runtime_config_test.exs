@@ -10,7 +10,7 @@ defmodule QuantumBilling.RuntimeConfigTest do
   setup %{tmp_dir: tmp_dir} do
     vars =
       @required ++
-        @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER UPLOADS_DIR PHX_CHECK_ORIGIN)
+        @seed_vars ++ ~w(DATABASE_URL SMTP_HOST PHX_SERVER UPLOADS_DIR PHX_CHECK_ORIGIN PHX_HOST)
 
     original = Map.new(vars, &{&1, System.get_env(&1)})
 
@@ -24,6 +24,7 @@ defmodule QuantumBilling.RuntimeConfigTest do
     Enum.each(vars, &System.delete_env/1)
     values = Map.new(@required, &{&1, Base.url_encode64(:crypto.strong_rand_bytes(48))})
     System.put_env(values)
+    System.put_env("PHX_HOST", "billing.example.com")
 
     # Copy the actual config so its relative .env path uses an isolated directory.
     config_dir = Path.join(tmp_dir, "config")
@@ -62,10 +63,11 @@ defmodule QuantumBilling.RuntimeConfigTest do
     end
   end
 
-  test "production requires nonblank secrets and a database URL", context do
+  test "production requires nonblank secrets, a database URL and a host", context do
     System.put_env("DATABASE_URL", "ecto://test-user:test-password@localhost/test-db")
 
-    for name <- ~w(SECRET_KEY_BASE TOTP_ENCRYPTION_KEY SECRETS_ENCRYPTION_KEY DATABASE_URL) do
+    for name <-
+          ~w(SECRET_KEY_BASE TOTP_ENCRYPTION_KEY SECRETS_ENCRYPTION_KEY DATABASE_URL PHX_HOST) do
       value = System.fetch_env!(name)
 
       for missing <- [nil, "", "   "] do
@@ -114,6 +116,7 @@ defmodule QuantumBilling.RuntimeConfigTest do
     end
 
     assert endpoint.()[:check_origin] == true
+    assert endpoint.()[:url][:host] == "billing.example.com"
 
     System.put_env("PHX_CHECK_ORIGIN", " //localhost, //name-4000.app.github.dev ,")
     assert endpoint.()[:check_origin] == ["//localhost", "//name-4000.app.github.dev"]

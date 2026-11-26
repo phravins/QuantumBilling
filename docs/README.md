@@ -17,7 +17,7 @@ These guides describe the application and code in this repository: product workf
 | 5 | [Technical architecture](technical-architecture.md) | Trace requests, jobs, documents, notifications, business access, and security |
 | 6 | [Tech stack](tech-stack.md) | Understand dependency versions and the purpose of each technology |
 | 7 | [Development](development.md) | Change the code and run checks; [CONTRIBUTING](../CONTRIBUTING.md) covers pull requests and the rules every change must keep |
-| 8 | [Deployment and operations](deployment.md) | Build and version releases, run them as a service behind a proxy, upgrade, monitor jobs, and back up an installation |
+| 8 | [Deployment and operations](deployment.md) | Build and version releases, run them as a service behind a proxy, upgrade, monitor jobs, and back up an installation; [Coolify](deployment-coolify.md) covers PaaS hosts |
 | 9 | [API](api.md) | Connect your own systems with API keys: endpoints, scopes, errors, idempotency ([OpenAPI document](openapi.json)) |
 | 10 | [Webhooks](webhooks.md) | Receive signed events: catalogue, verification, retries, secret rotation |
 

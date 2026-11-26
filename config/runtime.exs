@@ -258,7 +258,10 @@ if config_env() == :prod do
     # notices before a request does.
     idle_interval: 15_000
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  # The public host name. Generated links (sign-in emails, payment pages) use
+  # it, and the LiveView socket accepts only this origin unless
+  # PHX_CHECK_ORIGIN says otherwise, so a wrong default would boot broken.
+  host = required_env!.("PHX_HOST")
 
   config :quantum_billing, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

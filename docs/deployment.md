@@ -56,9 +56,11 @@ The release has no Mix executable, and production has no `/dev/mailbox` or `/dev
 
 [`docker-compose.yml`](../docker-compose.yml) runs the same release on one host: PostgreSQL 16, a one-shot `migrate` container, then the app. The image ([`Dockerfile`](../Dockerfile)) includes Chromium and fonts for PDFs and runs as `nobody`.
 
+On Coolify, use [`docker-compose.coolify.yml`](../docker-compose.coolify.yml) instead: Coolify generates the secrets, the app container runs the migrations, and no host port is published. [Deploying on Coolify](deployment-coolify.md) covers the setup and how to use the file on other platforms.
+
 ### Configure and start
 
-Compose reads variables from the shell or from `.env` beside the file. Set `DATABASE_USER`, `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY` and `PHX_HOST`; it refuses to start without the first five. Compose builds `DATABASE_URL` for its own `db` service, so the native `DB_*` settings do not apply.
+Compose reads variables from the shell or from `.env` beside the file. Set `DATABASE_USER`, `DATABASE_PASSWORD`, `SECRET_KEY_BASE`, `TOTP_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY` and `PHX_HOST`; it refuses to start without any of them. `PHX_HOST` is the public host name, or `localhost` for a trial on your own machine. Compose builds `DATABASE_URL` for its own `db` service, so the native `DB_*` settings do not apply.
 
 The database password is both the PostgreSQL password and part of a URL, so generate it URL-safe:
 
@@ -68,6 +70,8 @@ mix phx.gen.secret            # each of the three keys, separately
 docker compose up -d --build
 docker compose ps
 ```
+
+Without Elixir on the host, `openssl rand -base64 48` makes each key instead.
 
 Startup order is `db` healthy, then `migrate` exits successfully, then `app` starts and reports healthy through `/health`. Migrations run on every `up`; seeding does not.
 
@@ -295,8 +299,9 @@ cannot do them for you.
   `DATABASE_URL` and provider secrets come from the host's secret manager or
   service environment — never a file in the release, the repository, a
   ticket or a chat.
-- Generate each key with `mix phx.gen.secret`; never reuse one between
-  installations or environments.
+- Generate each key with `mix phx.gen.secret`, or `openssl rand -base64 48`
+  where Elixir is not installed; never reuse one between installations or
+  environments.
 - Restrict who can read the service environment; rotate `SECRET_KEY_BASE`
   (signs sessions — rotating signs everyone out) and provider credentials
   after anyone with access leaves. The two encryption keys cannot simply be

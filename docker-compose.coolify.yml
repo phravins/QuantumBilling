@@ -1,0 +1,117 @@
+# Coolify (Docker Compose build pack) and similar PaaS hosts. A plain host with
+# its own reverse proxy uses docker-compose.yml instead.
+# Setup, secrets, proxies, mail and backups: docs/deployment-coolify.md.
+#
+# Coolify generates the SERVICE_* values on first deploy and keeps them. Only
+# PHX_HOST must be set by hand; the deploy is blocked while it is empty.
+# Every other app setting matches docker-compose.yml (a test keeps them in step).
+
+services:
+  quantum-billing-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: ${DATABASE_NAME:-quantum_billing_prod}
+    # No published port: only the app reaches it, over the resource network.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    shm_size: 256m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  quantum-billing:
+    # The only build. No image tag: Coolify names the image per resource.
+    build: .
+    # Migrations run before the server, so there is no one-shot container that
+    # exits. exec hands PID 1 to the release, which handles SIGTERM itself. A
+    # failed migration stops the container and the restart policy retries it.
+    command: ["sh", "-c", "bin/migrate && exec bin/server"]
+    restart: unless-stopped
+    environment:
+      # SERVICE_USER_* and SERVICE_PASSWORD_* are alphanumeric, so URL-safe here.
+      DATABASE_URL: ecto://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@quantum-billing-db:5432/${DATABASE_NAME:-quantum_billing_prod}
+      POOL_SIZE: ${POOL_SIZE:-20}
+      DB_QUEUE_TARGET_MS: ${DB_QUEUE_TARGET_MS:-150}
+      DB_QUEUE_INTERVAL_MS: ${DB_QUEUE_INTERVAL_MS:-1000}
+      DB_TIMEOUT_MS: ${DB_TIMEOUT_MS:-15000}
+      # The bare host name of the domain, e.g. billing.example.com (no scheme or
+      # port). Keep this form with no text after "?": Coolify would prefill it.
+      PHX_HOST: ${PHX_HOST:?}
+      # Comma-separated, e.g. //localhost,//name-4000.app.github.dev; empty = PHX_HOST only.
+      PHX_CHECK_ORIGIN: ${PHX_CHECK_ORIGIN:-}
+      PORT: "4000"
+      # 64 random characters each. Back them up: a database dump cannot be
+      # decrypted without the two encryption keys.
+      SECRET_KEY_BASE: ${SERVICE_BASE64_64_SECRETKEYBASE}
+      TOTP_ENCRYPTION_KEY: ${SERVICE_BASE64_64_TOTPKEY}
+      SECRETS_ENCRYPTION_KEY: ${SERVICE_BASE64_64_SECRETSKEY}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SSL: ${SMTP_SSL:-}
+      SMTP_TLS_VERIFY: ${SMTP_TLS_VERIFY:-true}
+      MAILER_FROM_EMAIL: ${MAILER_FROM_EMAIL:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      IRP_CLIENT_ID: ${IRP_CLIENT_ID:-}
+      IRP_CLIENT_SECRET: ${IRP_CLIENT_SECRET:-}
+      IRP_SANDBOX: ${IRP_SANDBOX:-true}
+      NIC_EWB_API_URL: ${NIC_EWB_API_URL:-}
+      NIC_EWB_API_KEY: ${NIC_EWB_API_KEY:-}
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      # The platform proxy reaches the app over a Docker network, and no host
+      # port is published, so only containers there can be the peer. The client
+      # IP is the rightmost x-forwarded-for entry outside these ranges.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
+      SLOW_QUERY_MS: ${SLOW_QUERY_MS:-500}
+    depends_on:
+      quantum-billing-db:
+        condition: service_healthy
+    # No published port: the platform proxy routes to container port 4000 and
+    # terminates TLS. Set the domain as https://<host>:4000 in Coolify.
+    volumes:
+      - uploads:/app/uploads
+    # No root filesystem writes outside the volume and /tmp, no privilege
+    # escalation, bounded logs.
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # Oban finishes running jobs on SIGTERM; give it time before SIGKILL.
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # Migrations run first, once per business schema. Failures in this window
+      # don't count; the first passing check marks it healthy.
+      start_period: 300s
+
+volumes:
+  postgres_data:
+  uploads:
