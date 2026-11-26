@@ -8,6 +8,16 @@ defmodule QuantumBillingWeb.ClientIP do
   """
 
   import Bitwise
+  require Logger
+
+  @private_networks [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "127.0.0.0/8",
+    "fc00::/7",
+    "::1/128"
+  ]
 
   @doc """
   The address a request came from, as a string.
@@ -41,18 +51,23 @@ defmodule QuantumBillingWeb.ClientIP do
   def from_connect_info(_peer_data, _x_headers), do: nil
 
   defp resolve(remote_ip, forwarded) do
-    if trusted_proxy?(remote_ip) do
-      forwarded
-      |> forwarded_chain()
-      |> Enum.reverse()
-      |> Enum.find(&(!trusted_proxy?(&1)))
-      |> case do
-        nil -> remote_ip
-        address -> address
+    maybe_warn_untrusted_proxy(remote_ip, forwarded)
+
+    resolved =
+      if trusted_proxy?(remote_ip) do
+        forwarded
+        |> forwarded_chain()
+        |> Enum.reverse()
+        |> Enum.find(&(!trusted_proxy?(&1)))
+        |> case do
+          nil -> remote_ip
+          address -> address
+        end
+      else
+        remote_ip
       end
-    else
-      remote_ip
-    end
+
+    normalize(resolved)
   end
 
   @doc """
@@ -86,10 +101,16 @@ defmodule QuantumBillingWeb.ClientIP do
 
   @doc "Formats an `:inet` address tuple as a string."
   def to_string_ip(address) when is_tuple(address) do
-    address |> :inet.ntoa() |> to_string()
+    address |> normalize() |> :inet.ntoa() |> to_string()
   end
 
-  def to_string_ip(address) when is_binary(address), do: address
+  def to_string_ip(address) when is_binary(address) do
+    case parse(address) do
+      nil -> address
+      parsed -> parsed |> normalize() |> :inet.ntoa() |> to_string()
+    end
+  end
+
   def to_string_ip(_address), do: "unknown"
 
   defp forwarded_chain(values) do
@@ -158,9 +179,55 @@ defmodule QuantumBillingWeb.ClientIP do
   defp parse(_address), do: nil
 
   # Dual-stack listeners report IPv4 peers as ::ffff:a.b.c.d; unwrap so allowlists match.
-  defp normalize({0, 0, 0, 0, 0, 0xFFFF, ab, cd}) do
+  @doc false
+  def normalize({0, 0, 0, 0, 0, 0xFFFF, ab, cd}) do
     {bsr(ab, 8), band(ab, 0xFF), bsr(cd, 8), band(cd, 0xFF)}
   end
 
-  defp normalize(address), do: address
+  def normalize(address), do: address
+
+  defp maybe_warn_untrusted_proxy(remote_ip, forwarded) do
+    if trusted_proxies() == [] and has_forwarded_header?(forwarded) do
+      normalized_remote = normalize(remote_ip)
+
+      if allowed?(normalized_remote, @private_networks) do
+        log_proxy_warning_once(normalized_remote)
+      end
+    end
+  end
+
+  defp has_forwarded_header?(nil), do: false
+  defp has_forwarded_header?([]), do: false
+
+  defp has_forwarded_header?(headers) when is_list(headers) do
+    Enum.any?(headers, fn h -> is_binary(h) and String.trim(h) != "" end)
+  end
+
+  defp has_forwarded_header?(header) when is_binary(header), do: String.trim(header) != ""
+  defp has_forwarded_header?(_), do: false
+
+  defp log_proxy_warning_once(peer_ip) do
+    case :persistent_term.get({__MODULE__, :proxy_warning_logged}, false) do
+      true ->
+        :ok
+
+      false ->
+        :persistent_term.put({__MODULE__, :proxy_warning_logged}, true)
+
+        Logger.warning(
+          "[security] Requests are arriving through a proxy (peer #{to_string_ip(peer_ip)} sends x-forwarded-for) " <>
+            "but TRUSTED_PROXIES is empty. Client IPs in the audit log and rate limits will all be the proxy's. " <>
+            "Set TRUSTED_PROXIES. See docs/deployment.md."
+        )
+    end
+  end
+
+  @doc false
+  def reset_warning_state! do
+    try do
+      :persistent_term.erase({__MODULE__, :proxy_warning_logged})
+    rescue
+      _ -> :ok
+    end
+  end
 end
