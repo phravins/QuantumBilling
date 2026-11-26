@@ -280,7 +280,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                 <span class="ml-1 text-xs">{member.role}</span>
               </td>
 
-              <td class="text-xs text-base-content/60">
+              <td id={"user-#{user.id}-confirmation"} class="text-xs text-base-content/60">
                 {if user.confirmed_at, do: "Confirmed", else: "Pending"}
               </td>
 

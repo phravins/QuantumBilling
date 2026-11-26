@@ -187,6 +187,53 @@ defmodule QuantumBillingWeb.UserLive.RegistrationTest do
       assert Accounts.get_user_by_email("invited@email.com")
     end
 
+    test "an invited account can sign in at once, with no confirmation email", %{conn: conn} do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@email.com")
+
+      {:ok, lv, _html} = live(conn, ~p"/users/register?#{[token: token]}")
+
+      {:ok, login_lv, html} =
+        lv
+        |> form("#registration_form",
+          user: valid_registration_attributes(email: "invited@email.com")
+        )
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/users/log-in")
+
+      assert html =~ "Sign in with invited@email.com"
+
+      assert has_element?(
+               login_lv,
+               ~s(#login_form_password input[name="user[email]"][value="invited@email.com"])
+             )
+
+      user = Accounts.get_user_by_email("invited@email.com")
+      assert user.confirmed_at
+
+      refute QuantumBilling.Repo.get_by(QuantumBilling.Accounts.UserToken,
+               user_id: user.id,
+               context: "confirm"
+             )
+
+      # The invitation is the only mail the address gets.
+      assert [%{subject: subject}] =
+               Enum.filter(
+                 QuantumBilling.Mail.list_recent_deliveries(100),
+                 &(&1.to_email == "invited@email.com")
+               )
+
+      assert subject =~ "invited"
+
+      conn =
+        post(build_conn(), ~p"/users/log-in", %{
+          "user" => %{"email" => "invited@email.com", "password" => valid_user_password()}
+        })
+
+      assert get_session(conn, :user_token)
+      refute Phoenix.Flash.get(conn.assigns.flash, :error)
+    end
+
     test "still creates the account when the relay is half-configured", %{conn: conn} do
       # A relay with a username and no password, written past the changeset as an
       # older row could be. ensure_organization/0 because get_organization/0 returns

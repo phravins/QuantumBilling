@@ -159,6 +159,14 @@ defmodule QuantumBillingWeb.UserLive.Registration do
       end
 
     case Accounts.register_user_with_password(user_params, socket.assigns.invitation_token) do
+      # Invited: the invitation link proved the address, so there is nothing to confirm.
+      {:ok, %User{confirmed_at: %DateTime{}} = user} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Account created. Sign in with #{user.email} and your password.")
+         |> put_flash(:email, user.email)
+         |> push_navigate(to: ~p"/users/log-in")}
+
       {:ok, user} ->
         # The account is already saved, so a mail failure must not crash the page.
         case Accounts.deliver_user_confirmation_instructions(

@@ -47,7 +47,7 @@ defmodule QuantumBilling.Accounts do
     |> Repo.insert()
   end
 
-  @doc "Registers a user with a username, email and password. The account starts unconfirmed."
+  @doc "Registers a user with a username, email and password. See `register_user_with_password/2`."
   def register_user_with_password(attrs) do
     register_user_with_password(attrs, nil)
   end
@@ -58,6 +58,10 @@ defmodule QuantumBilling.Accounts do
   Only two ways in: the first account on an empty install (it becomes the
   owner), or an invitation for that exact address. The invitation is claimed in
   the same transaction as the insert, so a token cannot be used twice.
+
+  The first account starts unconfirmed and is activated by its confirmation
+  email. An invited account starts confirmed: the invitation link already
+  proved the address.
   """
   def register_user_with_password(attrs, invitation_token) do
     if bootstrap?() do
@@ -100,7 +104,7 @@ defmodule QuantumBilling.Accounts do
         {0, _} -> {:error, :already_accepted}
       end
     end)
-    |> Ecto.Multi.insert(:user, User.registration_changeset(%User{}, attrs))
+    |> Ecto.Multi.insert(:user, invited_user_changeset(attrs, invitation))
     |> Ecto.Multi.run(:memberships, fn repo, %{user: user} ->
       {:ok, join_invited_businesses(repo, user, invitation)}
     end)
@@ -110,6 +114,20 @@ defmodule QuantumBilling.Accounts do
       {:error, :user, changeset, _changes} -> {:error, changeset}
       {:error, :claim, reason, _changes} -> {:error, invitation_error(attrs, reason)}
     end
+  end
+
+  # The invitation link was emailed to this address, so opening it proves the
+  # mailbox, as a password-reset link does: the account starts confirmed. That
+  # holds only for the address the invitation was sent to, so no other is let in.
+  defp invited_user_changeset(attrs, invitation) do
+    %User{}
+    |> User.registration_changeset(attrs)
+    |> Ecto.Changeset.validate_change(:email, fn :email, email ->
+      if String.downcase(String.trim(email)) == invitation.email,
+        do: [],
+        else: [email: "must be the address the invitation was sent to"]
+    end)
+    |> User.confirm_changeset()
   end
 
   # Claims every pending invitation for this address, across businesses.

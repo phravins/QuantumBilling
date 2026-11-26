@@ -69,6 +69,20 @@ defmodule QuantumBillingWeb.SettingsLive.TeamTest do
       assert has_element?(view, "#remove-member-#{other.id}")
     end
 
+    test "an invited member shows as confirmed once they sign up", %{conn: conn, user: owner} do
+      token = invitation_token_fixture("joined@example.com", invited_by: owner)
+
+      {:ok, member} =
+        Accounts.register_user_with_password(
+          valid_registration_attributes(email: "joined@example.com"),
+          token
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/team")
+
+      assert has_element?(view, "#user-#{member.id}-confirmation", "Confirmed")
+    end
+
     test "says so when the email could not be sent, and lists nothing", %{conn: conn} do
       # A relay on a closed local port: refused at once, without the network.
       QuantumBilling.Settings.ensure_organization()

@@ -205,6 +205,52 @@ defmodule QuantumBilling.AccountsTest do
                )
     end
 
+    test "an invited account starts confirmed, with no confirmation token" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      assert {:ok, user} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "invited@example.com"),
+                 token
+               )
+
+      assert user.confirmed_at
+      assert Accounts.get_user!(user.id).confirmed_at
+      refute Repo.get_by(UserToken, user_id: user.id, context: "confirm")
+    end
+
+    test "an invitation registers only the address it was sent to" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      assert {:error, changeset} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "someone@example.com"),
+                 token
+               )
+
+      assert "must be the address the invitation was sent to" in errors_on(changeset).email
+      refute Accounts.get_user_by_email("someone@example.com")
+      refute Accounts.get_user_by_email("invited@example.com")
+
+      # Rolled back with the insert: the invitation still works for its address.
+      assert Accounts.invited_email(token) == "invited@example.com"
+    end
+
+    test "an invitation ignores the case of its address" do
+      _first = registered_user_fixture()
+      token = invitation_token_fixture("invited@example.com")
+
+      assert {:ok, user} =
+               Accounts.register_user_with_password(
+                 valid_registration_attributes(email: "Invited@Example.com"),
+                 token
+               )
+
+      assert user.confirmed_at
+    end
+
     test "an invitation whose email is refused is not left pending, and is logged" do
       owner = owner_fixture()
 

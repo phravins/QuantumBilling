@@ -62,7 +62,7 @@ Team administration at `/settings/team` works on the selected business. Owners c
 
 Registration accepts the first account on an empty installation; subsequent registration requires an invitation. Invitations bind an email address to a business and a role, expire, and are claimed once. The context can add an existing account to an invited business, or let a new account accept pending invitations for its email.
 
-Authentication features include password sign-in, email confirmation, emailed sign-in links, forgotten-password reset, password and email changes, optional remembered sessions, and TOTP two-factor authentication with recovery codes. An ordinary newly registered password account starts unconfirmed; the confirmation email completes activation. Demo account provisioning is described separately in [Getting started](getting-started.md), without publishing a shared password in this guide.
+Authentication features include password sign-in, email confirmation, emailed sign-in links, forgotten-password reset, password and email changes, optional remembered sessions, and TOTP two-factor authentication with recovery codes. The first account on a new installation starts unconfirmed; its confirmation email completes activation. An account created from an invitation is confirmed at sign-up, because the invitation link already proved the address, and can sign in straight away. Demo account provisioning is described separately in [Getting started](getting-started.md), without publishing a shared password in this guide.
 
 ### First sign-in
 
