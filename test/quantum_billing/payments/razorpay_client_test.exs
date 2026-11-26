@@ -158,6 +158,54 @@ defmodule QuantumBilling.Payments.RazorpayClientTest do
     end
   end
 
+  describe "duplicate reference error handling" do
+    test "duplicate_reference_error?/1 detects field and descriptions" do
+      assert RazorpayClient.duplicate_reference_error?(%{
+               "code" => "BAD_REQUEST_ERROR",
+               "field" => "reference_id",
+               "description" => "Validation failed"
+             })
+
+      assert RazorpayClient.duplicate_reference_error?(%{
+               "code" => "BAD_REQUEST_ERROR",
+               "description" => "An existing reference id has been passed"
+             })
+
+      refute RazorpayClient.duplicate_reference_error?(%{
+               "code" => "BAD_REQUEST_ERROR",
+               "description" => "Invalid amount passed"
+             })
+    end
+
+    test "fetch_payment_link_by_reference/1 returns existing payment link" do
+      System.put_env("RAZORPAY_KEY_ID", "rzp_test_key")
+      System.put_env("RAZORPAY_KEY_SECRET", "rzp_test_secret")
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_ID") end)
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_SECRET") end)
+
+      previous = Req.default_options()
+      Req.default_options(plug: {Req.Test, __MODULE__})
+      on_exit(fn -> Req.default_options(previous) end)
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        assert conn.query_string =~ "reference_id=INV-4001"
+
+        Req.Test.json(conn, %{
+          "payment_links" => [
+            %{
+              "id" => "plink_existing_123",
+              "short_url" => "https://rzp.io/i/existing123",
+              "status" => "created"
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, %{link_id: "plink_existing_123", short_url: "https://rzp.io/i/existing123"}} =
+               RazorpayClient.fetch_payment_link_by_reference("INV-4001")
+    end
+  end
+
   describe "verify_webhook_signature/3" do
     test "accepts only an exact match over the raw body" do
       body = ~s({"event":"payment.captured"})

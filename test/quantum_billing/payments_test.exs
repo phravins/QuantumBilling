@@ -313,4 +313,97 @@ defmodule QuantumBilling.PaymentsTest do
       assert {:error, :unsupported_currency} = QuantumBilling.Payments.QRCode.upi_uri(invoice)
     end
   end
+
+  describe "concurrency and duplicate reference handling" do
+    test "recovers existing payment link when duplicate reference error occurs" do
+      invoice =
+        Repo.insert!(%Invoice{
+          invoice_number: "INV-DUP-1",
+          invoice_date: ~D[2026-03-01],
+          place_of_supply: "Maharashtra",
+          company_state: "Maharashtra",
+          client_name: "Duplicate Corp",
+          grand_total: 500_000,
+          currency: "INR",
+          status: "Draft"
+        })
+
+      System.put_env("RAZORPAY_KEY_ID", "rzp_test_key")
+      System.put_env("RAZORPAY_KEY_SECRET", "rzp_test_secret")
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_ID") end)
+      on_exit(fn -> System.delete_env("RAZORPAY_KEY_SECRET") end)
+
+      previous = Req.default_options()
+      Req.default_options(plug: {Req.Test, __MODULE__})
+      on_exit(fn -> Req.default_options(previous) end)
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/v1/payment_links"} ->
+            conn
+            |> Plug.Conn.put_status(400)
+            |> Req.Test.json(%{
+              "error" => %{
+                "code" => "BAD_REQUEST_ERROR",
+                "description" => "An existing reference id has been passed",
+                "field" => "reference_id"
+              }
+            })
+
+          {"GET", "/v1/payment_links"} ->
+            Req.Test.json(conn, %{
+              "payment_links" => [
+                %{
+                  "id" => "plink_recovered_999",
+                  "short_url" => "https://rzp.io/i/recovered999",
+                  "reference_id" => "INV-DUP-1",
+                  "status" => "created"
+                }
+              ]
+            })
+        end
+      end)
+
+      assert {:ok, updated} = Payments.generate_payment_link(invoice)
+      assert updated.razorpay_payment_link_id == "plink_recovered_999"
+      assert updated.razorpay_payment_url == "https://rzp.io/i/recovered999"
+      assert Repo.get(Invoice, invoice.id).razorpay_payment_link_id == "plink_recovered_999"
+    end
+
+    test "concurrent generate_payment_link calls serialize and create only one link" do
+      invoice =
+        Repo.insert!(%Invoice{
+          invoice_number: "INV-CONCUR-1",
+          invoice_date: ~D[2026-03-01],
+          place_of_supply: "Maharashtra",
+          company_state: "Maharashtra",
+          client_name: "Concurrent Corp",
+          grand_total: 750_000,
+          currency: "INR",
+          status: "Draft"
+        })
+
+      test_pid = self()
+
+      task1 =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Payments.generate_payment_link(invoice)
+        end)
+
+      task2 =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Payments.generate_payment_link(invoice)
+        end)
+
+      res1 = Task.await(task1)
+      res2 = Task.await(task2)
+
+      assert {:ok, updated1} = res1
+      assert {:ok, updated2} = res2
+      assert updated1.razorpay_payment_link_id == updated2.razorpay_payment_link_id
+      assert updated1.razorpay_payment_url == updated2.razorpay_payment_url
+    end
+  end
 end
