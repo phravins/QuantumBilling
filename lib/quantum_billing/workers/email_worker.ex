@@ -9,6 +9,7 @@ defmodule QuantumBilling.Workers.EmailWorker do
 
   require Logger
 
+  alias QuantumBilling.Accounts
   alias QuantumBilling.Compliance.ReminderEmail
   alias QuantumBilling.Compliance.Task
   alias QuantumBilling.EWayBillNotifier
@@ -33,78 +34,20 @@ defmodule QuantumBilling.Workers.EmailWorker do
     end
   end
 
+  @impl QuantumBilling.Worker
+  def process(%Oban.Job{
+        args: %{
+          "action" => "deliver_reset_password_instructions",
+          "email" => email,
+          "reset_url_template" => reset_url_template
+        }
+      })
+      when is_binary(email) and is_binary(reset_url_template) do
+    case Accounts.deliver_reset_password_email_now(email, reset_url_template) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   def process(%Oban.Job{}), do: :discard
-
-  defp deliver(delivery, job) do
-    case build(delivery, job.args) do
-      {:ok, email} ->
-        case Mail.deliver(email, Settings.get_organization()) do
-          {:ok, _metadata} ->
-            {:ok, _} = Mail.mark_sent(delivery)
-            :ok
-
-          {:error, message} ->
-            record_failure(delivery, job, message)
-        end
-
-      # Build failures are permanent; only delivery is retried.
-      {:error, :permanent, message} ->
-        _ = Mail.mark_failed(delivery, message, true)
-        Logger.error("[EmailWorker] delivery #{delivery.id} discarded: #{message}")
-        :discard
-    end
-  end
-
-  # "failed" in the ledger only once Oban has given up too.
-  defp record_failure(delivery, %Oban.Job{attempt: attempt, max_attempts: max}, message) do
-    final? = attempt >= max
-    _ = Mail.mark_failed(delivery, message, final?)
-
-    Logger.warning(
-      "[EmailWorker] delivery #{delivery.id} attempt #{attempt}/#{max} failed: #{message}"
-    )
-
-    {:error, message}
-  end
-
-  # Before the invoice clause: an e-way bill notice carries an invoice_id too.
-  defp build(delivery, %{"e_way_bill_id" => bill_id}) when not is_nil(bill_id) do
-    case EWayBills.get_e_way_bill(bill_id) do
-      nil -> {:error, :permanent, "e-way bill #{bill_id} no longer exists"}
-      bill -> EWayBillNotifier.build_email(delivery.to_email, bill)
-    end
-  end
-
-  # A task done or deleted before the queue got to it needs no reminder.
-  defp build(delivery, %{"compliance_task_id" => task_id} = args) when not is_nil(task_id) do
-    case Repo.get(Task, task_id) do
-      %Task{status: "open"} = task ->
-        {:ok, ReminderEmail.build_email(delivery.to_email, task, args["due_phrase"] || "is due")}
-
-      _gone_or_done ->
-        {:error, :permanent, "task #{task_id} is no longer open"}
-    end
-  end
-
-  # A quotation binned before the queue got to it is not sent.
-  defp build(delivery, %{"quotation_id" => quotation_id}) when not is_nil(quotation_id) do
-    case Quotations.get_quotation(quotation_id) do
-      nil -> {:error, :permanent, "quotation #{quotation_id} no longer exists"}
-      quotation -> QuotationNotifier.build_email(delivery.to_email, quotation)
-    end
-  end
-
-  defp build(delivery, %{"invoice_id" => invoice_id}) when not is_nil(invoice_id) do
-    case Invoices.get_invoice(invoice_id) do
-      nil ->
-        {:error, :permanent, "invoice #{invoice_id} no longer exists"}
-
-      invoice ->
-        InvoiceNotifier.build_email(delivery.to_email, invoice)
-    end
-  end
-
-  defp build(delivery, _args) do
-    {:error, :permanent, "delivery #{delivery.id} has no document to render"}
-  end
 end

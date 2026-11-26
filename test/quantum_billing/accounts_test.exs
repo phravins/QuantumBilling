@@ -292,6 +292,9 @@ defmodule QuantumBilling.AccountsTest do
       assert Accounts.count_owners(business) == 1
     end
 
+ fix/existing-user-invitation-flow
+    test "an invitation to an existing account creates a pending invitation and sends an email" do
+
     test "concurrent owner removals leave at least one owner" do
       business = Businesses.default!()
       owner1 = owner_fixture()
@@ -323,22 +326,56 @@ defmodule QuantumBilling.AccountsTest do
     end
 
     test "an invitation to an existing account adds the membership at once" do
+ main
       business = Businesses.default!()
       owner = owner_fixture()
       user = user_fixture()
       {:ok, _} = Accounts.remove_member(business, user)
 
-      assert {:ok, {:added, membership}} =
-               Accounts.invite(business, user.email, "staff", owner, fn _ ->
-                 flunk("no invitation email for an existing account")
-               end)
+      assert {:ok, {:invited, invitation}} =
+               Accounts.invite(business, user.email, "staff", owner, &"http://localhost/#{&1}")
 
+      assert invitation.email == String.downcase(user.email)
+      assert invitation.role == "staff"
+
+      # Not a member until accepted.
+      refute Enum.any?(Accounts.list_members(business), &(&1.user_id == user.id))
+      assert length(Accounts.list_invitations(business)) == 1
+      assert [%{id: inv_id}] = Accounts.list_pending_invitations(user)
+      assert inv_id == invitation.id
+
+      # Duplicate pending invitation is rejected.
+      assert {:ok, {:invited, _}} = Accounts.invite(business, user.email, "staff", owner, &"http://localhost/#{&1}")
+    end
+
+    test "accepting a pending invitation creates membership and clears pending invitation" do
+      business = Businesses.default!()
+      owner = owner_fixture()
+      user = user_fixture()
+      {:ok, _} = Accounts.remove_member(business, user)
+
+      assert {:ok, {:invited, invitation}} =
+               Accounts.invite(business, user.email, "staff", owner, &"http://localhost/#{&1}")
+
+      assert {:ok, membership} = Accounts.accept_invitation(user, invitation)
       assert membership.user_id == user.id
+      assert membership.role == "staff"
+      assert Enum.any?(Accounts.list_members(business), &(&1.user_id == user.id))
+      assert Accounts.list_pending_invitations(user) == []
+    end
 
-      assert {:error, :already_member} =
-               Accounts.invite(business, user.email, "staff", owner, & &1)
+    test "declining a pending invitation removes the pending invitation without adding membership" do
+      business = Businesses.default!()
+      owner = owner_fixture()
+      user = user_fixture()
+      {:ok, _} = Accounts.remove_member(business, user)
 
-      assert Accounts.list_invitations(business) == []
+      assert {:ok, {:invited, invitation}} =
+               Accounts.invite(business, user.email, "staff", owner, &"http://localhost/#{&1}")
+
+      assert {:ok, _result} = Accounts.decline_invitation(user, invitation)
+      refute Enum.any?(Accounts.list_members(business), &(&1.user_id == user.id))
+      assert Accounts.list_pending_invitations(user) == []
     end
 
     test "a token that is not a token is refused without reaching the database" do

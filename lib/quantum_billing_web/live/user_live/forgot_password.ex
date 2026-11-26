@@ -10,6 +10,8 @@ defmodule QuantumBillingWeb.UserLive.ForgotPassword do
   import QuantumBillingWeb.UserLive.AuthComponents
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.RateLimiter
+  alias QuantumBillingWeb.ClientIP
 
   @impl true
   def render(assigns) do
@@ -68,10 +70,27 @@ defmodule QuantumBillingWeb.UserLive.ForgotPassword do
 
   @impl true
   def handle_event("send", %{"user" => %{"email" => email}}, socket) do
-    Accounts.deliver_user_reset_password_instructions(
-      email,
-      &url(~p"/users/reset-password/#{&1}")
-    )
+    normalized_email = email |> to_string() |> String.trim() |> String.downcase()
+    ip = client_ip(socket)
+
+    ip_allowed? =
+      case RateLimiter.hit({:password_reset_ip, ip}, 10, 60) do
+        {:ok, _remaining} -> true
+        {:error, :rate_limited, _retry_after} -> false
+      end
+
+    email_allowed? =
+      case RateLimiter.hit({:password_reset_email, normalized_email}, 3, 900) do
+        {:ok, _remaining} -> true
+        {:error, :rate_limited, _retry_after} -> false
+      end
+
+    if ip_allowed? and email_allowed? do
+      Accounts.deliver_user_reset_password_instructions(
+        normalized_email,
+        &url(~p"/users/reset-password/#{&1}")
+      )
+    end
 
     {:noreply,
      socket
@@ -84,5 +103,12 @@ defmodule QuantumBillingWeb.UserLive.ForgotPassword do
 
   def handle_event("validate", %{"user" => user_params}, socket) do
     {:noreply, assign(socket, form: to_form(user_params, as: "user"))}
+  end
+
+  defp client_ip(socket) do
+    ClientIP.from_connect_info(
+      Phoenix.LiveView.get_connect_info(socket, :peer_data),
+      Phoenix.LiveView.get_connect_info(socket, :x_headers)
+    ) || "unknown"
   end
 end

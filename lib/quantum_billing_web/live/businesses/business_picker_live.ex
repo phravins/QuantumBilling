@@ -4,10 +4,12 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
 
   Continue posts to `BusinessController.switch/2`, then `BusinessReadyLive`.
   Rows show the business logo inlined (`/uploads` serves only the current
-  business's), or its initials. Owners can rename, archive and restore here.
+  business's), or its initials. Pending invitations addressed to the current
+  user can be accepted or declined here. Owners can rename, archive and restore here.
   """
   use QuantumBillingWeb, :live_view
 
+  alias QuantumBilling.Accounts
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.Business
   alias QuantumBilling.Repo
@@ -22,6 +24,7 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_scope.user
     entries = Businesses.list_for_user(user)
+    pending_invitations = Accounts.list_pending_invitations(user)
 
     {:ok,
      socket
@@ -29,6 +32,7 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
      |> assign(:entries, entries)
      |> assign(:logos, logos(entries))
      |> assign(:selected_id, initial_selection(socket.assigns.current_scope, entries))
+     |> assign(:pending_invitations, pending_invitations)
      |> assign(:archived, Businesses.list_archived_owned(user))
      |> assign(:can_create?, Businesses.owns_any?(user))
      |> assign(:renaming_id, nil)
@@ -40,6 +44,77 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
     case Enum.find(socket.assigns.entries, fn {b, _m} -> to_string(b.id) == to_string(id) end) do
       {business, _membership} -> {:noreply, assign(socket, :selected_id, business.id)}
       nil -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("accept_invitation", %{"id" => id}, socket) do
+    current_user = user(socket)
+
+    case Enum.find(socket.assigns.pending_invitations, &(to_string(&1.id) == to_string(id))) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "That invitation is no longer available.")}
+
+      invitation ->
+        case Accounts.accept_invitation(current_user, invitation) do
+          {:ok, _membership} ->
+            entries = Businesses.list_for_user(current_user)
+            pending = Accounts.list_pending_invitations(current_user)
+
+            {:noreply,
+             socket
+             |> assign(:entries, entries)
+             |> assign(:logos, logos(entries))
+             |> assign(:selected_id, invitation.business_id)
+             |> assign(:pending_invitations, pending)
+             |> assign(:can_create?, Businesses.owns_any?(current_user))
+             |> put_flash(:info, "Joined #{invitation.business.name}.")}
+
+          {:error, :email_mismatch} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This invitation was sent to a different email address."
+             )}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> assign(:pending_invitations, Accounts.list_pending_invitations(current_user))
+             |> put_flash(:error, "That invitation could not be accepted.")}
+        end
+    end
+  end
+
+  def handle_event("decline_invitation", %{"id" => id}, socket) do
+    current_user = user(socket)
+
+    case Enum.find(socket.assigns.pending_invitations, &(to_string(&1.id) == to_string(id))) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "That invitation is no longer available.")}
+
+      invitation ->
+        case Accounts.decline_invitation(current_user, invitation) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> assign(:pending_invitations, Accounts.list_pending_invitations(current_user))
+             |> put_flash(:info, "Declined invitation to #{invitation.business.name}.")}
+
+          {:error, :email_mismatch} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This invitation was sent to a different email address."
+             )}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> assign(:pending_invitations, Accounts.list_pending_invitations(current_user))
+             |> put_flash(:error, "That invitation could not be declined.")}
+        end
     end
   end
 
@@ -169,6 +244,51 @@ defmodule QuantumBillingWeb.BusinessPickerLive do
             {count_line(length(@entries))}
           </p>
         </header>
+
+        <section
+          :if={@pending_invitations != []}
+          id="pending-invitations"
+          aria-label="Pending invitations"
+          class="mb-4 overflow-hidden rounded-box border border-base-300 bg-base-100"
+        >
+          <div class="border-b border-base-300 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-base-content/60">
+            Pending invitations
+          </div>
+          <ul class="divide-y divide-base-300">
+            <li
+              :for={invitation <- @pending_invitations}
+              id={"pending-invitation-#{invitation.id}"}
+              class="flex items-center justify-between gap-3 px-4 py-3"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">{invitation.business.name}</p>
+                <p class="text-xs text-base-content/55">
+                  Invited as {invitation.role} · {invitation.email}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  id={"accept-invitation-#{invitation.id}"}
+                  phx-click="accept_invitation"
+                  phx-value-id={invitation.id}
+                  class={action_button_class()}
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  id={"decline-invitation-#{invitation.id}"}
+                  phx-click="decline_invitation"
+                  phx-value-id={invitation.id}
+                  class={secondary_button_class()}
+                >
+                  Decline
+                </button>
+              </div>
+            </li>
+          </ul>
+        </section>
 
         <div
           :if={@entries == [] and not @can_create?}
