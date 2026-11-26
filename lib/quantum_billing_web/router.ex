@@ -296,6 +296,7 @@ defmodule QuantumBillingWeb.Router do
 
     live_session :current_user,
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
+      live "/invitations/:token", InvitationLive, :show
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new

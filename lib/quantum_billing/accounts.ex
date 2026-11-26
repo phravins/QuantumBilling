@@ -173,6 +173,22 @@ defmodule QuantumBilling.Accounts do
   @doc "Whether the install has no users yet. Checked, never cached."
   def bootstrap?, do: not Repo.exists?(User)
 
+  @doc "Fetches a pending invitation by raw token with :business preloaded, or 
+il."
+  def get_invitation_by_token(token) when is_binary(token) and token != "" do
+    case Invitation.by_token_query(token) do
+      {:ok, query} ->
+        query
+        |> where([i], is_nil(i.accepted_at))
+        |> preload(:business)
+        |> Repo.one()
+
+      _other ->
+        nil
+    end
+  end
+
+  def get_invitation_by_token(_token), do: nil
   @doc "The address an invitation was issued to, or `nil`."
   def invited_email(invitation_token) do
     case fetch_pending_invitation(invitation_token) do
@@ -289,12 +305,11 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc """
-  Brings `email` into `business` as `role`.
+  Invites `email` to join `business` as `role`.
 
-  Returns `{:ok, {:added, membership}}` for an existing account, or
-  `{:ok, {:invited, invitation}}` after emailing an invitation. Re-inviting
-  replaces the pending invitation. Returns `{:error, {:delivery_failed, msg}}`
-  if the email is refused.
+  Always creates a pending invitation and sends an invitation email, even when
+  `email` already has an account. Re-inviting replaces the pending invitation.
+  Returns `{:ok, {:invited, invitation}}` or `{:error, {:delivery_failed, msg}}`.
   """
   def invite(%Business{} = business, email, role, %User{} = invited_by, url_fun)
       when is_function(url_fun, 1) do
@@ -304,8 +319,8 @@ defmodule QuantumBilling.Accounts do
       normalized == "" ->
         {:error, :invalid_email}
 
-      user = get_user_by_email(normalized) ->
-        add_existing_user(business, user, role)
+      existing_member?(business, normalized) ->
+        {:error, :already_member}
 
       true ->
         {token, changeset} = Invitation.build(normalized, role, invited_by, business)
@@ -317,17 +332,75 @@ defmodule QuantumBilling.Accounts do
     end
   end
 
-  defp add_existing_user(business, user, role) do
-    if Businesses.get_membership(user, business.id) do
-      {:error, :already_member}
+  defp existing_member?(%Business{id: business_id}, normalized_email) do
+    case get_user_by_email(normalized_email) do
+      nil -> false
+      user -> Businesses.get_membership(user, business_id) != nil
+    end
+  end
+
+  @doc """
+  Lists active (unclaimed, unexpired) pending invitations addressed to `user.email`.
+  """
+  def list_pending_invitations(%User{email: email}) when is_binary(email) do
+    normalized = String.downcase(email)
+    now = DateTime.utc_now()
+
+    Repo.all(
+      from i in Invitation,
+        where:
+          fragment("lower(?)", i.email) == ^normalized and
+            is_nil(i.accepted_at) and
+            i.expires_at > ^now,
+        preload: [:business, :invited_by],
+        order_by: [desc: i.inserted_at]
+    )
+  end
+
+  @doc """
+  Accepts a pending `invitation` for a signed-in `user`, atomically claiming it
+  and creating the membership with the invited role. Rejects if addressed to a
+  different email.
+  """
+  def accept_invitation(%User{} = user, %Invitation{} = invitation) do
+    if String.downcase(user.email) != String.downcase(invitation.email) do
+      {:error, :email_mismatch}
     else
-      %Membership{user_id: user.id, business_id: business.id}
-      |> Membership.changeset(role)
-      |> Repo.insert()
+      Ecto.Multi.new()
+      |> Ecto.Multi.run(:claim, fn repo, _changes ->
+        claim_invitation_record(repo, invitation)
+      end)
+      |> Ecto.Multi.insert(:membership, fn %{claim: claimed} ->
+        %Membership{user_id: user.id, business_id: claimed.business_id}
+        |> Membership.changeset(claimed.role)
+      end)
+      |> Repo.transaction()
       |> case do
-        {:ok, membership} -> {:ok, {:added, %{membership | user: user}}}
-        {:error, changeset} -> {:error, changeset}
+        {:ok, %{membership: membership}} -> {:ok, membership}
+        {:error, :claim, reason, _changes} -> {:error, reason}
+        {:error, :membership, changeset, _changes} -> {:error, changeset}
       end
+    end
+  end
+
+  @doc """
+  Declines and deletes a pending `invitation` addressed to `user.email`.
+  """
+  def decline_invitation(%User{} = user, %Invitation{} = invitation) do
+    if String.downcase(user.email) != String.downcase(invitation.email) do
+      {:error, :email_mismatch}
+    else
+      Repo.delete(invitation)
+    end
+  end
+
+  defp claim_invitation_record(repo, %Invitation{id: id} = invitation) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    query = from(i in Invitation, where: i.id == ^id, where: is_nil(i.accepted_at))
+
+    case repo.update_all(query, set: [accepted_at: now]) do
+      {1, _} -> {:ok, invitation}
+      {0, _} -> {:error, :already_accepted}
     end
   end
 
