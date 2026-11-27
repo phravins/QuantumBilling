@@ -255,13 +255,43 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
 
   defp saved_message(_existing, invoice), do: "Invoice #{invoice.invoice_number} updated."
 
+  defp credit_limit_warning(socket, invoice) do
+    with client_id when not is_nil(client_id) <- invoice.client_id,
+         client when not is_nil(client) <- Clients.get_client(client_id),
+         true <- is_integer(client.credit_limit) and client.credit_limit > 0 do
+      outstanding = Clients.outstanding(client)
+
+      previous =
+        case socket.assigns.invoice do
+          %Invoice{id: id, client_id: ^client_id, grand_total: amount, status: status}
+          when not is_nil(id) and status not in ["Paid", "Cancelled"] ->
+            amount || 0
+
+          _ ->
+            0
+        end
+
+      projected = max(outstanding - previous, 0) + (invoice.grand_total || 0)
+      currency = invoice.currency || QuantumBilling.Currency.default()
+
+      if Clients.over_credit_limit?(client, projected) do
+        "This invoice takes #{client.name} to #{QuantumBillingWeb.Format.money(projected, currency)} outstanding, over their #{QuantumBillingWeb.Format.money(client.credit_limit, currency)} credit limit."
+      end
+    else
+      _ -> nil
+    end
+  end
+
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     invoice = Ecto.Changeset.apply_changes(changeset)
+
+    warning = credit_limit_warning(socket, invoice)
 
     socket
     |> assign(:form, to_form(changeset, as: "invoice"))
     |> assign(:summary, invoice)
     |> assign(:intra_state?, Invoice.intra_state?(changeset))
+    |> assign(:credit_limit_warning, warning)
   end
 
   # A named term implies the due date; "Custom" leaves whatever is in the box.
@@ -446,6 +476,15 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
             summary={@summary}
             item_definitions={@item_definitions}
           />
+
+          <div
+            :if={@credit_limit_warning}
+            role="alert"
+            class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            <.icon name="hero-exclamation-triangle" class="mr-1 inline size-4" />
+            {@credit_limit_warning}
+          </div>
 
           <.card padding="p-4">
             <div class="mb-3 flex items-center gap-2.5">

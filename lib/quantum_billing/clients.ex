@@ -189,6 +189,12 @@ defmodule QuantumBilling.Clients do
 
   defp clamp(_value, minimum, _maximum), do: minimum
 
+  @doc "Whether projected outstanding exceeds the configured credit limit."
+  def over_credit_limit?(%Client{credit_limit: limit}, projected)
+      when is_integer(limit) and limit > 0 and is_integer(projected),
+      do: projected > limit
+
+  def over_credit_limit?(_client, _projected), do: false
   @doc "Fetches a non-binned client. Raises if missing."
   def get_client!(id), do: Repo.get!(Client.kept(), id)
 
