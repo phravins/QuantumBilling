@@ -12,10 +12,13 @@ defmodule QuantumBillingWeb.HsnSuggestions do
     * `lookup`: the row whose "Find HSN/SAC" search is open, and its query.
     * `suggested`: rows whose code was filled from a suggestion and not yet
       edited by hand; they carry a "Suggested" tag.
-    * `manual`: rows whose code or rate was typed by hand. Picking a
-      suggestion there asks first (`data-confirm`), so a typed value is
-      never replaced without the user saying so.
+    * `manual`: rows whose code or rate was typed by hand in this session.
     * `notice`: the "please verify" note after a pick, for a few seconds.
+
+  Picking a suggestion asks first (`data-confirm`, see `confirm_pick?/5`)
+  when it would replace a code or GST rate that did not come from a
+  suggestion: typed by hand, saved on the document or copied from a
+  quotation. So nothing the user chose is replaced without them saying so.
 
   Adding or removing a row closes the panel and carries the manual and
   suggested flags to each surviving row's new index.
@@ -24,6 +27,8 @@ defmodule QuantumBillingWeb.HsnSuggestions do
   import Phoenix.Component, only: [assign: 3]
 
   alias QuantumBilling.HsnFinder
+  alias QuantumBilling.Settings.Organization
+  alias QuantumBillingWeb.DocumentForm
 
   @notice_ms 6_000
 
@@ -155,9 +160,66 @@ defmodule QuantumBillingWeb.HsnSuggestions do
   end
 
   defp put_rate(item, rate) do
-    if to_string(rate) in Enum.map(QuantumBilling.Settings.Organization.gst_rates(), &to_string/1),
-      do: Map.put(item, "tax_rate", to_string(rate)),
-      else: item
+    case applied_rate(rate) do
+      nil -> item
+      rate -> Map.put(item, "tax_rate", rate)
+    end
+  end
+
+  # The rate a pick puts on the row, as the form sends it ("18"), or nil
+  # when the form does not offer it and the row keeps its own.
+  defp applied_rate(rate) do
+    rate = to_string(rate)
+    if rate in Enum.map(Organization.gst_rates(), &to_string/1), do: rate
+  end
+
+  @doc """
+  Whether picking `option` on row `index` asks first. `code` and `rate` are
+  the row's values as they are now.
+
+  It asks when the pick would replace a code or GST rate that did not come
+  from a suggestion: one typed by hand in this session (the row is in
+  `manual`), or one already on the row when the form opened (saved on the
+  document, copied from a quotation, restored after a reconnect). It does
+  not ask on a row filled from a suggestion and not edited since, nor on a
+  new row whose rate is still the default.
+  """
+  def confirm_pick?(hsn, index, code, rate, option) do
+    cond do
+      MapSet.member?(hsn.suggested, index) -> false
+      MapSet.member?(hsn.manual, index) -> true
+      true -> replaces_code?(code, option) or replaces_rate?(rate, option)
+    end
+  end
+
+  defp replaces_code?(code, option) do
+    code = code |> to_string() |> String.trim()
+    code != "" and code != option.code
+  end
+
+  defp replaces_rate?(rate, option) do
+    rate = to_string(rate)
+    new_rate = applied_rate(option.rate)
+
+    new_rate != nil and new_rate != rate and rate not in ["", default_rate()]
+  end
+
+  # What a new line starts with; a row still on it has no rate of its own.
+  defp default_rate, do: DocumentForm.blank_item(0)["tax_rate"]
+
+  @doc "The question `data-confirm` asks before a pick replaces a row's values."
+  def confirm_message(option) do
+    type = option.type |> to_string() |> String.upcase()
+
+    case applied_rate(option.rate) do
+      nil ->
+        "This line already has its own HSN/SAC or GST rate. " <>
+          "Use #{type} #{option.code} instead? The GST rate stays as it is."
+
+      rate ->
+        "This line already has its own HSN/SAC or GST rate. " <>
+          "Replace them with #{type} #{option.code} at #{rate}%?"
+    end
   end
 
   @doc """

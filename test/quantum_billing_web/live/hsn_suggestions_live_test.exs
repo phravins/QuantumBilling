@@ -250,6 +250,52 @@ defmodule QuantumBillingWeb.HsnSuggestionsLiveTest do
 
       refute has_element?(view, option(0, "9401") <> "[data-confirm]")
     end
+
+    test "a code saved on the invoice makes picking ask first", %{conn: conn} do
+      {:ok, invoice} =
+        Invoices.create_invoice(%{
+          "invoice_date" => "2026-11-01",
+          "place_of_supply" => "Maharashtra (27)",
+          "client_name" => "Earlier Client",
+          "items" => %{"0" => line("Consulting", %{"hsn_sac" => "998313"})}
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}/edit")
+
+      # Through form/3, so the row's stored id and order go with it.
+      view
+      |> form("#invoice-form", %{
+        "invoice" => %{"items" => %{"0" => %{"description" => "Office chair"}}}
+      })
+      |> render_change(%{"_target" => ["invoice", "items", "0", "description"]})
+
+      assert has_element?(view, option(0, "9401") <> "[data-confirm]")
+    end
+  end
+
+  describe "keyboard" do
+    test "the hook is wired on invoices and quotations", %{conn: conn} do
+      hook = "QuantumBillingWeb.DocumentFormComponents.HsnSuggest"
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/new")
+      assert has_element?(view, ~s(#invoice-items[phx-hook="#{hook}"]))
+
+      {:ok, view, _html} = live(conn, ~p"/quotations/new")
+      assert has_element?(view, ~s(#quotation-items[phx-hook="#{hook}"]))
+    end
+
+    test "marks the fields the arrow keys and Enter work from", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/invoices/new")
+
+      assert has_element?(view, ~s(input[name="invoice[items][0][description]"][data-hsn-input]))
+      assert has_element?(view, ~s(input[name="invoice[items][0][hsn_sac]"][data-hsn-input]))
+      refute has_element?(view, ~s(input[name="invoice[items][0][quantity]"][data-hsn-input]))
+
+      type(view, %{"0" => line("Zxqv widget")}, 0, "description")
+      view |> element("#invoice-hsn-find-0") |> render_click()
+
+      assert has_element?(view, "#invoice-hsn-lookup-0[data-hsn-lookup]")
+    end
   end
 
   describe "no match (criterion 5)" do

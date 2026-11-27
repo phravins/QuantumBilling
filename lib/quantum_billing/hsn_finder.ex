@@ -464,12 +464,18 @@ defmodule QuantumBilling.HsnFinder do
   end
 
   # This business's own lines (invoices and quotations not in the Bin) that
-  # share a word with the description and carry an HSN/SAC: grouped by code
-  # and rate, most shared words first, then most used.
+  # share a word with the description (singular or plural, as `matches?/2`)
+  # and carry an HSN/SAC: grouped by code and rate, most shared words first,
+  # then most used. SQL only narrows the lines ("milk" is also in
+  # "milkshake"); `matches?/2` decides.
   defp history(words) do
     import Ecto.Query, only: [from: 2]
 
-    patterns = Enum.map(words, &("%" <> escape_like(&1) <> "%"))
+    patterns =
+      words
+      |> Enum.flat_map(&like_forms/1)
+      |> Enum.uniq()
+      |> Enum.map(&("%" <> escape_like(&1) <> "%"))
 
     invoice_lines =
       from i in QuantumBilling.Invoices.InvoiceItem,
@@ -514,8 +520,29 @@ defmodule QuantumBilling.HsnFinder do
 
       {suggestion, score, length(lines)}
     end)
+    |> Enum.filter(fn {_suggestion, score, _uses} -> score > 0 end)
     |> Enum.sort_by(fn {suggestion, score, uses} -> {-score, -uses, suggestion.code} end)
     |> Enum.map(&elem(&1, 0))
+  end
+
+  # Text a stored line holds when it has `word`, its singular or its plural.
+  # The singular is inside most plurals ("chair" in "chairs", "box" in
+  # "boxes"); "batteries" does not hold "battery", so it gets a pattern of
+  # its own. A three-letter word keeps itself: "gas" as "ga" would match
+  # nearly every line and fill the row limit.
+  defp like_forms(word) do
+    singular = singular(word)
+
+    cond do
+      String.length(singular) < 3 ->
+        [word]
+
+      Regex.match?(~r/[^aeiou]y\z/, singular) ->
+        [singular, String.slice(singular, 0..-2//1) <> "ies"]
+
+      true ->
+        [singular]
+    end
   end
 
   defp escape_like(word), do: String.replace(word, ~r/[\\%_]/, "\\\\\\0")

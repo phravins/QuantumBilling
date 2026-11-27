@@ -106,5 +106,34 @@ defmodule QuantumBilling.HsnSuggestTest do
 
       assert length(HsnFinder.suggest("Garden chair")) == 5
     end
+
+    test "a past line that shares no whole word is not suggested" do
+      # "milk" is inside "milkshake", but a milkshake mixer is not milk.
+      billed("Milkshake mixer", "8509", 18)
+
+      suggestions = HsnFinder.suggest("Milk")
+
+      refute "8509" in codes(suggestions)
+      assert [%{code: "0401", source: :catalogue} | _] = suggestions
+    end
+
+    test "a singular finds a plural line, and a plural a singular one" do
+      billed("Office chair", "940130", 18)
+      billed("AA batteries", "850610", 18)
+
+      assert "940130" in codes(HsnFinder.suggest("Chairs"))
+      assert "850610" in codes(HsnFinder.suggest("Battery"))
+      assert "850610" in codes(HsnFinder.suggest("Batteries"))
+    end
+
+    test "a short word still finds its own lines" do
+      billed("LPG gas refill", "271111", 5)
+      billed("Garden hose", "391740", 18)
+
+      suggestions = HsnFinder.suggest("Gas")
+
+      assert "271111" in codes(suggestions)
+      refute "391740" in codes(suggestions)
+    end
   end
 end

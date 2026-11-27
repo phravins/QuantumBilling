@@ -25,6 +25,7 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
   alias QuantumBilling.Settings.Organization
   alias QuantumBilling.Tax
   alias QuantumBilling.TaxRates.TaxRate
+  alias QuantumBillingWeb.HsnSuggestions
 
   attr :step, :integer, required: true
   attr :title, :string, required: true
@@ -230,8 +231,11 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
             </tr>
           </thead>
 
-          <%!-- inputs_for keeps stored row ids (no duplicate rows on edit); skip_hidden because an input is invalid directly in tbody. --%>
-          <tbody id={"#{@form.name}-items"} phx-hook={@hsn && ".HsnSuggest"}>
+          <%!-- inputs_for keeps stored row ids (no duplicate rows on edit); skip_hidden because an input is invalid directly in tbody.
+               phx-hook must be a plain string: LiveView only expands ".HsnSuggest" to the
+               full hook name then. The hook does nothing while no HSN/SAC panel is open
+               (always, on a VAT form). --%>
+          <tbody id={"#{@form.name}-items"} phx-hook=".HsnSuggest">
             <.inputs_for :let={item_f} field={@form[:items]} skip_hidden>
               <tr
                 id={"#{@form.name}-item-#{item_f.index}"}
@@ -259,6 +263,7 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
                     required
                     phx-debounce={@hsn && "300"}
                     autocomplete={@hsn && "off"}
+                    data-hsn-input={@hsn != nil}
                     class={form_input_class()}
                   />
                 </td>
@@ -273,6 +278,7 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
                     phx-debounce={@hsn && "300"}
                     autocomplete={@hsn && "off"}
                     aria-describedby={@hsn && "#{@form.name}-hsn-note-#{item_f.index}"}
+                    data-hsn-input={@hsn != nil}
                     class={form_input_class()}
                   />
                   <.hsn_assist :if={@hsn} hsn={@hsn} form={@form} index={to_string(item_f.index)} />
@@ -404,6 +410,8 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
                     hsn={@hsn}
                     form={@form}
                     index={to_string(item_f.index)}
+                    code={item_f[:hsn_sac].value}
+                    rate={item_f[:tax_rate].value}
                   />
                 </td>
               </tr>
@@ -425,6 +433,52 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
           </tbody>
         </table>
       </div>
+
+      <%!-- The <tbody> hook above. Extracted at compile time; renders nothing. --%>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".HsnSuggest">
+        // Keyboard for a row's HSN/SAC suggestions, while they are open:
+        //   * ArrowDown / ArrowUp, from the row's description or HSN/SAC box,
+        //     the "Find HSN/SAC" search or a suggestion, move through the
+        //     suggestions. Other fields (quantity, the GST rate) keep their keys.
+        //   * Enter picks the focused suggestion (they are buttons). In the
+        //     search box it moves to the first result and never submits, so
+        //     it cannot save the document.
+        //   * Escape closes the suggestions.
+        export default {
+          mounted() {
+            this.el.addEventListener("keydown", (event) => {
+              if (event.isComposing || !this.el.querySelector("[data-hsn-panel]")) return
+
+              if (event.key === "Escape") {
+                event.preventDefault()
+                this.pushEvent("close_hsn", {})
+                return
+              }
+
+              const options = [...this.el.querySelectorAll("[data-hsn-option]")]
+
+              if (event.key === "Enter" && event.target.matches("[data-hsn-lookup]")) {
+                event.preventDefault()
+                if (options.length > 0) options[0].focus()
+                return
+              }
+
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+              if (!event.target.matches("[data-hsn-input], [data-hsn-lookup], [data-hsn-option]")) return
+              if (options.length === 0) return
+
+              event.preventDefault()
+              const at = options.indexOf(document.activeElement)
+              const next =
+                event.key === "ArrowDown"
+                  ? (at + 1) % options.length
+                  : (at - 1 + options.length) % options.length
+
+              options[next].focus()
+            })
+          }
+        }
+      </script>
 
       <p :for={msg <- item_errors(@form)} class="mt-2 flex items-center gap-1 text-2xs text-error">
         <.icon name="hero-exclamation-circle" class="size-3.5 shrink-0" />{msg}
@@ -607,8 +661,9 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
   attr :form, Phoenix.HTML.Form, required: true
   attr :index, :string, required: true
 
-  # Under the HSN/SAC box: the "Suggested" tag, the "please verify" note,
-  # and the suggestions or the "Find HSN/SAC" search for this row.
+  # Under the HSN/SAC box: the "Suggested" tag and the "please verify" note
+  # for screen readers. The suggestions and the search are in the row below
+  # (`hsn_panel/1`); their keyboard hook is in `items_section/1`.
   defp hsn_assist(assigns) do
     assigns =
       assigns
@@ -629,49 +684,18 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
     <p id={"#{@form.name}-hsn-note-#{@index}"} aria-live="polite" class="sr-only">
       {@notice}
     </p>
-
-    <script :type={Phoenix.LiveView.ColocatedHook} name=".HsnSuggest">
-      // Arrow keys move through a row's HSN/SAC suggestions; Enter picks
-      // (the options are buttons); Escape closes them.
-      export default {
-        mounted() {
-          this.el.addEventListener("keydown", (event) => {
-            const options = [...this.el.querySelectorAll("[data-hsn-option]")]
-            const panel = this.el.querySelector("[data-hsn-panel]")
-
-            if (event.key === "Escape" && panel) {
-              event.preventDefault()
-              this.pushEvent("close_hsn", {})
-              return
-            }
-
-            if (options.length === 0) return
-            const at = options.indexOf(document.activeElement)
-
-            if (event.key === "ArrowDown") {
-              event.preventDefault()
-              options[(at + 1) % options.length].focus()
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault()
-              options[(at - 1 + options.length) % options.length].focus()
-            }
-          })
-        }
-      }
-    </script>
     """
   end
 
   attr :hsn, :map, required: true
   attr :form, Phoenix.HTML.Form, required: true
   attr :index, :string, required: true
+  attr :code, :any, default: nil, doc: "the row's HSN/SAC as it is now"
+  attr :rate, :any, default: nil, doc: "the row's GST rate as it is now"
 
   # The suggestions for a row, or its "Find HSN/SAC" search.
   defp hsn_panel(assigns) do
-    assigns =
-      assigns
-      |> assign(:manual?, MapSet.member?(assigns.hsn.manual, assigns.index))
-      |> assign(:lookup?, assigns.hsn.lookup == assigns.index)
+    assigns = assign(assigns, :lookup?, assigns.hsn.lookup == assigns.index)
 
     ~H"""
     <div
@@ -692,18 +716,21 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
           phx-debounce="300"
           phx-mounted={Phoenix.LiveView.JS.focus()}
           autocomplete="off"
+          data-hsn-lookup
           class={form_input_class()}
         />
         <.hsn_options
-          options={QuantumBillingWeb.HsnSuggestions.lookup_results(@hsn)}
+          options={HsnSuggestions.lookup_results(@hsn)}
+          hsn={@hsn}
           form={@form}
           index={@index}
-          manual?={@manual?}
+          code={@code}
+          rate={@rate}
         />
         <p
           :if={
             String.trim(@hsn.query) != "" and
-              QuantumBillingWeb.HsnSuggestions.lookup_results(@hsn) == []
+              HsnSuggestions.lookup_results(@hsn) == []
           }
           class="px-1 py-2 text-xs text-base-content/60"
         >
@@ -713,7 +740,14 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
         <p class="px-1 pb-1 text-2xs font-semibold uppercase tracking-wider text-base-content/45">
           {if @hsn.from == :code, do: "Matching codes", else: "Suggested HSN/SAC"}
         </p>
-        <.hsn_options options={@hsn.list} form={@form} index={@index} manual?={@manual?} />
+        <.hsn_options
+          options={@hsn.list}
+          hsn={@hsn}
+          form={@form}
+          index={@index}
+          code={@code}
+          rate={@rate}
+        />
         <p :if={@hsn.list == []} class="px-1 py-2 text-xs text-base-content/60">
           No match. Nothing has been filled in.
         </p>
@@ -757,10 +791,14 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
     do: hsn_panel_open?(hsn, index) or notice_for(hsn.notice, index) != nil
 
   attr :options, :list, required: true
+  attr :hsn, :map, required: true
   attr :form, Phoenix.HTML.Form, required: true
   attr :index, :string, required: true
-  attr :manual?, :boolean, required: true
+  attr :code, :any, required: true
+  attr :rate, :any, required: true
 
+  # A pick that would replace a code or rate the user did not get from a
+  # suggestion asks first (`HsnSuggestions.confirm_pick?/5`).
   defp hsn_options(assigns) do
     ~H"""
     <ul
@@ -780,8 +818,8 @@ defmodule QuantumBillingWeb.DocumentFormComponents do
           phx-value-code={option.code}
           phx-value-rate={option.rate}
           data-confirm={
-            @manual? &&
-              "Replace the HSN/SAC and GST rate you entered on this line with #{type_label(option)} #{option.code} at #{option.rate}%?"
+            HsnSuggestions.confirm_pick?(@hsn, @index, @code, @rate, option) &&
+              HsnSuggestions.confirm_message(option)
           }
           class="flex w-full flex-col gap-0.5 rounded-field px-2 py-1.5 text-left hover:bg-base-200 focus:bg-base-200 focus:outline-none"
         >
