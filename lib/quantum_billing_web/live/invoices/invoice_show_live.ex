@@ -246,6 +246,93 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
     {:noreply, if(show?, do: assign_creditable(socket), else: socket)}
   end
 
+  def handle_event("toggle_cancel_irn_modal", _params, socket) do
+    {:noreply,
+     assign(socket, :show_cancel_irn_modal, !Map.get(socket.assigns, :show_cancel_irn_modal, false))}
+  end
+
+  def handle_event("cancel_einvoice", %{"reason_code" => reason_code, "remarks" => remarks}, socket) do
+    user = socket.assigns[:current_user]
+    opts = if user, do: [user_id: user.id], else: []
+
+    case Invoices.cancel_e_invoice(socket.assigns.invoice, reason_code, remarks, opts) do
+      {:ok, updated_invoice} ->
+        msg =
+          if Invoice.demo_irn?(updated_invoice) do
+            "e-Invoice (IRN) cancellation simulated in sandbox mode."
+          else
+            "e-Invoice (IRN) cancelled successfully on IRP."
+          end
+
+        {:noreply,
+         socket
+         |> put_flash(:info, msg)
+         |> assign(:invoice, QuantumBilling.Repo.preload(updated_invoice, :items))
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :statutory_window_expired} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "Statutory 24-hour cancellation window has expired. Please issue a Credit Note instead."
+         )
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :live_e_way_bill} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "Cannot cancel e-invoice: an active e-way bill is attached to this invoice. Please cancel the e-way bill first."
+         )
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :has_notes} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "Cannot cancel e-invoice: this invoice has active credit or debit notes. Please cancel the notes first."
+         )
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :invalid_cancellation_reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Invalid cancellation reason code. Must be 1, 2, 3, or 4.")
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :blank_cancellation_remarks} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Cancellation remarks cannot be blank.")
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :cancellation_remarks_too_long} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Cancellation remarks cannot exceed 100 characters.")
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :live_cancellation_unavailable} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Live IRP cancellation is unavailable. Please configure live credentials or use demo mode.")
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, :already_cancelled} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "This invoice is already cancelled.")
+         |> assign(:show_cancel_irn_modal, false)}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Failed to cancel e-invoice: #{inspect(reason)}")}
+    end
+  end
+
   def handle_info({:invoice_changed, %{id: id}}, socket) do
     if id == socket.assigns.invoice.id do
       {:noreply, refresh_invoice(socket)}
@@ -324,7 +411,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       <div class="mb-6 space-y-3">
         <div
-          :if={@invoice.irn && !Invoice.demo_irn?(@invoice)}
+          :if={@invoice.irn && !Invoice.demo_irn?(@invoice) && !Invoice.irn_cancelled?(@invoice)}
           id="irn-panel"
           class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4"
         >
@@ -357,7 +444,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
         <%!-- A demo IRN looks exactly like a real one; this panel must not. --%>
         <div
-          :if={Invoice.demo_irn?(@invoice)}
+          :if={Invoice.demo_irn?(@invoice) && !Invoice.irn_cancelled?(@invoice)}
           id="demo-irn-panel"
           class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"
         >
@@ -386,6 +473,29 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             >
               <.icon name="hero-qr-code" class="size-4" /> View Demo QR Code
             </button>
+          </div>
+        </div>
+
+        <div
+          :if={Invoice.irn_cancelled?(@invoice)}
+          id="irn-cancelled-panel"
+          class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4"
+        >
+          <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">
+                <.icon name="hero-x-circle" class="size-3.5" /> e-Invoice Cancelled
+              </span>
+              <span class="text-xs text-base-content/60">
+                Reason: <strong class="text-base-content">{@invoice.irn_cancellation_reason}</strong>
+              </span>
+            </div>
+            <p class="font-mono text-xs text-rose-400 break-all">
+              IRN: {@invoice.irn}
+            </p>
+            <p :if={@invoice.irn_cancellation_remarks} class="text-xs text-base-content/70">
+              Remarks: {@invoice.irn_cancellation_remarks}
+            </p>
           </div>
         </div>
 
@@ -756,6 +866,61 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           </form>
         </div>
       </div>
+
+      <div
+        :if={Map.get(assigns, :show_cancel_irn_modal, false)}
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      >
+        <div class="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-6 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between border-b border-base-200 pb-3">
+            <h3 class="text-base font-bold text-error flex items-center gap-2">
+              <.icon name="hero-exclamation-triangle" class="size-5" />
+              Cancel e-Invoice (IRN)
+            </h3>
+            <button
+              type="button"
+              phx-click="toggle_cancel_irn_modal"
+              class="text-base-content/50 hover:text-base-content"
+            >
+              <.icon name="hero-x-mark" class="size-5" />
+            </button>
+          </div>
+
+          <p class="text-xs text-base-content/70">
+            Under Rule 48(4) of CGST Rules, an IRN can only be cancelled within <strong>24 hours</strong> of generation.
+            Once cancelled on the government portal, it cannot be regenerated with the same invoice number.
+          </p>
+
+          <form phx-submit="cancel_einvoice" class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold mb-1">Cancellation Reason <span class="text-error">*</span></label>
+              <select name="reason_code" class="select select-bordered w-full text-xs" required>
+                <option value="1">1 - Duplicate</option>
+                <option value="2">2 - Data Entry Mistake</option>
+                <option value="3">3 - Order Cancelled</option>
+                <option value="4">4 - Others</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold mb-1">Remarks <span class="text-error">*</span></label>
+              <input
+                type="text"
+                name="remarks"
+                maxlength="100"
+                placeholder="Reason for cancelling this e-invoice (max 100 characters)"
+                class="input input-bordered w-full text-xs"
+                required
+              />
+            </div>
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-base-200">
+              <button type="button" phx-click="toggle_cancel_irn_modal" class="btn btn-sm btn-ghost">Back</button>
+              <button type="submit" class="btn btn-sm btn-error">Confirm Cancellation</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </Layouts.app>
     <script :type={Phoenix.LiveView.ColocatedHook} name=".CopyPaymentLink">
       export default {
@@ -880,7 +1045,7 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
 
       <div class="flex-1 space-y-4 overflow-y-auto p-3">
         <section
-          :if={@gst_tools and (@invoice.status != "E-Invoice Generated" or is_nil(@e_way_bill))}
+          :if={@gst_tools and (@invoice.status != "E-Invoice Generated" or is_nil(@e_way_bill) or (@invoice.irn && !Invoice.irn_cancelled?(@invoice)))}
           id="drawer-gst-tools"
         >
           <h3 class={drawer_group_class()}>E-Invoice &amp; E-Way Bill</h3>
@@ -892,6 +1057,14 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
             label="1-Click Generate IRN"
             hint="Register this invoice with the IRP"
             phx-click={JS.push("generate_einvoice") |> hide_drawer()}
+          />
+          <.drawer_item
+            :if={@invoice.irn && !Invoice.irn_cancelled?(@invoice)}
+            id="drawer-cancel-irn"
+            icon="hero-x-circle"
+            label="Cancel e-Invoice (IRN)"
+            hint="Cancel IRN on government portal within statutory 24-hr window"
+            phx-click={JS.push("toggle_cancel_irn_modal") |> hide_drawer()}
           />
           <.drawer_item
             :if={is_nil(@e_way_bill)}

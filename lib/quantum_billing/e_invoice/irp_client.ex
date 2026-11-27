@@ -23,6 +23,73 @@ defmodule QuantumBilling.EInvoice.IRPClient do
     end
   end
 
+  @doc """
+  Cancels an IRN on the IRP API or sandbox emulator.
+  Reason code must be statutory code "1" (Duplicate), "2" (Data Entry Mistake), "3" (Order Cancelled), or "4" (Others).
+  """
+  def cancel_irn(irn, reason_code, remarks, opts \\ []) when is_binary(irn) do
+    mode = Keyword.get(opts, :mode, "live")
+    force_sandbox = Keyword.get(opts, :force_sandbox, false)
+
+    cond do
+      mode == "demo" or force_sandbox ->
+        simulate_irp_cancellation(irn, reason_code, remarks)
+
+      not live?() ->
+        {:error, :live_cancellation_unavailable}
+
+      true ->
+        do_live_cancel_irn(irn, reason_code, remarks, opts)
+    end
+  end
+
+  defp simulate_irp_cancellation(irn, _reason_code, _remarks) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {:ok, %{irn: irn, cancel_date: now}}
+  end
+
+  defp do_live_cancel_irn(irn, reason_code, remarks, opts) do
+    endpoint = System.get_env("IRP_API_URL", @default_endpoint)
+    client_id = System.get_env("IRP_CLIENT_ID")
+    client_secret = System.get_env("IRP_CLIENT_SECRET")
+    user_gstin = Keyword.get(opts, :gstin) || System.get_env("IRP_GSTIN", "27AABCU9603R1ZM")
+
+    json_payload = %{
+      "Irn" => irn,
+      "CnlRsn" => to_string(reason_code),
+      "CnlRem" => remarks || "Cancelled"
+    }
+
+    req =
+      Req.new(
+        base_url: endpoint,
+        headers: [
+          {"content-type", "application/json"},
+          {"client-id", client_id},
+          {"client-secret", client_secret},
+          {"gstin", user_gstin}
+        ]
+      )
+
+    case Req.post(req, url: "/einv/api/invoice/cancel", json: json_payload) do
+      {:ok, %{status: 200, body: %{"status" => "1", "data" => data}}} ->
+        {:ok,
+         %{
+           irn: data["Irn"] || irn,
+           cancel_date: parse_ack_date(data["CancelDate"])
+         }}
+
+      {:ok, %{status: 200, body: %{"error" => errors}}} ->
+        {:error, format_errors(errors)}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, "IRP API returned HTTP #{status}: #{inspect(body)}"}
+
+      {:error, exception} ->
+        {:error, "HTTP connection error: #{Exception.message(exception)}"}
+    end
+  end
+
   defp do_live_generate_irn(%Invoice{} = invoice) do
     endpoint = System.get_env("IRP_API_URL", @default_endpoint)
     client_id = System.get_env("IRP_CLIENT_ID")
@@ -119,9 +186,22 @@ defmodule QuantumBilling.EInvoice.IRPClient do
   defp parse_ack_date(nil), do: DateTime.utc_now() |> DateTime.truncate(:second)
 
   defp parse_ack_date(date_str) when is_binary(date_str) do
-    case DateTime.from_iso8601(date_str) do
-      {:ok, dt, _offset} -> dt
-      _ -> DateTime.utc_now() |> DateTime.truncate(:second)
+    cleaned = String.trim(date_str) |> String.replace(" ", "T")
+
+    case DateTime.from_iso8601(cleaned) do
+      {:ok, dt, _offset} ->
+        DateTime.shift_zone!(dt, "Etc/UTC")
+
+      _ ->
+        case NaiveDateTime.from_iso8601(cleaned) do
+          {:ok, ndt} ->
+            ndt
+            |> DateTime.from_naive!("Etc/UTC")
+            |> DateTime.add(-19800, :second)
+
+          _ ->
+            DateTime.utc_now() |> DateTime.truncate(:second)
+        end
     end
   end
 

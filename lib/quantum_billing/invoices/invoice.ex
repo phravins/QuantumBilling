@@ -115,6 +115,9 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :signed_invoice, :string
     # "live" when the IRP registered the IRN; "demo" when it was simulated.
     field :irn_mode, :string
+    field :irn_cancelled_at, :utc_datetime
+    field :irn_cancellation_reason, :string
+    field :irn_cancellation_remarks, :string
 
     has_many :e_way_bills, QuantumBilling.EWayBills.EWayBill
 
@@ -320,6 +323,31 @@ defmodule QuantumBilling.Invoices.Invoice do
 
   @doc "True when the invoice carries an IRN that was simulated, not registered with the IRP."
   def demo_irn?(%__MODULE__{irn: irn, irn_mode: mode}), do: is_binary(irn) and mode != "live"
+
+  @doc "Whether the invoice has a cancelled IRN."
+  def irn_cancelled?(%__MODULE__{irn_cancelled_at: %DateTime{}}), do: true
+  def irn_cancelled?(_), do: false
+
+  @doc "Whether the invoice is within the statutory 24-hour cancellation window from ack_date."
+  def within_24_hour_irn_window?(%__MODULE__{ack_date: %DateTime{} = ack_date}) do
+    now = DateTime.utc_now()
+    DateTime.diff(now, ack_date, :second) <= 24 * 3600
+  end
+
+  def within_24_hour_irn_window?(_), do: false
+
+  @irn_cancellation_reasons [
+    {"1", "Duplicate"},
+    {"2", "Data Entry Mistake"},
+    {"3", "Order Cancelled"},
+    {"4", "Others"}
+  ]
+
+  @irn_cancellation_reason_codes Enum.map(@irn_cancellation_reasons, &elem(&1, 0))
+
+  def irn_cancellation_reasons, do: @irn_cancellation_reasons
+  def irn_cancellation_reason_codes, do: @irn_cancellation_reason_codes
+  def valid_irn_cancellation_reason?(code), do: code in @irn_cancellation_reason_codes
 
   @doc """
   Records the IRP's answer on the invoice. `irn_mode` comes from the IRP client, never a form.

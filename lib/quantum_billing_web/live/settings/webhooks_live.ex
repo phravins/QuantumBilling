@@ -13,6 +13,7 @@ defmodule QuantumBillingWeb.SettingsLive.Webhooks do
     "invoice.updated" => "An invoice is edited",
     "invoice.paid" => "A payment is recorded against an invoice",
     "invoice.cancelled" => "An invoice is cancelled",
+    "invoice.irn_cancelled" => "An e-invoice IRN is cancelled with the IRP",
     "invoice.e_invoice_generated" => "An IRN is registered",
     "invoice.e_invoice_failed" => "E-invoice registration fails",
     "client.created" => "A client is added",

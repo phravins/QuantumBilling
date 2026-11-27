@@ -25,6 +25,13 @@ defmodule QuantumBilling.EInvoice.IRPClientTest do
     assert result.mode == "demo"
   end
 
+  test "cancel_irn/4 simulates realistic IRP cancellation response in sandbox mode" do
+    irn = "9876543210abcdef9876543210abcdef9876543210abcdef9876543210abcdef"
+    assert {:ok, result} = IRPClient.cancel_irn(irn, "2", "Data Entry Error", force_sandbox: true)
+    assert result.irn == irn
+    assert %DateTime{} = result.cancel_date
+  end
+
   describe "live?/0" do
     setup do
       saved = Map.new(~w(IRP_CLIENT_ID IRP_CLIENT_SECRET IRP_SANDBOX), &{&1, System.get_env(&1)})

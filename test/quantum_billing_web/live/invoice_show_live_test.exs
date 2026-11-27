@@ -381,4 +381,67 @@ defmodule QuantumBillingWeb.InvoiceShowLiveTest do
       assert has_element?(view, ~s(#ewb-mode-badge[data-mode="demo"]))
     end
   end
+
+  describe "e-invoice IRN cancellation" do
+    defp with_irn(invoice, mode, ack_date) do
+      invoice
+      |> QuantumBilling.Invoices.Invoice.einvoice_changeset(%{
+        irn: String.duplicate("b", 64),
+        ack_number: "112010000000002",
+        ack_date: ack_date,
+        signed_qr_code: "qr",
+        signed_invoice: "jwt",
+        irn_mode: mode,
+        status: "E-Invoice Generated"
+      })
+      |> QuantumBilling.Repo.update!()
+    end
+
+    test "cancels e-invoice within 24 hours and displays cancelled state", %{conn: conn} do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      invoice = create_invoice() |> with_irn("demo", DateTime.add(now, -3600, :second))
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      assert has_element?(view, "#demo-irn-panel")
+      refute has_element?(view, "#irn-cancelled-panel")
+
+      # Open modal
+      view |> element("#drawer-cancel-irn") |> render_click()
+
+      # Submit cancellation
+      view
+      |> form("form[phx-submit=cancel_einvoice]", %{
+        "reason_code" => "1",
+        "remarks" => "Duplicate entry created accidentally"
+      })
+      |> render_submit()
+
+      # Panel now shows cancelled state
+      assert has_element?(view, "#irn-cancelled-panel")
+      refute has_element?(view, "#demo-irn-panel")
+      assert render(view) =~ "Duplicate entry created accidentally"
+    end
+
+    test "refuses cancellation when 24-hour window has expired and prompts for Credit Note", %{conn: conn} do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      # Registered 26 hours ago
+      invoice = create_invoice() |> with_irn("demo", DateTime.add(now, -26 * 3600, :second))
+
+      {:ok, view, _html} = live(conn, ~p"/invoices/#{invoice.id}")
+
+      # Trigger cancellation submission
+      html =
+        view
+        |> form("form[phx-submit=cancel_einvoice]", %{
+          "reason_code" => "2",
+          "remarks" => "Order cancelled"
+        })
+        |> render_submit()
+
+      assert html =~ "Statutory 24-hour cancellation window has expired"
+      assert html =~ "Credit Note"
+      refute has_element?(view, "#irn-cancelled-panel")
+    end
+  end
 end
