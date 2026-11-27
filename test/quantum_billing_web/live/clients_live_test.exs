@@ -16,6 +16,11 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
 
     assert has_element?(view, "#clients-search")
     assert html =~ "All Status"
+
+    assert has_element?(
+             view,
+             ~s(#client-status-filter-trigger[aria-haspopup="menu"][aria-expanded="false"])
+           )
   end
 
   test "shows an empty state rather than a bare table", %{conn: conn} do
@@ -57,7 +62,10 @@ defmodule QuantumBillingWeb.ClientsLiveTest do
     assert has_element?(view, "#clients-export[href^='/clients/export?']")
 
     view |> form("#clients-search", %{"q" => "Acme"}) |> render_change()
-    view |> element("a[phx-click=filter_status][phx-value-status=Inactive]") |> render_click()
+
+    view
+    |> element("button[phx-click=filter_status][phx-value-status=Inactive]")
+    |> render_click()
 
     assert has_element?(view, "#clients-export[href*='q=Acme'][href*='status=Inactive']")
   end

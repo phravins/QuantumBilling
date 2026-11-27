@@ -51,6 +51,11 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
     assert html =~ "Search invoices..."
     assert has_element?(view, "#invoice-search")
     assert html =~ "All Status"
+
+    assert has_element?(
+             view,
+             ~s(#invoice-status-filter-trigger[aria-haspopup="menu"][aria-expanded="false"])
+           )
   end
 
   test "shows an empty state rather than a bare table", %{conn: conn} do
@@ -194,6 +199,11 @@ defmodule QuantumBillingWeb.InvoicesLiveTest do
 
       assert has_element?(view, "#invoice-#{invoice.id}")
       assert html =~ "All Status"
+
+      assert has_element?(
+               view,
+               ~s(#invoice-status-filter-trigger[aria-haspopup="menu"][aria-expanded="false"])
+             )
     end
 
     test "deleting an invoice moves it to the Bin", %{conn: conn} do

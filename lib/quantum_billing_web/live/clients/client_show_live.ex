@@ -179,40 +179,36 @@ defmodule QuantumBillingWeb.ClientShowLive do
           <div class="flex flex-wrap items-center justify-end gap-2">
             <.status_badge status={@client.status} />
 
-            <div class="dropdown dropdown-end">
-              <div
-                tabindex="0"
-                role="button"
-                class={secondary_button_class()}
-                aria-label={"Change status for #{@client.name}"}
-              >
+            <.action_menu
+              id="client-detail-status"
+              label={"Change status for #{@client.name}"}
+              trigger_class={secondary_button_class()}
+              menu_class="w-44"
+            >
+              <:trigger>
                 <.icon name="hero-arrow-path" class="size-4" /> Status
-              </div>
-
-              <ul
-                tabindex="0"
-                class="dropdown-content menu z-20 w-44 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-              >
-                <li :for={status <- Clients.statuses()}>
-                  <button
-                    type="button"
-                    phx-click="set_status"
-                    phx-value-status={status}
-                    disabled={@client.status == status}
-                    class={@client.status == status && "text-base-content/45"}
-                  >
-                    <.icon
-                      name={
-                        if @client.status == status,
-                          do: "hero-check-circle",
-                          else: "hero-arrow-right-circle"
-                      }
-                      class="size-4"
-                    /> {status}
-                  </button>
-                </li>
-              </ul>
-            </div>
+              </:trigger>
+              <li :for={status <- Clients.statuses()}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                  phx-click="set_status"
+                  phx-value-status={status}
+                  disabled={@client.status == status}
+                  class={@client.status == status && "text-base-content/45"}
+                >
+                  <.icon
+                    name={
+                      if @client.status == status,
+                        do: "hero-check-circle",
+                        else: "hero-arrow-right-circle"
+                    }
+                    class="size-4"
+                  /> {status}
+                </button>
+              </li>
+            </.action_menu>
 
             <.link
               id="client-invoices-link"

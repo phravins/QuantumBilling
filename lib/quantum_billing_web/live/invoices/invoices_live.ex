@@ -232,21 +232,28 @@ defmodule QuantumBillingWeb.InvoicesLive do
             filters={@custom_filter}
           />
 
-          <div class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class={filter_button_class()}>
+          <.action_menu
+            id="invoice-status-filter"
+            label="Filter invoices by status"
+            trigger_class={filter_button_class()}
+            menu_class="w-56"
+          >
+            <:trigger>
               <.icon name="hero-funnel" class="size-3.5" /> {@status_filter}
               <.icon name="hero-chevron-down" class="size-3.5" />
-            </div>
-
-            <ul
-              tabindex="0"
-              class="dropdown-content menu z-10 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-            >
-              <li :for={s <- @status_options}>
-                <a phx-click="filter_status" phx-value-status={s}>{s}</a>
-              </li>
-            </ul>
-          </div>
+            </:trigger>
+            <li :for={s <- @status_options}>
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-field px-3 py-2 text-left hover:bg-base-200"
+                phx-click="filter_status"
+                phx-value-status={s}
+              >
+                {s}
+              </button>
+            </li>
+          </.action_menu>
 
           <.link href={~p"/reports/export"} class={filter_button_class()}>
             <.icon name="hero-arrow-down-tray" class="size-3.5" /> Export
@@ -362,34 +369,35 @@ defmodule QuantumBillingWeb.InvoicesLive do
                         <.icon name="hero-eye" class="size-4" />
                       </.link>
 
-                      <div class="dropdown dropdown-end">
-                        <div
-                          tabindex="0"
-                          role="button"
-                          class={row_action_class()}
-                          aria-label="More actions"
-                        >
+                      <.action_menu
+                        id={"invoice-row-actions-#{row.id}"}
+                        label="More actions"
+                        trigger_class={row_action_class()}
+                        menu_class="w-48"
+                      >
+                        <:trigger>
                           <.icon name="hero-ellipsis-vertical" class="size-4" />
-                        </div>
-
-                        <ul
-                          tabindex="0"
-                          class="dropdown-content menu z-10 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg"
-                        >
-                          <li>
-                            <.link navigate={~p"/invoices/#{row.id}/edit"}>
-                              <.icon name="hero-pencil-square" class="size-4" /> Edit
-                            </.link>
-                          </li>
-
-                          <li>
-                            <%!-- Real navigation: the print view is a plain page. --%>
-                            <.link href={~p"/invoices/#{row.id}/pdf/download"}>
-                              <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
-                            </.link>
-                          </li>
-                        </ul>
-                      </div>
+                        </:trigger>
+                        <li>
+                          <.link
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            navigate={~p"/invoices/#{row.id}/edit"}
+                          >
+                            <.icon name="hero-pencil-square" class="size-4" /> Edit
+                          </.link>
+                        </li>
+                        <li>
+                          <%!-- Real navigation: the print view is a plain page. --%>
+                          <.link
+                            role="menuitem"
+                            class="flex w-full items-center gap-2 rounded-field px-3 py-2 hover:bg-base-200"
+                            href={~p"/invoices/#{row.id}/pdf/download"}
+                          >
+                            <.icon name="hero-arrow-down-tray" class="size-4" /> Download as PDF
+                          </.link>
+                        </li>
+                      </.action_menu>
 
                       <button
                         type="button"

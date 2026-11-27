@@ -77,36 +77,37 @@ defmodule QuantumBillingWeb.DashboardLive do
         <:subtitle>Overview of your GST invoicing and compliance</:subtitle>
 
         <:actions>
-          <div id="dashboard-export" class="dropdown dropdown-end">
-            <div tabindex="0" role="button" class={secondary_button_class()}>
+          <.action_menu
+            id="dashboard-export"
+            label="Export options"
+            trigger_class={secondary_button_class()}
+            menu_class="w-60"
+          >
+            <:trigger>
               <.icon name="hero-arrow-down-tray" class="size-4" /> Export
               <.icon name="hero-chevron-down" class="size-4" />
-            </div>
-
-            <ul
-              tabindex="0"
-              class="dropdown-content menu z-10 mt-2 w-60 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-            >
-              <li>
-                <.link
-                  id="export-tax-summary"
-                  href={~p"/reports/export?#{[date_range: "This Year"]}"}
-                >
-                  GST tax summary, this year (CSV)
-                </.link>
-              </li>
-              <li>
-                <.link
-                  id="export-sales-register"
-                  href={
-                    ~p"/reports/export?#{[date_range: "This Year", report_type: "Sales Register"]}"
-                  }
-                >
-                  Sales register, this year (CSV)
-                </.link>
-              </li>
-            </ul>
-          </div>
+            </:trigger>
+            <li>
+              <.link
+                id="export-tax-summary"
+                role="menuitem"
+                class="flex w-full items-center rounded-field px-3 py-2 hover:bg-base-200"
+                href={~p"/reports/export?#{[date_range: "This Year"]}"}
+              >
+                GST tax summary, this year (CSV)
+              </.link>
+            </li>
+            <li>
+              <.link
+                id="export-sales-register"
+                role="menuitem"
+                class="flex w-full items-center rounded-field px-3 py-2 hover:bg-base-200"
+                href={~p"/reports/export?#{[date_range: "This Year", report_type: "Sales Register"]}"}
+              >
+                Sales register, this year (CSV)
+              </.link>
+            </li>
+          </.action_menu>
         </:actions>
       </.header>
 

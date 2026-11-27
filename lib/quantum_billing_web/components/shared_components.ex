@@ -2,6 +2,8 @@ defmodule QuantumBillingWeb.SharedComponents do
   @moduledoc "UI pieces shared across features: pills, cards, form fields, tables and pagination."
   use Phoenix.Component
 
+  alias Phoenix.LiveView.JS
+
   import QuantumBillingWeb.CoreComponents, only: [icon: 1, input: 1]
 
   @action_button_class "inline-flex h-9 items-center gap-2 rounded-field bg-primary px-3.5 " <>
@@ -576,4 +578,131 @@ defmodule QuantumBillingWeb.SharedComponents do
   end
 
   def fit_rows_per_page(_rows), do: :error
+  @doc "Accessible dropdown menu with keyboard navigation and focus management."
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :class, :any, default: nil
+  attr :trigger_class, :any, default: nil
+  attr :menu_class, :any, default: nil
+
+  slot :trigger, required: true
+  slot :inner_block, required: true
+
+  def action_menu(assigns) do
+    ~H"""
+    <div id={@id} class={["relative inline-block", @class]} phx-hook=".ActionMenu">
+      <button
+        id={"#{@id}-trigger"}
+        type="button"
+        aria-label={@label}
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-controls={"#{@id}-menu"}
+        class={@trigger_class}
+        phx-click={
+          JS.toggle_class("hidden", to: "##{@id}-menu")
+          |> JS.toggle_attribute({"aria-expanded", "true", "false"})
+        }
+      >
+        {render_slot(@trigger)}
+      </button>
+
+      <ul
+        id={"#{@id}-menu"}
+        role="menu"
+        aria-labelledby={"#{@id}-trigger"}
+        class={[
+          "absolute right-0 z-30 mt-2 hidden min-w-48 rounded-box",
+          "border border-base-300 bg-base-100 p-1.5 text-sm shadow-lg",
+          @menu_class
+        ]}
+      >
+        {render_slot(@inner_block)}
+      </ul>
+    </div>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".ActionMenu">
+      export default {
+        mounted() {
+          this.trigger = this.el.querySelector("button[aria-haspopup='menu']")
+          this.menu = this.el.querySelector("[role='menu']")
+
+          this.items = () =>
+            [...this.menu.querySelectorAll("[role='menuitem']:not([disabled])")]
+
+          this.close = (restoreFocus = false) => {
+            this.menu.classList.add("hidden")
+            this.trigger.setAttribute("aria-expanded", "false")
+            if (restoreFocus) this.trigger.focus()
+          }
+
+          this.onKeydown = (event) => {
+            const items = this.items()
+            const current = items.indexOf(document.activeElement)
+
+            if (event.key === "Escape") {
+              if (this.trigger.getAttribute("aria-expanded") === "true") {
+                event.preventDefault()
+                this.close(true)
+              }
+              return
+            }
+
+            if (
+              event.target === this.trigger &&
+              ["ArrowDown", "ArrowUp"].includes(event.key)
+            ) {
+              event.preventDefault()
+              this.trigger.click()
+              requestAnimationFrame(() => {
+                const available = this.items()
+                const next =
+                  event.key === "ArrowDown"
+                    ? available[0]
+                    : available[available.length - 1]
+                next?.focus()
+              })
+              return
+            }
+
+            if (event.key === "Tab") {
+              this.close()
+              return
+            }
+
+            if (current === -1 || items.length === 0) return
+
+            let next = null
+            if (event.key === "ArrowDown") next = (current + 1) % items.length
+            if (event.key === "ArrowUp") next = (current - 1 + items.length) % items.length
+            if (event.key === "Home") next = 0
+            if (event.key === "End") next = items.length - 1
+
+            if (next !== null) {
+              event.preventDefault()
+              items[next]?.focus()
+            }
+
+          }
+
+          this.onOutsideClick = (event) => {
+            if (!this.el.contains(event.target)) this.close()
+          }
+
+          this.onMenuClick = () => this.close()
+
+          this.el.addEventListener("keydown", this.onKeydown)
+          this.menu.addEventListener("click", this.onMenuClick)
+          document.addEventListener("click", this.onOutsideClick)
+        },
+
+        destroyed() {
+          this.el.removeEventListener("keydown", this.onKeydown)
+          this.menu.removeEventListener("click", this.onMenuClick)
+          document.removeEventListener("click", this.onOutsideClick)
+        }
+      }
+    </script>
+    """
+  end
 end

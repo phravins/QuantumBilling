@@ -131,22 +131,21 @@ defmodule QuantumBillingWeb.Layouts do
           </nav>
 
           <div class="border-t border-base-300 p-2.5 lg:sidebar-collapsed:p-2">
-            <div class="dropdown dropdown-top w-full">
-              <div
-                tabindex="0"
-                role="button"
-                title={user_name(@current_scope)}
-                class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200 lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0"
-              >
+            <.action_menu
+              id="sidebar-account-menu"
+              label={"Account options for #{user_name(@current_scope)}"}
+              class="w-full"
+              trigger_class="flex w-full items-center gap-2 rounded-field px-2 py-2 text-left hover:bg-base-200 lg:sidebar-collapsed:justify-center lg:sidebar-collapsed:px-0"
+              menu_class="z-10 bottom-full left-0 mb-2 w-full lg:sidebar-collapsed:w-48"
+            >
+              <:trigger>
                 <span class={["shrink-0 bg-base-300 text-base-content", avatar_class()]}>
                   {user_initials(@current_scope)}
                 </span>
-
                 <span class="min-w-0 flex-1 lg:sidebar-collapsed:hidden">
                   <span class="block truncate text-sm font-medium leading-tight">
                     {user_name(@current_scope)}
                   </span>
-
                   <span
                     :if={user_designation(@current_scope)}
                     class="block truncate text-xs text-base-content/45"
@@ -158,20 +157,17 @@ defmodule QuantumBillingWeb.Layouts do
                   name="hero-ellipsis-horizontal"
                   class="size-4 shrink-0 text-base-content/45 lg:sidebar-collapsed:hidden"
                 />
-              </div>
-
-              <ul
-                tabindex="0"
-                class="dropdown-content menu z-10 mb-2 w-full lg:sidebar-collapsed:w-48 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-              >
-                <li><.link navigate={~p"/users/profile"}>My profile</.link></li>
-                <li><.link navigate={~p"/users/settings"}>Account settings</.link></li>
-
-                <li>
-                  <.link href={~p"/users/log-out"} method="delete">Sign out</.link>
-                </li>
-              </ul>
-            </div>
+              </:trigger>
+              <li>
+                <.link role="menuitem" navigate={~p"/users/profile"}>My profile</.link>
+              </li>
+              <li>
+                <.link role="menuitem" navigate={~p"/users/settings"}>Account settings</.link>
+              </li>
+              <li>
+                <.link role="menuitem" href={~p"/users/log-out"} method="delete">Sign out</.link>
+              </li>
+            </.action_menu>
           </div>
         </div>
       </aside>
@@ -832,13 +828,14 @@ defmodule QuantumBillingWeb.Layouts do
       <header class="flex items-center justify-between gap-4 border-b border-base-300 px-5 py-3 sm:px-8">
         <.brand_mark />
 
-        <div :if={@current_scope && @current_scope.user} class="dropdown dropdown-end">
-          <div
-            tabindex="0"
-            role="button"
-            id="focus-user-menu"
-            class="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-base-content/5"
-          >
+        <.action_menu
+          :if={@current_scope && @current_scope.user}
+          id="focus-user-menu"
+          label="User account options"
+          trigger_class="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-base-content/5"
+          menu_class="z-20 mt-2 w-48"
+        >
+          <:trigger>
             <span class={["bg-base-content text-base-100", avatar_class()]}>
               {user_initials(@current_scope)}
             </span>
@@ -846,16 +843,18 @@ defmodule QuantumBillingWeb.Layouts do
               {user_name(@current_scope)}
             </span>
             <.icon name="hero-chevron-down" class="size-3.5 text-base-content/45" />
-          </div>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu z-20 mt-2 w-48 rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg"
-          >
-            <li>
-              <.link href={~p"/users/log-out"} method="delete" id="focus-sign-out">Sign out</.link>
-            </li>
-          </ul>
-        </div>
+          </:trigger>
+          <li>
+            <.link
+              role="menuitem"
+              href={~p"/users/log-out"}
+              method="delete"
+              id="focus-sign-out"
+            >
+              Sign out
+            </.link>
+          </li>
+        </.action_menu>
       </header>
 
       <div :if={@steps} id="focus-progress" class="mx-auto w-full max-w-5xl px-5 pt-6 sm:px-8">
