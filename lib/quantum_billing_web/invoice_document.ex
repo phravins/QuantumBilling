@@ -20,6 +20,7 @@ defmodule QuantumBillingWeb.InvoiceDocument do
     |> vat_sample()
     |> struct(seller)
     |> struct(if tax_number, do: [company_tax_number: tax_number], else: [])
+    |> struct(arabic_seller_fields(organization))
   end
 
   def sample(%Organization{} = organization) do
@@ -152,6 +153,8 @@ defmodule QuantumBillingWeb.InvoiceDocument do
         client_state: nil,
         client_billing_address: "14 Harbour Road",
         client_tax_number: sample_tax_number(country, "1009876543"),
+        company_vat_country: country,
+        company_name_ar: if(country == "SA", do: "شركتك"),
         items: items
     }
     |> struct(totals)
@@ -166,7 +169,9 @@ defmodule QuantumBillingWeb.InvoiceDocument do
   end
 
   # A number in the country's shape, for show only.
-  defp sample_tax_number(country, digits) when country in ["AE", "SA", "BH"],
+  defp sample_tax_number("SA", digits), do: "3" <> digits <> "0003"
+
+  defp sample_tax_number(country, digits) when country in ["AE", "BH"],
     do: digits <> "00003"
 
   defp sample_tax_number("GB", digits), do: "GB" <> String.slice(digits, 0, 9)
@@ -187,6 +192,15 @@ defmodule QuantumBillingWeb.InvoiceDocument do
       company_address: presence(address),
       company_gstin: presence(organization.gstin),
       company_state: presence(organization.state)
+    ]
+    |> Enum.reject(fn {_field, value} -> is_nil(value) end)
+  end
+
+  # The business's Arabic name and address, for a Saudi invoice's preview.
+  defp arabic_seller_fields(%Organization{} = organization) do
+    [
+      company_name_ar: presence(organization.company_name_ar),
+      company_address_ar: presence(organization.address_ar)
     ]
     |> Enum.reject(fn {_field, value} -> is_nil(value) end)
   end

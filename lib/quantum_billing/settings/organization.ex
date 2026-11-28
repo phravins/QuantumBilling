@@ -26,7 +26,7 @@ defmodule QuantumBilling.Settings.Organization do
     "YYYY-MM-DD"
   ]
 
-  @timezones ["Asia/Kolkata"]
+  @timezones ["Asia/Kolkata", "Asia/Riyadh"]
 
   @languages ["en"]
 
@@ -36,6 +36,10 @@ defmodule QuantumBilling.Settings.Organization do
     field :company_name, :string
     field :trade_name, :string
     field :address, :string
+    # Arabic name and address, printed on Saudi invoices (ZATCA Phase 1). The
+    # name is also the seller name in the QR code.
+    field :company_name_ar, :string
+    field :address_ar, :string
     # Kept apart from the address: the e-invoice schema needs city and PIN as fields.
     field :city, :string
     field :pincode, :string
@@ -142,7 +146,8 @@ defmodule QuantumBilling.Settings.Organization do
   end
 
   @general ~w(company_name trade_name address city pincode phone email gstin pan
-              state currency financial_year timezone date_format)a
+              state currency financial_year timezone date_format company_name_ar
+              address_ar)a
 
   @invoice ~w(invoice_prefix invoice_next_number invoice_number_padding
               invoice_due_days invoice_terms credit_note_prefix credit_note_next_number
@@ -188,8 +193,10 @@ defmodule QuantumBilling.Settings.Organization do
     |> cast(attrs, @general)
     |> validate_required([:company_name])
     |> validate_length(:company_name, max: 160)
-    # An Indian PIN is exactly six digits.
-    |> validate_format(:pincode, ~r/^\d{6}$/, message: "must be six digits")
+    |> validate_length(:company_name_ar, max: 160)
+    |> validate_qr_bytes(:company_name_ar)
+    |> validate_length(:address_ar, max: 500)
+    |> validate_postal_code()
     |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
       message: "must have the @ sign and no spaces"
     )
@@ -460,6 +467,28 @@ defmodule QuantumBilling.Settings.Organization do
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
+  # The QR code gives each field one length byte: at most 255 bytes of UTF-8,
+  # which for Arabic is about 127 letters.
+  defp validate_qr_bytes(changeset, field) do
+    validate_change(changeset, field, fn ^field, value ->
+      if byte_size(value) <= 255,
+        do: [],
+        else: [{field, "is too long for the invoice QR code; shorten it"}]
+    end)
+  end
+
+  # An Indian PIN is six digits, a Saudi postal code five.
+  defp validate_postal_code(changeset) do
+    if saudi?(changeset) do
+      validate_format(changeset, :pincode, ~r/^\d{5}$/, message: "must be five digits")
+    else
+      validate_format(changeset, :pincode, ~r/^\d{6}$/, message: "must be six digits")
+    end
+  end
+
+  defp saudi?(changeset),
+    do: get_field(changeset, :tax_regime) == "vat" and get_field(changeset, :vat_country) == "SA"
+
   # A VAT business needs its country; its VAT number is optional but must fit it.
   defp validate_vat(changeset) do
     if get_field(changeset, :tax_regime) == "vat" do
@@ -524,6 +553,22 @@ defmodule QuantumBilling.Settings.Organization do
       prices_include_tax: vat? and organization.prices_include_tax == true,
       round_to_whole_units: round_to_whole_units?(organization),
       company_tax_number: if(vat?, do: organization.vat_number)
+    }
+  end
+
+  @doc "Whether the business charges Saudi VAT, and so issues ZATCA invoices."
+  def saudi_vat?(organization), do: vat?(organization) and organization.vat_country == "SA"
+
+  @doc """
+  The Saudi e-invoicing fields a new invoice snapshots from the business: the
+  Arabic name and address, and the VAT country. The country is kept only for
+  a VAT business.
+  """
+  def zatca_snapshot(organization) do
+    %{
+      company_name_ar: organization.company_name_ar,
+      company_address_ar: organization.address_ar,
+      company_vat_country: if(vat?(organization), do: organization.vat_country)
     }
   end
 

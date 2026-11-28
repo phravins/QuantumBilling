@@ -76,7 +76,7 @@ defmodule QuantumBilling.Backup do
                           vat_country prices_include_tax round_to_whole_units
                           credit_note_prefix credit_note_next_number debit_note_prefix
                           debit_note_next_number quotation_prefix quotation_next_number
-                          quotation_validity_days)a
+                          quotation_validity_days company_name_ar address_ar)a
 
   @client_fields ~w(id client_type name display_name gstin pan legal_name business_type category
                     phone_country_code phone email billing_line1 billing_line2 billing_city
@@ -97,7 +97,8 @@ defmodule QuantumBilling.Backup do
                      layout_xml deleted_at custom_fields tax_regime vat_amount tax_breakdown
                      company_tax_number client_tax_number reverse_charge prices_include_tax
                      round_to_whole_units quotation_id
-                     rc_cgst_amount rc_sgst_amount rc_igst_amount rc_cess_amount)a
+                     rc_cgst_amount rc_sgst_amount rc_igst_amount rc_cess_amount
+                     company_name_ar company_address_ar company_vat_country)a
 
   # deleted_at and public_token travel too: binned quotations stay in the Bin,
   # and a client's emailed link keeps working after a restore.

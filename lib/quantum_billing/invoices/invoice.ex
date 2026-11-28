@@ -73,6 +73,12 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :company_address, :string
     field :company_gstin, :string
     field :company_state, :string
+    # Saudi e-invoicing (ZATCA Phase 1), snapshotted from the business: the
+    # Arabic name and address, and the VAT country the invoice was issued
+    # under. See QuantumBilling.Zatca.
+    field :company_name_ar, :string
+    field :company_address_ar, :string
+    field :company_vat_country, :string
 
     field :remarks, :string
     field :terms, :string
@@ -164,7 +170,8 @@ defmodule QuantumBilling.Invoices.Invoice do
   # passed as `trusted`, never read from params.
   @trusted ~w(invoice_number company_name company_address company_gstin company_state
               status template_id layout_xml tax_regime prices_include_tax
-              round_to_whole_units company_tax_number quotation_id)a
+              round_to_whole_units company_tax_number quotation_id company_name_ar
+              company_address_ar company_vat_country)a
 
   @doc """
   Builds an invoice changeset, including its line items.
