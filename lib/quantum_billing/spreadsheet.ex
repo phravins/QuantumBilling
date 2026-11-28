@@ -7,12 +7,15 @@ defmodule QuantumBilling.Spreadsheet do
   line; UTF-8 (with or without a BOM), UTF-16 ("Unicode text" from Excel), or
   Latin-1 from older tools.
 
-  XLSX is a zip of XML parts, read with `:zip` and `Saxy`, so no extra
-  dependency is needed. Saxy expands no external entities. The archive's
-  uncompressed size is checked before anything is unpacked, so a zip bomb is
-  refused rather than inflated. The old binary `.xls` format is refused with a
-  pointer to save as .xlsx or CSV.
+  XLSX is a zip of XML parts, read with `:zip`, `:zlib` and `Saxy`, so no extra
+  dependency is needed. Saxy expands no external entities. A zip bomb is
+  refused rather than inflated: the sizes the archive declares are checked
+  first, then every part is inflated a chunk at a time, and reading stops once
+  the parts together pass 50 MB, whatever the archive claims. The old binary
+  `.xls` format is refused with a pointer to save as .xlsx or CSV.
   """
+
+  import Bitwise
 
   alias QuantumBilling.Spreadsheet.XlsxHandler
 
@@ -127,29 +130,39 @@ defmodule QuantumBilling.Spreadsheet do
 
   # ── XLSX ───────────────────────────────────────────────────────────────────
 
+  # `budget` is how many more inflated bytes may be read. It starts at
+  # @max_unzipped and every part read takes its real size from it.
   defp parse_xlsx(binary) do
-    with {:ok, names} <- zip_entries(binary),
-         {:ok, sheet_path} <- first_sheet_path(binary, names),
-         {:ok, shared} <- shared_strings(binary, names),
-         {:ok, xml} <- unzip_one(binary, sheet_path),
+    with {:ok, entries} <- zip_entries(binary),
+         {:ok, sheet_path, budget} <- first_sheet_path(binary, entries, @max_unzipped),
+         {:ok, shared, budget} <- shared_strings(binary, entries, budget),
+         {:ok, xml, _budget} <- read_part(binary, entries, sheet_path, budget),
          {:ok, rows} <- sheet_rows(xml, shared) do
       to_table(rows)
     end
   end
 
+  # The archive's parts as `name => {local header offset, compressed size}`.
+  # The declared uncompressed sizes are only a fast first refusal: the
+  # uploader writes them, so `inflate_part/4` never relies on them.
   defp zip_entries(binary) do
     case :zip.list_dir(binary) do
       {:ok, [_comment | entries]} ->
-        sizes =
-          for {:zip_file, _name, info, _comment, _offset, _comp} <- entries, do: elem(info, 1)
+        declared =
+          Enum.sum(
+            for {:zip_file, _name, info, _comment, _offset, _comp} <- entries, do: elem(info, 1)
+          )
 
-        names =
-          for {:zip_file, name, _info, _comment, _offset, _comp} <- entries, do: to_string(name)
+        # The first entry wins if a name repeats.
+        parts =
+          for {:zip_file, name, _info, _comment, offset, comp_size} <- entries, reduce: %{} do
+            acc -> Map.put_new(acc, to_string(name), {offset, comp_size})
+          end
 
         cond do
-          Enum.sum(sizes) > @max_unzipped -> {:error, "The spreadsheet is too large to read."}
-          "xl/workbook.xml" not in names -> {:error, not_xlsx()}
-          true -> {:ok, names}
+          declared > @max_unzipped -> {:error, too_large()}
+          not Map.has_key?(parts, "xl/workbook.xml") -> {:error, not_xlsx()}
+          true -> {:ok, parts}
         end
 
       _error ->
@@ -158,47 +171,159 @@ defmodule QuantumBilling.Spreadsheet do
   end
 
   defp not_xlsx, do: "This doesn't look like an Excel (.xlsx) file."
+  defp too_large, do: "The spreadsheet is too large to read."
 
-  defp unzip_one(binary, name) do
-    case :zip.unzip(binary, [:memory, {:file_list, [String.to_charlist(name)]}]) do
-      {:ok, [{_name, xml}]} -> {:ok, xml}
-      _missing -> {:error, not_xlsx()}
+  # A part's contents, or the message to show for it.
+  defp read_part(binary, entries, name, budget) do
+    case inflate_part(binary, entries, name, budget) do
+      {:ok, _xml, _budget} = read -> read
+      {:error, :too_large} -> {:error, too_large()}
+      {:error, :unreadable, _left} -> {:error, not_xlsx()}
     end
+  end
+
+  # Reads a part from its local header, inflates at most `budget` bytes of it,
+  # and checks its CRC-32 as `:zip` would. An unreadable part returns the budget
+  # left after what it inflated before failing, so a fallback read can't spend
+  # those bytes again.
+  defp inflate_part(binary, entries, name, budget) do
+    with {:ok, {offset, comp_size}} <- Map.fetch(entries, name),
+         <<_before::binary-size(offset), 0x04034B50::little-32, _version::little-16,
+           flags::little-16, method::little-16, _time_date::binary-size(4), crc::little-32,
+           _sizes::binary-size(8), name_length::little-16, extra_length::little-16,
+           _name::binary-size(name_length), _extra::binary-size(extra_length),
+           data::binary-size(comp_size), after_data::binary>> <- binary,
+         {:ok, crc} <- expected_crc(flags, crc, after_data),
+         {:ok, contents, left} <- inflate_data(method, data, budget) do
+      if :erlang.crc32(contents) == crc,
+        do: {:ok, contents, left},
+        else: {:error, :unreadable, left}
+    else
+      {:error, _reason, _left} = inflate_error -> inflate_error
+      {:error, :too_large} -> {:error, :too_large}
+      _missing_or_damaged -> {:error, :unreadable, budget}
+    end
+  end
+
+  # With flag bit 3 the CRC follows the data, in a descriptor whose signature
+  # is optional; otherwise it is in the local header.
+  defp expected_crc(flags, crc, _after_data) when (flags &&& 0x08) == 0, do: {:ok, crc}
+
+  defp expected_crc(_flags, _crc, <<0x08074B50::little-32, crc::little-32, _::binary>>),
+    do: {:ok, crc}
+
+  defp expected_crc(_flags, _crc, <<crc::little-32, _::binary>>), do: {:ok, crc}
+  defp expected_crc(_flags, _crc, _after_data), do: :error
+
+  # Method 0 is stored as is, 8 is deflate; .xlsx uses nothing else.
+  defp inflate_data(0, data, budget) when byte_size(data) <= budget,
+    do: {:ok, data, budget - byte_size(data)}
+
+  defp inflate_data(0, _data, _budget), do: {:error, :too_large}
+
+  defp inflate_data(8, data, budget) do
+    z = :zlib.open()
+
+    try do
+      :ok = :zlib.inflateInit(z, -15)
+      inflate_chunks(z, zlib(fn -> :zlib.safeInflate(z, data) end), [], budget)
+    after
+      :zlib.close(z)
+    end
+  end
+
+  defp inflate_data(_method, _data, budget), do: {:error, :unreadable, budget}
+
+  # safeInflate/2 hands back a small chunk at a time, so this stops within one
+  # chunk of the budget however far the data would expand. Every chunk is
+  # charged before the next is asked for, so a failure keeps them counted.
+  defp inflate_chunks(z, {status, output}, chunks, budget)
+       when status in [:continue, :finished] do
+    left = budget - IO.iodata_length(output)
+
+    cond do
+      left < 0 ->
+        {:error, :too_large}
+
+      status == :continue ->
+        inflate_chunks(z, zlib(fn -> :zlib.safeInflate(z, []) end), [output | chunks], left)
+
+      # inflateEnd/1 refuses a stream that stopped before its end.
+      zlib(fn -> :zlib.inflateEnd(z) end) == :ok ->
+        {:ok, IO.iodata_to_binary(Enum.reverse([output | chunks])), left}
+
+      true ->
+        {:error, :unreadable, left}
+    end
+  end
+
+  # A data error, or a preset dictionary .xlsx never uses.
+  defp inflate_chunks(_z, _unreadable, _chunks, budget), do: {:error, :unreadable, budget}
+
+  # A zlib call whose data error comes back as a value, not an exception.
+  defp zlib(call) do
+    call.()
+  catch
+    :error, _reason -> :data_error
   end
 
   # The first <sheet> in the workbook, through its relationship id.
-  defp first_sheet_path(binary, names) do
-    with {:ok, workbook} <- unzip_one(binary, "xl/workbook.xml"),
-         {:ok, %{sheet_rel: rel_id}} when is_binary(rel_id) <- handle(workbook, :workbook),
-         true <- "xl/_rels/workbook.xml.rels" in names,
-         {:ok, rels_xml} <- unzip_one(binary, "xl/_rels/workbook.xml.rels"),
-         {:ok, %{rels: rels}} <- handle(rels_xml, :rels),
-         target when is_binary(target) <- Map.get(rels, rel_id) do
-      path =
-        if String.starts_with?(target, "/"),
-          do: String.trim_leading(target, "/"),
-          else: "xl/" <> target
+  defp first_sheet_path(binary, entries, budget) do
+    case inflate_part(binary, entries, "xl/workbook.xml", budget) do
+      {:ok, workbook, budget} ->
+        case handle(workbook, :workbook) do
+          {:ok, %{sheet_rel: rel_id}} when is_binary(rel_id) ->
+            sheet_from_rels(binary, entries, rel_id, budget)
 
-      if path in names, do: {:ok, path}, else: fallback_sheet(names)
-    else
-      _no_rels -> fallback_sheet(names)
+          _no_rel ->
+            fallback_sheet(entries, budget)
+        end
+
+      {:error, :too_large} ->
+        {:error, too_large()}
+
+      {:error, :unreadable, left} ->
+        fallback_sheet(entries, left)
     end
   end
 
-  defp fallback_sheet(names) do
-    if "xl/worksheets/sheet1.xml" in names,
-      do: {:ok, "xl/worksheets/sheet1.xml"},
+  defp sheet_from_rels(binary, entries, rel_id, budget) do
+    case inflate_part(binary, entries, "xl/_rels/workbook.xml.rels", budget) do
+      {:ok, rels_xml, budget} ->
+        with {:ok, %{rels: rels}} <- handle(rels_xml, :rels),
+             target when is_binary(target) <- Map.get(rels, rel_id),
+             path = sheet_path(target),
+             true <- Map.has_key?(entries, path) do
+          {:ok, path, budget}
+        else
+          _no_target -> fallback_sheet(entries, budget)
+        end
+
+      {:error, :too_large} ->
+        {:error, too_large()}
+
+      {:error, :unreadable, left} ->
+        fallback_sheet(entries, left)
+    end
+  end
+
+  defp sheet_path("/" <> _absolute = target), do: String.trim_leading(target, "/")
+  defp sheet_path(relative), do: "xl/" <> relative
+
+  defp fallback_sheet(entries, budget) do
+    if Map.has_key?(entries, "xl/worksheets/sheet1.xml"),
+      do: {:ok, "xl/worksheets/sheet1.xml", budget},
       else: {:error, "The spreadsheet has no sheets."}
   end
 
-  defp shared_strings(binary, names) do
-    if "xl/sharedStrings.xml" in names do
-      with {:ok, xml} <- unzip_one(binary, "xl/sharedStrings.xml"),
+  defp shared_strings(binary, entries, budget) do
+    if Map.has_key?(entries, "xl/sharedStrings.xml") do
+      with {:ok, xml, budget} <- read_part(binary, entries, "xl/sharedStrings.xml", budget),
            {:ok, %{strings: strings}} <- handle(xml, :shared_strings) do
-        {:ok, strings |> Enum.reverse() |> List.to_tuple()}
+        {:ok, strings |> Enum.reverse() |> List.to_tuple(), budget}
       end
     else
-      {:ok, {}}
+      {:ok, {}, budget}
     end
   end
 
