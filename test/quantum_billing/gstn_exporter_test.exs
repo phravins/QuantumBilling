@@ -64,6 +64,63 @@ defmodule QuantumBilling.GSTNExporterTest do
   end
 
   describe "generate_gstr1_json/1" do
+    test "reports exports separately and converts foreign currency to INR" do
+      export =
+        invoice(%{
+          invoice_number: "EXPORT-1",
+          client_gstin: nil,
+          export_type: "EXPORT_WITH_PAY",
+          currency: "USD",
+          exchange_rate: Decimal.new("80"),
+          place_of_supply: "Other Countries (96)",
+          taxable_value: 100_000,
+          cgst_amount: 0,
+          sgst_amount: 0,
+          igst_amount: 18_000,
+          grand_total: 118_000
+        })
+
+      item(export, %{amount: 100_000, rate: 100_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+      assert [%{"exp_typ" => "WPAY", "inv" => [entry]}] = json["exp"]
+      assert entry["inum"] == "EXPORT-1"
+      assert entry["val"] == 94_400.0
+      assert [%{"txval" => 80_000.0, "iamt" => 14_400.0}] = entry["itms"]
+      assert json["b2cl"] == []
+      assert json["b2cs"] == []
+      assert [%{"txval" => 80_000.0}] = json["hsn"]["hsn_b2c"]
+    end
+
+    test "reports an export without payment and its credit note in export sections" do
+      export =
+        invoice(%{
+          invoice_number: "EXPORT-LUT",
+          client_gstin: nil,
+          export_type: "EXPORT_WITHOUT_PAY",
+          place_of_supply: "Other Countries (96)",
+          taxable_value: 100_000,
+          cgst_amount: 0,
+          sgst_amount: 0,
+          igst_amount: 0,
+          grand_total: 100_000
+        })
+
+      item(export, %{amount: 100_000, rate: 100_000, tax_rate: 18})
+      note(export, %{subtotal: 50_000, tax_total: 0, grand_total: 50_000})
+
+      assert {:ok, json} = GSTNExporter.generate_gstr1_json("032026")
+
+      assert [%{"exp_typ" => "WOPAY", "inv" => [%{"itms" => [line]}]}] =
+               json["exp"]
+
+      assert line["iamt"] == 0
+      assert [%{"typ" => "EXPWOP", "ntty" => "C", "val" => 500.0}] = json["cdnur"]
+      assert [%{"txval" => 500.0}] = json["hsn"]["hsn_b2c"]
+      assert json["b2cs"] == []
+      assert json["b2cl"] == []
+    end
+
     test "constructs the GSTN structure for the period" do
       invoice = invoice(%{invoice_number: "INV-9904"})
       item(invoice, %{})

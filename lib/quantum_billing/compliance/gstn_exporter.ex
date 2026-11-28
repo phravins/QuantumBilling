@@ -7,15 +7,16 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
     * 4 (`b2b`): registered buyers, by GSTIN.
     * 5 (`b2cl`): inter-state consumer invoices above the B2CL limit, by place
       of supply. The limit is ₹1,00,000 from August 2024 and ₹2,50,000 before.
+    * 6A (`exp`): exports grouped by payment of tax.
     * 7 (`b2cs`): every other consumer sale, by place of supply, rate and
       supply type, net of the notes raised against those sales.
-    * 9B (`cdnr`, `cdnur`): notes against Table 4 and Table 5 invoices.
+    * 9B (`cdnr`, `cdnur`): notes against registered, large consumer and export invoices.
     * 12 (`hsn`): by HSN/SAC and rate, split into `hsn_b2b` and `hsn_b2c`, with
       the tax heads, net of notes.
     * 13 (`doc_issue`): the number ranges used, with cancelled ones counted.
 
   Every table is built from the same per-line amounts (`lines/1`), so Table 12
-  adds up to Tables 4, 5, 7 and 9B. A GST note stores only its totals, so its
+  adds up to Tables 4, 5, 6A, 7 and 9B. A GST note stores only its totals, so its
   lines are its invoice's, scaled to them.
 
   Cancelled and binned invoices are left out of the supplies, but still count
@@ -98,6 +99,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
          "b2b" => finish_by(sections.b2b, "ctin"),
          "b2cl" => finish_by(sections.b2cl, "pos"),
          "b2cs" => finish_b2cs(sections.b2cs),
+         "exp" => finish_by(sections.exp, "exp_typ"),
          "cdnr" => finish_by(sections.cdnr, "ctin", "nt"),
          "cdnur" => Enum.reverse(sections.cdnur),
          "hsn" => finish_hsn(sections.hsn),
@@ -116,7 +118,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   # Streamed in one pass to keep memory flat on large periods.
   # Repo.stream/2 cannot preload, so items are fetched per chunk.
   defp accumulate(from, to) do
-    empty = %{b2b: %{}, b2cl: %{}, b2cs: %{}, cdnr: %{}, cdnur: [], hsn: %{}}
+    empty = %{b2b: %{}, b2cl: %{}, b2cs: %{}, exp: %{}, cdnr: %{}, cdnur: [], hsn: %{}}
 
     {:ok, sections} =
       Repo.transaction(
@@ -156,6 +158,9 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   # Which of Tables 4, 5 and 7 the invoice belongs to. A note follows its invoice.
   defp section(%Invoice{} = invoice) do
     cond do
+      invoice.export_type in ["EXPORT_WITH_PAY", "EXPORT_WITHOUT_PAY"] ->
+        :exp
+
       registered_buyer?(invoice) ->
         :b2b
 
@@ -182,15 +187,58 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   # Exactly one of b2b, b2cl and b2cs takes the invoice; its lines always feed the HSN summary.
   defp absorb(%Invoice{} = invoice, sections) do
-    lines = lines(invoice)
     section = section(invoice)
+    lines = invoice |> lines() |> export_lines(invoice, section)
     sections = %{sections | hsn: absorb_hsn(lines, section == :b2b, sections.hsn, 1)}
 
     case section do
       :b2b -> %{sections | b2b: absorb_b2b(invoice, lines, sections.b2b)}
       :b2cl -> %{sections | b2cl: absorb_b2cl(invoice, lines, sections.b2cl)}
       :b2cs -> %{sections | b2cs: absorb_b2cs(invoice, lines, sections.b2cs, 1)}
+      :exp -> %{sections | exp: absorb_exp(invoice, lines, sections.exp)}
     end
+  end
+
+  defp absorb_exp(invoice, lines, groups) do
+    entry = %{
+      "inum" => invoice.invoice_number,
+      "idt" => format_date(invoice.invoice_date),
+      "val" => rupees(export_amount(invoice.grand_total, invoice)),
+      "itms" => Enum.map(rate_lines(lines, :igst_only), & &1["itm_det"])
+    }
+
+    type = if invoice.export_type == "EXPORT_WITH_PAY", do: "WPAY", else: "WOPAY"
+    Map.update(groups, type, [entry], &[entry | &1])
+  end
+
+  defp export_lines(lines, invoice, :exp) do
+    Enum.map(lines, fn line ->
+      line =
+        if invoice.export_type == "EXPORT_WITHOUT_PAY" do
+          %{line | cgst: 0, sgst: 0, igst: 0}
+        else
+          line
+        end
+
+      Enum.reduce(@amounts, line, fn key, acc ->
+        Map.update!(acc, key, &export_amount(&1, invoice))
+      end)
+    end)
+  end
+
+  defp export_lines(lines, _invoice, _section), do: lines
+
+  defp export_amount(nil, _invoice), do: 0
+
+  defp export_amount(amount, %Invoice{currency: currency}) when currency in [nil, "INR"],
+    do: amount
+
+  defp export_amount(amount, %Invoice{} = invoice) do
+    amount
+    |> Decimal.new()
+    |> Decimal.mult(invoice.exchange_rate || Decimal.new(1))
+    |> Decimal.round(0)
+    |> Decimal.to_integer()
   end
 
   defp absorb_b2b(invoice, lines, groups) do
@@ -277,8 +325,8 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
   end
 
   defp absorb_note(%CreditNote{invoice: invoice} = note, sections) do
-    lines = note_lines(note)
     section = section(invoice)
+    lines = note |> note_lines() |> export_lines(invoice, section)
     sign = if note.note_type == "Debit", do: 1, else: -1
     sections = %{sections | hsn: absorb_hsn(lines, section == :b2b, sections.hsn, sign)}
 
@@ -308,6 +356,18 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
           "nt_dt" => format_date(note.note_date),
           "pos" => state_code(invoice.place_of_supply),
           "val" => rupees(note.grand_total),
+          "itms" => rate_lines(lines, :igst_only)
+        }
+
+        %{sections | cdnur: [entry | sections.cdnur]}
+
+      :exp ->
+        entry = %{
+          "typ" => if(invoice.export_type == "EXPORT_WITH_PAY", do: "EXPWP", else: "EXPWOP"),
+          "ntty" => note_type(note),
+          "nt_num" => note.note_number,
+          "nt_dt" => format_date(note.note_date),
+          "val" => rupees(export_amount(note.grand_total, invoice)),
           "itms" => rate_lines(lines, :igst_only)
         }
 
