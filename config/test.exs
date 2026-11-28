@@ -38,6 +38,11 @@ config :quantum_billing, :github_cache, false
 # In memory, so async tests sharing a key don't block; Postgres is tested separately.
 config :quantum_billing, :rate_limiter, QuantumBilling.RateLimiter.ETS
 
+# Test requests all come from 127.0.0.1 and the ETS buckets are never reset, so
+# the real limit of 30 a minute would be shared by every test that opens a
+# public document. PublicDocumentRateLimitTest fills the bucket to this value.
+config :quantum_billing, :public_document_rate_limit, 1_000
+
 # Outbound URLs are resolved by a fake, so tests never depend on real DNS.
 config :quantum_billing, :url_guard_resolver, QuantumBilling.FakeDNS
 

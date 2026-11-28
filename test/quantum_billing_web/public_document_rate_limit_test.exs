@@ -3,6 +3,7 @@ defmodule QuantumBillingWeb.PublicDocumentRateLimitTest do
 
   alias QuantumBilling.RateLimiter
   alias QuantumBillingWeb.ClientIP
+  alias QuantumBillingWeb.Plugs.PublicDocumentRateLimit
 
   @client_ip {192, 0, 2, 68}
   @other_ip {192, 0, 2, 69}
@@ -18,7 +19,8 @@ defmodule QuantumBillingWeb.PublicDocumentRateLimitTest do
   end
 
   test "all public document routes share a bucket, separate from calendar and legal pages" do
-    fill_bucket(:public_document, 29)
+    # The last request the limit allows still reaches the router.
+    fill_bucket(:public_document, PublicDocumentRateLimit.limit() - 1)
     assert request(@document_pdf).status == 404
 
     for path <- [
