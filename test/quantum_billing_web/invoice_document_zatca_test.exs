@@ -15,6 +15,7 @@ defmodule QuantumBillingWeb.InvoiceDocumentZatcaTest do
   alias QuantumBilling.Businesses
   alias QuantumBilling.Invoices
   alias QuantumBilling.QuotationsFixtures
+  alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Tax
   alias QuantumBilling.TaxRates
@@ -224,7 +225,11 @@ defmodule QuantumBillingWeb.InvoiceDocumentZatcaTest do
     end
 
     test "a backup keeps the Arabic fields and the VAT country" do
-      invoice = invoice!()
+      # Hours before the restore, so a restore that reset it would show.
+      invoice =
+        invoice!()
+        |> Ecto.Changeset.change(inserted_at: ~U[2026-01-05 08:15:00Z])
+        |> Repo.update!()
 
       json = Backup.export_json()
       decoded = Jason.decode!(json)
@@ -245,8 +250,27 @@ defmodule QuantumBillingWeb.InvoiceDocumentZatcaTest do
       restored = Invoices.get_invoice!(invoice.id)
       assert restored.company_name_ar == @name_ar
       assert restored.company_vat_country == "SA"
+      assert restored.inserted_at == ~U[2026-01-05 08:15:00Z]
       assert Zatca.qr_payload(restored) == Zatca.qr_payload(invoice)
       assert Settings.get_organization().address_ar == @address_ar
+    end
+
+    test "a backup from before ZATCA Phase 1 restores its invoices' VAT country" do
+      invoice = invoice!()
+
+      json =
+        Backup.export_json()
+        |> Jason.decode!()
+        |> Map.update!("invoices", fn rows ->
+          Enum.map(rows, &Map.delete(&1, "company_vat_country"))
+        end)
+        |> Jason.encode!()
+
+      assert {:ok, _counts} = Backup.restore_json(json)
+
+      restored = Invoices.get_invoice!(invoice.id)
+      assert restored.company_vat_country == "SA"
+      assert Zatca.applies?(restored)
     end
 
     test "Settings take the Arabic name, a five-digit postal code and Riyadh time",

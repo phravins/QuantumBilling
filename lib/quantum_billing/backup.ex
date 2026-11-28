@@ -98,7 +98,7 @@ defmodule QuantumBilling.Backup do
                      company_tax_number client_tax_number reverse_charge prices_include_tax
                      round_to_whole_units quotation_id
                      rc_cgst_amount rc_sgst_amount rc_igst_amount rc_cess_amount
-                     company_name_ar company_address_ar company_vat_country)a
+                     company_name_ar company_address_ar company_vat_country inserted_at)a
 
   # deleted_at and public_token travel too: binned quotations stay in the Bin,
   # and a client's emailed link keeps working after a restore.
@@ -294,6 +294,7 @@ defmodule QuantumBilling.Backup do
             end)
 
           restore_organization!(data["organization"])
+          fill_vat_country!()
 
           # Rows keep their ids, so move every sequence past them.
           Enum.each(
@@ -638,6 +639,23 @@ defmodule QuantumBilling.Backup do
 
   defp restore_organization!(_other),
     do: Repo.rollback("Settings in the backup are not an object.")
+
+  # A backup from before ZATCA Phase 1 has no VAT country on its invoices, so a
+  # restored Saudi invoice would lose its QR code. Its VAT invoices take the
+  # business's VAT country, as the AddZatcaFields migration did.
+  defp fill_vat_country! do
+    country =
+      Repo.one(from o in Organization, order_by: [asc: o.id], limit: 1, select: o.vat_country)
+
+    if country do
+      Repo.update_all(
+        from(i in Invoice, where: i.tax_regime == "vat" and is_nil(i.company_vat_country)),
+        set: [company_vat_country: country]
+      )
+    end
+
+    :ok
+  end
 
   # Raw SQL skips Ecto's prefix, so the table is named with its schema.
   defp resync_sequence(table) do
