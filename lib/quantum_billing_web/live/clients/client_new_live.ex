@@ -264,6 +264,21 @@ defmodule QuantumBillingWeb.ClientNewLive do
                 type="email"
                 placeholder="Enter email address"
               />
+
+              <label class="mt-3 flex items-start gap-2 text-sm">
+                <input type="hidden" name="client[reminders_opt_out]" value="false" />
+                <input
+                  id="client-reminders-opt-out"
+                  type="checkbox"
+                  name="client[reminders_opt_out]"
+                  value="true"
+                  checked={Phoenix.HTML.Form.normalize_value("checkbox", f[:reminders_opt_out].value)}
+                  class="mt-0.5 size-4 accent-base-content"
+                />
+                <span>
+                  Do not send automatic payment reminders to this client.
+                </span>
+              </label>
             </div>
             <hr class="my-6 border-base-300" />
             <h2 class="mb-2.5 text-sm font-semibold tracking-tight">Billing Address</h2>

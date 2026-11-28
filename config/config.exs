@@ -108,7 +108,8 @@ config :quantum_billing, Oban,
        {"30 2 * * *", QuantumBilling.Workers.ComplianceReminderWorker},
        # Reminders with a time of day; within a quarter of an hour of it.
        {"*/15 * * * *", QuantumBilling.Workers.TaskReminderWorker},
-       {"0 3 * * *", QuantumBilling.Workers.CalendarSyncWorker}
+       {"0 3 * * *", QuantumBilling.Workers.CalendarSyncWorker},
+       {"0 9 * * *", QuantumBilling.Workers.PaymentReminderWorker}
      ]}
   ]
 

@@ -3,4 +3,3 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/phravins/QuantumBilling/security/advisories/new
     about: Report security vulnerabilities privately. Do not disclose them in a public issue.
-    

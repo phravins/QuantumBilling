@@ -86,11 +86,32 @@ defmodule QuantumBilling.Workers.EmailWorker do
     end
   end
 
+  defp build(delivery, %{"payment_reminder" => true, "invoice_id" => invoice_id})
+       when not is_nil(invoice_id) do
+    case Invoices.get_invoice(invoice_id) do
+      nil ->
+        {:error, :permanent, "invoice #{invoice_id} no longer exists"}
+
+      invoice ->
+        if invoice.status in ["Draft", "Paid", "Cancelled"] do
+          {:error, :permanent, "invoice #{invoice_id} is no longer payable"}
+        else
+          QuantumBilling.Payments.PaymentReminderNotifier.build_email(
+            delivery.to_email,
+            invoice
+          )
+        end
+    end
+  end
+
   # A quotation binned before the queue got to it is not sent.
   defp build(delivery, %{"quotation_id" => quotation_id}) when not is_nil(quotation_id) do
     case Quotations.get_quotation(quotation_id) do
-      nil -> {:error, :permanent, "quotation #{quotation_id} no longer exists"}
-      quotation -> QuotationNotifier.build_email(delivery.to_email, quotation)
+      nil ->
+        {:error, :permanent, "quotation #{quotation_id} no longer exists"}
+
+      quotation ->
+        QuotationNotifier.build_email(delivery.to_email, quotation)
     end
   end
 

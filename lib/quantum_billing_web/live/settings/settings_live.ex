@@ -628,6 +628,31 @@ defmodule QuantumBillingWeb.SettingsLive do
   # The tax system and VAT identity decide every invoice's tax: owners only.
   @owner_tax_fields ~w(tax_regime vat_number vat_country prices_include_tax round_to_whole_units)
 
+  defp restrict_params(params, %{assigns: %{section: :notifications}}) do
+    case Map.pop(params, "payment_reminder_days_text") do
+      {nil, params} ->
+        params
+
+      {value, params} ->
+        days =
+          value
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> Enum.map(fn item ->
+            case Integer.parse(item) do
+              {number, ""} -> number
+              _ -> nil
+            end
+          end)
+
+        Map.put(
+          params,
+          "payment_reminder_days",
+          if(days != [] and Enum.all?(days, &is_integer/1), do: days, else: [])
+        )
+    end
+  end
+
   defp restrict_params(params, %{assigns: %{section: :tax, current_scope: scope}}) do
     if Scope.owner?(scope), do: params, else: Map.drop(params, @owner_tax_fields)
   end
@@ -1708,6 +1733,37 @@ defmodule QuantumBillingWeb.SettingsLive do
           label="A GST filing is coming due"
           hint="Uses the compliance calendar."
         />
+        <.toggle
+          field={f[:payment_reminders_enabled]}
+          label="Automatic payment reminders"
+          hint="Email clients about unpaid invoices according to the schedule below."
+        />
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label for="payment-reminder-days" class="mb-1 block text-sm font-medium">
+            Payment reminder schedule (days)
+          </label>
+          <input
+            id="payment-reminder-days"
+            name="organization[payment_reminder_days_text]"
+            type="text"
+            value={Enum.join(f[:payment_reminder_days].value || [], ", ")}
+            placeholder="-3, 0, 7"
+            class="input input-bordered w-full"
+          />
+          <p class="mt-1 text-xs text-base-content/60">
+            Comma-separated offsets: -3 means 3 days before due, 0 means due date,
+            and 7 means 7 days overdue. Allowed range: -30 to 365.
+          </p>
+          <p
+            :for={error <- f[:payment_reminder_days].errors}
+            class="mt-1 text-xs text-error"
+          >
+            {elem(error, 0)}
+          </p>
+        </div>
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
