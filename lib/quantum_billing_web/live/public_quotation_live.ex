@@ -35,6 +35,9 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
         {:ok, gone(socket)}
 
       quotation ->
+        if connected?(socket) and is_binary(quotation.public_token),
+          do: Quotations.subscribe_public(quotation.public_token)
+
         {:ok,
          socket
          |> assign(:page_title, "Quotation #{quotation.number}")
@@ -42,24 +45,61 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
          |> assign(:business, business)
          |> assign(:token, token)
          |> assign(:answer_error, nil)
+         |> assign(:revision_notice, nil)
          |> assign_quotation(quotation)}
     end
   end
 
-  def handle_event("accept", _params, socket), do: answer(socket, &Quotations.accept/2)
-  def handle_event("decline", _params, socket), do: answer(socket, &Quotations.decline/2)
+  def handle_event("accept", params, socket), do: answer(socket, params, &Quotations.accept/3)
+  def handle_event("decline", params, socket), do: answer(socket, params, &Quotations.decline/3)
 
-  # Re-read by the token: the quotation may have been binned, answered or
-  # extended since the page opened.
-  defp answer(socket, action) do
+  def handle_info({:quotation_changed, _id}, socket) do
     case Quotations.get_quotation_by_token(socket.assigns.token) do
       nil ->
         {:noreply, gone(socket)}
 
       quotation ->
-        case action.(@actor, quotation) do
+        {:noreply,
+         socket
+         |> assign(:revision_notice, "This quotation was revised. Review the current version before answering.")
+         |> assign_quotation(quotation)}
+    end
+  end
+
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Re-read by the token: the quotation may have been binned, answered or
+  # extended since the page opened.
+  defp answer(socket, params, action) do
+    expected_revision = parse_revision(params["revision"])
+
+    case {expected_revision, Quotations.get_quotation_by_token(socket.assigns.token)} do
+      {nil, _quotation} ->
+        {:noreply,
+         assign(socket, :answer_error, "Please reload this quotation before answering it.")}
+
+      {_revision, nil} ->
+        {:noreply, gone(socket)}
+
+      {revision, quotation} ->
+        case action.(@actor, quotation, revision) do
           {:ok, updated} ->
             {:noreply, socket |> assign(:answer_error, nil) |> assign_quotation(updated)}
+
+          {:error, :stale_revision} ->
+            current = Quotations.get_quotation_by_token(socket.assigns.token) || quotation
+
+            {:noreply,
+             socket
+             |> assign(
+               :answer_error,
+               "This quotation was revised after you opened it. Please review the updated version before answering."
+             )
+             |> assign(
+               :revision_notice,
+               "This quotation was revised. Review the current version before answering."
+             )
+             |> assign_quotation(current)}
 
           {:error, _reason} ->
             current = Quotations.get_quotation_by_token(socket.assigns.token) || quotation
@@ -75,6 +115,15 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
     end
   end
 
+  defp parse_revision(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {revision, ""} when revision > 0 -> revision
+      _ -> nil
+    end
+  end
+
+  defp parse_revision(_value), do: nil
+
   defp assign_quotation(socket, %Quotation{} = quotation) do
     document = Quotations.as_document(quotation)
     {doc, accent, logo} = Templates.document_for(document)
@@ -83,6 +132,8 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
     socket
     |> assign(:quotation, quotation)
     |> assign(:status, Quotation.effective_status(quotation, Quotations.today()))
+    |> assign(:answerable?, Quotation.answerable?(quotation))
+    |> assign(:needs_resend?, Quotation.needs_resend?(quotation))
     |> assign(:document, document)
     |> assign(:doc, doc)
     |> assign(:accent, accent)
@@ -98,6 +149,11 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
   end
 
   defp open?(status), do: status in ["Draft", "Sent"]
+
+  defp revision_message(true, _notice),
+    do: "This quotation was revised. The business must send the updated version before you can answer."
+
+  defp revision_message(false, notice), do: notice
 
   def render(assigns) do
     ~H"""
@@ -133,6 +189,15 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
             {@answer_error}
           </p>
 
+          <p
+            :if={@revision_notice || @needs_resend?}
+            id="public-quotation-revised"
+            role="status"
+            class="w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning sm:order-last"
+          >
+            {revision_message(@needs_resend?, @revision_notice)}
+          </p>
+
           <div class="flex flex-wrap items-center gap-3">
             <span
               id="public-quotation-status"
@@ -156,14 +221,19 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
                 }
                 class="size-4"
               />
-              {if open?(@status), do: "Awaiting your answer", else: @status}
+              {cond do
+                @needs_resend? -> "Revised; awaiting updated copy"
+                open?(@status) -> "Awaiting your answer"
+                true -> @status
+              end}
             </span>
 
             <button
-              :if={open?(@status)}
+              :if={@answerable? and open?(@status)}
               id="public-decline-quotation"
               type="button"
               phx-click="decline"
+              phx-value-revision={@quotation.revision}
               phx-disable-with="Declining…"
               data-confirm="Decline this quotation?"
               class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-base-300 hover:border-error/40 hover:bg-error/5 hover:text-error text-xs font-semibold transition"
@@ -172,10 +242,11 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
             </button>
 
             <button
-              :if={open?(@status)}
+              :if={@answerable? and open?(@status)}
               id="public-accept-quotation"
               type="button"
               phx-click="accept"
+              phx-value-revision={@quotation.revision}
               phx-disable-with="Accepting…"
               data-confirm="Accept this quotation?"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition transform hover:-translate-y-0.5"

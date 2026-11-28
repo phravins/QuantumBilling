@@ -35,6 +35,8 @@ defmodule QuantumBilling.Quotations.Quotation do
     field :quotation_date, :date
     field :valid_until, :date
     field :status, :string, default: "Draft"
+    field :revision, :integer, default: 1
+    field :sent_revision, :integer
     field :place_of_supply, :string
     field :currency, :string, default: "INR"
 
@@ -197,6 +199,14 @@ defmodule QuantumBilling.Quotations.Quotation do
 
   @doc "Whether the quotation can still be edited (its stored status is Draft or Sent)."
   def editable?(%__MODULE__{status: status}), do: status in ["Draft", "Sent"]
+
+  def needs_resend?(%__MODULE__{status: "Draft", revision: revision, sent_revision: sent_revision})
+      when is_integer(sent_revision),
+      do: revision > sent_revision
+
+  def needs_resend?(_quotation), do: false
+
+  def answerable?(%__MODULE__{} = quotation), do: not needs_resend?(quotation)
 
   @doc "Whether a linked invoice exists. Needs `:invoice` preloaded."
   def converted?(%__MODULE__{invoice: %Invoice{}}), do: true

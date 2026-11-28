@@ -161,7 +161,7 @@ defmodule QuantumBilling.QuotationsTest do
   end
 
   describe "update_quotation/3" do
-    test "edits a Draft or Sent quotation but not its number or status", %{scope: scope} do
+    test "edits Draft quotations and sends revised Sent quotations back to Draft", %{scope: scope} do
       quotation = quotation_fixture(scope)
 
       assert {:ok, updated} =
@@ -176,7 +176,20 @@ defmodule QuantumBilling.QuotationsTest do
       assert updated.number == quotation.number
 
       {:ok, sent} = Quotations.mark_sent(scope, updated)
-      assert {:ok, _} = Quotations.update_quotation(scope, sent, %{"remarks" => "Revised"})
+      assert sent.sent_revision == sent.revision
+      assert {:ok, revised} = Quotations.update_quotation(scope, sent, %{"remarks" => "Revised"})
+      assert revised.status == "Draft"
+      assert revised.revision == sent.revision + 1
+      assert revised.sent_revision == sent.revision
+      assert Quotation.needs_resend?(revised)
+      refute Quotation.answerable?(revised)
+
+      assert {:error, :invalid_transition} = Quotations.accept(scope, revised)
+      assert {:error, :invalid_transition} = Quotations.decline(scope, revised)
+
+      {:ok, resent} = Quotations.mark_sent(scope, revised)
+      assert resent.sent_revision == resent.revision
+      assert Quotation.answerable?(resent)
     end
 
     test "is locked once Accepted or Declined", %{scope: scope} do

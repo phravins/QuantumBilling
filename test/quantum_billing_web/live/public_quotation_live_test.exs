@@ -10,6 +10,7 @@ defmodule QuantumBillingWeb.PublicQuotationLiveTest do
 
   alias QuantumBilling.Audit
   alias QuantumBilling.Quotations
+  alias QuantumBilling.Quotations.Quotation
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBillingWeb.PublicQuotationLive
@@ -74,8 +75,26 @@ defmodule QuantumBillingWeb.PublicQuotationLiveTest do
 
     assert Enum.any?(Audit.list_audit_logs(), fn log ->
              log.action == "quotation_accepted" and log.resource_id == to_string(quotation.id) and
-               is_nil(log.user_id)
+               is_nil(log.user_id) and log.details["accepted_revision"] == quotation.revision and
+               log.details["grand_total"] == quotation.grand_total
            end)
+  end
+
+  test "a changed quotation is reloaded and can't be accepted from a stale page",
+       %{conn: conn, quotation: quotation} do
+    {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
+
+    {:ok, revised} =
+      Quotations.update_quotation(@actor, quotation, %{"terms" => "Revised terms"})
+
+    assert revised.revision == quotation.revision + 1
+
+    view |> element("#public-accept-quotation") |> render_click()
+
+    assert has_element?(view, "#public-quotation-error", "revised after you opened it")
+    assert has_element?(view, "#public-quotation-status", "Awaiting your answer")
+    assert render(view) =~ "Revised terms"
+    assert Quotations.get_quotation(quotation.id).status == "Draft"
   end
 
   test "declining records the client's answer", %{conn: conn, quotation: quotation} do
@@ -93,11 +112,47 @@ defmodule QuantumBillingWeb.PublicQuotationLiveTest do
     {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
     {:ok, _} = Quotations.decline(@actor, quotation)
 
-    view |> element("#public-accept-quotation") |> render_click()
+    render_click(view, "accept", %{"revision" => to_string(quotation.revision)})
 
     assert has_element?(view, "#public-quotation-error")
+    assert has_element?(view, "#public-quotation-revised")
     assert has_element?(view, "#public-quotation-status", "Declined")
     assert Quotations.get_quotation(quotation.id).status == "Declined"
+  end
+
+  test "an open client page refreshes immediately when a quotation is revised",
+       %{conn: conn, quotation: quotation} do
+    {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
+
+    {:ok, revised} =
+      Quotations.update_quotation(@actor, quotation, %{"terms" => "New terms for review"})
+
+    assert has_element?(view, "#public-quotation-revised")
+    assert render(view) =~ "New terms for review"
+    assert revised.revision == quotation.revision + 1
+
+    render_click(view, "accept", %{"revision" => to_string(quotation.revision)})
+    assert has_element?(view, "#public-quotation-error", "revised after you opened it")
+    assert Quotations.get_quotation(quotation.id).status == "Draft"
+
+    render_click(view, "decline", %{"revision" => to_string(quotation.revision)})
+    assert has_element?(view, "#public-quotation-error", "revised after you opened it")
+    assert Quotations.get_quotation(quotation.id).status == "Draft"
+  end
+
+  test "an edited sent quotation can't be answered again until its new version is sent",
+       %{conn: conn, quotation: quotation} do
+    {:ok, sent} = Quotations.mark_sent(@actor, quotation)
+    {:ok, view, _html} = live(conn, PublicQuotationLive.path(sent.public_token))
+
+    {:ok, revised} =
+      Quotations.update_quotation(@actor, sent, %{"terms" => "Revised after sending"})
+
+    assert revised.status == "Draft"
+    assert Quotation.needs_resend?(revised)
+    assert has_element?(view, "#public-quotation-revised", "must send the updated version")
+    refute has_element?(view, "#public-accept-quotation")
+    refute has_element?(view, "#public-decline-quotation")
   end
 
   test "an expired quotation can't be answered", %{conn: conn, quotation: quotation} do

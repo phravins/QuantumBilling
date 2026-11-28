@@ -44,6 +44,9 @@ defmodule QuantumBilling.Events do
   # Business-scoped: invoice ids restart in every business's schema.
   def invoice_topic(invoice_id), do: business_topic("invoice:#{invoice_id}")
 
+  @doc "Changes to one quotation, for the public client page."
+  def public_quotation_topic(token), do: business_topic("public_quotation:#{token}")
+
   @doc "E-way bills generated, cancelled, or moved to another vehicle. Carries an `%EWayBill{}`."
   def e_way_bills_topic, do: business_topic("e_way_bills")
 

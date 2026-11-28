@@ -185,6 +185,10 @@ defmodule QuantumBillingWeb.QuotationNewLive do
   end
 
   defp saved_message(%Quotation{id: nil}, quotation), do: "Quotation #{quotation.number} saved."
+
+  defp saved_message(%Quotation{status: "Sent"}, quotation),
+    do: "Quotation #{quotation.number} revised. Send the updated quotation before the client can answer."
+
   defp saved_message(_existing, quotation), do: "Quotation #{quotation.number} updated."
 
   def handle_info({:clear_hsn_notice, index}, socket),
@@ -249,6 +253,15 @@ defmodule QuantumBillingWeb.QuotationNewLive do
       </.header>
 
       <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <p
+          :if={@quotation.status == "Sent"}
+          id="sent-quotation-edit-warning"
+          role="status"
+          class="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning lg:col-span-3"
+        >
+          This quotation has already been sent. Saving changes moves it back to Draft; send the updated version before the client can answer.
+        </p>
+
         <.form
           :let={f}
           for={@form}
