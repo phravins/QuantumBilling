@@ -97,7 +97,8 @@ config :quantum_billing,
 
 # Disable only for a self-signed relay on a trusted network.
 config :quantum_billing,
-  smtp_tls_verify: System.get_env("SMTP_TLS_VERIFY") not in ["false", "0"]
+  smtp_tls_verify: System.get_env("SMTP_TLS_VERIFY") not in ["false", "0"],
+  smtp_allow_private_relay: System.get_env("SMTP_ALLOW_PRIVATE_RELAY") in ["true", "1"]
 
 # Trusted proxies (addresses or CIDRs) for x-forwarded-for; empty ignores the
 # header. See QuantumBillingWeb.ClientIP.

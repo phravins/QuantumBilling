@@ -69,9 +69,10 @@ Mail uses business SMTP settings when a usable relay is configured; otherwise it
 | `SMTP_PASSWORD` | Unset | Relay authentication password |
 | `SMTP_SSL` | False unless port 465 | `true`/`1` requests implicit TLS; otherwise required STARTTLS |
 | `SMTP_TLS_VERIFY` | Enabled | `false`/`0` disables certificate verification for a deliberately configured self-signed relay |
+| `SMTP_ALLOW_PRIVATE_RELAY` | Disabled | Set to `true` only when businesses need a private or local per-business relay. This opt-in also permits nonstandard SMTP ports; the operator-configured `SMTP_HOST` relay is unaffected. |
 | `MAILER_FROM_EMAIL` | `QuantumBilling.Mail.sender/2` | From address for mail sent through the app relay; must be one `SMTP_USERNAME` may send from. Empty uses `SMTP_USERNAME` when it is an address. |
 
-Port 465 uses implicit TLS; other ports require STARTTLS. Verification normally checks the system trust store and relay hostname. SMTP credentials entered in settings are stored encrypted, and secret form fields do not render stored values. A blank secret input preserves the stored secret. Account mail is composed in `Accounts.UserNotifier`; invoice/e-way-bill mail has dedicated notifier modules and delivery records/jobs.
+Per-business relays use ports 25, 465, 587 or 2525 by default. The host must resolve only to public addresses when saved and is resolved and pinned again when mail is sent, while TLS still verifies the original hostname. Port 465 uses implicit TLS; other ports require STARTTLS. Verification normally checks the system trust store and relay hostname. SMTP credentials entered in settings are stored encrypted, and secret form fields do not render stored values. A blank secret input preserves the stored secret. Account mail is composed in `Accounts.UserNotifier`; invoice/e-way-bill mail has dedicated notifier modules and delivery records/jobs.
 
 `Accounts.UserNotifier` selects the current business, or business 1 when there is none, for account mail transport and its ledger. Queued document mail (invoices, receipts, e-way bills) runs in the business that queued it, so it uses that business's SMTP settings and delivery ledger.
 

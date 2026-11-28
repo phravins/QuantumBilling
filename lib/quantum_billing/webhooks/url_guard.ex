@@ -11,7 +11,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   def check(url) when is_binary(url) do
     with {:ok, %URI{scheme: scheme, host: host, port: port}} <- parse(url),
          :ok <- check_scheme(scheme),
-         :ok <- check_host(host),
+         :ok <- check_host_name(host),
          {:ok, addresses} <- resolve(host, port),
          :ok <- check_addresses(addresses) do
       :ok
@@ -30,7 +30,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   def pin(url) when is_binary(url) do
     with {:ok, %URI{scheme: scheme, host: host, port: port} = uri} <- parse(url),
          :ok <- check_scheme(scheme),
-         :ok <- check_host(host),
+         :ok <- check_host_name(host),
          {:ok, addresses} <- resolve(host, port),
          :ok <- check_addresses(addresses),
          {:ok, address} <- first_address(addresses) do
@@ -58,7 +58,43 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
   defp check_scheme(scheme) when scheme in ["http", "https"], do: :ok
   defp check_scheme(_scheme), do: {:error, "must be a full http:// or https:// URL"}
 
-  defp check_host(host) when is_binary(host) and host != "" do
+  @doc "`:ok` only when a hostname resolves exclusively to public addresses."
+  def check_smtp_host(host) when is_binary(host) and host != "" do
+    with :ok <- check_host_name(host),
+         {:ok, addresses} <- resolve(host, nil),
+         :ok <- check_addresses(addresses),
+         :ok <- require_resolved(addresses) do
+      :ok
+    end
+  end
+
+  def check_smtp_host(_host), do: {:error, "must include a hostname"}
+
+  @doc "Resolves a hostname once and returns a checked public address for a pinned connection."
+  def pin_host(host) when is_binary(host) and host != "" do
+    with :ok <- check_host_name(host),
+         {:ok, addresses} <- resolve(host, nil),
+         :ok <- check_addresses(addresses),
+         {:ok, address} <- first_address(addresses) do
+      {:ok, address |> :inet.ntoa() |> to_string()}
+    end
+  end
+
+  def pin_host(_host), do: {:error, "must include a hostname"}
+
+  @doc "Whether the operator explicitly enabled private per-business SMTP relays."
+  def private_smtp_relays_allowed? do
+    Application.get_env(:quantum_billing, :smtp_allow_private_relay, false) == true
+  end
+
+  @doc "Whether the port is an SMTP port allowed by the operator's relay policy."
+  def smtp_port_allowed?(port) when is_integer(port) and port in 1..65_535 do
+    private_smtp_relays_allowed?() or port in [25, 465, 587, 2525]
+  end
+
+  def smtp_port_allowed?(_port), do: false
+
+  defp check_host_name(host) when is_binary(host) and host != "" do
     if String.ends_with?(host, [".internal", ".local", ".localdomain"]) or
          host in ["localhost", "metadata.google.internal"] do
       {:error, "cannot point inside the server's own network"}
@@ -67,7 +103,7 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
     end
   end
 
-  defp check_host(_host), do: {:error, "must include a hostname"}
+  defp check_host_name(_host), do: {:error, "must include a hostname"}
 
   @resolve_timeout_ms 2_000
 
@@ -104,6 +140,9 @@ defmodule QuantumBilling.Webhooks.UrlGuard do
       {:error, "cannot point inside the server's own network"}
     end
   end
+
+  defp require_resolved([]), do: {:error, "could not be resolved"}
+  defp require_resolved(_addresses), do: :ok
 
   @doc "Whether this server may connect to `address`. Public so the ranges can be tested."
   # Loopback.

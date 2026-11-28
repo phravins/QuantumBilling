@@ -19,6 +19,7 @@ defmodule QuantumBilling.Mail do
   alias QuantumBilling.Repo
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Webhooks.UrlGuard
 
   @connect_timeout_ms 15_000
   @default_sender_email "invoices@quantumbilling.in"
@@ -31,9 +32,13 @@ defmodule QuantumBilling.Mail do
   end
 
   def deliver(%Swoosh.Email{} = email, %Organization{} = organization) do
-    case Mailer.deliver(email, smtp_config(organization)) do
-      {:ok, metadata} -> {:ok, metadata}
-      {:error, reason} -> {:error, error_message(reason)}
+    with {:ok, config} <- delivery_config(organization) do
+      case Mailer.deliver(email, config) do
+        {:ok, metadata} -> {:ok, metadata}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    else
+      {:error, message} -> {:error, message}
     end
   rescue
     # gen_smtp raises on some option and DNS failures.
@@ -78,6 +83,31 @@ defmodule QuantumBilling.Mail do
   end
 
   def smtp_config(_no_organization), do: []
+
+  defp delivery_config(%Organization{} = organization) do
+    config = smtp_config(organization)
+
+    cond do
+      config == [] ->
+        {:ok, []}
+
+      not UrlGuard.smtp_port_allowed?(organization.smtp_port || 587) ->
+        {:error, private_relay_error()}
+
+      UrlGuard.private_smtp_relays_allowed?() ->
+        {:ok, config}
+
+      true ->
+        case UrlGuard.pin_host(presence(organization.smtp_host)) do
+          {:ok, address} -> {:ok, Keyword.put(config, :relay, address)}
+          {:error, _message} -> {:error, private_relay_error()}
+        end
+    end
+  end
+
+  defp private_relay_error do
+    "The SMTP host or port is not allowed. Ask the operator to set SMTP_ALLOW_PRIVATE_RELAY=true, or use a public relay on port 25, 465, 587 or 2525."
+  end
 
   # A username without a password can't authenticate; use the app mailer instead.
   defp usable_relay(%Organization{} = organization) do

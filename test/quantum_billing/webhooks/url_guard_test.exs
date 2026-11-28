@@ -3,9 +3,16 @@ defmodule QuantumBilling.Webhooks.UrlGuardTest do
   The address ranges outbound webhooks refuse. Tested through `public?/1`
   directly, without DNS.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias QuantumBilling.Webhooks.UrlGuard
+
+  defmodule SmtpResolver do
+    def resolve_with_dns("public.smtp.test"), do: [{93, 184, 216, 34}]
+    def resolve_with_dns("mixed.smtp.test"), do: [{93, 184, 216, 34}, {10, 0, 0, 8}]
+    def resolve_with_dns("private.smtp.test"), do: [{10, 0, 0, 8}]
+    def resolve_with_dns(_host), do: []
+  end
 
   describe "public?/1" do
     test "refuses loopback" do
@@ -110,6 +117,7 @@ defmodule QuantumBilling.Webhooks.UrlGuardTest do
     test "refuses what is not a URL at all" do
       assert {:error, _} = UrlGuard.check("not a url")
       assert {:error, _} = UrlGuard.check("https://")
+      assert {:error, _} = UrlGuard.check("https:/hooks")
       assert {:error, _} = UrlGuard.check("")
       assert {:error, _} = UrlGuard.check(nil)
       assert {:error, _} = UrlGuard.check(42)
@@ -157,6 +165,35 @@ defmodule QuantumBilling.Webhooks.UrlGuardTest do
       FakeDNS.put("v6.example.test", [{0x2001, 0xDB8, 0, 0, 0, 0, 0, 1}])
 
       assert {:ok, "https://[2001:db8::1]/in", _} = UrlGuard.pin("https://v6.example.test/in")
+    end
+  end
+
+  describe "SMTP host checks" do
+    setup do
+      previous = Application.get_env(:quantum_billing, :url_guard_resolver)
+      Application.put_env(:quantum_billing, :url_guard_resolver, SmtpResolver)
+
+      on_exit(fn ->
+        if is_nil(previous),
+          do: Application.delete_env(:quantum_billing, :url_guard_resolver),
+          else: Application.put_env(:quantum_billing, :url_guard_resolver, previous)
+      end)
+    end
+
+    test "accepts and pins a public SMTP hostname" do
+      assert :ok = UrlGuard.check_smtp_host("public.smtp.test")
+      assert {:ok, "93.184.216.34"} = UrlGuard.pin_host("public.smtp.test")
+    end
+
+    test "rejects private and mixed public/private DNS answers" do
+      assert {:error, message} = UrlGuard.check_smtp_host("private.smtp.test")
+      assert message =~ "inside the server's own network"
+      assert {:error, _message} = UrlGuard.pin_host("mixed.smtp.test")
+    end
+
+    test "rejects unresolvable hostnames" do
+      assert {:error, "could not be resolved"} = UrlGuard.check_smtp_host("missing.smtp.test")
+      assert {:error, "could not be resolved"} = UrlGuard.pin_host("missing.smtp.test")
     end
   end
 end

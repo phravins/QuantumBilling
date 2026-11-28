@@ -1861,8 +1861,19 @@ defmodule QuantumBillingWeb.SettingsLive do
     ~H"""
     <.form :let={f} for={@form} id="settings-form" phx-change="validate" phx-submit="save">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <.field field={f[:smtp_host]} label="SMTP Server Host" placeholder="smtp.mailgun.org" />
-        <.field field={f[:smtp_port]} label="Port" type="number" placeholder="587" />
+        <.field
+          field={f[:smtp_host]}
+          label="SMTP Server Host"
+          placeholder="smtp.mailgun.org"
+          hint="The host must resolve to a public address. Private network relays require the operator to set SMTP_ALLOW_PRIVATE_RELAY=true."
+        />
+        <.field
+          field={f[:smtp_port]}
+          label="Port"
+          type="number"
+          placeholder="587"
+          hint="Use 25, 465, 587 or 2525."
+        />
         <.field
           field={f[:smtp_username]}
           label="SMTP Username"

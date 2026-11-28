@@ -8,6 +8,21 @@ defmodule QuantumBilling.MailTest do
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
 
+  defmodule PublicRelayResolver do
+    def resolve_with_dns(_host), do: [{93, 184, 216, 34}]
+  end
+
+  setup_all do
+    previous = Application.get_env(:quantum_billing, :url_guard_resolver)
+    Application.put_env(:quantum_billing, :url_guard_resolver, PublicRelayResolver)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:quantum_billing, :url_guard_resolver),
+        else: Application.put_env(:quantum_billing, :url_guard_resolver, previous)
+    end)
+  end
+
   describe "smtp_config/1" do
     test "falls back to the application mailer when no relay is configured" do
       assert Mail.smtp_config(%Organization{}) == []
@@ -36,7 +51,7 @@ defmodule QuantumBilling.MailTest do
           smtp_password: nil
         })
 
-      assert config[:relay] == "smtp.example.com"
+      assert config[:relay] == "93.184.216.34"
       assert config[:auth] == :never
     end
 
@@ -50,7 +65,7 @@ defmodule QuantumBilling.MailTest do
         })
 
       assert config[:adapter] == Swoosh.Adapters.SMTP
-      assert config[:relay] == "smtp.example.com"
+      assert config[:relay] == "93.184.216.34"
       assert config[:port] == 587
       assert config[:ssl] == false
       # Required, not opportunistic: a downgrade would send the password in
@@ -85,7 +100,7 @@ defmodule QuantumBilling.MailTest do
     end
 
     test "does not authenticate when no username is configured" do
-      config = Mail.smtp_config(%Organization{smtp_host: "relay.internal", smtp_port: 25})
+      config = Mail.smtp_config(%Organization{smtp_host: "smtp.example.com", smtp_port: 25})
 
       assert config[:auth] == :never
       refute Keyword.has_key?(config, :username)
@@ -95,7 +110,7 @@ defmodule QuantumBilling.MailTest do
       assert Mail.smtp_config(%Organization{smtp_host: "  "}) == []
 
       assert Mail.smtp_config(%Organization{smtp_host: " smtp.example.com "})[:relay] ==
-               "smtp.example.com"
+               "93.184.216.34"
     end
   end
 
@@ -237,6 +252,42 @@ defmodule QuantumBilling.MailTest do
 
       assert {:ok, _metadata} = Mail.deliver(email, %Organization{})
       assert_email_sent(subject: "Hello")
+    end
+
+    test "a relay that becomes private is refused instead of falling back to the app mailer" do
+      previous = Application.get_env(:quantum_billing, :url_guard_resolver)
+      Application.put_env(:quantum_billing, :url_guard_resolver, QuantumBilling.FakeDNS)
+
+      on_exit(fn ->
+        if is_nil(previous),
+          do: Application.delete_env(:quantum_billing, :url_guard_resolver),
+          else: Application.put_env(:quantum_billing, :url_guard_resolver, previous)
+      end)
+
+      QuantumBilling.FakeDNS.put("relay-rebound.example.test", [{203, 0, 113, 10}])
+
+      {:ok, organization} =
+        Settings.update_section(
+          Settings.get_organization(),
+          %{"smtp_host" => "relay-rebound.example.test", "smtp_port" => "587"},
+          :smtp
+        )
+
+      QuantumBilling.FakeDNS.put("relay-rebound.example.test", [{10, 0, 0, 5}])
+      email = Swoosh.Email.new() |> Swoosh.Email.to("someone@example.com")
+
+      assert {:error, message} = Mail.deliver(email, organization)
+      assert message =~ "SMTP host or port is not allowed"
+      refute_email_sent()
+    end
+
+    test "a previously saved non-SMTP port is refused at send time" do
+      organization = %Organization{smtp_host: "smtp.example.test", smtp_port: 5432}
+      email = Swoosh.Email.new() |> Swoosh.Email.to("someone@example.com")
+
+      assert {:error, message} = Mail.deliver(email, organization)
+      assert message =~ "SMTP host or port is not allowed"
+      refute_email_sent()
     end
 
     # Prod without SMTP_HOST uses this adapter (config/runtime.exs).

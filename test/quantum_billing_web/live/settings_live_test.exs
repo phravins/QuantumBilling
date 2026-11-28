@@ -510,6 +510,40 @@ defmodule QuantumBillingWeb.SettingsLiveTest do
       refute html =~ "hunter2-after-error"
     end
 
+    test "refuses private relay addresses and non-SMTP ports", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{"smtp_host" => "127.0.0.1", "smtp_port" => "5432"}
+      })
+      |> render_change()
+
+      assert has_element?(view, "#settings-form", "cannot point inside")
+      assert has_element?(view, "#settings-form", "must be one of 25, 465, 587 or 252")
+    end
+
+    test "the operator opt-in allows private relays on custom ports", %{conn: conn} do
+      previous = Application.get_env(:quantum_billing, :smtp_allow_private_relay, false)
+      Application.put_env(:quantum_billing, :smtp_allow_private_relay, true)
+
+      on_exit(fn ->
+        Application.put_env(:quantum_billing, :smtp_allow_private_relay, previous)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/smtp")
+
+      view
+      |> form("#settings-form", %{
+        "organization" => %{"smtp_host" => "127.0.0.1", "smtp_port" => "1025"}
+      })
+      |> render_submit()
+
+      organization = Settings.get_organization()
+      assert organization.smtp_host == "127.0.0.1"
+      assert organization.smtp_port == 1025
+    end
+
     test "the password field has a show/hide button", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings/smtp")
 

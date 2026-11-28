@@ -14,6 +14,7 @@ defmodule QuantumBilling.Settings.Organization do
   alias QuantumBilling.GST
   alias QuantumBilling.Money.Paise
   alias QuantumBilling.Tax
+  alias QuantumBilling.Webhooks.UrlGuard
 
   @gst_rates [0, 5, 12, 18, 28]
 
@@ -282,13 +283,14 @@ defmodule QuantumBilling.Settings.Organization do
     |> cast(attrs, @smtp)
     |> keep_stored_secrets()
     |> trim(@smtp)
-    |> validate_number(:smtp_port, greater_than: 0, less_than: 65536)
+    |> validate_smtp_port()
     |> validate_format(:smtp_from_email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
       message: "must have the @ sign and no spaces"
     )
     |> validate_format(:smtp_host, ~r|^[^\s/:]+$|,
       message: "must be a hostname only, without https:// or a port"
     )
+    |> validate_smtp_host_guard()
     |> validate_smtp_credentials_paired()
   end
 
@@ -356,6 +358,40 @@ defmodule QuantumBilling.Settings.Organization do
       add_error(changeset, :smtp_password, "is required when a username is set")
     else
       changeset
+    end
+  end
+
+  defp validate_smtp_host_guard(changeset) do
+    host = get_field(changeset, :smtp_host)
+
+    cond do
+      not present?(host) ->
+        changeset
+
+      UrlGuard.private_smtp_relays_allowed?() ->
+        changeset
+
+      true ->
+        case UrlGuard.check_smtp_host(host) do
+          :ok -> changeset
+          {:error, message} -> add_error(changeset, :smtp_host, message)
+        end
+    end
+  end
+
+  defp validate_smtp_port(changeset) do
+    changeset =
+      validate_number(changeset, :smtp_port,
+        greater_than: 0,
+        less_than_or_equal_to: 65_535
+      )
+
+    if UrlGuard.private_smtp_relays_allowed?() or not changeset.valid? do
+      changeset
+    else
+      validate_inclusion(changeset, :smtp_port, [25, 465, 587, 2525],
+        message: "must be one of 25, 465, 587 or 2525"
+      )
     end
   end
 
