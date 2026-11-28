@@ -178,12 +178,14 @@ defmodule QuantumBilling.Spreadsheet do
     case inflate_part(binary, entries, name, budget) do
       {:ok, _xml, _budget} = read -> read
       {:error, :too_large} -> {:error, too_large()}
-      {:error, :unreadable} -> {:error, not_xlsx()}
+      {:error, :unreadable, _left} -> {:error, not_xlsx()}
     end
   end
 
   # Reads a part from its local header, inflates at most `budget` bytes of it,
-  # and checks its CRC-32 as `:zip` would.
+  # and checks its CRC-32 as `:zip` would. An unreadable part returns the budget
+  # left after what it inflated before failing, so a fallback read can't spend
+  # those bytes again.
   defp inflate_part(binary, entries, name, budget) do
     with {:ok, {offset, comp_size}} <- Map.fetch(entries, name),
          <<_before::binary-size(offset), 0x04034B50::little-32, _version::little-16,
@@ -192,12 +194,14 @@ defmodule QuantumBilling.Spreadsheet do
            _name::binary-size(name_length), _extra::binary-size(extra_length),
            data::binary-size(comp_size), after_data::binary>> <- binary,
          {:ok, crc} <- expected_crc(flags, crc, after_data),
-         {:ok, contents, left} <- inflate_data(method, data, budget),
-         true <- :erlang.crc32(contents) == crc do
-      {:ok, contents, left}
+         {:ok, contents, left} <- inflate_data(method, data, budget) do
+      if :erlang.crc32(contents) == crc,
+        do: {:ok, contents, left},
+        else: {:error, :unreadable, left}
     else
+      {:error, _reason, _left} = inflate_error -> inflate_error
       {:error, :too_large} -> {:error, :too_large}
-      _missing_or_damaged -> {:error, :unreadable}
+      _missing_or_damaged -> {:error, :unreadable, budget}
     end
   end
 
@@ -222,18 +226,17 @@ defmodule QuantumBilling.Spreadsheet do
 
     try do
       :ok = :zlib.inflateInit(z, -15)
-      inflate_chunks(z, :zlib.safeInflate(z, data), [], budget)
-    catch
-      :error, _reason -> {:error, :unreadable}
+      inflate_chunks(z, zlib(fn -> :zlib.safeInflate(z, data) end), [], budget)
     after
       :zlib.close(z)
     end
   end
 
-  defp inflate_data(_method, _data, _budget), do: {:error, :unreadable}
+  defp inflate_data(_method, _data, budget), do: {:error, :unreadable, budget}
 
   # safeInflate/2 hands back a small chunk at a time, so this stops within one
-  # chunk of the budget however far the data would expand.
+  # chunk of the budget however far the data would expand. Every chunk is
+  # charged before the next is asked for, so a failure keeps them counted.
   defp inflate_chunks(z, {status, output}, chunks, budget)
        when status in [:continue, :finished] do
     left = budget - IO.iodata_length(output)
@@ -243,16 +246,26 @@ defmodule QuantumBilling.Spreadsheet do
         {:error, :too_large}
 
       status == :continue ->
-        inflate_chunks(z, :zlib.safeInflate(z, []), [output | chunks], left)
+        inflate_chunks(z, zlib(fn -> :zlib.safeInflate(z, []) end), [output | chunks], left)
+
+      # inflateEnd/1 refuses a stream that stopped before its end.
+      zlib(fn -> :zlib.inflateEnd(z) end) == :ok ->
+        {:ok, IO.iodata_to_binary(Enum.reverse([output | chunks])), left}
 
       true ->
-        # Raises a data error if the stream stopped before its end.
-        :ok = :zlib.inflateEnd(z)
-        {:ok, IO.iodata_to_binary(Enum.reverse([output | chunks])), left}
+        {:error, :unreadable, left}
     end
   end
 
-  defp inflate_chunks(_z, _need_dictionary, _chunks, _budget), do: {:error, :unreadable}
+  # A data error, or a preset dictionary .xlsx never uses.
+  defp inflate_chunks(_z, _unreadable, _chunks, budget), do: {:error, :unreadable, budget}
+
+  # A zlib call whose data error comes back as a value, not an exception.
+  defp zlib(call) do
+    call.()
+  catch
+    :error, _reason -> :data_error
+  end
 
   # The first <sheet> in the workbook, through its relationship id.
   defp first_sheet_path(binary, entries, budget) do
@@ -269,8 +282,8 @@ defmodule QuantumBilling.Spreadsheet do
       {:error, :too_large} ->
         {:error, too_large()}
 
-      {:error, :unreadable} ->
-        fallback_sheet(entries, budget)
+      {:error, :unreadable, left} ->
+        fallback_sheet(entries, left)
     end
   end
 
@@ -289,8 +302,8 @@ defmodule QuantumBilling.Spreadsheet do
       {:error, :too_large} ->
         {:error, too_large()}
 
-      {:error, :unreadable} ->
-        fallback_sheet(entries, budget)
+      {:error, :unreadable, left} ->
+        fallback_sheet(entries, left)
     end
   end
 

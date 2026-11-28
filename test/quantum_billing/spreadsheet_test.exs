@@ -200,6 +200,46 @@ defmodule QuantumBilling.SpreadsheetTest do
                Spreadsheet.parse(archive, "x.xlsx")
     end
 
+    test "counts a part that fails its CRC check against the limit" do
+      # The workbook inflates 30 MiB and then fails its CRC check, so the reader
+      # falls back to sheet1.xml. Those 30 MiB still count: another 30 MiB
+      # sheet would take the total past the limit.
+      {data, crc, size} =
+        deflated([
+          {~s|<workbook><sheets><sheet name="S" sheetId="1"/></sheets>|, 1},
+          {spaces(), 30},
+          {"</workbook>", 1}
+        ])
+
+      archive =
+        raw_zip([
+          {"xl/workbook.xml", {data, bxor(crc, 1), size}, 1},
+          {"xl/worksheets/sheet1.xml", padded_sheet(30 * @mib), 1}
+        ])
+
+      assert {:error, "The spreadsheet is too large to read."} =
+               Spreadsheet.parse(archive, "x.xlsx")
+    end
+
+    test "counts relationships that fail their CRC check against the limit" do
+      workbook =
+        ~s|<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">| <>
+          ~s|<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>|
+
+      {data, crc, size} =
+        deflated([{"<Relationships>", 1}, {spaces(), 30}, {"</Relationships>", 1}])
+
+      archive =
+        raw_zip([
+          {"xl/workbook.xml", deflated([{workbook, 1}]), :actual},
+          {"xl/_rels/workbook.xml.rels", {data, bxor(crc, 1), size}, 1},
+          {"xl/worksheets/sheet1.xml", padded_sheet(30 * @mib), 1}
+        ])
+
+      assert {:error, "The spreadsheet is too large to read."} =
+               Spreadsheet.parse(archive, "x.xlsx")
+    end
+
     test "reads parts whose CRC and sizes follow the data in a descriptor" do
       archive =
         raw_zip([
