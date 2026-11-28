@@ -16,6 +16,7 @@ defmodule QuantumBillingWeb.BinLive do
 
   alias QuantumBilling.Clients
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Compliance
   alias QuantumBilling.EWayBills
   alias QuantumBilling.EWayBills.EWayBill
   alias QuantumBilling.Invoices
@@ -24,6 +25,7 @@ defmodule QuantumBillingWeb.BinLive do
   alias QuantumBilling.Quotations.Quotation
   alias QuantumBilling.Recurring
   alias QuantumBilling.Recurring.RecurringProfile
+  alias QuantumBilling.Settings
   alias QuantumBilling.Templates
   alias QuantumBilling.Templates.InvoiceTemplate
 
@@ -284,6 +286,8 @@ defmodule QuantumBillingWeb.BinLive do
     |> assign(:counts, counts)
     |> assign(:shown, length(shown))
     |> assign(:hidden, max(Map.get(counts, filter, 0) - length(shown), 0))
+    |> assign(:today, Compliance.local_date())
+    |> assign(:timezone, Settings.get_organization().timezone)
     |> stream(:entries, shown, reset: true)
   end
 
@@ -444,12 +448,18 @@ defmodule QuantumBillingWeb.BinLive do
 
   @doc false
   # "Deleted today", "Deleted yesterday", "Deleted 3 days ago"; a date past a month.
-  def relative_deleted(%DateTime{} = deleted_at, today \\ Date.utc_today()) do
-    case Date.diff(today, DateTime.to_date(deleted_at)) do
+  def relative_deleted(
+        %DateTime{} = deleted_at,
+        today \\ Compliance.local_date(),
+        timezone \\ nil
+      ) do
+    deleted_date = Compliance.local_date(deleted_at, timezone)
+
+    case Date.diff(today, deleted_date) do
       days when days <= 0 -> "Deleted today"
       1 -> "Deleted yesterday"
       days when days <= 30 -> "Deleted #{days} days ago"
-      _older -> "Deleted on #{format_date(DateTime.to_date(deleted_at))}"
+      _older -> "Deleted on #{format_date(deleted_date)}"
     end
   end
 
@@ -594,7 +604,7 @@ defmodule QuantumBillingWeb.BinLive do
               title={Calendar.strftime(entry.deleted_at, "%d %b %Y, %H:%M UTC")}
             >
               <.icon name="hero-clock" class="size-3.5" />
-              {relative_deleted(entry.deleted_at)}
+              {relative_deleted(entry.deleted_at, @today, @timezone)}
             </span>
 
             <div class="flex items-center gap-1.5">

@@ -17,7 +17,7 @@ defmodule QuantumBillingWeb.ComplianceTasksLiveTest do
     Map.merge(
       %{
         "title" => "Renew trade licence",
-        "due_date" => Date.to_iso8601(Date.add(Date.utc_today(), 30)),
+        "due_date" => Date.to_iso8601(Date.add(Compliance.local_date(), 30)),
         "category" => "other",
         "remind_days_before" => "3",
         "notes" => "Municipal office"
@@ -178,7 +178,7 @@ defmodule QuantumBillingWeb.ComplianceTasksLiveTest do
     end
 
     test "a calendar day with a task can be selected", %{conn: conn, scope: scope} do
-      due = Date.utc_today()
+      due = Compliance.local_date()
       view = add_task(conn, %{"due_date" => Date.to_iso8601(due)})
       [task] = stored(scope)
 
@@ -203,13 +203,13 @@ defmodule QuantumBillingWeb.ComplianceTasksLiveTest do
 
   describe "reminders" do
     test "one inside its window is announced straight away, and once", %{conn: conn, scope: scope} do
-      add_task(conn, %{"due_date" => Date.to_iso8601(Date.utc_today())})
+      add_task(conn, %{"due_date" => Date.to_iso8601(Compliance.local_date())})
 
       assert [%{title: title}] = Notifications.recent(50)
       assert title =~ "due today"
       assert [%{reminded_at: %DateTime{}}] = stored(scope)
 
-      assert Compliance.remind_due_tasks(Date.utc_today()) == 0
+      assert Compliance.remind_due_tasks(Compliance.local_date()) == 0
       assert length(Notifications.recent(50)) == 1
     end
 
@@ -232,10 +232,10 @@ defmodule QuantumBillingWeb.ComplianceTasksLiveTest do
     end
 
     test "moving the date allows a new reminder", %{conn: conn, scope: scope} do
-      add_task(conn, %{"due_date" => Date.to_iso8601(Date.utc_today())})
+      add_task(conn, %{"due_date" => Date.to_iso8601(Compliance.local_date())})
       [task] = stored(scope)
 
-      next_month = Date.add(Date.utc_today(), 30)
+      next_month = Date.add(Compliance.local_date(), 30)
 
       {:ok, moved} =
         Compliance.update_task(scope, task, %{"due_date" => Date.to_iso8601(next_month)})

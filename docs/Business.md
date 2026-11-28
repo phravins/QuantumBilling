@@ -88,6 +88,8 @@ Settings are divided into independently saved sections. A change in one section 
 | Backup & Restore | JSON business data export and restore. |
 | Data model | Owners only, at `/settings/data-model`: the business's own fields on clients, invoices, invoice lines, credit notes, e-way bills, and recurring profiles. See [Custom fields](#custom-fields). |
 
+New invoice and recurring profile dates, dashboard and report periods, compliance dates, and the Bin's relative deletion labels follow the business time zone. In India the next calendar day starts at midnight IST.
+
 Some preferences are stored ahead of complete operational support. In particular, invoice totals currently keep cess at zero; saving cess/TDS flags does not introduce cess/TDS line calculations. The e-way-bill auto-generate preference does not replace the explicit generation workflow described below.
 
 SMTP passwords, Razorpay secrets, IRP passwords, and webhook secrets saved through Settings use encrypted database fields. Secret inputs are write-only: saved values are not sent back to the browser, and submitting a blank secret preserves the stored value. Environment-supplied credentials and deployment encryption keys are described in [Configuration](configuration.md).

@@ -12,6 +12,7 @@ defmodule QuantumBilling.Invoices do
   alias Ecto.Multi
   alias QuantumBilling.Audit
   alias QuantumBilling.Clients.Client
+  alias QuantumBilling.Compliance
   alias QuantumBilling.CreditNotes.CreditNote
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Events
@@ -225,7 +226,7 @@ defmodule QuantumBilling.Invoices do
   end
 
   @doc "Totals for the invoices dated within `month`."
-  def month_totals(date \\ Date.utc_today()) do
+  def month_totals(date \\ Compliance.local_date()) do
     from = Date.beginning_of_month(date)
     to = Date.end_of_month(date)
 
@@ -268,7 +269,7 @@ defmodule QuantumBilling.Invoices do
 
   Months without invoices are included as zeros.
   """
-  def monthly_tax_split(count \\ 6, today \\ Date.utc_today()) do
+  def monthly_tax_split(count \\ 6, today \\ Compliance.local_date()) do
     first = today |> Date.beginning_of_month() |> shift_months(-(count - 1))
     last = Date.end_of_month(today)
 

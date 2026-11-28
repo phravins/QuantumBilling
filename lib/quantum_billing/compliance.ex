@@ -62,7 +62,7 @@ defmodule QuantumBilling.Compliance do
   `filings` is a map from `list_filings/0`; `nil` reads it from the database
   once for the whole list.
   """
-  def obligations(today \\ Date.utc_today(), filings \\ nil) do
+  def obligations(today \\ local_date(), filings \\ nil) do
     {fy_start, _fy_end} = financial_year(today)
     filings = filings || list_filings()
 
@@ -154,7 +154,7 @@ defmodule QuantumBilling.Compliance do
   No GSTIN, or a VAT business: none. Composition: CMP-08 and annual returns.
   Regular: GSTR-1, GSTR-3B and annual returns.
   """
-  def tracked_obligations(today \\ Date.utc_today(), registration \\ nil, filings \\ nil) do
+  def tracked_obligations(today \\ local_date(), registration \\ nil, filings \\ nil) do
     if registered?(registration) do
       composition? = composition_scheme?(registration)
 
@@ -212,7 +212,7 @@ defmodule QuantumBilling.Compliance do
 
   Each has `days_until`, negative once overdue.
   """
-  def upcoming(obligations, today \\ Date.utc_today(), limit \\ 5) do
+  def upcoming(obligations, today \\ local_date(), limit \\ 5) do
     obligations
     |> Enum.reject(&(&1.status in ["Filed", "Done"]))
     |> Enum.map(&Map.put(&1, :days_until, Date.diff(&1.due_date, today)))
@@ -607,8 +607,14 @@ defmodule QuantumBilling.Compliance do
 
   def document_number_valid?(_number), do: false
 
-  @doc "Today's date where the business is, at `now`."
-  def local_date(%DateTime{} = now \\ DateTime.utc_now(), timezone \\ nil) do
+  @doc "Today's date in the current business's time zone. Falls back to UTC without a business."
+  def local_date do
+    clock = Application.get_env(:quantum_billing, :compliance_clock, &DateTime.utc_now/0)
+    local_date(clock.())
+  end
+
+  @doc "The business-local date at `now`, using an explicit time zone if supplied."
+  def local_date(%DateTime{} = now, timezone \\ nil) do
     now |> local_time(timezone) |> NaiveDateTime.to_date()
   end
 
@@ -625,10 +631,7 @@ defmodule QuantumBilling.Compliance do
   def utc_offset(timezone), do: Map.get(@utc_offsets, timezone, 0)
 
   defp organization_timezone do
-    case QuantumBilling.Settings.get_organization() do
-      %{timezone: timezone} when is_binary(timezone) -> timezone
-      _none -> nil
-    end
+    if Repo.business(), do: QuantumBilling.Settings.get_organization().timezone
   end
 
   defp remind_tasks(today, time) do

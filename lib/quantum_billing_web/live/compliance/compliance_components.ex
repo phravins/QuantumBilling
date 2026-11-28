@@ -219,6 +219,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
   """
   attr :obligation, :map, required: true
   attr :filing_form, Phoenix.HTML.Form, default: nil
+  attr :today, Date, required: true
 
   def obligation_detail(assigns) do
     assigns = assign(assigns, :filing, assigns.obligation[:filing])
@@ -331,7 +332,7 @@ defmodule QuantumBillingWeb.ComplianceComponents do
             field={@filing_form[:filed_on]}
             type="date"
             label="Filed on"
-            max={Date.to_iso8601(Date.utc_today())}
+            max={Date.to_iso8601(@today)}
             required
           />
           <.input

@@ -36,7 +36,7 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
       assert html =~ "Completed"
       assert html =~ "Pending"
       assert html =~ "Overdue"
-      assert html =~ Compliance.financial_year_label(Date.utc_today())
+      assert html =~ Compliance.financial_year_label(Compliance.local_date())
     end
 
     test "requires authentication" do
@@ -122,7 +122,7 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
       # The earliest return this year: Overdue on most days, Pending in the
       # first days of April. Either way Undo must put back what was there.
       return =
-        Date.utc_today()
+        Compliance.local_date()
         |> Compliance.tracked_obligations(%{gstin: @gstin})
         |> Enum.min_by(& &1.due_date, Date)
 
@@ -154,7 +154,7 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
       view
       |> form("#filing-form",
         filing: %{
-          filed_on: Date.to_iso8601(Date.utc_today()),
+          filed_on: Date.to_iso8601(Compliance.local_date()),
           arn: "aa27 0424 1234 567"
         }
       )
@@ -176,7 +176,9 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
       view |> element("#mark-filed-button") |> render_click()
 
       view
-      |> form("#filing-form", filing: %{filed_on: Date.to_iso8601(Date.add(Date.utc_today(), 3))})
+      |> form("#filing-form",
+        filing: %{filed_on: Date.to_iso8601(Date.add(Compliance.local_date(), 3))}
+      )
       |> render_submit()
 
       assert has_element?(view, "#filing-form")
@@ -198,11 +200,11 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     setup %{conn: conn} do
       {:ok, _organization} = register_gstin()
 
-      today = Date.utc_today()
+      today = Compliance.local_date()
 
       # Taken from the schedule, so the test does not depend on the calendar.
       due =
-        Date.utc_today()
+        Compliance.local_date()
         |> Compliance.tracked_obligations(%{gstin: @gstin})
         |> Enum.map(& &1.due_date)
         |> Enum.find(&(&1.year == today.year and &1.month == today.month))
@@ -291,13 +293,13 @@ defmodule QuantumBillingWeb.ComplianceLiveTest do
     test "opens on the current month", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/compliance")
 
-      assert html =~ Calendar.strftime(Date.utc_today(), "%B %Y")
+      assert html =~ Calendar.strftime(Compliance.local_date(), "%B %Y")
     end
 
     test "steps forward and back a month", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/compliance")
 
-      today = Date.utc_today()
+      today = Compliance.local_date()
       next = Compliance.shift_months(Date.new!(today.year, today.month, 1), 1)
       previous = Compliance.shift_months(Date.new!(today.year, today.month, 1), -1)
 

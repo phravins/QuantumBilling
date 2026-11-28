@@ -30,14 +30,14 @@ defmodule QuantumBillingWeb.DashboardLive do
   end
 
   defp assign_dashboard(socket) do
-    today = Date.utc_today()
+    today = Compliance.local_date()
     totals = Invoices.totals()
     month = Invoices.month_totals(today)
     status_counts = Invoices.status_counts()
     chart_months = billed_months(Invoices.monthly_tax_split(6, today))
     obligations = Compliance.obligations(today)
     # This year, as the export links download it.
-    year = Reports.default_filters()
+    year = Map.put(Reports.default_filters(), :today, today)
     tax_rows = Reports.tax_rows(year)
     currency = Organization.currency_code(Settings.get_organization())
 

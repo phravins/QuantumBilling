@@ -8,6 +8,7 @@ defmodule QuantumBilling.Reports do
 
   import Ecto.Query, warn: false
 
+  alias QuantumBilling.Compliance
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Repo
 
@@ -30,7 +31,7 @@ defmodule QuantumBilling.Reports do
   defp query(filters) when is_map(filters) do
     # Binned invoices are excluded from every report.
     Invoice.kept()
-    |> filter_dates(range_bounds(filters[:date_range]))
+    |> filter_dates(range_bounds(filters[:date_range], filters[:today]))
     |> filter_equal(:status, filters[:status], "All Status")
     |> filter_equal(:client_name, filters[:client], "All Clients")
     |> filter_gstin(filters[:gstin])
@@ -274,23 +275,23 @@ defmodule QuantumBilling.Reports do
   def range_bounds("All Time", _today), do: {nil, nil}
 
   def range_bounds("This Month", today) do
-    today = today || Date.utc_today()
+    today = today || Compliance.local_date()
     {Date.beginning_of_month(today), Date.end_of_month(today)}
   end
 
   def range_bounds("Last Month", today) do
-    previous = (today || Date.utc_today()) |> Date.beginning_of_month() |> Date.add(-1)
+    previous = (today || Compliance.local_date()) |> Date.beginning_of_month() |> Date.add(-1)
     {Date.beginning_of_month(previous), Date.end_of_month(previous)}
   end
 
   def range_bounds("This Quarter", today) do
-    today = today || Date.utc_today()
+    today = today || Compliance.local_date()
     from = Date.new!(today.year, div(today.month - 1, 3) * 3 + 1, 1)
     {from, from |> Date.add(62) |> Date.end_of_month()}
   end
 
   def range_bounds("This Year", today) do
-    today = today || Date.utc_today()
+    today = today || Compliance.local_date()
     {Date.new!(today.year, 1, 1), Date.new!(today.year, 12, 31)}
   end
 

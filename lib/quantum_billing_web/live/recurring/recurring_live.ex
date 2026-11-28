@@ -5,6 +5,7 @@ defmodule QuantumBillingWeb.RecurringLive do
   import QuantumBillingWeb.CustomFieldComponents, only: [custom_fields_section: 1]
 
   alias QuantumBilling.Clients
+  alias QuantumBilling.Compliance
   alias QuantumBilling.CustomFields
   alias QuantumBilling.Recurring
 
@@ -317,7 +318,7 @@ defmodule QuantumBillingWeb.RecurringLive do
                 <.input
                   field={@form[:next_run_date]}
                   type="date"
-                  value={to_string(Date.utc_today())}
+                  value={@form[:next_run_date].value || Date.to_iso8601(Compliance.local_date())}
                   required
                 />
               </div>

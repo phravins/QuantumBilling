@@ -19,6 +19,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   import QuantumBillingWeb.SettingsComponents, only: [toggle: 1]
 
   alias QuantumBilling.Clients
+  alias QuantumBilling.Compliance
   alias QuantumBilling.CustomFields
   alias QuantumBilling.EWayBills.EWayBillForm
   alias QuantumBilling.GST
@@ -61,7 +62,7 @@ defmodule QuantumBillingWeb.InvoiceNewLive do
   end
 
   defp mount_new(organization, socket, overrides \\ %{}) do
-    today = Date.utc_today()
+    today = Compliance.local_date()
 
     params =
       Map.merge(

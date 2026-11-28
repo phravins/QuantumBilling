@@ -19,7 +19,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
   alias QuantumBilling.Settings
 
   def mount(_params, _session, socket) do
-    today = Date.utc_today()
+    today = Compliance.local_date()
 
     {:ok,
      socket
@@ -464,7 +464,7 @@ defmodule QuantumBillingWeb.ComplianceLive do
           </div>
 
           <div :if={@selected} class="mt-4">
-            <.obligation_detail obligation={@selected} filing_form={@filing_form} />
+            <.obligation_detail obligation={@selected} filing_form={@filing_form} today={@today} />
           </div>
 
           <%!-- Separate empty states: no data at all vs. a filter that excluded everything. --%>
