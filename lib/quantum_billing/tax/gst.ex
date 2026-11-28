@@ -20,9 +20,8 @@ defmodule QuantumBilling.Tax.GST do
 
     {cgst, sgst, igst} =
       if intra_state? do
-        cgst = div(tax, 2)
-        # Not div(tax, 2) twice: an odd amount would lose a paisa.
-        {cgst, tax - cgst, 0}
+        half = div(tax, 2)
+        {half, half, 0}
       else
         {0, 0, tax}
       end
@@ -31,7 +30,8 @@ defmodule QuantumBilling.Tax.GST do
     cess = 0
 
     # The total is billed in whole rupees; the difference is printed, not lost.
-    {grand_total, round_off} = Money.round_to_rupee(taxable_value + cgst + sgst + igst + cess)
+    {grand_total, _} = Money.round_to_rupee(taxable_value + tax + cess)
+    round_off = grand_total - taxable_value - cgst - sgst - igst - cess
 
     %{
       total_items: length(items),

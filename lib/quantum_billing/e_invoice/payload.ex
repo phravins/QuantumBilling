@@ -178,7 +178,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   def reported_tax(%Invoice{} = invoice, :cess),
     do: (invoice.cess_amount || 0) + (invoice.rc_cess_amount || 0)
 
-  defp split(tax, true), do: {div(tax, 2), tax - div(tax, 2), 0}
+  defp split(tax, true), do: {div(tax, 2), div(tax, 2), 0}
   defp split(tax, false), do: {0, 0, tax}
 
   defp service?(hsn) when is_binary(hsn), do: String.starts_with?(hsn, "99")

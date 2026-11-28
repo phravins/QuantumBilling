@@ -643,7 +643,7 @@ defmodule QuantumBilling.Compliance.GSTNExporter do
 
   defp split_tax(tax, true) do
     half = div(tax, 2)
-    {half, tax - half, 0}
+    {half, half, 0}
   end
 
   defp split_tax(tax, false), do: {0, 0, tax}
