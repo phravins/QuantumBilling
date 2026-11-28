@@ -35,7 +35,12 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
           space_top: String.t(),
           space_bottom: String.t()
         }
-  @type t :: %__MODULE__{version: integer(), page: page(), blocks: [Block.t()]}
+  @type t :: %__MODULE__{
+          version: integer(),
+          page: page(),
+          blocks: [Block.t()],
+          bilingual: boolean()
+        }
 
   # Mirrors Layout.page_attrs/0 (reading it would be a cycle); LayoutTest checks they agree.
   defstruct version: 1,
@@ -66,7 +71,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Document do
               space_top: "0mm",
               space_bottom: "0mm"
             },
-            blocks: []
+            blocks: [],
+            # Set only at render time, by `ZatcaLayout.adapt/2`: labels print in
+            # Arabic too and the stylesheet loads the Arabic font. Never saved.
+            bilingual: false
 
   @doc "The block with `id`, or `nil`."
   def block(%__MODULE__{blocks: blocks}, id), do: Enum.find(blocks, &(&1.id == id))

@@ -1297,6 +1297,8 @@ defmodule QuantumBillingWeb.SettingsLive do
   end
 
   defp render_panel(%{section: :general} = assigns) do
+    assigns = assign(assigns, :saudi?, Organization.saudi_vat?(assigns.organization))
+
     ~H"""
     <.form
       :let={f}
@@ -1328,11 +1330,14 @@ defmodule QuantumBillingWeb.SettingsLive do
       <%!-- Separate fields: the e-invoice export needs the city and PIN. --%>
       <.field field={f[:city]} label="City" placeholder="Mumbai" />
       <.field
+        :if={!@saudi?}
         field={f[:pincode]}
         label="PIN Code"
         placeholder="400001"
         hint="Needed for the e-invoice export."
-      /> <.field field={f[:email]} label="Email Address" type="email" />
+      />
+      <.field :if={@saudi?} field={f[:pincode]} label="Postal Code" placeholder="12345" />
+      <.field field={f[:email]} label="Email Address" type="email" />
       <.field field={f[:phone]} label="Phone Number" placeholder="+91 98765 43210" />
       <.field
         field={f[:financial_year]}
@@ -1360,6 +1365,34 @@ defmodule QuantumBillingWeb.SettingsLive do
         type="select"
         options={Organization.timezones()}
       />
+
+      <%!-- ZATCA wants the seller in Arabic; the name is also the QR code's seller name. --%>
+      <fieldset
+        :if={@saudi?}
+        id="settings-arabic"
+        class="grid grid-cols-1 gap-3 border-t border-base-300 pt-3 sm:col-span-2 sm:grid-cols-2"
+      >
+        <legend class="sr-only">Arabic details</legend>
+        <p class="text-xs text-base-content/60 sm:col-span-2">
+          Saudi invoices print these under the English name and address, and the
+          QR code carries the Arabic name. Blank, they use the English.
+        </p>
+        <.field
+          field={f[:company_name_ar]}
+          label="Company Name (Arabic)"
+          dir="rtl"
+          lang="ar"
+          maxlength="160"
+        />
+        <.field
+          field={f[:address_ar]}
+          label="Address (Arabic)"
+          type="textarea"
+          rows="3"
+          dir="rtl"
+          lang="ar"
+        />
+      </fieldset>
     </.form>
     """
   end

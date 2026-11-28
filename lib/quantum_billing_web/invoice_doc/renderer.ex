@@ -10,18 +10,29 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   A VAT invoice prints its VAT number in place of the GSTIN, a VAT line per
   rate in place of the GST lines, a VAT summary when it mixes rates, and the
   reverse-charge legend. HSN / SAC prints only if a line has a code.
+
+  A `bilingual` document (a Saudi invoice, from `ZatcaLayout.adapt/2`) prints
+  the default labels in Arabic as well, the seller's Arabic name and address,
+  the ZATCA QR code, and on a standard invoice each line's VAT and total.
   """
   use Phoenix.Component
 
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Tax
+  alias QuantumBilling.Zatca
   alias QuantumBillingWeb.CustomFieldComponents
   alias QuantumBillingWeb.Format
+  alias QuantumBillingWeb.InvoiceDoc.ArabicLabels
   alias QuantumBillingWeb.InvoiceDoc.Block
   alias QuantumBillingWeb.InvoiceDoc.Document
 
   attr :doc, Document, required: true
   attr :mode, :atom, default: :screen, values: [:screen, :print]
+
+  attr :fonts, :atom,
+    default: :url,
+    values: [:url, :inline],
+    doc: "`:inline` embeds the Arabic font as a `data:` URI, for the offline PDF renderer"
 
   @doc """
   The document's stylesheet in a `<style>` tag.
@@ -31,17 +42,17 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   arrives as an inline custom property instead.
   """
   def stylesheet(assigns) do
-    assigns = assign(assigns, :tag, style_tag(assigns.doc, assigns.mode))
+    assigns = assign(assigns, :tag, style_tag(assigns.doc, assigns.mode, assigns.fonts))
 
     ~H"""
     {@tag}
     """
   end
 
-  defp style_tag(doc, mode) do
+  defp style_tag(doc, mode, fonts) do
     Phoenix.HTML.raw([
       "<style>",
-      QuantumBillingWeb.InvoiceDoc.Stylesheet.css(doc, mode: mode),
+      QuantumBillingWeb.InvoiceDoc.Stylesheet.css(doc, mode: mode, fonts: fonts),
       "</style>"
     ])
   end
@@ -82,6 +93,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
       |> assign(:payment, Map.get(extras, :payment))
       |> assign(:images, images)
       |> assign(:custom, Map.get(extras, :custom) || %{invoice: [], items: []})
+      |> assign(:zatca, Map.get(extras, :zatca))
+      |> assign(:bilingual, assigns.doc.bilingual == true)
       |> assign(:page, page)
 
     ~H"""
@@ -103,6 +116,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
           payment={@payment}
           images={@images}
           custom={@custom}
+          zatca={@zatca}
+          bilingual={@bilingual}
           editing={not @sheet?}
         />
       <% end %>
@@ -164,6 +179,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :payment, :map, default: nil
   attr :images, :map, default: %{}
   attr :custom, :map, default: %{invoice: [], items: []}
+  attr :zatca, :map, default: nil
+  attr :bilingual, :boolean, default: false
   attr :editing, :boolean, default: false
 
   defp row(%{row: [block]} = assigns) do
@@ -178,6 +195,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
         payment={@payment}
         images={@images}
         custom={@custom}
+        zatca={@zatca}
+        bilingual={@bilingual}
         editing={@editing}
       />
     </div>
@@ -195,6 +214,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
           payment={@payment}
           images={@images}
           custom={@custom}
+          zatca={@zatca}
+          bilingual={@bilingual}
           editing={@editing}
         />
       </div>
@@ -208,6 +229,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   attr :payment, :map, default: nil
   attr :images, :map, default: %{}
   attr :custom, :map, default: %{invoice: [], items: []}
+  attr :zatca, :map, default: nil
+  attr :bilingual, :boolean, default: false
   attr :editing, :boolean, default: false
 
   defp block(%{block: %Block{type: :logo}} = assigns) do
@@ -248,22 +271,54 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
       @block.opts.color == "accent" && "qb-doc__heading--accent"
     ]}>
       {heading(@block, @invoice)}
+      <span
+        :if={@bilingual and present?(Map.get(@block.opts, :text_ar))}
+        lang="ar"
+        dir="rtl"
+        class="qb-doc__ar qb-doc__ar--block"
+      >
+        {@block.opts.text_ar}
+      </span>
     </p>
     """
   end
 
   defp block(%{block: %Block{type: :company}} = assigns) do
     ~H"""
-    <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+    <p :if={@block.opts.label != ""} class="qb-doc__label">
+      <.label_text text={@block.opts.label} bilingual={@bilingual} />
+    </p>
 
     <p class="qb-doc__name">{@invoice.company_name || "—"}</p>
+
+    <p
+      :if={@bilingual and present?(@invoice.company_name_ar)}
+      id="company-name-ar"
+      lang="ar"
+      dir="rtl"
+      class="qb-doc__name qb-doc__rtl"
+    >
+      {@invoice.company_name_ar}
+    </p>
 
     <p :if={@block.opts.show_address and @invoice.company_address} class="qb-doc__muted">
       {@invoice.company_address}
     </p>
 
+    <p
+      :if={@bilingual and @block.opts.show_address and present?(@invoice.company_address_ar)}
+      lang="ar"
+      dir="rtl"
+      class="qb-doc__muted qb-doc__rtl"
+    >
+      {@invoice.company_address_ar}
+    </p>
+
     <p :if={@block.opts.show_gstin and tax_number(@invoice, :company)} class="qb-doc__muted">
-      {tax_number_label(@invoice)}: {tax_number(@invoice, :company)}
+      <.label_text text={tax_number_label(@invoice, @bilingual)} bilingual={@bilingual} />: {tax_number(
+        @invoice,
+        :company
+      )}
     </p>
 
     <p :if={@block.opts.show_state and @invoice.company_state} class="qb-doc__muted">
@@ -274,7 +329,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
   defp block(%{block: %Block{type: :client}} = assigns) do
     ~H"""
-    <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+    <p :if={@block.opts.label != ""} class="qb-doc__label">
+      <.label_text text={@block.opts.label} bilingual={@bilingual} />
+    </p>
 
     <p class="qb-doc__name">{@invoice.client_name}</p>
 
@@ -283,7 +340,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     </p>
 
     <p :if={@block.opts.show_gstin and tax_number(@invoice, :client)} class="qb-doc__muted">
-      {tax_number_label(@invoice)}: {tax_number(@invoice, :client)}
+      <.label_text text={tax_number_label(@invoice, @bilingual)} bilingual={@bilingual} />: {tax_number(
+        @invoice,
+        :client
+      )}
     </p>
 
     <p :if={@block.opts.show_email and @invoice.client_email} class="qb-doc__muted">
@@ -305,7 +365,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
         :for={line <- @lines}
         class={["qb-doc__meta-line", line.emphasis == "strong" && "qb-doc__meta-line--strong"]}
       >
-        <dt :if={line.label != ""}>{line.label}</dt>
+        <dt :if={line.label != ""}><.label_text text={line.label} bilingual={@bilingual} /></dt>
 
         <dd>{meta_value(line.field, @invoice)}</dd>
       </div>
@@ -328,11 +388,14 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
         |> Enum.map(&serial_label/1)
         |> regime_columns(assigns.invoice)
         |> with_custom_columns(assigns.custom.items, assigns.invoice.items)
+        |> zatca_columns(assigns.invoice, assigns.bilingual)
       )
       |> assign(:vat_summary, vat_summary(assigns.invoice))
 
     ~H"""
-    <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+    <p :if={@block.opts.label != ""} class="qb-doc__label">
+      <.label_text text={@block.opts.label} bilingual={@bilingual} />
+    </p>
 
     <table class={[
       "qb-doc__items",
@@ -345,7 +408,12 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
             :for={column <- @columns}
             class={[align_class(column), Map.get(column, :width) == "grow" && "qb-doc__items--grow"]}
           >
-            {column_label(column.label, @invoice.currency)}
+            <.label_text
+              text={column_label(column.label, @invoice.currency)}
+              key={column.label}
+              context={:column}
+              bilingual={@bilingual}
+            />
           </th>
         </tr>
       </thead>
@@ -362,15 +430,17 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     <table :if={@vat_summary != []} class="qb-doc__items qb-doc__vat-summary">
       <thead>
         <tr>
-          <th>VAT summary</th>
-          <th class="qb-doc--right">Taxable amount</th>
-          <th class="qb-doc--right">VAT</th>
+          <th><.label_text text="VAT summary" bilingual={@bilingual} /></th>
+          <th class="qb-doc--right">
+            <.label_text text="Taxable amount" bilingual={@bilingual} />
+          </th>
+          <th class="qb-doc--right"><.label_text text="VAT" bilingual={@bilingual} /></th>
         </tr>
       </thead>
 
       <tbody>
         <tr :for={row <- @vat_summary}>
-          <td>{Tax.breakdown_label(row)}</td>
+          <td><.label_text text={Tax.breakdown_label(row)} bilingual={@bilingual} /></td>
           <td class="qb-doc--right">{money(row["taxable"], @invoice.currency)}</td>
           <td class="qb-doc--right">{money(row["tax"], @invoice.currency)}</td>
         </tr>
@@ -389,7 +459,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
     ~H"""
     <div :if={@rows != []}>
-      <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+      <p :if={@block.opts.label != ""} class="qb-doc__label">
+        <.label_text text={@block.opts.label} bilingual={@bilingual} />
+      </p>
 
       <dl>
         <div :for={{label, text} <- @rows} class="qb-doc__meta-line">
@@ -417,7 +489,7 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
           line.emphasis != "none" && "qb-doc__total-line--#{line.emphasis}"
         ]}
       >
-        <span>{line.label}</span>
+        <span><.label_text text={line.label} bilingual={@bilingual} /></span>
         <span>
           {Format.money(line.value, @invoice.currency, decimals: 2, space: true)}
         </span>
@@ -445,7 +517,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
   defp block(%{block: %Block{type: :amount_in_words}} = assigns) do
     ~H"""
-    <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+    <p :if={@block.opts.label != ""} class="qb-doc__label">
+      <.label_text text={@block.opts.label} bilingual={@bilingual} />
+    </p>
 
     <p class="qb-doc__muted">
       {Format.amount_in_words(@invoice.grand_total || 0, @invoice.currency)}
@@ -456,7 +530,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp block(%{block: %Block{type: :remarks}} = assigns) do
     ~H"""
     <div :if={present?(@invoice.remarks)}>
-      <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+      <p :if={@block.opts.label != ""} class="qb-doc__label">
+        <.label_text text={@block.opts.label} bilingual={@bilingual} />
+      </p>
 
       <p class="qb-doc__muted">{@invoice.remarks}</p>
     </div>
@@ -466,7 +542,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp block(%{block: %Block{type: :terms}} = assigns) do
     ~H"""
     <div :if={present?(@invoice.terms)}>
-      <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+      <p :if={@block.opts.label != ""} class="qb-doc__label">
+        <.label_text text={@block.opts.label} bilingual={@bilingual} />
+      </p>
 
       <p class="qb-doc__muted">{@invoice.terms}</p>
     </div>
@@ -531,7 +609,9 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
     ~H"""
     <div :if={not @empty? or @editing}>
-      <p :if={@block.opts.label != ""} class="qb-doc__label">{@block.opts.label}</p>
+      <p :if={@block.opts.label != ""} class="qb-doc__label">
+        <.label_text text={@block.opts.label} bilingual={@bilingual} />
+      </p>
 
       <div class="qb-doc__payment">
         <%!-- The SVG is generated on the server from the UPI URI; nothing user-written is in it. --%>
@@ -575,6 +655,32 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
     <div :if={is_nil(@src) and @editing} class="qb-doc__placeholder">
       Upload an image, stamp or seal
     </div>
+    """
+  end
+
+  defp block(%{block: %Block{type: :zatca_qr}} = assigns) do
+    ~H"""
+    <%!-- Generated on the server from the invoice's own figures; the SVG holds no text. --%>
+    <div :if={@zatca} id="zatca-qr" class="qb-doc__zatca-qr">
+      {Phoenix.HTML.raw(@zatca.svg)}
+    </div>
+    """
+  end
+
+  attr :text, :any, required: true
+  attr :bilingual, :boolean, default: false
+  attr :key, :string, default: nil, doc: "the English default to translate, if `text` differs"
+  attr :context, :atom, default: :label, values: [:label, :column]
+
+  # A label, followed on a bilingual document by its Arabic when it has one.
+  defp label_text(assigns) do
+    arabic =
+      if assigns.bilingual, do: ArabicLabels.ar(assigns.key || assigns.text, assigns.context)
+
+    assigns = assign(assigns, :arabic, arabic)
+
+    ~H"""
+    {@text}<span :if={@arabic} lang="ar" dir="rtl" class="qb-doc__ar">{@arabic}</span>
     """
   end
 
@@ -639,6 +745,16 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp item_value(%{field: "amount"}, item, _index, invoice),
     do: money(item.amount, invoice.currency)
 
+  defp item_value(%{field: "line_vat"}, item, _index, invoice) do
+    {_taxable, vat} = line_split(item, invoice)
+    money(vat, invoice.currency)
+  end
+
+  defp item_value(%{field: "line_total"}, item, _index, invoice) do
+    {taxable, vat} = line_split(item, invoice)
+    money(taxable + vat, invoice.currency)
+  end
+
   defp item_value(%{custom: definition}, item, _index, invoice),
     do: custom_text(definition, item.custom_fields, invoice.currency) || "—"
 
@@ -670,6 +786,28 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
 
   defp regime_columns(columns, _invoice), do: columns
 
+  # A standard (B2B) Saudi tax invoice shows each line's VAT and its total with VAT.
+  defp zatca_columns(columns, %Invoice{} = invoice, true) do
+    if Zatca.simplified?(invoice) do
+      columns
+    else
+      columns ++
+        [
+          %{field: "line_vat", label: "VAT amount", align: "right", width: "auto"},
+          %{field: "line_total", label: "Total incl. VAT", align: "right", width: "auto"}
+        ]
+    end
+  end
+
+  defp zatca_columns(columns, _invoice, _bilingual), do: columns
+
+  defp line_split(item, %Invoice{} = invoice) do
+    Tax.VAT.line_split(item, %{
+      prices_include_tax: invoice.prices_include_tax,
+      reverse_charge: invoice.reverse_charge
+    })
+  end
+
   # The per-rate table prints only when an invoice mixes rates.
   defp vat_summary(%Invoice{tax_regime: "vat", tax_breakdown: [_, _ | _] = rows}), do: rows
   defp vat_summary(_invoice), do: []
@@ -683,8 +821,10 @@ defmodule QuantumBillingWeb.InvoiceDoc.Renderer do
   defp tax_number(invoice, :company), do: invoice.company_gstin
   defp tax_number(invoice, :client), do: invoice.client_gstin
 
-  defp tax_number_label(%Invoice{tax_regime: "vat"}), do: "VAT No. / TRN"
-  defp tax_number_label(_invoice), do: "GSTIN"
+  # A bilingual document names the number in Arabic, so "TRN" (the Gulf term) is dropped.
+  defp tax_number_label(%Invoice{tax_regime: "vat"}, true), do: "VAT No."
+  defp tax_number_label(%Invoice{tax_regime: "vat"}, _bilingual), do: "VAT No. / TRN"
+  defp tax_number_label(_invoice, _bilingual), do: "GSTIN"
 
   # Headings default to "Rate (₹)"; another currency shows its own symbol.
   defp column_label(label, currency) when is_binary(label) and currency not in [nil, "INR"],

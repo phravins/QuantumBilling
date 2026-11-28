@@ -15,6 +15,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
   alias QuantumBilling.Settings
   alias QuantumBilling.Templates
   alias QuantumBilling.Uploads
+  alias QuantumBilling.Zatca
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Document
   alias QuantumBillingWeb.InvoiceDoc.Extras
@@ -34,6 +35,7 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
 
       template ->
         organization = Settings.get_organization()
+        sample = InvoiceDocument.pad_sample(organization)
 
         {:ok,
          socket
@@ -47,7 +49,8 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
          |> assign(:error, nil)
          |> assign(:upload_error, nil)
          |> assign(:logo_error, nil)
-         |> assign(:sample, InvoiceDocument.pad_sample(organization))
+         |> assign(:sample, sample)
+         |> assign(:zatca?, Zatca.applies?(sample))
          |> assign_logo()
          |> put_doc(Templates.document_of(template))
          |> assign(:form, to_form(%{"name" => template.name, "accent" => template.accent}))
@@ -582,6 +585,20 @@ defmodule QuantumBillingWeb.InvoiceTemplateDesignLive do
       </.header>
 
       <.text_tools id="template-page-form" page={@doc.page} class="mb-2" />
+
+      <%!-- The canvas edits the saved design; ZatcaLayout adapts it only when an invoice renders. --%>
+      <p
+        :if={@zatca?}
+        id="zatca-design-note"
+        class="mb-2 flex items-start gap-2 rounded-box border border-base-300 bg-base-200/60 px-3 py-2 text-xs text-base-content/70"
+      >
+        <.icon name="hero-information-circle" class="mt-px size-4 shrink-0 text-base-content/45" />
+        <span>
+          Saudi invoices print this design with what ZATCA requires added: the
+          bilingual title, seller and buyer details, Arabic labels and the QR code
+          after the totals. Labels you rewrite print as you write them.
+        </span>
+      </p>
 
       <div class="flex flex-1 gap-3">
         <.card padding="p-2" class="hidden w-44 shrink-0 self-start lg:block">

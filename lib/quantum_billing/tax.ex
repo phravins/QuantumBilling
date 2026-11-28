@@ -46,7 +46,8 @@ defmodule QuantumBilling.Tax do
        {"Exempt", "exempt", 0},
        {"Reverse charge", "reverse_charge", 0}
      ]},
-    {"SA", "Saudi Arabia", ~r/^\d{15}$/,
+    # A Saudi VAT number is 15 digits that start and end with 3.
+    {"SA", "Saudi Arabia", ~r/^3\d{13}3$/,
      [{"Standard 15%", "standard", 1500}, {"Zero-rated", "zero", 0}, {"Exempt", "exempt", 0}]},
     {"BH", "Bahrain", ~r/^\d{15}$/,
      [{"Standard 10%", "standard", 1000}, {"Zero-rated", "zero", 0}]},
@@ -302,8 +303,9 @@ defmodule QuantumBilling.Tax do
 
   @doc """
   Whether `number` looks like a VAT number for `country`: a UAE TRN is 15
-  digits, a UK number `GB` and 9 or 12 digits, an EU number its country prefix
-  and 2 to 13 letters or digits. Elsewhere 3 to 20 letters or digits.
+  digits, a Saudi number 15 digits starting and ending with 3, a UK number
+  `GB` and 9 or 12 digits, an EU number its country prefix and 2 to 13
+  letters or digits. Elsewhere 3 to 20 letters or digits.
   """
   def tax_number_valid?(country, number) when is_binary(number) do
     number = normalize_tax_number(number)

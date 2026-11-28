@@ -21,7 +21,7 @@ defmodule QuantumBilling.Compliance do
   @max_id 9_223_372_036_854_775_807
 
   # Fixed offsets for the timezones on offer (none use daylight saving).
-  @utc_offsets %{"Asia/Kolkata" => 19_800}
+  @utc_offsets %{"Asia/Kolkata" => 19_800, "Asia/Riyadh" => 10_800}
 
   @monthly [
     {"GSTR-1", "Monthly Return", :returns, 11},
@@ -614,13 +614,15 @@ defmodule QuantumBilling.Compliance do
 
   @doc "`now` as wall-clock time where the business is."
   def local_time(%DateTime{} = now, timezone \\ nil) do
-    timezone = timezone || organization_timezone()
-    offset = Map.get(@utc_offsets, timezone, 0)
+    offset = utc_offset(timezone || organization_timezone())
 
     now
     |> DateTime.add(offset, :second)
     |> DateTime.to_naive()
   end
+
+  @doc "Seconds `timezone` is ahead of UTC. Unknown zones count as UTC."
+  def utc_offset(timezone), do: Map.get(@utc_offsets, timezone, 0)
 
   defp organization_timezone do
     case QuantumBilling.Settings.get_organization() do

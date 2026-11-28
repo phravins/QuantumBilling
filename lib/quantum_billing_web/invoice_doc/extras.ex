@@ -6,6 +6,8 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
     * `:images` - `%{path => src}` for the background and image blocks
     * `:custom` - `%{invoice: defs, items: defs}`, the custom fields marked
       "Show on invoice" for the custom-fields block and extra item columns
+    * `:zatca` - `%{svg: qr}`, the Saudi e-invoice QR code, or `nil` when the
+      invoice is not under ZATCA (see `QuantumBilling.Zatca`)
 
   Only paths `DesignAssets.owned?/1` accepts are rendered. With `inline: true`
   (PDF, print, public page) images become `data:` URIs.
@@ -17,12 +19,13 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
   alias QuantumBilling.Payments.QRCode
   alias QuantumBilling.Settings
   alias QuantumBilling.Settings.Organization
+  alias QuantumBilling.Zatca
   alias QuantumBillingWeb.InvoiceDoc.Document
   alias QuantumBillingWeb.InvoiceDoc.Layout
   alias QuantumBillingWeb.InvoicePdfGenerator
 
   @no_custom %{invoice: [], items: []}
-  @empty %{payment: nil, images: %{}, custom: @no_custom}
+  @empty %{payment: nil, images: %{}, custom: @no_custom, zatca: nil}
 
   @doc "Extras for a page with none of the newer blocks."
   def empty, do: @empty
@@ -36,17 +39,33 @@ defmodule QuantumBillingWeb.InvoiceDoc.Extras do
     paths = Layout.asset_paths(document)
     payment? = Document.has_type?(document, :payment)
     custom = custom(invoice, document)
+    zatca = zatca(invoice, document)
 
     if paths == [] and not payment? do
-      %{@empty | custom: custom}
+      %{@empty | custom: custom, zatca: zatca}
     else
       organization = Keyword.get_lazy(opts, :organization, &Settings.get_organization/0)
 
       %{
         payment: if(payment?, do: payment(invoice, organization)),
         images: images(paths, Keyword.get(opts, :inline, false)),
-        custom: custom
+        custom: custom,
+        zatca: zatca
       }
+    end
+  end
+
+  @doc """
+  The Saudi e-invoice QR code, as inline SVG so the offline PDF renderer
+  draws it too. `nil` unless the invoice is under ZATCA and the layout has
+  the QR block (`ZatcaLayout.adapt/2` adds it).
+  """
+  def zatca(%Invoice{} = invoice, %Document{} = document) do
+    with true <- Zatca.applies?(invoice) and Document.has_type?(document, :zatca_qr),
+         svg when svg != "" <- QRCode.generate_svg(Zatca.qr_payload(invoice), width: 160) do
+      %{svg: svg}
+    else
+      _no_qr -> nil
     end
   end
 

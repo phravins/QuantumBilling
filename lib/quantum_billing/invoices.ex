@@ -533,6 +533,7 @@ defmodule QuantumBilling.Invoices do
         |> with_layout_snapshot(template, organization)
         |> Map.put(:default_currency, Organization.currency_code(locked))
         |> Map.merge(Organization.invoice_tax_snapshot(locked))
+        |> Map.merge(Organization.zatca_snapshot(locked))
         |> with_quotation(quotation)
 
       Invoice.changeset(%Invoice{}, attrs, trusted)

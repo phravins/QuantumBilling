@@ -19,6 +19,7 @@ defmodule QuantumBilling.Templates do
   alias QuantumBilling.Templates.InvoiceTemplate
   alias QuantumBillingWeb.InvoiceDoc.Catalog
   alias QuantumBillingWeb.InvoiceDoc.Layout
+  alias QuantumBillingWeb.InvoiceDoc.ZatcaLayout
 
   @default_accent "#18181b"
 
@@ -311,7 +312,9 @@ defmodule QuantumBilling.Templates do
   What to render `invoice` with: `{layout, accent, logo}`.
 
   The layout comes from the invoice's snapshot, then its template, the default,
-  then the stock layout. The accent and logo are always read live.
+  then the stock layout. The accent and logo are always read live. A Saudi
+  invoice's layout is then adapted for ZATCA (`ZatcaLayout.adapt/2`); the
+  result is for rendering only and is never saved.
   """
   @spec document_for(Invoice.t()) ::
           {QuantumBillingWeb.InvoiceDoc.Document.t(), String.t(), String.t() | nil}
@@ -329,7 +332,7 @@ defmodule QuantumBilling.Templates do
         true -> Catalog.classic()
       end
 
-    {document, accent, logo}
+    {ZatcaLayout.adapt(document, invoice), accent, logo}
   end
 
   defp template_of(%Invoice{template_id: nil}), do: nil

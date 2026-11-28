@@ -131,7 +131,7 @@ defmodule QuantumBillingWeb.InvoicePdfGenerator do
             .no-print { display: none !important; }
           }
         </style>
-        <Renderer.stylesheet doc={@doc} />
+        <Renderer.stylesheet doc={@doc} fonts={:inline} />
       </head>
       <body>
         <div :if={@print_button} class="no-print" style="margin-bottom: 16px; text-align: right;">

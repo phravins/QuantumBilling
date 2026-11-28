@@ -12,13 +12,72 @@ defmodule QuantumBillingWeb.InvoiceDoc.Stylesheet do
   @doc """
   The stylesheet for `document`.
 
-  Option: `:mode`, `:screen` (default) or `:print`, which adds the paper rules and `@page`.
+  Options:
+
+    * `:mode` - `:screen` (default) or `:print`, which adds the paper rules and `@page`
+    * `:fonts` - where a bilingual document's Arabic font loads from: `:url`
+      (default, the app's `/fonts`) or `:inline`, a `data:` URI for the PDF
+      renderer, which has no network
   """
   @spec css(Document.t(), keyword()) :: binary()
-  def css(%Document{page: page}, opts \\ []) do
+  def css(%Document{page: page} = document, opts \\ []) do
     mode = Keyword.get(opts, :mode, :screen)
-    base(page) <> sheet_rules(page) <> mode_rules(mode, page) <> letterhead_print(mode, page)
+
+    base(page) <>
+      sheet_rules(page) <>
+      bilingual_rules(document, Keyword.get(opts, :fonts, :url)) <>
+      mode_rules(mode, page) <> letterhead_print(mode, page)
   end
+
+  # The Arabic font covers only Arabic code points, so Latin text keeps the
+  # design's own font. It ships with the app (Noto Sans Arabic, OFL): a server
+  # or PDF renderer without an Arabic font would otherwise print boxes.
+  @arabic_range "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF"
+  @arabic_fonts [{400, "noto-sans-arabic-regular.ttf"}, {700, "noto-sans-arabic-bold.ttf"}]
+
+  defp bilingual_rules(%Document{bilingual: true, page: page}, fonts) do
+    faces =
+      Enum.map_join(@arabic_fonts, "\n", fn {weight, file} ->
+        ~s|@font-face { font-family: "QB Arabic"; font-style: normal; font-weight: #{weight}; | <>
+          ~s|font-display: block; src: url("#{arabic_font_src(file, fonts)}") format("truetype"); | <>
+          "unicode-range: #{@arabic_range}; }"
+      end)
+
+    faces <>
+      """
+
+      .qb-doc {
+        font-family: "QB Arabic", #{font_stack(page.font)};
+        --qb-heading-family: "QB Arabic", #{heading_stack(page)};
+      }
+      .qb-doc__ar { unicode-bidi: isolate; margin-inline-start: 0.4em; }
+      .qb-doc__ar--block, .qb-doc__items th .qb-doc__ar { display: block; margin-inline-start: 0; }
+      .qb-doc__rtl { unicode-bidi: isolate; }
+      .qb-doc__zatca-qr { display: inline-block; width: 128px; height: 128px; }
+      .qb-doc__zatca-qr svg { display: block; width: 100%; height: 100%; }
+      """
+  end
+
+  defp bilingual_rules(_document, _fonts), do: ""
+
+  defp arabic_font_src(file, :inline) do
+    key = {__MODULE__, :font, file}
+
+    # Read once per file; a missing file falls back to the URL and is not cached.
+    with nil <- :persistent_term.get(key, nil),
+         {:ok, bytes} <- File.read(Path.join(fonts_dir(), file)) do
+      src = "data:font/ttf;base64," <> Base.encode64(bytes)
+      :persistent_term.put(key, src)
+      src
+    else
+      {:error, _reason} -> arabic_font_src(file, :url)
+      src -> src
+    end
+  end
+
+  defp arabic_font_src(file, _url), do: "/fonts/" <> file
+
+  defp fonts_dir, do: Application.app_dir(:quantum_billing, "priv/static/fonts")
 
   defp base(page) do
     """

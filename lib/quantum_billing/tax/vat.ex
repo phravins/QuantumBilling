@@ -63,6 +63,18 @@ defmodule QuantumBilling.Tax.VAT do
     }
   end
 
+  @doc """
+  One line's `{taxable, vat}`, for documents that print the VAT per line
+  (a Saudi standard tax invoice). `ctx` is as for `totals/2`.
+
+  The invoice's own VAT is still worked out per rate in `totals/2`, so these
+  can differ from it by a rounding unit when several lines share a rate.
+  """
+  def line_split(item, ctx \\ %{}) do
+    rate_bp = if Map.get(ctx, :reverse_charge) == true, do: 0, else: Tax.effective_bp(item)
+    split(InvoiceItem.amount(item), rate_bp, Map.get(ctx, :prices_include_tax) == true)
+  end
+
   defp group_key(_item, true), do: {"Reverse charge", "reverse_charge", 0}
 
   defp group_key(%{tax_rate_bp: nil}, false), do: {"No VAT", "out_of_scope", 0}
