@@ -15,6 +15,7 @@ defmodule QuantumBilling.Application do
       {DNSCluster, query: Application.get_env(:quantum_billing, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QuantumBilling.PubSub},
       QuantumBilling.RateLimiter,
+      QuantumBillingWeb.InvoiceDoc.PDF.RenderSlots,
       # Scheduled work runs through Oban's Cron plugin, so it runs once across nodes.
       {Oban, Application.fetch_env!(:quantum_billing, Oban)},
       QuantumBillingWeb.Endpoint

@@ -9,14 +9,15 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
   """
 
   require Logger
+  alias QuantumBillingWeb.InvoiceDoc.PDF.RenderSlots
 
   @candidates ~w(chromium chromium-browser google-chrome google-chrome-stable chrome)
 
   @doc """
   Renders `html` to a PDF binary.
 
-  Returns `{:ok, pdf}` or `{:error, reason}`: `:no_renderer`, `:timeout` or
-  `{:exit, status, output}`. Option: `:timeout` in ms (default 20,000).
+  Returns `{:ok, pdf}` or `{:error, reason}`: `:no_renderer`, `:busy`, `:timeout` or
+  `{:exit, status, output}`. Options: `:wait` in ms (default 0) and `:timeout` in ms (default 20,000).
   """
   def render(html, opts \\ []) when is_binary(html) do
     case executable() do
@@ -24,24 +25,36 @@ defmodule QuantumBillingWeb.InvoiceDoc.PDF do
         {:error, :no_renderer}
 
       binary ->
-        timeout = Keyword.get(opts, :timeout, 20_000)
+        wait = Keyword.get(opts, :wait, 0)
 
-        directory =
-          Path.join(System.tmp_dir!(), "qb-pdf-#{System.unique_integer([:positive])}")
+        case RenderSlots.acquire(wait) do
+          {:ok, token} ->
+            try do
+              timeout = Keyword.get(opts, :timeout, 20_000)
 
-        File.mkdir_p!(directory)
+              directory =
+                Path.join(System.tmp_dir!(), "qb-pdf-#{System.unique_integer([:positive])}")
 
-        try do
-          source = Path.join(directory, "invoice.html")
-          output = Path.join(directory, "invoice.pdf")
-          File.write!(source, html)
+              File.mkdir_p!(directory)
 
-          case run(binary, source, output, directory, timeout) do
-            :ok -> read_output(output)
-            {:error, reason} -> {:error, reason}
-          end
-        after
-          File.rm_rf(directory)
+              try do
+                source = Path.join(directory, "invoice.html")
+                output = Path.join(directory, "invoice.pdf")
+                File.write!(source, html)
+
+                case run(binary, source, output, directory, timeout) do
+                  :ok -> read_output(output)
+                  {:error, reason} -> {:error, reason}
+                end
+              after
+                File.rm_rf(directory)
+              end
+            after
+              RenderSlots.release(token)
+            end
+
+          {:error, :busy} ->
+            {:error, :busy}
         end
     end
   end

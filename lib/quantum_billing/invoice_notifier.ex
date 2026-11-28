@@ -54,40 +54,45 @@ defmodule QuantumBilling.InvoiceNotifier do
     organization = Settings.get_organization()
     {from_name, from_email} = Mail.sender(organization, invoice.company_name)
 
-    email =
-      new()
-      |> to(recipient)
-      |> from({from_name, from_email})
-      |> subject(subject_for(invoice, from_name))
-      |> html_body(html_content(invoice, from_name))
-      |> text_body(text_content(invoice, from_name))
-      |> attachment(document_attachment(invoice))
-      |> Mail.reply_to(organization)
+    with {:ok, attachment} <- document_attachment(invoice) do
+      email =
+        new()
+        |> to(recipient)
+        |> from({from_name, from_email})
+        |> subject(subject_for(invoice, from_name))
+        |> html_body(html_content(invoice, from_name))
+        |> text_body(text_content(invoice, from_name))
+        |> attachment(attachment)
+        |> Mail.reply_to(organization)
 
-    {:ok, email}
+      {:ok, email}
+    end
   end
 
-  # A PDF where one can be printed, otherwise the HTML document named .html.
+  # A PDF where one can be printed, otherwise HTML only when no renderer exists.
   defp document_attachment(%Invoice{} = invoice) do
     name = invoice.invoice_number || "invoice"
 
-    case InvoicePdfGenerator.generate_pdf(invoice) do
+    case InvoicePdfGenerator.generate_pdf(invoice, wait: 30_000) do
       {:ok, pdf} ->
-        Swoosh.Attachment.new({:data, pdf},
-          filename: "#{name}.pdf",
-          content_type: "application/pdf"
-        )
+        {:ok,
+         Swoosh.Attachment.new({:data, pdf},
+           filename: "#{name}.pdf",
+           content_type: "application/pdf"
+         )}
+
+      {:error, :no_renderer} ->
+        Logger.warning("[InvoiceNotifier] #{name}: no PDF renderer, attaching HTML instead")
+
+        {:ok,
+         Swoosh.Attachment.new(
+           {:data, InvoicePdfGenerator.generate_html(invoice, print_button: false)},
+           filename: "#{name}.html",
+           content_type: "text/html"
+         )}
 
       {:error, reason} ->
-        Logger.warning(
-          "[InvoiceNotifier] #{name}: no PDF (#{inspect(reason)}), attaching HTML instead"
-        )
-
-        Swoosh.Attachment.new(
-          {:data, InvoicePdfGenerator.generate_html(invoice, print_button: false)},
-          filename: "#{name}.html",
-          content_type: "text/html"
-        )
+        {:error, reason}
     end
   end
 

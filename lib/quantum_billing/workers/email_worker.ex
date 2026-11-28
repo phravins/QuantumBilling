@@ -47,11 +47,14 @@ defmodule QuantumBilling.Workers.EmailWorker do
             record_failure(delivery, job, message)
         end
 
-      # Build failures are permanent; only delivery is retried.
+      # Explicitly permanent build failures are discarded; transient failures are retried.
       {:error, :permanent, message} ->
         _ = Mail.mark_failed(delivery, message, true)
         Logger.error("[EmailWorker] delivery #{delivery.id} discarded: #{message}")
         :discard
+
+      {:error, reason} ->
+        record_failure(delivery, job, "could not build email: #{inspect(reason)}")
     end
   end
 
