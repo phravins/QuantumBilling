@@ -2,6 +2,7 @@ defmodule QuantumBilling.AccountsTest do
   use QuantumBilling.DataCase
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.ApiKeys
   alias QuantumBilling.Businesses
 
   import QuantumBilling.AccountsFixtures
@@ -336,6 +337,31 @@ defmodule QuantumBilling.AccountsTest do
       assert {:ok, demoted} = Accounts.set_role(business, owner, "staff")
       assert demoted.role == "staff"
       assert Accounts.count_owners(business) == 1
+    end
+
+    test "demoting an owner revokes their business API keys but preserves other owners' keys" do
+      business = Businesses.default!()
+      actor = owner_fixture()
+      target = owner_fixture()
+      {:ok, %{raw: target_raw}} =
+        ApiKeys.create_key(%{"name" => "Target", "scopes" => ["invoices:read"]}, target, business)
+      {:ok, %{raw: actor_raw}} =
+        ApiKeys.create_key(%{"name" => "Actor", "scopes" => ["invoices:read"]}, actor, business)
+
+      assert {:ok, _} = Accounts.set_role(business, target, "staff", actor)
+      assert ApiKeys.authenticate(target_raw) == :error
+      assert {:ok, _} = ApiKeys.authenticate(actor_raw)
+    end
+
+    test "removing a member revokes keys created for that business" do
+      business = Businesses.default!()
+      actor = owner_fixture()
+      target = user_fixture()
+      {:ok, %{raw: raw}} =
+        ApiKeys.create_key(%{"name" => "Target", "scopes" => ["invoices:read"]}, target, business)
+
+      assert {:ok, _} = Accounts.remove_member(business, target, actor)
+      assert ApiKeys.authenticate(raw) == :error
     end
 
     test "concurrent owner removals leave at least one owner" do

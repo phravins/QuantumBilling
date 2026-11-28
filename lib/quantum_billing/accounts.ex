@@ -6,6 +6,7 @@ defmodule QuantumBilling.Accounts do
   require Logger
 
   alias QuantumBilling.Events
+  alias QuantumBilling.ApiKeys
   alias QuantumBilling.Repo
 
   alias QuantumBilling.Accounts.{Invitation, SignInRequest, User, UserToken, UserNotifier}
@@ -220,7 +221,7 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc "Gives `user` the role `role` in `business`. Refuses to demote the last owner."
-  def set_role(%Business{} = business, %User{} = user, role) when is_binary(role) do
+  def set_role(%Business{} = business, %User{} = user, role, actor \\ nil) when is_binary(role) do
     Repo.transaction(fn ->
       # Lock owner memberships for update to serialize concurrent owner changes
       _owners =
@@ -242,7 +243,9 @@ defmodule QuantumBilling.Accounts do
             Repo.rollback(:last_owner)
           else
             case change_role(membership, role) do
-              {:ok, updated} -> updated
+              {:ok, updated} ->
+                if role == "staff", do: ApiKeys.revoke_creator_keys(business, user, actor)
+                updated
               {:error, changeset} -> Repo.rollback(changeset)
             end
           end
@@ -263,7 +266,7 @@ defmodule QuantumBilling.Accounts do
   end
 
   @doc "Removes `user` from `business`. Refuses to remove the last owner."
-  def remove_member(%Business{} = business, %User{} = user) do
+  def remove_member(%Business{} = business, %User{} = user, actor \\ nil) do
     Repo.transaction(fn ->
       # Lock owner memberships for update to serialize concurrent owner removals
       _owners =
@@ -282,14 +285,18 @@ defmodule QuantumBilling.Accounts do
             Repo.rollback(:last_owner)
           else
             case Repo.delete(membership) do
-              {:ok, deleted} -> deleted
+              {:ok, deleted} ->
+                ApiKeys.revoke_creator_keys(business, user, actor)
+                deleted
               {:error, changeset} -> Repo.rollback(changeset)
             end
           end
 
         membership ->
           case Repo.delete(membership) do
-            {:ok, deleted} -> deleted
+            {:ok, deleted} ->
+              ApiKeys.revoke_creator_keys(business, user, actor)
+              deleted
             {:error, changeset} -> Repo.rollback(changeset)
           end
       end

@@ -12,6 +12,7 @@ defmodule QuantumBilling.ApiKeys do
   alias QuantumBilling.ApiKeys.{ApiKey, IdempotencyKey}
   alias QuantumBilling.Audit
   alias QuantumBilling.Businesses.Business
+  alias QuantumBilling.Businesses.Membership
   alias QuantumBilling.Repo
 
   # `last_used_at` is updated at most once a minute, so reads don't all become writes.
@@ -80,6 +81,27 @@ defmodule QuantumBilling.ApiKeys do
     end
   end
 
+  @doc "Revokes a creator's keys for one business; call inside the membership transaction."
+  def revoke_creator_keys(%Business{id: business_id}, %User{id: user_id}, actor) do
+    keys =
+      Repo.all(
+        from k in ApiKey,
+          where: k.business_id == ^business_id and k.created_by_id == ^user_id and is_nil(k.revoked_at),
+          lock: "FOR UPDATE"
+      )
+
+    Enum.each(keys, fn key ->
+      {:ok, _revoked} = key |> ApiKey.revoke_changeset() |> Repo.update()
+
+      Audit.log_event(:api_key_revoked, "ApiKey", key.id,
+        user_id: actor && actor.id,
+        details: %{name: key.name, prefix: key.prefix, reason: "creator_membership_changed"}
+      )
+    end)
+
+    length(keys)
+  end
+
   @doc """
   The usable key for a raw bearer token, or `:error` for any malformed, unknown, revoked or expired key.
   """
@@ -90,6 +112,8 @@ defmodule QuantumBilling.ApiKeys do
            Repo.one(
              from k in ApiKey,
                join: b in assoc(k, :business),
+               join: m in Membership,
+               on: m.business_id == k.business_id and m.user_id == k.created_by_id and m.role == "owner",
                where: k.hashed_key == ^ApiKey.hash(raw) and is_nil(b.archived_at),
                preload: [business: b]
            ),

@@ -123,7 +123,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
   def handle_event("set_role", %{"id" => id, "role" => role}, socket) do
     with %Membership{user: user, role: old_role} <- find_member(socket, id) do
-      case Accounts.set_role(socket.assigns.current_scope.business, user, role) do
+      case Accounts.set_role(socket.assigns.current_scope.business, user, role, socket.assigns.current_scope.user) do
         {:ok, _membership} ->
           if old_role != role do
             audit(socket, :member_role_changed, user,
@@ -153,7 +153,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
   def handle_event("remove", %{"id" => id}, socket) do
     with %Membership{user: user, role: old_role} <- find_member(socket, id) do
-      case Accounts.remove_member(socket.assigns.current_scope.business, user) do
+      case Accounts.remove_member(socket.assigns.current_scope.business, user, socket.assigns.current_scope.user) do
         {:ok, _membership} ->
           audit(socket, :member_removed, user, details: %{"role" => old_role})
           QuantumBillingWeb.UserAuth.disconnect_user(user)
@@ -304,7 +304,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   phx-click="set_role"
                   phx-value-id={user.id}
                   phx-value-role="staff"
-                  data-confirm={"Make #{user.email} staff? They will lose access to accounts, credentials and the data export."}
+                  data-confirm={"Make #{user.email} staff? They will lose access to accounts, credentials and the data export. API keys they created for this business will be revoked."}
                   data-confirm-tone="neutral"
                   class="btn btn-xs btn-ghost"
                 >
@@ -324,7 +324,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   id={"remove-member-#{user.id}"}
                   phx-click="remove"
                   phx-value-id={user.id}
-                  data-confirm={"Remove #{user.email} from #{@current_scope.business.name}? Their account and any other businesses stay as they are."}
+                  data-confirm={"Remove #{user.email} from #{@current_scope.business.name}? Their account and other businesses stay as they are. API keys they created for this business will be revoked."}
                   class="btn btn-xs btn-ghost text-error"
                 >
                   Remove
