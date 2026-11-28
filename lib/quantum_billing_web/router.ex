@@ -31,6 +31,10 @@ defmodule QuantumBillingWeb.Router do
     plug :put_public_invoice_noindex
   end
 
+  pipeline :public_document_rate_limit do
+    plug QuantumBillingWeb.Plugs.PublicDocumentRateLimit
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
     plug QuantumBillingWeb.Plugs.ApiResponseHeaders
@@ -64,7 +68,7 @@ defmodule QuantumBillingWeb.Router do
 
   # Public quotation links: crawlers must not index customer documents.
   scope "/q", QuantumBillingWeb do
-    pipe_through [:browser, :public_invoice_noindex]
+    pipe_through [:public_invoice_noindex, :public_document_rate_limit, :browser]
 
     live_session :public_quotation,
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
@@ -76,7 +80,7 @@ defmodule QuantumBillingWeb.Router do
 
   # Public invoice links: crawlers must not index these customer documents.
   scope "/p", QuantumBillingWeb do
-    pipe_through [:browser, :public_invoice_noindex]
+    pipe_through [:public_invoice_noindex, :public_document_rate_limit, :browser]
 
     live_session :public_invoice,
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do
@@ -88,7 +92,7 @@ defmodule QuantumBillingWeb.Router do
 
   # Legacy public invoice links.
   scope "/pay", QuantumBillingWeb do
-    pipe_through [:browser, :public_invoice_noindex]
+    pipe_through [:public_invoice_noindex, :public_document_rate_limit, :browser]
 
     live_session :legacy_public_invoice,
       on_mount: [{QuantumBillingWeb.UserAuth, :mount_current_scope}] do

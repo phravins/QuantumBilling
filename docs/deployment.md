@@ -129,6 +129,11 @@ UPLOADS_DIR=/var/lib/quantum_billing/uploads
 
 `PHX_HOST` must be the host name browsers use. LiveView refuses a websocket from any other origin, which leaves pages loading but not interactive ("Something went wrong! Attempting to reconnect"); the log says "Could not check origin" and names the origin it saw. Behind a proxy that rewrites the `Origin` header, such as GitHub Codespaces port forwarding (which presents `http://localhost:4000`), list every origin in `PHX_CHECK_ORIGIN`, for example `//localhost,//name-4000.app.github.dev`. `TRUSTED_PROXIES` names the proxy so that client addresses reach the IP allowlist, rate limits and audit log. [Configuration](configuration.md) lists every variable.
 
+Public invoice, quotation and payment pages share a limit of 30 requests per
+minute per client address, including PDF downloads. Calendar feeds have their
+own 60-request allowance. The default Postgres limiter shares both allowances
+across the deployment's app servers.
+
 ### systemd
 
 ```ini
