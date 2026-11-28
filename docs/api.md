@@ -475,8 +475,10 @@ the email is queued; a Draft becomes Sent. An expired quotation is refused with
 
 Empty body. A Draft or Sent quotation becomes Accepted or Declined. Any other
 status, or accepting an expired quotation, is refused with `409`
-`invalid_transition`. Converting into an invoice, editing and deleting are done
-in the application.
+`invalid_transition`. If the quotation changes between the request's initial
+read and its locked transition, the API returns `409 stale_revision` instead
+of applying an answer to a different revision. Converting into an invoice,
+editing and deleting are done in the application.
 
 ## OpenAPI
 

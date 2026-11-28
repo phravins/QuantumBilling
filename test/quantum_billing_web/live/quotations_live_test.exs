@@ -197,6 +197,16 @@ defmodule QuantumBillingWeb.QuotationsLiveTest do
 
       assert path == "/quotations/#{quotation.id}"
       assert Quotations.get_quotation(quotation.id).client_name == "Renamed Client"
+      refute has_element?(view, "#quotation-revision-warning")
+    end
+
+    test "warns when editing a sent quotation", %{conn: conn, scope: scope} do
+      quotation = quotation_fixture(scope)
+      {:ok, sent} = Quotations.mark_sent(scope, quotation)
+
+      {:ok, view, _html} = live(conn, ~p"/quotations/#{sent}/edit")
+
+      assert has_element?(view, "#quotation-revision-warning")
     end
 
     test "won't open an accepted quotation for editing", %{conn: conn, scope: scope} do

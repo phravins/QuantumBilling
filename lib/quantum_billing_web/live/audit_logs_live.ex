@@ -18,7 +18,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
   @per_page 50
 
   # Kept in `details` for the page itself, not shown as details.
-  @reserved ~w(label changes actor via edits)
+  @reserved ~w(label changes actor via edits currency)
 
   # Older entries name their record under these keys instead of "label".
   @legacy_name_keys ~w(invoice_number note_number number ewb_number name title client_name email)
@@ -655,7 +655,7 @@ defmodule QuantumBillingWeb.AuditLogsLive do
             <dl class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-x-4 gap-y-2 text-sm">
               <%= for {key, value} <- @other_details do %>
                 <dt class="truncate text-base-content/50">{Catalog.field_label(key)}</dt>
-                <dd class="break-words">{plain_value(value)}</dd>
+                <dd class="break-words">{format_value(key, value, @currency)}</dd>
               <% end %>
             </dl>
           </section>

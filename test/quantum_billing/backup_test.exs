@@ -149,7 +149,19 @@ defmodule QuantumBilling.BackupTest do
       assert length(data["quotation_items"]) == 3
       refute Enum.any?(data["quotations"], &Map.has_key?(&1, "user_id"))
 
+      exported_accepted = Enum.find(data["quotations"], &(&1["id"] == accepted.id))
+      assert exported_accepted["revision"] == accepted.revision
+      assert exported_accepted["accepted_revision"] == accepted.accepted_revision
+      assert exported_accepted["accepted_total"] == accepted.accepted_total
+      assert exported_accepted["accepted_at"]
+
       assert {:ok, %{quotations: 3, quotation_items: 3}} = Backup.restore_json(json)
+
+      restored_accepted = QuantumBilling.Quotations.get_quotation(accepted.id)
+      assert restored_accepted.revision == accepted.revision
+      assert restored_accepted.accepted_revision == accepted.accepted_revision
+      assert restored_accepted.accepted_total == accepted.accepted_total
+      assert restored_accepted.accepted_at == accepted.accepted_at
 
       restored = QuantumBilling.Quotations.get_quotation_by_token(open.public_token)
       assert restored.id == open.id

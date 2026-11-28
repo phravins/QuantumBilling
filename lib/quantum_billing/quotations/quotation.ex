@@ -35,6 +35,10 @@ defmodule QuantumBilling.Quotations.Quotation do
     field :quotation_date, :date
     field :valid_until, :date
     field :status, :string, default: "Draft"
+    field :revision, :integer, default: 1
+    field :accepted_revision, :integer
+    field :accepted_total, :integer
+    field :accepted_at, :utc_datetime
     field :place_of_supply, :string
     field :currency, :string, default: "INR"
 
@@ -183,6 +187,16 @@ defmodule QuantumBilling.Quotations.Quotation do
   @doc "Moves the stored status. Callers check the transition is allowed."
   def status_changeset(quotation, status) when status in @statuses do
     change(quotation, status: status)
+  end
+
+  @doc "Records the exact quotation revision and total accepted by the client."
+  def accepted_changeset(%__MODULE__{} = quotation) do
+    change(quotation,
+      status: "Accepted",
+      accepted_revision: quotation.revision,
+      accepted_total: quotation.grand_total,
+      accepted_at: DateTime.utc_now(:second)
+    )
   end
 
   @doc """

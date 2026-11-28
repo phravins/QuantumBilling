@@ -88,6 +88,28 @@ defmodule QuantumBilling.WebhooksOutgoingTest do
       assert Enum.all?(deliveries, &(&1.event_id == event_id))
     end
 
+    test "thin acceptance webhooks include the accepted revision and total", %{owner: owner} do
+      {endpoint, _secret} = endpoint(owner, %{"events" => ["quotation.accepted"]})
+
+      assert {:ok, _event_id} =
+               Webhooks.publish("quotation.accepted", 42, %{
+                 "quotation_id" => 42,
+                 "accepted_revision" => 3,
+                 "accepted_total" => 118_000,
+                 "currency" => "INR"
+               })
+
+      payload = delivery_for(endpoint).body |> Jason.decode!()
+
+      assert payload["data"] == %{
+               "object" => "quotation",
+               "id" => 42,
+               "accepted_revision" => 3,
+               "accepted_total" => 118_000,
+               "currency" => "INR"
+             }
+    end
+
     test "a thin event carries the id, the type and the record, nothing more", %{owner: owner} do
       endpoint(owner)
 

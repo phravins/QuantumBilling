@@ -7,6 +7,7 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Businesses
+  alias QuantumBilling.Events
   alias QuantumBilling.Quotations
   alias QuantumBilling.Quotations.Quotation
   alias QuantumBilling.Templates
@@ -35,6 +36,8 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
         {:ok, gone(socket)}
 
       quotation ->
+        if connected?(socket), do: Events.subscribe(Events.quotation_topic(quotation.id))
+
         {:ok,
          socket
          |> assign(:page_title, "Quotation #{quotation.number}")
@@ -46,20 +49,48 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
     end
   end
 
-  def handle_event("accept", _params, socket), do: answer(socket, &Quotations.accept/2)
-  def handle_event("decline", _params, socket), do: answer(socket, &Quotations.decline/2)
+  def handle_event("accept", params, socket),
+    do: answer(socket, revision_param(params), &Quotations.accept/3)
+
+  def handle_event("decline", params, socket),
+    do: answer(socket, revision_param(params), &Quotations.decline/3)
+
+  def handle_info({:quotation_changed, id, revision, status}, socket) do
+    current = socket.assigns.quotation
+
+    if current.id == id and (current.revision != revision or current.status != status) do
+      case Quotations.get_quotation_by_token(socket.assigns.token) do
+        nil -> {:noreply, gone(socket)}
+        updated ->
+          {:noreply,
+           socket
+           |> assign(:answer_error, "This quotation changed. Review the updated version before answering.")
+           |> assign_quotation(updated)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
 
   # Re-read by the token: the quotation may have been binned, answered or
   # extended since the page opened.
-  defp answer(socket, action) do
+  defp answer(socket, expected_revision, action) do
     case Quotations.get_quotation_by_token(socket.assigns.token) do
       nil ->
         {:noreply, gone(socket)}
 
       quotation ->
-        case action.(@actor, quotation) do
+        case action.(@actor, quotation, expected_revision) do
           {:ok, updated} ->
             {:noreply, socket |> assign(:answer_error, nil) |> assign_quotation(updated)}
+
+          {:error, :stale_revision} ->
+            current = Quotations.get_quotation_by_token(socket.assigns.token) || quotation
+
+            {:noreply,
+             socket
+             |> assign(:answer_error, "This quotation changed. Review the updated version before answering.")
+             |> assign_quotation(current)}
 
           {:error, _reason} ->
             current = Quotations.get_quotation_by_token(socket.assigns.token) || quotation
@@ -74,6 +105,15 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
         end
     end
   end
+
+  defp revision_param(%{"revision" => value}) when is_binary(value) do
+    case Integer.parse(value) do
+      {revision, ""} -> revision
+      _invalid -> -1
+    end
+  end
+
+  defp revision_param(_missing), do: -1
 
   defp assign_quotation(socket, %Quotation{} = quotation) do
     document = Quotations.as_document(quotation)
@@ -119,7 +159,7 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
             <p class="text-xs text-base-content/60 mt-0.5">
               Dated {format_date(@quotation.quotation_date)} · Valid until {format_date(
                 @quotation.valid_until
-              )} · Total:
+              )} · Revision {@quotation.revision} · Total:
               <strong class="text-base-content">{money(@quotation.grand_total, @quotation.currency)}</strong>
             </p>
           </div>
@@ -164,6 +204,7 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
               id="public-decline-quotation"
               type="button"
               phx-click="decline"
+              phx-value-revision={@quotation.revision}
               phx-disable-with="Declining…"
               data-confirm="Decline this quotation?"
               class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-base-300 hover:border-error/40 hover:bg-error/5 hover:text-error text-xs font-semibold transition"
@@ -176,6 +217,7 @@ defmodule QuantumBillingWeb.PublicQuotationLive do
               id="public-accept-quotation"
               type="button"
               phx-click="accept"
+              phx-value-revision={@quotation.revision}
               phx-disable-with="Accepting…"
               data-confirm="Accept this quotation?"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition transform hover:-translate-y-0.5"

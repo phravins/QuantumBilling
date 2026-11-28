@@ -91,13 +91,37 @@ defmodule QuantumBillingWeb.PublicQuotationLiveTest do
   test "an answer given elsewhere since the page opened is not overwritten",
        %{conn: conn, quotation: quotation} do
     {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
-    {:ok, _} = Quotations.decline(@actor, quotation)
+    {:ok, _declined} = Quotations.decline(@actor, quotation)
 
-    view |> element("#public-accept-quotation") |> render_click()
+    render_click(view, "accept", %{"revision" => to_string(quotation.revision)})
 
     assert has_element?(view, "#public-quotation-error")
     assert has_element?(view, "#public-quotation-status", "Declined")
     assert Quotations.get_quotation(quotation.id).status == "Declined"
+  end
+
+  test "an answer from an older quotation revision is refused",
+       %{conn: conn, quotation: quotation} do
+    {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
+    Repo.update!(
+      Ecto.Changeset.change(quotation, remarks: "Revised", revision: quotation.revision + 1)
+    )
+
+    view |> element("#public-accept-quotation") |> render_click()
+
+    assert has_element?(view, "#public-quotation-error")
+    assert render(view) =~ "Revision 2"
+    assert Quotations.get_quotation(quotation.id).status == "Draft"
+  end
+
+  test "an open page receives edits and refreshes to the new revision", %{conn: conn, quotation: quotation} do
+    {:ok, view, _html} = live(conn, PublicQuotationLive.path(quotation.public_token))
+
+    {:ok, updated} = Quotations.update_quotation(@actor, quotation, %{"remarks" => "New terms"})
+
+    assert updated.revision == quotation.revision + 1
+    assert has_element?(view, "#public-quotation-error", "This quotation changed")
+    assert render(view) =~ "Revision 2"
   end
 
   test "an expired quotation can't be answered", %{conn: conn, quotation: quotation} do

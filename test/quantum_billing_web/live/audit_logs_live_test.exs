@@ -116,6 +116,24 @@ defmodule QuantumBillingWeb.AuditLogsLiveTest do
     refute has_element?(view, "#audit-log-drawer")
   end
 
+  test "the drawer formats an accepted quotation total as money", %{conn: conn} do
+    {:ok, log} =
+      Audit.log_event(:quotation_accepted, "Quotation", 42,
+        label: "QT-0042",
+        accepted_revision: 3,
+        accepted_total: 118_000,
+        currency: "INR"
+      )
+
+    {:ok, view, _html} = live(conn, ~p"/settings/audit-logs")
+    view |> element("#audit-row-#{log.id} button") |> render_click()
+
+    details = view |> element("#audit-log-drawer dl") |> render()
+    assert details =~ "Accepted total"
+    assert details =~ "1,180"
+    refute details =~ "118000"
+  end
+
   test "the drawer links to a record only while it can still be opened", %{conn: conn} do
     {:ok, gone} = Audit.log_event(:bin_invoice, "Invoice", 123_456, label: "INV-GONE")
     {:ok, settings} = Audit.log_event(:settings_updated, "Settings", "company", label: "Company")

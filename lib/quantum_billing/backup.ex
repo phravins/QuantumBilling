@@ -102,7 +102,8 @@ defmodule QuantumBilling.Backup do
 
   # deleted_at and public_token travel too: binned quotations stay in the Bin,
   # and a client's emailed link keeps working after a restore.
-  @quotation_fields ~w(id number quotation_date valid_until status place_of_supply currency
+  @quotation_fields ~w(id number quotation_date valid_until status revision accepted_revision
+                       accepted_total accepted_at place_of_supply currency
                        client_id client_name client_gstin client_pan client_billing_address
                        client_email client_state client_city client_pincode client_tax_number
                        company_name company_address company_gstin company_state

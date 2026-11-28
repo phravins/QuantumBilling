@@ -234,7 +234,7 @@ defmodule QuantumBilling.Audit.Catalog do
     field = to_string(field)
 
     field in ~w(subtotal grand_total amount amount_paid taxable_value tax_total discount_total
-                round_off total_value) or
+                round_off total_value accepted_total) or
       String.ends_with?(field, "_amount")
   end
 
@@ -249,6 +249,7 @@ defmodule QuantumBilling.Audit.Catalog do
       "sgst_amount" => "SGST",
       "igst_amount" => "IGST",
       "cess_amount" => "Cess",
+      "accepted_total" => "Accepted total",
       "smtp_password" => "SMTP password",
       "smtp_host" => "SMTP host",
       "smtp_port" => "SMTP port",

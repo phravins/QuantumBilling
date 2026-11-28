@@ -226,6 +226,45 @@ defmodule QuantumBillingWeb.API.QuotationsTest do
       assert json_response(conn, 409)["error"]["code"] == "invalid_transition"
     end
 
+    test "returns 409 when a quotation changes between fetch and acceptance", %{client: client} do
+      {raw, _key} = api_key_fixture(["quotations:write"])
+      quotation = quotation(client)
+      handler_id = {__MODULE__, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:quantum_billing, :repo, :query],
+          fn _event, _measurements, metadata, {quotation, next_revision} ->
+            query = metadata[:query] || ""
+
+            if not Process.get(:quotation_revision_bumped, false) and
+                 String.starts_with?(String.trim_leading(query), "SELECT") and
+                 String.contains?(query, "quotations") and
+                 not String.contains?(String.upcase(query), "FOR UPDATE") do
+              Process.put(:quotation_revision_bumped, true)
+
+              Repo.update!(
+                Ecto.Changeset.change(quotation, revision: next_revision)
+              )
+            end
+          end,
+          {quotation, quotation.revision + 1}
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      conn =
+        raw
+        |> api_conn()
+        |> api_post(~p"/api/v1/quotations/#{quotation.id}/accept", %{})
+
+      assert json_response(conn, 409)["error"]["code"] == "stale_revision"
+      current = Repo.get!(Quotation, quotation.id)
+      assert current.status == "Draft"
+      assert current.revision == quotation.revision + 1
+    end
+
     test "an expired quotation cannot be accepted, and a body is refused", %{client: client} do
       {raw, _key} = api_key_fixture(["quotations:write"])
       expired = client |> quotation() |> expire!()

@@ -25,6 +25,7 @@ defmodule QuantumBilling.Quotations do
   alias QuantumBilling.Audit
   alias QuantumBilling.Compliance
   alias QuantumBilling.CustomFields
+  alias QuantumBilling.Events
   alias QuantumBilling.Invoices
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
@@ -288,53 +289,80 @@ defmodule QuantumBilling.Quotations do
 
   @doc """
   Updates a Draft or Sent quotation; an Accepted or Declined one is locked
-  (`{:error, :locked}`). The number and company block never change; the
-  design is re-taken from the form.
+  (`{:error, :locked}`). The submitted revision must still be current, and the
+  number and company block never change.
   """
   def update_quotation(actor, %Quotation{} = quotation, attrs) do
-    if Quotation.editable?(quotation) do
-      trusted = attrs |> Invoices.resolve_template() |> Invoices.layout_snapshot()
+    trusted = attrs |> Invoices.resolve_template() |> Invoices.layout_snapshot()
 
-      quotation
-      |> Repo.preload(:items)
-      |> Quotation.changeset(attrs, trusted)
-      |> Repo.update()
-      |> case do
-        {:ok, quotation} ->
-          audit(:update_quotation, quotation, actor)
-          Webhooks.publish("quotation.updated", quotation.id)
-          {:ok, with_assocs(quotation)}
+    Repo.transaction(fn ->
+      current =
+        Repo.one(from q in Quotation.kept(), where: q.id == ^quotation.id, lock: "FOR UPDATE")
 
-        {:error, changeset} ->
-          {:error, changeset}
+      cond do
+        is_nil(current) ->
+          Repo.rollback(:not_found)
+
+        current.revision != quotation.revision ->
+          Repo.rollback(:stale_revision)
+
+        not Quotation.editable?(current) ->
+          Repo.rollback(:locked)
+
+        true ->
+          current
+          |> Repo.preload(:items)
+          |> Quotation.changeset(attrs, trusted)
+          |> Ecto.Changeset.put_change(:revision, current.revision + 1)
+          |> Repo.update()
+          |> case do
+            {:ok, updated} -> updated
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
       end
-    else
-      {:error, :locked}
+    end)
+    |> case do
+      {:ok, updated} ->
+        audit(:update_quotation, updated, actor, %{revision: updated.revision})
+        Webhooks.publish("quotation.updated", updated.id)
+        broadcast_quotation_changed(updated)
+        {:ok, with_assocs(updated)}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   @doc "Draft → Sent. An expired draft needs a later `valid_until` first."
   def mark_sent(actor, %Quotation{} = quotation) do
-    transition(actor, quotation, "Sent", :quotation_sent, fn q ->
+    transition(actor, quotation, quotation.revision, "Sent", :quotation_sent, fn q ->
       q.status == "Draft" and not expired?(q)
     end)
   end
 
   @doc "Draft or Sent → Accepted. An expired quotation needs a later `valid_until` first."
   def accept(actor, %Quotation{} = quotation) do
-    transition(actor, quotation, "Accepted", :quotation_accepted, fn q ->
+    accept(actor, quotation, quotation.revision)
+  end
+
+  def accept(actor, %Quotation{} = quotation, expected_revision) do
+    transition(actor, quotation, expected_revision, "Accepted", :quotation_accepted, fn q ->
       q.status in ["Draft", "Sent"] and not expired?(q)
     end)
   end
 
   @doc "Draft or Sent (expired or not) → Declined."
   def decline(actor, %Quotation{} = quotation) do
-    transition(actor, quotation, "Declined", :quotation_declined, fn q ->
+    decline(actor, quotation, quotation.revision)
+  end
+
+  def decline(actor, %Quotation{} = quotation, expected_revision) do
+    transition(actor, quotation, expected_revision, "Declined", :quotation_declined, fn q ->
       q.status in ["Draft", "Sent"]
     end)
   end
 
-  defp transition(actor, quotation, status, action, allowed?) do
+  defp transition(actor, quotation, expected_revision, status, action, allowed?) do
     # Re-read under a lock: the page may be showing a stale status, or it was binned.
     Repo.transaction(fn ->
       current =
@@ -344,8 +372,16 @@ defmodule QuantumBilling.Quotations do
         is_nil(current) ->
           Repo.rollback(:not_found)
 
+        current.revision != expected_revision ->
+          Repo.rollback(:stale_revision)
+
         allowed?.(current) ->
-          case current |> Quotation.status_changeset(status) |> Repo.update() do
+          changeset =
+            if status == "Accepted",
+              do: Quotation.accepted_changeset(current),
+              else: Quotation.status_changeset(current, status)
+
+          case Repo.update(changeset) do
             {:ok, updated} -> updated
             {:error, changeset} -> Repo.rollback(changeset)
           end
@@ -356,8 +392,9 @@ defmodule QuantumBilling.Quotations do
     end)
     |> case do
       {:ok, updated} ->
-        audit(action, updated, actor)
-        publish_status(status, updated.id)
+        audit(action, updated, actor, acceptance_audit_details(updated))
+        publish_status(status, updated)
+        broadcast_quotation_changed(updated)
         {:ok, with_assocs(updated)}
 
       {:error, reason} ->
@@ -366,9 +403,35 @@ defmodule QuantumBilling.Quotations do
   end
 
   # Spelled out, so a search for an event type finds where it is published.
-  defp publish_status("Sent", id), do: Webhooks.publish("quotation.sent", id)
-  defp publish_status("Accepted", id), do: Webhooks.publish("quotation.accepted", id)
-  defp publish_status("Declined", id), do: Webhooks.publish("quotation.declined", id)
+  defp publish_status("Sent", quotation), do: Webhooks.publish("quotation.sent", quotation.id)
+
+  defp publish_status("Accepted", quotation) do
+    Webhooks.publish("quotation.accepted", quotation.id, %{
+      "quotation_id" => quotation.id,
+      "accepted_revision" => quotation.accepted_revision,
+      "accepted_total" => quotation.accepted_total,
+      "currency" => quotation.currency
+    })
+  end
+
+  defp publish_status("Declined", quotation),
+    do: Webhooks.publish("quotation.declined", quotation.id)
+
+  defp acceptance_audit_details(%Quotation{status: "Accepted"} = quotation) do
+    %{
+      accepted_revision: quotation.accepted_revision,
+      accepted_total: quotation.accepted_total,
+      currency: quotation.currency
+    }
+  end
+
+  defp acceptance_audit_details(_quotation), do: %{}
+
+  defp broadcast_quotation_changed(%Quotation{} = quotation) do
+    Events.broadcast(Events.quotation_topic(quotation.id),
+      {:quotation_changed, quotation.id, quotation.revision, quotation.status}
+    )
+  end
 
   @doc "Whether `quotation` reads as Expired today."
   def expired?(quotation), do: Quotation.effective_status(quotation, today()) == "Expired"

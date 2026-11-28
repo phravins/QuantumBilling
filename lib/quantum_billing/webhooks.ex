@@ -170,12 +170,21 @@ defmodule QuantumBilling.Webhooks do
     })
   end
 
-  defp body(%Endpoint{}, event_id, type, object, id, now, _legacy_payload) do
+  defp body(%Endpoint{}, event_id, type, object, id, now, legacy_payload) do
+    data = %{object: object, id: id}
+
+    data =
+      if type == "quotation.accepted" and is_map(legacy_payload) do
+        Map.merge(data, Map.take(legacy_payload, ["accepted_revision", "accepted_total", "currency"]))
+      else
+        data
+      end
+
     Jason.encode!(%{
       id: event_id,
       type: type,
       created_at: DateTime.to_iso8601(now),
-      data: %{object: object, id: id}
+      data: data
     })
   end
 

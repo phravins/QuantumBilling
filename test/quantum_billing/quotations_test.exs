@@ -179,6 +179,59 @@ defmodule QuantumBilling.QuotationsTest do
       assert {:ok, _} = Quotations.update_quotation(scope, sent, %{"remarks" => "Revised"})
     end
 
+    test "edits increment the revision and a stale acceptance is refused", %{scope: scope} do
+      original = quotation_fixture(scope)
+      {:ok, edited} = Quotations.update_quotation(scope, original, %{"remarks" => "New terms"})
+
+      assert edited.revision == original.revision + 1
+      assert Quotations.accept(scope, original, original.revision) == {:error, :stale_revision}
+      assert Quotations.decline(scope, original, original.revision) == {:error, :stale_revision}
+      assert Repo.get!(Quotation, original.id).status == "Draft"
+
+      {:ok, accepted} = Quotations.accept(scope, edited, edited.revision)
+      assert accepted.accepted_revision == edited.revision
+      assert accepted.accepted_total == edited.grand_total
+      assert accepted.accepted_at
+      accepted_id = to_string(accepted.id)
+
+      audit =
+        Repo.one!(
+          from l in AuditLog,
+            where: l.action == "quotation_accepted" and l.resource_id == ^accepted_id
+        )
+
+      assert audit.details["accepted_revision"] == edited.revision
+      assert audit.details["accepted_total"] == edited.grand_total
+    end
+
+    test "concurrent edit and acceptance of one revision cannot overwrite each other", %{scope: scope} do
+      quotation = quotation_fixture(scope)
+      test_pid = self()
+
+      edit =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Repo.put_business(scope.business)
+          Quotations.update_quotation(scope, quotation, %{"remarks" => "Updated"})
+        end)
+
+      accept =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(QuantumBilling.Repo, test_pid, self())
+          Repo.put_business(scope.business)
+          Quotations.accept(scope, quotation, quotation.revision)
+        end)
+
+      edit_result = Task.await(edit)
+      accept_result = Task.await(accept)
+      current = Repo.get!(Quotation, quotation.id)
+
+      assert match?({:ok, _}, edit_result) or match?({:error, :locked}, edit_result)
+      assert match?({:ok, _}, accept_result) or match?({:error, :stale_revision}, accept_result)
+      refute match?({:ok, _}, edit_result) and match?({:ok, _}, accept_result)
+      assert current.status == "Accepted" or current.revision == quotation.revision + 1
+    end
+
     test "is locked once Accepted or Declined", %{scope: scope} do
       accepted = accepted_fixture(scope)
       {:ok, declined} = Quotations.decline(scope, quotation_fixture(scope))

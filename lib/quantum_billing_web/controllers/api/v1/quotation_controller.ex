@@ -135,6 +135,12 @@ defmodule QuantumBillingWeb.API.V1.QuotationController do
             "Not possible from this quotation's status (an expired one needs a later valid_until)."
           )
 
+        {:error, :stale_revision} ->
+          conflict(
+            :stale_revision,
+            "The quotation changed while the request was being processed. Fetch it again before answering."
+          )
+
         {:error, fields} when is_map(fields) ->
           validation_failed(fields)
 
