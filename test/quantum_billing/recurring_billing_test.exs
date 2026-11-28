@@ -143,6 +143,85 @@ defmodule QuantumBilling.RecurringBillingTest do
       # Stored rates are rupees, read through the same cast as the form: 4 × ₹2,500.
       assert item.amount == 1_000_000
     end
+
+    test "tracks consecutive failure, timestamp, and failure reason on billing error" do
+      client = client_fixture()
+      invalid_items = Jason.encode!([%{"description" => "", "quantity" => 0, "rate" => 100}])
+      profile = profile_fixture(client, %{items_json: invalid_items})
+
+      assert {:error, _reason} = Recurring.process_profile(profile)
+
+      reloaded = Recurring.get_profile!(profile.id)
+      assert reloaded.consecutive_failures == 1
+      assert %DateTime{} = reloaded.last_failed_at
+      assert reloaded.last_failure_reason =~ "description" or reloaded.last_failure_reason =~ "blank"
+      assert reloaded.status == "Active"
+    end
+
+    test "trips circuit breaker and auto-pauses profile after 3 consecutive failures" do
+      client = client_fixture()
+      invalid_items = Jason.encode!([%{"description" => "", "quantity" => 0, "rate" => 100}])
+      profile = profile_fixture(client, %{items_json: invalid_items})
+
+      assert {:error, _} = Recurring.process_profile(profile)
+      assert Recurring.get_profile!(profile.id).consecutive_failures == 1
+      assert Recurring.get_profile!(profile.id).status == "Active"
+
+      assert {:error, _} = Recurring.process_profile(profile)
+      assert Recurring.get_profile!(profile.id).consecutive_failures == 2
+      assert Recurring.get_profile!(profile.id).status == "Active"
+
+      assert {:error, _} = Recurring.process_profile(profile)
+      paused_profile = Recurring.get_profile!(profile.id)
+      assert paused_profile.consecutive_failures == 3
+      assert paused_profile.status == "Paused"
+
+      # Paused profile is excluded from due_profiles sweeps
+      assert Recurring.due_profiles() == []
+
+      # Direct processing returns {:skip, :not_active}
+      assert {:skip, :not_active} = Recurring.process_profile(paused_profile)
+    end
+
+    test "dispatches in-app warning notification on failure and error notification on circuit breaker" do
+      client = client_fixture()
+      invalid_items = Jason.encode!([%{"description" => "", "quantity" => 0, "rate" => 100}])
+      profile = profile_fixture(client, %{items_json: invalid_items})
+
+      assert {:error, _} = Recurring.process_profile(profile)
+      %{notifications: [n1 | _]} = QuantumBilling.Notifications.feed()
+      assert n1.severity == "warning"
+      assert n1.title =~ "Recurring Billing Failed"
+
+      assert {:error, _} = Recurring.process_profile(profile)
+      assert {:error, _} = Recurring.process_profile(profile)
+
+      %{notifications: notifications} = QuantumBilling.Notifications.feed()
+      assert Enum.any?(notifications, fn n ->
+               n.severity == "error" and n.title =~ "Recurring Billing Paused"
+             end)
+    end
+
+    test "successful billing resets consecutive_failures and last_failure_reason" do
+      client = client_fixture()
+      profile = profile_fixture(client, %{consecutive_failures: 2, last_failure_reason: "Previous failure"})
+
+      assert {:ok, _invoice} = Recurring.process_profile(profile)
+
+      updated = Recurring.get_profile!(profile.id)
+      assert updated.consecutive_failures == 0
+      assert updated.last_failure_reason == nil
+    end
+
+    test "manually activating a paused profile resets failures and re-arms circuit breaker" do
+      client = client_fixture()
+      profile = profile_fixture(client, %{status: "Paused", consecutive_failures: 3, last_failure_reason: "Error"})
+
+      assert {:ok, updated} = Recurring.update_profile(profile, %{status: "Active"})
+      assert updated.status == "Active"
+      assert updated.consecutive_failures == 0
+      assert updated.last_failure_reason == nil
+    end
   end
 
   describe "enqueue_due_profiles/1" do

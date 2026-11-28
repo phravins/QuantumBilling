@@ -23,6 +23,11 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
     field :auto_send_email, :boolean, default: true
     field :items_json, :string
 
+    # Failure tracking and circuit breaker
+    field :consecutive_failures, :integer, default: 0
+    field :last_failed_at, :utc_datetime
+    field :last_failure_reason, :string
+
     # Set when the profile is moved to the Bin. Never cast.
     field :deleted_at, :utc_datetime
 
@@ -34,16 +39,69 @@ defmodule QuantumBilling.Recurring.RecurringProfile do
     timestamps(type: :utc_datetime)
   end
 
-  @castable ~w(title frequency next_run_date status auto_send_email client_id items_json)a
+  @castable ~w(title frequency next_run_date status auto_send_email client_id items_json consecutive_failures last_failed_at last_failure_reason)a
+
+  @max_circuit_failures 3
 
   def changeset(profile, attrs) do
-    profile
-    |> cast(attrs, @castable)
-    |> validate_required([:title, :frequency, :next_run_date, :client_id])
-    |> validate_inclusion(:frequency, @frequencies)
-    |> validate_inclusion(:status, @statuses)
-    |> CustomFields.cast("recurring_profile", attrs)
+    changeset =
+      profile
+      |> cast(attrs, @castable)
+      |> validate_required([:title, :frequency, :next_run_date, :client_id])
+      |> validate_inclusion(:frequency, @frequencies)
+      |> validate_inclusion(:status, @statuses)
+      |> CustomFields.cast("recurring_profile", attrs)
+
+    if get_change(changeset, :status) == "Active" and profile.status == "Paused" do
+      changeset
+      |> put_change(:consecutive_failures, 0)
+      |> put_change(:last_failure_reason, nil)
+    else
+      changeset
+    end
   end
+
+  @doc """
+  Records an execution failure on the profile. If consecutive failures reach
+  `max_failures`, the profile's status transitions to "Paused" (circuit breaker).
+  """
+  def record_failure_changeset(profile, reason, max_failures \\ @max_circuit_failures) do
+    failures = (profile.consecutive_failures || 0) + 1
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    reason_text = truncate_reason(reason)
+
+    changes = %{
+      consecutive_failures: failures,
+      last_failed_at: now,
+      last_failure_reason: reason_text
+    }
+
+    changes =
+      if failures >= max_failures do
+        Map.put(changes, :status, "Paused")
+      else
+        changes
+      end
+
+    change(profile, changes)
+  end
+
+  @doc """
+  Resets failure tracking on successful billing.
+  """
+  def reset_failure_changeset(profile) do
+    change(profile, consecutive_failures: 0, last_failure_reason: nil)
+  end
+
+  defp truncate_reason(reason) when is_binary(reason) do
+    if String.length(reason) > 500 do
+      String.slice(reason, 0, 497) <> "..."
+    else
+      reason
+    end
+  end
+
+  defp truncate_reason(reason), do: reason |> inspect() |> truncate_reason()
 
   @doc "Narrows `query` to profiles that are not in the Bin."
   def kept(query \\ __MODULE__) do

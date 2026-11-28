@@ -219,4 +219,52 @@ defmodule QuantumBillingWeb.RecurringLiveTest do
       assert length(Recurring.page(status: "All Status").rows) == 2
     end
   end
+
+  describe "circuit breaker and run_now feedback" do
+    test "run_now shows error flash when all due profiles fail", %{conn: conn} do
+      client = client()
+      invalid_items = Jason.encode!([%{"description" => "", "quantity" => 0, "rate" => 100}])
+      profile(client, %{"items_json" => invalid_items})
+
+      {:ok, view, _html} = live(conn, ~p"/recurring")
+      html = render_click(view, "run_now")
+      assert html =~ "Failed to process 1 profile(s)"
+    end
+
+    test "run_now shows info flash when no profiles are due", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/recurring")
+      html = render_click(view, "run_now")
+      assert html =~ "No recurring profiles were due to run"
+    end
+
+    test "displays circuit breaker badge when profile reached failure limit", %{conn: conn} do
+      client = client()
+
+      profile(client, %{
+        "title" => "Broken Retainer",
+        "status" => "Paused",
+        "consecutive_failures" => 3,
+        "last_failure_reason" => "description can't be blank"
+      })
+
+      {:ok, _view, html} = live(conn, ~p"/recurring")
+      assert html =~ "Paused (Circuit Breaker)"
+      assert html =~ "Broken Retainer"
+    end
+
+    test "displays active with failure count when profile has partial failures", %{conn: conn} do
+      client = client()
+
+      profile(client, %{
+        "title" => "Failing Retainer",
+        "status" => "Active",
+        "consecutive_failures" => 2,
+        "last_failure_reason" => "temporary error"
+      })
+
+      {:ok, _view, html} = live(conn, ~p"/recurring")
+      assert html =~ "Active (2 fail)"
+      assert html =~ "Failing Retainer"
+    end
+  end
 end

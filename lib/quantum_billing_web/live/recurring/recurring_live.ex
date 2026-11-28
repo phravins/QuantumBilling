@@ -110,12 +110,38 @@ defmodule QuantumBillingWeb.RecurringLive do
 
   def handle_event("run_now", _params, socket) do
     results = Recurring.process_due_profiles()
-    count = length(results)
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Processed #{count} due recurring invoice(s)!")
-     |> load_profiles()}
+    {succeeded, failed, _skipped} =
+      Enum.reduce(results, {0, 0, 0}, fn
+        {:ok, _}, {s, f, sk} -> {s + 1, f, sk}
+        {:error, _}, {s, f, sk} -> {s, f + 1, sk}
+        {:skip, _}, {s, f, sk} -> {s, f, sk + 1}
+      end)
+
+    socket =
+      cond do
+        results == [] ->
+          put_flash(socket, :info, "No recurring profiles were due to run.")
+
+        failed > 0 and succeeded > 0 ->
+          put_flash(
+            socket,
+            :warning,
+            "Generated #{succeeded} invoice(s), but #{failed} profile(s) failed. Check status badges."
+          )
+
+        failed > 0 and succeeded == 0 ->
+          put_flash(
+            socket,
+            :error,
+            "Failed to process #{failed} profile(s). Check profile details and error messages."
+          )
+
+        true ->
+          put_flash(socket, :info, "Processed #{succeeded} due recurring invoice(s)!")
+      end
+
+    {:noreply, socket |> load_profiles()}
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
@@ -209,13 +235,44 @@ defmodule QuantumBillingWeb.RecurringLive do
                   </span>
                 </td>
                 <td>
-                  <span class={
-                    if p.status == "Active",
-                      do: "badge badge-success text-xs",
-                      else: "badge badge-warning text-xs"
-                  }>
-                    {p.status}
-                  </span>
+                  <%= cond do %>
+                    <% p.status == "Paused" and (p.consecutive_failures || 0) >= 3 -> %>
+                      <div class="flex flex-col gap-0.5">
+                        <span
+                          class="badge badge-error text-xs gap-1 font-semibold"
+                          title={"Auto-paused after #{p.consecutive_failures} failures: #{p.last_failure_reason}"}
+                        >
+                          <.icon name="hero-exclamation-triangle" class="size-3" /> Paused (Circuit Breaker)
+                        </span>
+                        <span
+                          :if={p.last_failure_reason}
+                          class="text-[10px] text-error/80 truncate max-w-[160px]"
+                          title={p.last_failure_reason}
+                        >
+                          {p.last_failure_reason}
+                        </span>
+                      </div>
+                    <% p.status == "Active" and (p.consecutive_failures || 0) > 0 -> %>
+                      <div class="flex flex-col gap-0.5">
+                        <span
+                          class="badge badge-warning text-xs gap-1"
+                          title={"Failed #{p.consecutive_failures} time(s): #{p.last_failure_reason}"}
+                        >
+                          <.icon name="hero-exclamation-circle" class="size-3" /> Active ({p.consecutive_failures} fail)
+                        </span>
+                        <span
+                          :if={p.last_failure_reason}
+                          class="text-[10px] text-warning/80 truncate max-w-[160px]"
+                          title={p.last_failure_reason}
+                        >
+                          {p.last_failure_reason}
+                        </span>
+                      </div>
+                    <% p.status == "Active" -> %>
+                      <span class="badge badge-success text-xs">Active</span>
+                    <% true -> %>
+                      <span class="badge badge-ghost text-xs">Paused</span>
+                  <% end %>
                 </td>
                 <td>
                   <div class="flex items-center gap-2">

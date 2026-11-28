@@ -17,6 +17,7 @@ defmodule QuantumBilling.Recurring do
   alias QuantumBilling.CustomFields
   alias QuantumBilling.InvoiceNotifier
   alias QuantumBilling.Invoices
+  alias QuantumBilling.Notifications
   alias QuantumBilling.Paging
   alias QuantumBilling.Recurring.RecurringProfile
   alias QuantumBilling.Repo
@@ -121,14 +122,26 @@ defmodule QuantumBilling.Recurring do
     changes = Audit.changes(changeset, summarize: [:items_json])
 
     action =
-      case changes do
-        %{"status" => %{"to" => "Paused"}} when map_size(changes) == 1 ->
+      cond do
+        match?(%{"status" => %{"to" => "Paused"}}, changes) and
+            Map.drop(changes, [
+              "status",
+              "consecutive_failures",
+              "last_failure_reason",
+              "last_failed_at"
+            ]) == %{} ->
           :recurring_profile_paused
 
-        %{"status" => %{"to" => "Active"}} when map_size(changes) == 1 ->
+        match?(%{"status" => %{"to" => "Active"}}, changes) and
+            Map.drop(changes, [
+              "status",
+              "consecutive_failures",
+              "last_failure_reason",
+              "last_failed_at"
+            ]) == %{} ->
           :recurring_profile_resumed
 
-        _other ->
+        true ->
           :recurring_profile_updated
       end
 
@@ -271,7 +284,9 @@ defmodule QuantumBilling.Recurring do
     # Same transaction as the invoice, so a cycle is never billed twice.
     |> Multi.update(:profile, fn _changes ->
       RecurringProfile.changeset(profile, %{
-        next_run_date: advance_date(profile.next_run_date || today, profile.frequency)
+        next_run_date: advance_date(profile.next_run_date || today, profile.frequency),
+        consecutive_failures: 0,
+        last_failure_reason: nil
       })
     end)
     |> Repo.transaction()
@@ -281,9 +296,86 @@ defmodule QuantumBilling.Recurring do
         {:ok, invoice}
 
       {:error, _step, reason, _changes} ->
-        {:error, reason}
+        handle_billing_failure(profile, reason, today)
     end
   end
+
+  defp handle_billing_failure(%RecurringProfile{} = profile, reason, today) do
+    current_profile = Repo.get(RecurringProfile, profile.id) || profile
+    reason_str = describe_failure_reason(reason)
+
+    case current_profile |> RecurringProfile.record_failure_changeset(reason_str) |> Repo.update() do
+      {:ok, updated} ->
+        failures = updated.consecutive_failures
+        circuit_broken? = updated.status == "Paused" and failures >= 3
+
+        if circuit_broken? do
+          Logger.error(
+            "[Recurring] profile #{profile.id} (\"#{profile.title}\") auto-paused by circuit breaker " <>
+              "after #{failures} consecutive failures. Reason: #{reason_str}"
+          )
+
+          Audit.log_event(
+            :recurring_profile_circuit_broken,
+            "RecurringProfile",
+            updated.id,
+            label: updated.title,
+            details: %{
+              title: updated.title,
+              consecutive_failures: failures,
+              reason: reason_str
+            }
+          )
+
+          Notifications.notify(%{
+            kind: "invoice",
+            severity: "error",
+            title: "Recurring Billing Paused: #{updated.title}",
+            body: "Auto-paused after #{failures} consecutive failures. Reason: #{reason_str}",
+            path: "/recurring",
+            dedupe_key: "recurring_circuit_breaker:#{updated.id}"
+          })
+        else
+          Logger.warning(
+            "[Recurring] profile #{profile.id} (\"#{profile.title}\") failed attempt #{failures} of 3: #{reason_str}"
+          )
+
+          Notifications.notify(%{
+            kind: "invoice",
+            severity: "warning",
+            title: "Recurring Billing Failed: #{updated.title}",
+            body: "Attempt #{failures} of 3 failed. Reason: #{reason_str}",
+            path: "/recurring",
+            dedupe_key: "recurring_failure:#{updated.id}:#{Date.to_iso8601(today)}:#{failures}"
+          })
+        end
+
+      {:error, changeset} ->
+        Logger.error(
+          "[Recurring] failed to record failure state on profile #{profile.id}: #{inspect(changeset.errors)}"
+        )
+    end
+
+    {:error, reason}
+  end
+
+  defp describe_failure_reason(%Ecto.Changeset{} = changeset) do
+    errors =
+      changeset
+      |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
+        Enum.reduce(opts, msg, fn {key, value}, acc ->
+          String.replace(acc, "%{#{key}}", to_string(value))
+        end)
+      end)
+      |> Enum.map(fn {field, errs} -> "#{field} #{Enum.join(errs, ", ")}" end)
+      |> Enum.join("; ")
+
+    if errors == "", do: "Validation failed", else: errors
+  end
+
+  defp describe_failure_reason(reason) when is_binary(reason), do: reason
+  defp describe_failure_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp describe_failure_reason(reason), do: inspect(reason)
 
   # Queued, not sent: a mail failure must not roll back the billing.
   defp maybe_queue_email(%RecurringProfile{auto_send_email: true}, client, invoice) do

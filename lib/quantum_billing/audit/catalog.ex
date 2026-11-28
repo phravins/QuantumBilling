@@ -69,6 +69,8 @@ defmodule QuantumBilling.Audit.Catalog do
      :update},
     {"recurring_profile_paused", "Paused recurring profile", "Recurring", "hero-pause-circle",
      :info},
+    {"recurring_profile_circuit_broken", "Recurring profile auto-paused (circuit breaker)",
+     "Recurring", "hero-exclamation-triangle", :danger},
     {"recurring_profile_resumed", "Resumed recurring profile", "Recurring", "hero-play-circle",
      :info},
     {"bin_recurring_profile", "Moved recurring profile to the Bin", "Recurring", "hero-trash",
