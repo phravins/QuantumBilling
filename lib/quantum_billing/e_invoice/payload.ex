@@ -8,6 +8,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   """
 
   alias QuantumBilling.GST
+  alias QuantumBilling.EInvoice
   alias QuantumBilling.Invoices.Invoice
   alias QuantumBilling.Invoices.InvoiceItem
   alias QuantumBilling.Money
@@ -18,6 +19,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   # Bill of Supply and Export Invoice are absent on purpose; see EInvoice.validate/2.
   @types %{
     "Tax Invoice" => "INV",
+    "Export Invoice" => "INV",
     "Credit Note" => "CRN",
     "Debit Note" => "DBN"
   }
@@ -39,8 +41,10 @@ defmodule QuantumBilling.EInvoice.Payload do
        seller_details(organization),
        buyer_details(invoice),
        item_list(invoice),
-       value_details(invoice)
-     ]}
+       value_details(invoice),
+       export_details(invoice)
+     ]
+     |> compact()}
   end
 
   defp comment(invoice) do
@@ -61,9 +65,7 @@ defmodule QuantumBilling.EInvoice.Payload do
      ]}
   end
 
-  defp supply_type(%Invoice{client_gstin: gstin}) do
-    if GST.valid_gstin?(gstin), do: "B2B", else: "B2C"
-  end
+  defp supply_type(invoice), do: EInvoice.supply_type(invoice)
 
   defp doc_details(invoice) do
     {"DocDtls", [],
@@ -93,29 +95,46 @@ defmodule QuantumBilling.EInvoice.Payload do
   defp buyer_details(invoice) do
     {"BuyerDtls", [],
      [
-       maybe("Gstin", if(GST.valid_gstin?(invoice.client_gstin), do: invoice.client_gstin)),
+       maybe("Gstin", if(EInvoice.export?(invoice), do: "URP", else: invoice.client_gstin)),
        element("LglNm", invoice.client_name),
-       element("Pos", GST.state_code(invoice.place_of_supply)),
+       element(
+         "Pos",
+         if(EInvoice.export?(invoice), do: "96", else: GST.state_code(invoice.place_of_supply))
+       ),
        element("Addr1", first_line(invoice.client_billing_address)),
        maybe("Addr2", rest_lines(invoice.client_billing_address)),
        element("Loc", invoice.client_city),
-       element("Pin", invoice.client_pincode),
+       element("Pin", if(EInvoice.export?(invoice), do: "999999", else: invoice.client_pincode)),
        element(
          "Stcd",
-         GST.state_code(invoice.client_state) || GST.state_code(invoice.place_of_supply)
+         if(EInvoice.export?(invoice),
+           do: "96",
+           else: GST.state_code(invoice.client_state) || GST.state_code(invoice.place_of_supply)
+         )
        )
      ]
      |> compact()}
   end
 
+  defp export_details(invoice) do
+    if EInvoice.export?(invoice) do
+      {"ExpDtls", [],
+       [
+         element("ForCur", invoice.currency),
+         element("CntCode", invoice.client_country),
+         element("RefClm", if(invoice.export_type == "EXPORT_WITH_PAY", do: "Y", else: "N"))
+       ]}
+    end
+  end
+
   defp item_list(invoice) do
-    intra_state? = Invoice.intra_state?(invoice)
+    intra_state? = not EInvoice.export?(invoice) and Invoice.intra_state?(invoice)
 
     items =
       invoice.items
       |> Enum.with_index(1)
       |> Enum.map(fn {item, index} ->
-        item(item, index, intra_state?, Invoice.gst_reverse_charge?(invoice))
+        item(item, index, intra_state?, Invoice.gst_reverse_charge?(invoice), invoice)
       end)
 
     {"ItemList", [], items}
@@ -123,9 +142,9 @@ defmodule QuantumBilling.EInvoice.Payload do
 
   # With RegRev "Y" the IRP lets the item value leave out the tax, which the
   # recipient pays; the tax amounts are still reported.
-  defp item(%InvoiceItem{} = item, index, intra_state?, reverse_charge?) do
+  defp item(%InvoiceItem{} = item, index, intra_state?, reverse_charge?, invoice) do
     amount = InvoiceItem.amount(item)
-    tax = InvoiceItem.tax(item)
+    tax = if invoice.export_type == "EXPORT_WITHOUT_PAY", do: 0, else: InvoiceItem.tax(item)
     {cgst, sgst, igst} = split(tax, intra_state?)
 
     {"Item", [],
@@ -137,27 +156,30 @@ defmodule QuantumBilling.EInvoice.Payload do
        element("HsnCd", item.hsn_sac),
        element("Qty", quantity(item.quantity)),
        element("Unit", unit_code(item.unit)),
-       element("UnitPrice", decimal(item.rate)),
-       element("TotAmt", decimal(amount)),
-       element("AssAmt", decimal(amount)),
+       element("UnitPrice", decimal(item.rate, invoice)),
+       element("TotAmt", decimal(amount, invoice)),
+       element("AssAmt", decimal(amount, invoice)),
        element("GstRt", percent(item.tax_rate)),
-       element("CgstAmt", decimal(cgst)),
-       element("SgstAmt", decimal(sgst)),
-       element("IgstAmt", decimal(igst)),
-       element("TotItemVal", decimal(if(reverse_charge?, do: amount, else: amount + tax)))
+       element("CgstAmt", decimal(cgst, invoice)),
+       element("SgstAmt", decimal(sgst, invoice)),
+       element("IgstAmt", decimal(igst, invoice)),
+       element(
+         "TotItemVal",
+         decimal(if(reverse_charge?, do: amount, else: amount + tax), invoice)
+       )
      ]}
   end
 
   defp value_details(invoice) do
     {"ValDtls", [],
      [
-       element("AssVal", decimal(invoice.taxable_value)),
-       element("CgstVal", decimal(reported_tax(invoice, :cgst))),
-       element("SgstVal", decimal(reported_tax(invoice, :sgst))),
-       element("IgstVal", decimal(reported_tax(invoice, :igst))),
-       element("CesVal", decimal(reported_tax(invoice, :cess))),
-       element("RndOffAmt", decimal(invoice.round_off)),
-       element("TotInvVal", decimal(invoice.grand_total))
+       element("AssVal", decimal(invoice.taxable_value, invoice)),
+       element("CgstVal", decimal(reported_tax(invoice, :cgst), invoice)),
+       element("SgstVal", decimal(reported_tax(invoice, :sgst), invoice)),
+       element("IgstVal", decimal(reported_tax(invoice, :igst), invoice)),
+       element("CesVal", decimal(reported_tax(invoice, :cess), invoice)),
+       element("RndOffAmt", decimal(invoice.round_off, invoice)),
+       element("TotInvVal", decimal(invoice.grand_total, invoice))
      ]}
   end
 
@@ -204,6 +226,7 @@ defmodule QuantumBilling.EInvoice.Payload do
   # Paise in, rupees with two decimals out.
   defp decimal(nil), do: "0.00"
   defp decimal(paise) when is_integer(paise), do: Money.to_input(paise)
+  defp decimal(amount, invoice), do: amount |> EInvoice.inr_paise(invoice) |> decimal()
 
   # A GST rate is a plain percentage, not money.
   defp percent(nil), do: "0.00"

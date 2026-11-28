@@ -68,6 +68,7 @@ defmodule QuantumBilling.Invoices.Invoice do
     field :client_state, :string
     field :client_city, :string
     field :client_pincode, :string
+    field :client_country, :string
 
     field :company_name, :string
     field :company_address, :string
@@ -155,7 +156,7 @@ defmodule QuantumBilling.Invoices.Invoice do
   @castable ~w(invoice_type invoice_date due_date payment_terms
                place_of_supply client_id client_name client_gstin client_pan
                client_billing_address client_email client_state
-               client_city client_pincode
+               client_city client_pincode client_country
                remarks terms template_id
                currency exchange_rate export_type lut_number
                client_tax_number reverse_charge)a

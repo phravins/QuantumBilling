@@ -473,7 +473,8 @@ defmodule QuantumBilling.Invoices do
       "client_billing_address" => billing_address(client),
       # Stored separately too: the e-invoice export needs them.
       "client_city" => client.billing_city,
-      "client_pincode" => client.billing_pin
+      "client_pincode" => client.billing_pin,
+      "client_country" => client.country
     }
   end
 
@@ -693,8 +694,12 @@ defmodule QuantumBilling.Invoices do
   end
 
   def queue_einvoice(%Invoice{} = invoice) do
-    with :ok <- QuantumBilling.Tax.ensure_gst(invoice) do
+    with :ok <- QuantumBilling.Tax.ensure_gst(invoice),
+         true <- QuantumBilling.EInvoice.eligible?(invoice) do
       enqueue_einvoice(invoice)
+    else
+      false -> {:error, :einvoice_ineligible}
+      error -> error
     end
   end
 

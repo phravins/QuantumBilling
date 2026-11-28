@@ -42,12 +42,13 @@ defmodule QuantumBilling.EInvoice do
   """
   def to_json(%Invoice{} = invoice) do
     organization = Settings.get_organization()
+    export? = export?(invoice)
 
     %{
       "Version" => "1.1",
       "TranDetails" => %{
         "TaxSch" => "GST",
-        "SupTyp" => if(invoice.client_gstin, do: "B2B", else: "B2C"),
+        "SupTyp" => supply_type(invoice),
         "RegRev" => if(Invoice.gst_reverse_charge?(invoice), do: "Y", else: "N")
       },
       "DocDetails" => %{
@@ -64,13 +65,17 @@ defmodule QuantumBilling.EInvoice do
         "Stcd" => GST.state_code(organization.state)
       },
       "BuyerDetails" => %{
-        "Gstin" => invoice.client_gstin,
+        "Gstin" => if(export?, do: "URP", else: invoice.client_gstin),
         "LglName" => invoice.client_name,
-        "Pos" => GST.state_code(invoice.place_of_supply),
+        "Pos" => if(export?, do: "96", else: GST.state_code(invoice.place_of_supply)),
         "Addr1" => invoice.client_billing_address,
         "Loc" => invoice.client_city,
-        "Pin" => invoice.client_pincode,
-        "Stcd" => GST.state_code(invoice.client_state || invoice.place_of_supply)
+        "Pin" => if(export?, do: 999_999, else: invoice.client_pincode),
+        "Stcd" =>
+          if(export?,
+            do: "96",
+            else: GST.state_code(invoice.client_state || invoice.place_of_supply)
+          )
       },
       "ItemList" =>
         Enum.map(invoice.items || [], fn item ->
@@ -80,24 +85,54 @@ defmodule QuantumBilling.EInvoice do
             "HsnCd" => item.hsn_sac,
             "Qty" => quantity(item.quantity),
             "Unit" => item.unit,
-            "UnitPrice" => rupees(item.rate),
-            "TotAmt" => rupees(item.amount),
+            "UnitPrice" => rupees(inr_paise(item.rate, invoice)),
+            "TotAmt" => rupees(inr_paise(item.amount, invoice)),
             "GstRt" => item.tax_rate,
-            "TotItemVal" => rupees(item.amount)
+            "TotItemVal" => rupees(inr_paise(item.amount, invoice))
           }
         end),
       "ValDetails" => %{
         # On a reverse-charge invoice the tax is reported though not charged:
         # the charged columns are 0 and the recipient's tax is in rc_*.
-        "AssVal" => rupees(invoice.taxable_value),
-        "CgstVal" => rupees(Payload.reported_tax(invoice, :cgst)),
-        "SgstVal" => rupees(Payload.reported_tax(invoice, :sgst)),
-        "IgstVal" => rupees(Payload.reported_tax(invoice, :igst)),
-        "CesVal" => rupees(Payload.reported_tax(invoice, :cess)),
-        "RndOffAmt" => rupees(invoice.round_off),
-        "TotInvVal" => rupees(invoice.grand_total)
+        "AssVal" => rupees(inr_paise(invoice.taxable_value, invoice)),
+        "CgstVal" => rupees(inr_paise(Payload.reported_tax(invoice, :cgst), invoice)),
+        "SgstVal" => rupees(inr_paise(Payload.reported_tax(invoice, :sgst), invoice)),
+        "IgstVal" => rupees(inr_paise(Payload.reported_tax(invoice, :igst), invoice)),
+        "CesVal" => rupees(inr_paise(Payload.reported_tax(invoice, :cess), invoice)),
+        "RndOffAmt" => rupees(inr_paise(invoice.round_off, invoice)),
+        "TotInvVal" => rupees(inr_paise(invoice.grand_total, invoice))
       }
     }
+    |> maybe_export_details(invoice)
+  end
+
+  def export?(%Invoice{export_type: type}), do: type in ["EXPORT_WITH_PAY", "EXPORT_WITHOUT_PAY"]
+
+  def eligible?(%Invoice{} = invoice), do: export?(invoice) or present?(invoice.client_gstin)
+
+  def inr_paise(nil, _invoice), do: 0
+  def inr_paise(amount, %Invoice{currency: currency}) when currency in [nil, "INR"], do: amount
+
+  def inr_paise(amount, %Invoice{} = invoice) do
+    rate = invoice.exchange_rate || 1
+    rate = if is_float(rate), do: Decimal.from_float(rate), else: rate
+    amount |> Decimal.new() |> Decimal.mult(rate) |> Decimal.round(0) |> Decimal.to_integer()
+  end
+
+  def supply_type(%Invoice{export_type: "EXPORT_WITH_PAY"}), do: "EXPWP"
+  def supply_type(%Invoice{export_type: "EXPORT_WITHOUT_PAY"}), do: "EXPWOP"
+  def supply_type(%Invoice{}), do: "B2B"
+
+  defp maybe_export_details(payload, invoice) do
+    if export?(invoice) do
+      Map.put(payload, "ExpDetails", %{
+        "ForCur" => invoice.currency,
+        "CntCode" => invoice.client_country,
+        "RefClm" => if(invoice.export_type == "EXPORT_WITH_PAY", do: "Y", else: "N")
+      })
+    else
+      payload
+    end
   end
 
   # The IRP takes rupees and quantities as JSON numbers; amounts are stored in paise.
@@ -129,6 +164,8 @@ defmodule QuantumBilling.EInvoice do
       [
         status(invoice),
         document_type(invoice),
+        eligibility(invoice),
+        export_tax(invoice),
         seller(organization),
         buyer(invoice),
         place_of_supply(invoice),
@@ -145,6 +182,25 @@ defmodule QuantumBilling.EInvoice do
   end
 
   defp status(_invoice), do: nil
+
+  defp eligibility(invoice) do
+    unless eligible?(invoice), do: "E-invoicing is not applicable to domestic B2C supplies."
+  end
+
+  defp export_tax(invoice) do
+    if export?(invoice) do
+      cond do
+        Payload.reported_tax(invoice, :cgst) != 0 or Payload.reported_tax(invoice, :sgst) != 0 ->
+          "An export invoice must not contain CGST or SGST. Correct the invoice before requesting an IRN."
+
+        invoice.export_type == "EXPORT_WITHOUT_PAY" and Payload.reported_tax(invoice, :igst) != 0 ->
+          "An export without payment must not contain IGST. Correct the invoice before requesting an IRN."
+
+        true ->
+          nil
+      end
+    end
+  end
 
   # Not coerced to INV: calling either a tax invoice would misstate it.
   defp document_type(%Invoice{invoice_type: type}) do
@@ -184,15 +240,18 @@ defmodule QuantumBilling.EInvoice do
       unless(present?(invoice.client_city),
         do: "The client's city is missing. Add it to the client and re-save the invoice."
       ),
-      unless(pincode?(invoice.client_pincode),
+      unless(export?(invoice) or pincode?(invoice.client_pincode),
         do:
           "The client's six-digit PIN code is missing. Add it to the client and re-save the invoice."
+      ),
+      if(export?(invoice) and not country_code?(invoice.client_country),
+        do: "The export client's two-letter country code is missing."
       )
     ]
   end
 
-  defp place_of_supply(%Invoice{place_of_supply: place}) do
-    unless GST.state_code(place) do
+  defp place_of_supply(%Invoice{place_of_supply: place} = invoice) do
+    unless export?(invoice) or GST.state_code(place) do
       "The place of supply is missing or is not a recognised state."
     end
   end
@@ -228,4 +287,9 @@ defmodule QuantumBilling.EInvoice do
 
   defp pincode?(value) when is_binary(value), do: Regex.match?(~r/^\d{6}$/, value)
   defp pincode?(_value), do: false
+
+  defp country_code?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Z]{2}$/, value) and value != "IN"
+
+  defp country_code?(_value), do: false
 end

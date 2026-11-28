@@ -87,7 +87,7 @@ defmodule QuantumBilling.Backup do
 
   @invoice_fields ~w(id invoice_number invoice_type invoice_date due_date payment_terms
                      place_of_supply client_id client_name client_gstin client_pan
-                     client_billing_address client_email client_state client_city client_pincode
+                     client_billing_address client_email client_state client_city client_pincode client_country
                      company_name company_address company_gstin company_state remarks terms
                      total_items total_quantity taxable_value cgst_amount sgst_amount igst_amount
                      cess_amount round_off grand_total status irn ack_number ack_date

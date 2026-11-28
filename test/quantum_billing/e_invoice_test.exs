@@ -150,13 +150,36 @@ defmodule QuantumBilling.EInvoiceTest do
       assert text(tree, ["BuyerDtls", "Gstin"]) == "27AAACN1234C1ZP"
     end
 
-    # An unregistered buyer is a legitimate supply, not an error — but the
-    # element must be absent rather than empty.
-    test "a buyer without a GSTIN is B2C and the element is omitted" do
-      tree = tree(invoice(%{"client_gstin" => nil}))
+    test "domestic consumers are not eligible for an IRN" do
+      invoice = invoice(%{"client_gstin" => nil})
+      assert {:error, problems} = EInvoice.xml_for(invoice)
+      assert Enum.any?(problems, &String.contains?(&1, "B2C"))
+      assert {:error, :einvoice_ineligible} = Invoices.queue_einvoice(invoice)
+    end
 
-      assert text(tree, ["TranDtls", "SupTyp"]) == "B2C"
-      refute "Gstin" in names(at(tree, ["BuyerDtls"]))
+    test "maps an export buyer to the foreign IRP codes" do
+      invoice =
+        invoice(
+          %{
+            "invoice_type" => "Export Invoice",
+            "export_type" => "EXPORT_WITHOUT_PAY",
+            "client_gstin" => nil,
+            "client_country" => "US",
+            "client_pincode" => nil,
+            "currency" => "USD",
+            "place_of_supply" => "Karnataka (29)"
+          },
+          %{"tax_rate" => "0"}
+        )
+
+      json = EInvoice.to_json(invoice)
+      assert json["TranDetails"]["SupTyp"] == "EXPWOP"
+      assert json["BuyerDetails"]["Gstin"] == "URP"
+      assert json["BuyerDetails"]["Pos"] == "96"
+      assert json["BuyerDetails"]["Stcd"] == "96"
+      assert json["BuyerDetails"]["Pin"] == 999_999
+      assert json["ExpDetails"]["CntCode"] == "US"
+      assert text(tree(invoice), ["TranDtls", "SupTyp"]) == "EXPWOP"
     end
 
     test "the seller comes from the organisation, split into its parts" do

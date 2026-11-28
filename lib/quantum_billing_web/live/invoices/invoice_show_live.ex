@@ -95,6 +95,10 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
       {:error, :gst_only} ->
         {:noreply, put_flash(socket, :error, Tax.gst_only_message(:e_invoice))}
 
+      {:error, :einvoice_ineligible} ->
+        {:noreply,
+         put_flash(socket, :error, "E-invoicing is not applicable to domestic B2C supplies.")}
+
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Could not queue the E-Invoice: #{ErrorMessages.text(reason)}")}
@@ -886,7 +890,9 @@ defmodule QuantumBillingWeb.InvoiceShowLive do
           <h3 class={drawer_group_class()}>E-Invoice &amp; E-Way Bill</h3>
 
           <.drawer_item
-            :if={@invoice.status != "E-Invoice Generated"}
+            :if={
+              @invoice.status != "E-Invoice Generated" and QuantumBilling.EInvoice.eligible?(@invoice)
+            }
             id="drawer-generate-irn"
             icon="hero-bolt"
             label="1-Click Generate IRN"

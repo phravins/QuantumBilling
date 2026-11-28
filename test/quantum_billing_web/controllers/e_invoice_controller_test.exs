@@ -31,6 +31,7 @@ defmodule QuantumBillingWeb.EInvoiceControllerTest do
         "invoice_date" => Date.to_iso8601(~D[2026-04-18]),
         "place_of_supply" => "Maharashtra (27)",
         "client_name" => "Northwind Traders",
+        "client_gstin" => "27AAACN1234C1ZP",
         "client_billing_address" => "14 Harbour Road",
         "client_city" => "Mumbai",
         "client_pincode" => "400002",
