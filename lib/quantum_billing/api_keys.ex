@@ -12,6 +12,7 @@ defmodule QuantumBilling.ApiKeys do
   alias QuantumBilling.ApiKeys.{ApiKey, IdempotencyKey}
   alias QuantumBilling.Audit
   alias QuantumBilling.Businesses.Business
+  alias QuantumBilling.Businesses.Membership
   alias QuantumBilling.Repo
 
   # `last_used_at` is updated at most once a minute, so reads don't all become writes.
@@ -27,6 +28,19 @@ defmodule QuantumBilling.ApiKeys do
         where: k.business_id == ^business_id,
         order_by: [desc: k.inserted_at, desc: k.id],
         preload: [:created_by]
+    )
+  end
+
+  @doc "How many unrevoked keys `user` created for `business`."
+  def count_active_keys(%Business{id: business_id}, user_id) do
+    Repo.aggregate(
+      from(k in ApiKey,
+        where:
+          k.business_id == ^business_id and k.created_by_id == ^user_id and
+            is_nil(k.revoked_at)
+      ),
+      :count,
+      :id
     )
   end
 
@@ -50,19 +64,52 @@ defmodule QuantumBilling.ApiKeys do
   def create_key(attrs, %User{} = owner, %Business{} = business) do
     {raw, changeset} = ApiKey.build(attrs, owner, business)
 
-    with {:ok, key} <- Repo.insert(changeset) do
-      QuantumBilling.SecurityAlerts.admin_event(
-        business,
-        owner,
-        "created the API key \"#{key.name}\" (#{Enum.join(key.scopes, ", ")})"
-      )
+    case Repo.transaction(fn ->
+           # Serialize issuance with role changes/removal. Those operations lock
+           # owner memberships before revoking keys, so either this insert is
+           # visible to their revocation or this ownership check sees no owner.
+           membership =
+             Repo.one(
+               from m in Membership,
+                 where:
+                   m.business_id == ^business.id and m.user_id == ^owner.id and
+                     m.role == "owner",
+                 lock: "FOR UPDATE"
+             )
 
-      Audit.log_event(:api_key_created, "ApiKey", key.id,
-        user_id: owner.id,
-        details: %{name: key.name, prefix: key.prefix, scopes: key.scopes}
-      )
+           if is_nil(membership) do
+             Repo.rollback(
+               {:changeset,
+                Ecto.Changeset.add_error(
+                  changeset,
+                  :name,
+                  "only a current business owner can issue API keys"
+                )}
+             )
+           end
 
-      {:ok, %{key: key, raw: raw}}
+           key =
+             case Repo.insert(changeset) do
+               {:ok, key} -> key
+               {:error, changeset} -> Repo.rollback({:changeset, changeset})
+             end
+
+           QuantumBilling.SecurityAlerts.admin_event(
+             business,
+             owner,
+             "created the API key \"#{key.name}\" (#{Enum.join(key.scopes, ", ")})"
+           )
+
+           Audit.log_event(:api_key_created, "ApiKey", key.id,
+             user_id: owner.id,
+             details: %{name: key.name, prefix: key.prefix, scopes: key.scopes}
+           )
+
+           %{key: key, raw: raw}
+         end) do
+      {:ok, result} -> {:ok, result}
+      {:error, {:changeset, changeset}} -> {:error, changeset}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -90,7 +137,10 @@ defmodule QuantumBilling.ApiKeys do
            Repo.one(
              from k in ApiKey,
                join: b in assoc(k, :business),
+               join: m in QuantumBilling.Businesses.Membership,
+               on: m.business_id == k.business_id and m.user_id == k.created_by_id,
                where: k.hashed_key == ^ApiKey.hash(raw) and is_nil(b.archived_at),
+               where: m.role == "owner",
                preload: [business: b]
            ),
          true <- ApiKey.usable?(key) do

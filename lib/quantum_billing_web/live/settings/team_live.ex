@@ -9,6 +9,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
   use QuantumBillingWeb, :live_view
 
   alias QuantumBilling.Accounts
+  alias QuantumBilling.ApiKeys
   alias QuantumBilling.Audit
   alias QuantumBilling.Businesses.Membership
 
@@ -26,9 +27,16 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
 
   defp load_team(socket) do
     business = socket.assigns.current_scope.business
+    members = Accounts.list_members(business)
 
     socket
-    |> assign(:members, Accounts.list_members(business))
+    |> assign(:members, members)
+    |> assign(
+      :api_key_counts,
+      Map.new(members, fn member ->
+        {member.user_id, ApiKeys.count_active_keys(business, member.user_id)}
+      end)
+    )
     |> assign(:invitations, Accounts.list_invitations(business))
     |> assign(:owner_count, Accounts.count_owners(business))
   end
@@ -304,7 +312,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   phx-click="set_role"
                   phx-value-id={user.id}
                   phx-value-role="staff"
-                  data-confirm={"Make #{user.email} staff? They will lose access to accounts, credentials and the data export."}
+                  data-confirm={"Make #{user.email} staff? They will lose access to accounts, credentials and the data export. #{Map.get(@api_key_counts, user.id, 0)} API key(s) created by them for this business will be revoked."}
                   data-confirm-tone="neutral"
                   class="btn btn-xs btn-ghost"
                 >
@@ -324,7 +332,7 @@ defmodule QuantumBillingWeb.SettingsLive.Team do
                   id={"remove-member-#{user.id}"}
                   phx-click="remove"
                   phx-value-id={user.id}
-                  data-confirm={"Remove #{user.email} from #{@current_scope.business.name}? Their account and any other businesses stay as they are."}
+                  data-confirm={"Remove #{user.email} from #{@current_scope.business.name}? Their account and any other businesses stay as they are. #{Map.get(@api_key_counts, user.id, 0)} API key(s) created by them for this business will be revoked."}
                   class="btn btn-xs btn-ghost text-error"
                 >
                   Remove

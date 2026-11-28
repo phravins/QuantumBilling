@@ -5,6 +5,7 @@ defmodule QuantumBilling.ApiKeysTest do
 
   alias QuantumBilling.ApiKeys
   alias QuantumBilling.ApiKeys.ApiKey
+  alias QuantumBilling.Accounts
   alias QuantumBilling.Businesses
 
   defp create(attrs) do
@@ -38,6 +39,23 @@ defmodule QuantumBilling.ApiKeysTest do
 
       assert errors_on(changeset).expires_at != []
     end
+
+    test "refuses issuance after the creator loses owner access" do
+      business = Businesses.default!()
+      former_owner = owner_fixture()
+      _remaining_owner = owner_fixture()
+      assert {:ok, _} = Accounts.set_role(business, former_owner, "staff")
+
+      assert {:error, changeset} =
+               ApiKeys.create_key(
+                 %{"name" => "Too late", "scopes" => ["invoices:read"]},
+                 former_owner,
+                 business
+               )
+
+      assert errors_on(changeset).name == ["only a current business owner can issue API keys"]
+      assert ApiKeys.count_active_keys(business, former_owner.id) == 0
+    end
   end
 
   describe "authenticate/1" do
@@ -65,6 +83,36 @@ defmodule QuantumBilling.ApiKeysTest do
                from l in QuantumBilling.Audit.AuditLog,
                  where: l.action == "api_key_revoked" and l.user_id == ^owner.id
              )
+    end
+
+    test "demoting a key creator revokes only their keys for that business" do
+      business = Businesses.default!()
+      former_owner = owner_fixture()
+      other_owner = owner_fixture()
+
+      {:ok, %{raw: former_key}} =
+        ApiKeys.create_key(%{"name" => "Former", "scopes" => ["invoices:read"]}, former_owner, business)
+
+      {:ok, %{raw: other_key}} =
+        ApiKeys.create_key(%{"name" => "Other", "scopes" => ["invoices:read"]}, other_owner, business)
+
+      assert {:ok, _} = Accounts.set_role(business, former_owner, "staff")
+
+      assert ApiKeys.authenticate(former_key) == :error
+      assert {:ok, _} = ApiKeys.authenticate(other_key)
+    end
+
+    test "removing a member revokes their keys" do
+      business = Businesses.default!()
+      owner = owner_fixture()
+      second_owner = owner_fixture()
+
+      {:ok, %{raw: raw}} =
+        ApiKeys.create_key(%{"name" => "Removed", "scopes" => ["invoices:read"]}, owner, business)
+
+      assert {:ok, _} = Accounts.remove_member(business, owner)
+      assert ApiKeys.authenticate(raw) == :error
+      assert {:ok, _} = Accounts.set_role(business, second_owner, "owner")
     end
   end
 

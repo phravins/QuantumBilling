@@ -11,6 +11,8 @@ defmodule QuantumBilling.Accounts do
   alias QuantumBilling.Accounts.{Invitation, SignInRequest, User, UserToken, UserNotifier}
   alias QuantumBilling.Businesses
   alias QuantumBilling.Businesses.{Business, Membership}
+  alias QuantumBilling.ApiKeys.ApiKey
+  alias QuantumBilling.Audit
 
   @doc "Gets a user by email."
   def get_user_by_email(email) when is_binary(email) do
@@ -242,7 +244,10 @@ defmodule QuantumBilling.Accounts do
             Repo.rollback(:last_owner)
           else
             case change_role(membership, role) do
-              {:ok, updated} -> updated
+              {:ok, updated} ->
+                if role != "owner", do: revoke_member_api_keys(business, user)
+                updated
+
               {:error, changeset} -> Repo.rollback(changeset)
             end
           end
@@ -282,18 +287,46 @@ defmodule QuantumBilling.Accounts do
             Repo.rollback(:last_owner)
           else
             case Repo.delete(membership) do
-              {:ok, deleted} -> deleted
+              {:ok, deleted} ->
+                revoke_member_api_keys(business, user)
+                deleted
+
               {:error, changeset} -> Repo.rollback(changeset)
             end
           end
 
         membership ->
           case Repo.delete(membership) do
-            {:ok, deleted} -> deleted
+            {:ok, deleted} ->
+              revoke_member_api_keys(business, user)
+              deleted
+
             {:error, changeset} -> Repo.rollback(changeset)
           end
       end
     end)
+  end
+
+  defp revoke_member_api_keys(%Business{} = business, %User{} = user) do
+    now = DateTime.utc_now(:second)
+
+    {count, _} =
+      Repo.update_all(
+        from(k in ApiKey,
+          where:
+            k.business_id == ^business.id and k.created_by_id == ^user.id and
+              is_nil(k.revoked_at)
+        ),
+        set: [revoked_at: now]
+      )
+
+    if count > 0 do
+      Audit.log_event(:api_keys_revoked, "Membership", "#{business.id}:#{user.id}",
+        details: %{count: count, reason: "owner_access_removed"}
+      )
+    end
+
+    count
   end
 
   @doc "`business`'s pending and recent invitations, newest first."
